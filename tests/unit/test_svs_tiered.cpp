@@ -2872,7 +2872,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
     // Validate tiered svs info fields
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.trainingTriggerThreshold, 1);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateTriggerThreshold, 1);
@@ -2901,7 +2901,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.indexUpdateScheduled, true);
 
     mock_thread_pool.thread_iteration();
@@ -2916,7 +2916,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
 
     if (TypeParam::isMulti()) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
@@ -2931,7 +2931,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
         EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                               info.tieredInfo.backendCommonInfo.memory +
                                               info.tieredInfo.frontendCommonInfo.memory);
-        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     }
 
     VecSimIndex_DeleteVector(tiered_index, 1);
@@ -2946,7 +2946,7 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
 }
 
 TYPED_TEST(SVSTieredIndexTest, testInfoIterator) {

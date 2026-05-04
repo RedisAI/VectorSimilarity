@@ -1244,6 +1244,160 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(HNSWTest, hnsw_resolve_rerank_rejected_on_ram_hnsw) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 2;
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = M, .efConstruction = ef, .efRuntime = ef};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    VecSimQueryParams qparams;
+    std::vector<VecSimRawParam> rparams;
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
+
+    // RERANK is only valid for disk-based HNSW; reject on RAM HNSW for every query type.
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
+            VecSimParamResolverErr_UnknownParam);
+    }
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 2;
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = M, .efConstruction = ef, .efRuntime = ef};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // Flip the disk flag so that the resolver treats this as a disk-based HNSW.
+    this->CastToHNSW(index)->setIsDiskForTesting(true);
+
+    VecSimQueryParams qparams;
+    std::vector<VecSimRawParam> rparams;
+
+    // --- defaults: efRuntime=0, shouldRerank=UNSET across all query types ---
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, nullptr, 0, &qparams, query_type), VecSim_OK);
+        EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 0);
+        EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_UNSET);
+    }
+
+    // --- RERANK: TRUE accepted on KNN/HYBRID/RANGE/NONE ---
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
+            VecSim_OK);
+        EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_TRUE);
+    }
+
+    // --- RERANK: FALSE (case-insensitive) ---
+    rparams[0] = (VecSimRawParam){
+        .name = "rerank", .nameLen = strlen("rerank"), .value = "false", .valLen = strlen("false")};
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_FALSE);
+
+    // --- EF_RUNTIME: KNN OK, value visible via the disk union view ---
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime",
+                                  .nameLen = strlen("ef_runtime"),
+                                  .value = "100",
+                                  .valLen = strlen("100")};
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 100);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_UNSET);
+
+    // --- EF_RUNTIME: rejected on RANGE ---
+    EXPECT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_UnknownParam);
+
+    // --- combined: EF_RUNTIME + RERANK in one resolve call ---
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 100);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_TRUE);
+
+    // --- HYBRID interactions: EF_RUNTIME + HYBRID_POLICY=ADHOC_BF rejected ---
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "ADHOC_BF",
+                                  .valLen = strlen("ADHOC_BF")};
+    EXPECT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
+
+    // --- HYBRID interactions: EF_RUNTIME + HYBRID_POLICY=BATCHES + BATCH_SIZE accepted ---
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "BATCHES",
+                                  .valLen = strlen("BATCHES")};
+    rparams.push_back((VecSimRawParam){.name = "batch_size",
+                                       .nameLen = strlen("batch_size"),
+                                       .value = "50",
+                                       .valLen = strlen("50")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 100);
+    EXPECT_EQ(qparams.searchMode, HYBRID_BATCHES);
+    EXPECT_EQ(qparams.batchSize, 50);
+
+    // --- error paths: BadValue ---
+    rparams.clear();
+    rparams.push_back((VecSimRawParam){.name = "RERANK",
+                                       .nameLen = strlen("RERANK"),
+                                       .value = "MAYBE",
+                                       .valLen = strlen("MAYBE")});
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    rparams[0] = (VecSimRawParam){
+        .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "-30", .valLen = 3};
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    // --- error paths: AlreadySet (RERANK) ---
+    rparams[0] = (VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")};
+    rparams.push_back((VecSimRawParam){.name = "RERANK",
+                                       .nameLen = strlen("RERANK"),
+                                       .value = "FALSE",
+                                       .valLen = strlen("FALSE")});
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_AlreadySet);
+
+    // --- error paths: AlreadySet (EF_RUNTIME) ---
+    rparams[0] = (VecSimRawParam){
+        .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "100", .valLen = 3};
+    rparams[1] = (VecSimRawParam){
+        .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "100", .valLen = 3};
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_AlreadySet);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTest, hnsw_get_distance) {
     size_t n = 4;
     size_t dim = 2;

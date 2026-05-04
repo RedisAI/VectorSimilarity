@@ -768,7 +768,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
     EXPECT_EQ(info.tieredInfo.bufferLimit, bufferLimit);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
 
@@ -784,7 +784,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
 
     mock_thread_pool.thread_iteration();
     info = index->debugInfo();
@@ -798,7 +798,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
 
     if (is_multi) {
         UINT8Test::GenerateAndAddVector(1, 1);
@@ -813,7 +813,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
         EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                               info.tieredInfo.backendCommonInfo.memory +
                                               info.tieredInfo.frontendCommonInfo.memory);
-        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     }
 
     VecSimIndex_DeleteVector(index, 1);
@@ -828,7 +828,7 @@ void UINT8TieredTest::test_info(bool is_multi) {
     EXPECT_EQ(info.commonInfo.memory, info.tieredInfo.management_layer_memory +
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
 }
 
 TEST_F(UINT8TieredTest, testInfoSingle) { test_info(false); }

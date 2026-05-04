@@ -54,6 +54,7 @@ const char *VecSimCommonStrings::EPSILON_STRING = "EPSILON";
 const char *VecSimCommonStrings::HNSW_MAX_LEVEL = "MAX_LEVEL";
 const char *VecSimCommonStrings::HNSW_ENTRYPOINT = "ENTRYPOINT";
 const char *VecSimCommonStrings::NUM_MARKED_DELETED = "NUMBER_OF_MARKED_DELETED";
+const char *VecSimCommonStrings::HNSW_RERANK_STRING = "RERANK";
 
 const char *VecSimCommonStrings::SVS_SEARCH_WS_STRING = "SEARCH_WINDOW_SIZE";
 const char *VecSimCommonStrings::SVS_CONSTRUCTION_WS_STRING = "CONSTRUCTION_WINDOW_SIZE";
@@ -162,6 +163,19 @@ VecSimResolveCode validate_vecsim_bool_param(VecSimRawParam rawParam, VecSimOpti
         *val = VecSimOption_DISABLE;
     } else if (value == "AUTO") {
         *val = VecSimOption_AUTO;
+    } else {
+        return VecSimParamResolverErr_BadValue;
+    }
+    return VecSimParamResolver_OK;
+}
+
+VecSimResolveCode validate_vecsim_tristate_bool_param(VecSimRawParam rawParam, VecSimBool *val) {
+    std::string value(rawParam.value, rawParam.valLen);
+    std::transform(value.begin(), value.end(), value.begin(), ::toupper);
+    if (value == "TRUE") {
+        *val = VecSimBool_TRUE;
+    } else if (value == "FALSE") {
+        *val = VecSimBool_FALSE;
     } else {
         return VecSimParamResolverErr_BadValue;
     }
