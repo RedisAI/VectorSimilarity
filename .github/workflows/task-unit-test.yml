@@ -33,7 +33,7 @@ jobs:
         shell: sh -l -eo pipefail {0}
         run: ${{ inputs.pre-checkout-script }}
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.number && format('refs/pull/{0}/merge', github.event.number) || github.head_ref }}
       - name: install dependencies
@@ -57,7 +57,7 @@ jobs:
           echo "path=bin/${FULL_VARIANT}/unit_tests/Testing/Temporary/" >> $GITHUB_OUTPUT
       - name: Archive san tests reports
         if: ${{ inputs.san  == 'address' && failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: san tests reports on ${{ steps.artifact-name.outputs.name }}
           path: ${{ steps.tests-artifact-path.outputs.path }}
