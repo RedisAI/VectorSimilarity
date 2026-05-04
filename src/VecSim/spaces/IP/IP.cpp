@@ -10,7 +10,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
-#include <cstring>
+#include "VecSim/utils/alignment.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -74,6 +74,69 @@ float SQ8_FP32_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dim
 
 float SQ8_FP32_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return SQ8_FP32_InnerProduct(pVect1v, pVect2v, dimension);
+}
+
+/*
+ * Optimized asymmetric SQ8-FP16 inner product using algebraic identity:
+ *   IP(x, y) = Σ(x_i * y_i)
+ *            ≈ Σ((min + delta * q_i) * y_i)
+ *            = min * Σy_i + delta * Σ(q_i * y_i)
+ *            = min * y_sum + delta * quantized_dot_product
+ *
+ * Each FP16 query value is widened to FP32 before accumulation. SQ8 metadata and
+ * query metadata are read as FP32.
+ *
+ * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares (L2
+ * only)]
+ * pVect2 is query (FP16):  [float16 values (dim)] [y_sum] [y_sum_squares (L2 only)]
+ *
+ * Returns raw inner product value (not distance). Used by SQ8_FP16_InnerProduct, SQ8_FP16_Cosine,
+ * SQ8_FP16_L2Sqr.
+ */
+float SQ8_FP16_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const float16 *>(pVect2v);
+
+    // Use 4 accumulators for instruction-level parallelism
+    float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+
+    // Main loop: process 4 elements per iteration
+    size_t i = 0;
+    size_t dim4 = dimension & ~size_t(3); // dim4 is a multiple of 4
+    for (; i < dim4; i += 4) {
+        sum0 += static_cast<float>(pVect1[i + 0]) * vecsim_types::FP16_to_FP32(pVect2[i + 0]);
+        sum1 += static_cast<float>(pVect1[i + 1]) * vecsim_types::FP16_to_FP32(pVect2[i + 1]);
+        sum2 += static_cast<float>(pVect1[i + 2]) * vecsim_types::FP16_to_FP32(pVect2[i + 2]);
+        sum3 += static_cast<float>(pVect1[i + 3]) * vecsim_types::FP16_to_FP32(pVect2[i + 3]);
+    }
+
+    // Handle remainder (0-3 elements)
+    for (; i < dimension; i++) {
+        sum0 += static_cast<float>(pVect1[i]) * vecsim_types::FP16_to_FP32(pVect2[i]);
+    }
+
+    // Combine accumulators
+    float quantized_dot = (sum0 + sum1) + (sum2 + sum3);
+
+    // Get quantization parameters from stored vector (pVect1 is SQ8) and the precomputed
+    // y_sum from the query blob. The metadata sits at byte offsets that are not guaranteed
+    // 4-byte aligned for odd `dimension`, so use load_unaligned to avoid alignment UB.
+    const auto *params_bytes = pVect1 + dimension;
+    const float min_val = load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
+    const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
+    const float y_sum = load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
+
+    // Apply formula: IP = min * y_sum + delta * Σ(q_i * y_i)
+    return min_val * y_sum + delta * quantized_dot;
+}
+
+float SQ8_FP16_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ8_FP16_InnerProduct_Impl(pVect1v, pVect2v, dimension);
+}
+
+float SQ8_FP16_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return SQ8_FP16_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
 // SQ8-to-SQ8: Common inner product implementation that returns the raw inner product value

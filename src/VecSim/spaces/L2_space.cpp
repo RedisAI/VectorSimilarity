@@ -94,6 +94,20 @@ dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
+// SQ8-FP16: asymmetric L2 distance between SQ8 storage and FP16 query.
+// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
+// returns the scalar implementation.
+dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
+                                           const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (!alignment) {
+        alignment = &dummy_alignment;
+    }
+    (void)dim;
+    (void)arch_opt;
+    return SQ8_FP16_L2Sqr;
+}
+
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;
     if (!alignment) {

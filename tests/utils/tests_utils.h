@@ -8,12 +8,14 @@
  */
 #pragma once
 
+#include <cstring>
 #include <random>
 #include <vector>
 #include "VecSim/spaces/normalize/compute_norm.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/utils/alignment.h"
 
 using sq8 = vecsim_types::sq8;
 
@@ -256,6 +258,130 @@ static float SQ8_FP32_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
     }
     return res;
 }
+/*
+ * SQ8-FP16 inner product distance reference implementation without algebraic optimizations.
+ * Uses element-wise dequantization of the SQ8 storage and widens FP16 query values to FP32:
+ * IP = Σ((min + delta * q_i) * FP16_to_FP32(y_i))
+ * pVect1 = SQ8 storage (quantized values + metadata)
+ * pVect2 = FP16 query (float16 values + FP32 metadata)
+ */
+static float SQ8_FP16_NotOptimized_InnerProduct(const void *pVect1v, const void *pVect2v,
+                                                size_t dimension) {
+
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    // FP16 query buffer may be only 1-byte aligned (e.g. backed by std::vector<uint8_t>),
+    // so access float16 values via memcpy on uint16_t to avoid alignment UB.
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v); // FP16 query
+
+    // Storage metadata sits at byte offset `dimension` into the uint8 buffer and is not
+    // guaranteed 4-byte aligned for odd `dimension`; use load_unaligned to avoid alignment UB.
+    const float min_val = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
+
+    float res = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        uint16_t raw;
+        std::memcpy(&raw, pVect2 + i * sizeof(vecsim_types::float16), sizeof(raw));
+        res +=
+            (pVect1[i] * delta + min_val) * vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
+    }
+    return 1.0f - res;
+}
+
+/*
+ * SQ8-FP16 cosine reference. For normalized vectors, cosine equals inner product distance.
+ */
+static float SQ8_FP16_NotOptimized_Cosine(const void *pVect1v, const void *pVect2v,
+                                          size_t dimension) {
+    return SQ8_FP16_NotOptimized_InnerProduct(pVect1v, pVect2v, dimension);
+}
+
+/*
+ * SQ8-FP16 L2 squared reference implementation without algebraic optimizations.
+ * Mirrors the algebraic identity used by the optimized kernel:
+ *   L2² = ||x_orig||² + ||y||² - 2 * Σ(dequant(x_i) * FP16_to_FP32(y_i))
+ * where ||x_orig||² is the SUM_SQUARES precomputed from the *original* (pre-quantization)
+ * floats and stored in the SQ8 metadata, and ||y||² is the SUM_SQUARES_QUERY computed
+ * from the FP16-widened-to-FP32 query values. This intentionally differs from a pure
+ * Σ(y - dequant(x))² by a quantization-error term that grows with dim, since the
+ * production storage stores the pre-quantization norm.
+ */
+static float SQ8_FP16_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    // FP16 query buffer may be only 1-byte aligned; access float16 values via memcpy on
+    // uint16_t to avoid alignment UB on strict-alignment targets.
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // Storage and query metadata sit at byte offsets that are not guaranteed 4-byte aligned
+    // for odd `dimension`; use load_unaligned to avoid alignment UB.
+    const float min_val = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+    const auto *query_meta_bytes = pVect2 + dimension * sizeof(vecsim_types::float16);
+    const float y_sum_sq =
+        load_unaligned<float>(query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float));
+
+    float ip = 0.0f;
+    for (size_t i = 0; i < dimension; i++) {
+        uint16_t raw;
+        std::memcpy(&raw, pVect2 + i * sizeof(vecsim_types::float16), sizeof(raw));
+        const float dequantized = pVect1[i] * delta + min_val;
+        ip += dequantized * vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
+    }
+    return x_sum_sq + y_sum_sq - 2.0f * ip;
+}
+
+// Preprocess FP16 query for SQ8 IP/Cosine/L2 space.
+// Query layout: [float16 values (dim)] [sum (float)] [sum_squares (float)]
+// `buf` must be at least
+//   dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float)
+// bytes (defaults to L2 layout, sufficient for IP/Cosine).
+// The metadata is computed from the FP16 values widened back to FP32, so it matches
+// what the SQ8-FP16 distance kernels will accumulate.
+// `buf` may be only 1-byte aligned (callers commonly back it with std::vector<uint8_t>),
+// so FP16 values and FP32 metadata are accessed via memcpy to avoid alignment UB on
+// strict-alignment targets.
+static void preprocess_sq8_fp16_query(void *buf, size_t dim) {
+    auto *bytes = static_cast<uint8_t *>(buf);
+    float sum = 0.0f;
+    float sum_squares = 0.0f;
+    for (size_t i = 0; i < dim; i++) {
+        uint16_t raw;
+        std::memcpy(&raw, bytes + i * sizeof(vecsim_types::float16), sizeof(raw));
+        const float widened = vecsim_types::FP16_to_FP32(vecsim_types::float16{raw});
+        sum += widened;
+        sum_squares += widened * widened;
+    }
+    auto *metadata_bytes = bytes + dim * sizeof(vecsim_types::float16);
+    std::memcpy(metadata_bytes + sq8::SUM_QUERY * sizeof(float), &sum, sizeof(float));
+    std::memcpy(metadata_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float), &sum_squares,
+                sizeof(float));
+}
+
+// Populate an FP16 query buffer for SQ8 IP/Cosine/L2 space.
+// `buf` must be at least
+//   dim * sizeof(float16) + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float)
+// bytes. Generates float values, optionally normalizes them in FP32 (matching the
+// FP32 query helper), converts to FP16, then computes FP32 metadata.
+// `buf` may be only 1-byte aligned; FP16 stores go through memcpy on uint16_t to avoid
+// alignment UB on strict-alignment targets.
+static void populate_sq8_fp16_query(void *buf, size_t dim, bool should_normalize = false,
+                                    int seed = 1234, float min = -1.0f, float max = 1.0f) {
+    std::vector<float> tmp(dim);
+    populate_float_vec(tmp.data(), dim, seed, min, max);
+    if (should_normalize) {
+        spaces::GetNormalizeFunc<float>()(tmp.data(), dim);
+    }
+    auto *bytes = static_cast<uint8_t *>(buf);
+    for (size_t i = 0; i < dim; i++) {
+        const uint16_t raw = vecsim_types::FP32_to_FP16(tmp[i]).val;
+        std::memcpy(bytes + i * sizeof(vecsim_types::float16), &raw, sizeof(raw));
+    }
+    preprocess_sq8_fp16_query(buf, dim);
+}
+
 /**
  * Populate a float vector and quantize to SQ8 with precomputed sum and sum_squares.
  * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares
