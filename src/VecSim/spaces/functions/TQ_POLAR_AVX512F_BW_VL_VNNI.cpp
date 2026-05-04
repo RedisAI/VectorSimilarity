@@ -40,10 +40,13 @@ inline int FinishPackedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs, s
 
 inline __m512i PopcountBytes(__m512i bytes) {
     const __m512i low_mask = _mm512_set1_epi8(0x0F);
+    alignas(64) static const unsigned char lookup_bytes[64] = {
+        0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2,
+        2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3,
+        2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
+    };
     const __m512i lookup =
-        _mm512_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2,
-                         2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3,
-                         2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+        _mm512_load_si512(reinterpret_cast<const void *>(lookup_bytes));
     const __m512i low = _mm512_and_si512(bytes, low_mask);
     const __m512i high =
         _mm512_and_si512(_mm512_srli_epi16(bytes, 4), low_mask);

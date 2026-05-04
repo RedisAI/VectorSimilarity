@@ -110,9 +110,10 @@ if(USE_SVS)
         )
         set(SVS_LVQ_HEADER "svs/quantization/lvq/impl/lvq_impl.h")
         set(SVS_LEANVEC_HEADER "svs/leanvec/impl/leanvec_impl.h")
+        set(SVS_HEADER_ROOT "${root}/deps/ScalableVectorSearch/include")
     endif()
 
-    if(SVS_LVQ_SUPPORTED AND EXISTS "${svs_SOURCE_DIR}/include/${SVS_LVQ_HEADER}")
+    if(SVS_LVQ_SUPPORTED AND EXISTS "${SVS_HEADER_ROOT}/${SVS_LVQ_HEADER}")
         message("SVS LVQ implementation found")
         add_compile_definitions(VectorSimilarity
             PUBLIC "HAVE_SVS_LVQ=1"
