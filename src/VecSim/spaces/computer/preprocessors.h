@@ -321,8 +321,15 @@ class QuantPreprocessor : public PreprocessorInterface {
         }
 
         // Metadata uses MetadataType. Use memcpy because the metadata offset
-        // (dim * sizeof(uint8_t)) is not guaranteed to be 4-byte aligned.
-        store_storage_metadata(quantized + this->dim, min_val, delta, sum, sum_squares);
+        // (dim * sizeof(uint8_t)) is not guaranteed to be sizeof(MetadataType)-aligned.
+        void *meta_dst = quantized + this->dim;
+        if constexpr (Metric == VecSimMetric_L2) {
+            const MetadataType buf[4] = {min_val, delta, sum, sum_squares};
+            memcpy(meta_dst, buf, sizeof(buf));
+        } else {
+            const MetadataType buf[3] = {min_val, delta, sum};
+            memcpy(meta_dst, buf, sizeof(buf));
+        }
     }
 
     // Computes and writes query metadata (FP32) in a single pass over the input vector.
@@ -373,7 +380,16 @@ class QuantPreprocessor : public PreprocessorInterface {
             }
         }
 
-        store_query_metadata(output_metadata, sum, sum_squares);
+        // Metadata uses MetadataType. Use memcpy because the metadata offset (after the query
+        // body of dim * sizeof(DataType)) is not guaranteed to be sizeof(MetadataType)-aligned
+        // when DataType is float16 and dim is odd.
+        if constexpr (Metric == VecSimMetric_L2) {
+            const MetadataType buf[2] = {sum, sum_squares};
+            memcpy(output_metadata, buf, sizeof(buf));
+        } else {
+            const MetadataType buf[1] = {sum};
+            memcpy(output_metadata, buf, sizeof(buf));
+        }
     }
 
 public:
@@ -492,50 +508,13 @@ public:
     }
 
 private:
-    // Returns (min, max) of the input vector evaluated in MetadataType. Required because float16
-    // does not have a usable operator< (it implicitly converts to uint16_t, ignoring the sign
-    // bit). The returned values are written verbatim into the metadata region.
+    // Returns (min, max) of the input vector evaluated in MetadataType. Both float and float16
+    // expose a usable operator< (float16's overload delegates to FP32 semantics), so a single
+    // std::minmax_element call covers both DataTypes. The returned values are written verbatim
+    // into the metadata region.
     std::pair<MetadataType, MetadataType> find_min_max(const DataType *input) const {
-        if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
-            MetadataType min_val = to_fp32<DataType>(input[0]);
-            MetadataType max_val = min_val;
-            for (size_t i = 1; i < dim; ++i) {
-                const MetadataType v = to_fp32<DataType>(input[i]);
-                if (v < min_val)
-                    min_val = v;
-                if (v > max_val)
-                    max_val = v;
-            }
-            return {min_val, max_val};
-        } else {
-            auto [min_it, max_it] = std::minmax_element(input, input + dim);
-            return {static_cast<MetadataType>(*min_it), static_cast<MetadataType>(*max_it)};
-        }
-    }
-
-    // Writes the SQ8 storage metadata at the given destination. Uses memcpy because the
-    // base pointer (quantized + dim) is not guaranteed to be sizeof(MetadataType)-aligned.
-    static void store_storage_metadata(void *dst, MetadataType min_val, MetadataType delta,
-                                       MetadataType sum, MetadataType sum_squares) {
-        const MetadataType buf_ip_cos[3] = {min_val, delta, sum};
-        const MetadataType buf_l2[4] = {min_val, delta, sum, sum_squares};
-        if constexpr (Metric == VecSimMetric_L2) {
-            memcpy(dst, buf_l2, sizeof(buf_l2));
-        } else {
-            memcpy(dst, buf_ip_cos, sizeof(buf_ip_cos));
-        }
-    }
-
-    // Writes the query metadata at the given destination. Uses memcpy for the same
-    // alignment reason as store_storage_metadata.
-    static void store_query_metadata(void *dst, MetadataType sum, MetadataType sum_squares) {
-        const MetadataType buf_ip_cos[1] = {sum};
-        const MetadataType buf_l2[2] = {sum, sum_squares};
-        if constexpr (Metric == VecSimMetric_L2) {
-            memcpy(dst, buf_l2, sizeof(buf_l2));
-        } else {
-            memcpy(dst, buf_ip_cos, sizeof(buf_ip_cos));
-        }
+        auto [min_it, max_it] = std::minmax_element(input, input + dim);
+        return {to_fp32<DataType>(*min_it), to_fp32<DataType>(*max_it)};
     }
 
     const size_t dim;
