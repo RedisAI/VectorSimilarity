@@ -46,9 +46,8 @@ TEST_F(FP16TypeCompare, MinmaxElementHandlesNegatives) {
     // Min and max are both negative, with the min having a larger absolute value. Under the
     // pre-fix uint16_t-based comparison, the negative with the larger magnitude would have
     // compared as the maximum, swapping the result.
-    const std::array<float16, 5> data{FP32_to_FP16(-3.5f), FP32_to_FP16(0.5f),
-                                      FP32_to_FP16(-1.25f), FP32_to_FP16(2.0f),
-                                      FP32_to_FP16(-0.75f)};
+    const std::array<float16, 5> data{FP32_to_FP16(-3.5f), FP32_to_FP16(0.5f), FP32_to_FP16(-1.25f),
+                                      FP32_to_FP16(2.0f), FP32_to_FP16(-0.75f)};
 
     auto [min_it, max_it] = std::minmax_element(data.begin(), data.end());
     EXPECT_FLOAT_EQ(FP16_to_FP32(*min_it), -3.5f);

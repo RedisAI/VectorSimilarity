@@ -57,9 +57,7 @@ static inline float FP16_to_FP32(float16 input) {
 inline std::partial_ordering operator<=>(float16 a, float16 b) {
     return FP16_to_FP32(a) <=> FP16_to_FP32(b);
 }
-inline bool operator==(float16 a, float16 b) {
-    return FP16_to_FP32(a) == FP16_to_FP32(b);
-}
+inline bool operator==(float16 a, float16 b) { return FP16_to_FP32(a) == FP16_to_FP32(b); }
 
 static inline float16 FP32_to_FP16(float input) {
     // via Fabian "ryg" Giesen.
