@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
+#include <compare>
 namespace vecsim_types {
 struct float16 {
     uint16_t val;
@@ -46,6 +47,18 @@ static inline float FP16_to_FP32(float16 input) {
 
     int32_t sign_bit = ((int32_t)(input & 0x8000u)) << 16;
     return _interpret_as_float(((exp == shifted_exp) ? infnan_val : reg_val) | sign_bit);
+}
+
+// Comparison operators that delegate to FP32 semantics. Required because the implicit
+// conversion to uint16_t would otherwise compare the raw bit pattern, which is not a valid
+// ordering for IEEE 754 values (the sign bit is the MSB, so negatives appear "larger" than
+// positives, and same-signed magnitudes compare correctly only for non-negative values).
+// These exact-match overloads take precedence over the implicit uint16_t conversion path.
+inline std::partial_ordering operator<=>(float16 a, float16 b) {
+    return FP16_to_FP32(a) <=> FP16_to_FP32(b);
+}
+inline bool operator==(float16 a, float16 b) {
+    return FP16_to_FP32(a) == FP16_to_FP32(b);
 }
 
 static inline float16 FP32_to_FP16(float input) {
