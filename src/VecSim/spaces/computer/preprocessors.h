@@ -12,12 +12,16 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
+#include <cstring>
 #include <memory>
+#include <type_traits>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/memory/memory_utils.h"
+#include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 
 class PreprocessorInterface : public VecsimBaseObject {
@@ -157,17 +161,19 @@ private:
  * x_sum = Σx_i: sum of the original values,
  * x_sum_squares = Σx_i²: sum of squares of the original values.
  *
- * The quantized blob size is:
- * - For L2:        dim * sizeof(OUTPUT_TYPE) + 4 * sizeof(DataType)
- * - For IP/Cosine: dim * sizeof(OUTPUT_TYPE) + 3 * sizeof(DataType)
+ * Storage metadata is always FP32 (independent of DataType) to match the asymmetric distance
+ * kernels. The quantized blob size is:
+ * - For L2:        dim * sizeof(OUTPUT_TYPE) + 4 * sizeof(float)
+ * - For IP/Cosine: dim * sizeof(OUTPUT_TYPE) + 3 * sizeof(float)
  *
  * Reconstruction formulas:
  * Given quantized value q_i, the original value is reconstructed as:
  *   x_i ≈ min + delta * q_i
  *
  * Query processing:
- * The query vector is not quantized. It remains as DataType, but we precompute
- * and store metric-specific values to accelerate asymmetric distance computation:
+ * The query vector is not quantized. It remains in DataType width (FP32 stays FP32, FP16 stays
+ * FP16), but we precompute and store metric-specific FP32 values to accelerate asymmetric
+ * distance computation:
  * - For IP/Cosine: y_sum = Σy_i (sum of query values)
  * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query values)
  *
@@ -175,11 +181,14 @@ private:
  * - For IP/Cosine: | query_values[dim] | y_sum |
  * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
  *
- * Query blob size:
- * - For IP/Cosine: (dim + 1) * sizeof(DataType)
- * - For L2:        (dim + 2) * sizeof(DataType)
+ * Query metadata is always FP32. The query blob size is:
+ * - For IP/Cosine: dim * sizeof(DataType) + 1 * sizeof(float)
+ * - For L2:        dim * sizeof(DataType) + 2 * sizeof(float)
  *
- * === Asymmetric distance (storage x quantized, query y remains float) ===
+ * Note: when DataType is float16 the metadata region may not be 4-byte aligned; both writes
+ * and reads of metadata must therefore go through memcpy.
+ *
+ * === Asymmetric distance (storage x quantized, query y in DataType) ===
  *
  * For IP/Cosine:
  *   IP(x, y) = Σ(x_i * y_i)
@@ -217,9 +226,26 @@ private:
  *   ||x - y||² = sum_sq_x + sum_sq_y - 2 * IP(x, y)
  *   where sum_sq_x, sum_sq_y are precomputed sums of squared original values.
  */
-template <typename DataType, VecSimMetric Metric>
+// Input types accepted by QuantPreprocessor. Opt-in via std::same_as so unrelated types
+// (e.g. integers, double, bfloat16) are rejected at the template head with a named constraint.
+template <typename T>
+concept QuantInput = std::same_as<T, float> || std::same_as<T, vecsim_types::float16>;
+
+// Convert a single input element to FP32 for accumulation/comparison. Identity for float,
+// FP16 -> FP32 widening for vecsim_types::float16.
+template <QuantInput T>
+static inline float to_fp32(T x) {
+    if constexpr (std::is_same_v<T, vecsim_types::float16>) {
+        return vecsim_types::FP16_to_FP32(x);
+    } else {
+        return x;
+    }
+}
+
+template <QuantInput DataType, VecSimMetric Metric>
 class QuantPreprocessor : public PreprocessorInterface {
     using OUTPUT_TYPE = uint8_t;
+    using MetadataType = float; // SQ8 metadata is always FP32 (see class doc).
     using sq8 = vecsim_types::sq8;
 
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
@@ -230,21 +256,21 @@ class QuantPreprocessor : public PreprocessorInterface {
     // methods.
     void quantize(const DataType *input, OUTPUT_TYPE *quantized) const {
         assert(input && quantized);
-        // Find min and max values
+        // Find min and max values (computed in MetadataType regardless of DataType).
         auto [min_val, max_val] = find_min_max(input);
 
-        // Calculate scaling factor
-        const DataType diff = (max_val - min_val);
-        // Delta = diff / 255.0f
-        const DataType delta = (diff == DataType{0}) ? DataType{1} : diff / DataType{255};
-        const DataType inv_delta = DataType{1} / delta;
+        // Calculate scaling factor (typed as MetadataType because they end up as metadata).
+        const MetadataType diff = (max_val - min_val);
+        const MetadataType delta = (diff == 0.0f) ? MetadataType{1} : diff / MetadataType{255};
+        const MetadataType inv_delta = MetadataType{1} / delta;
 
-        // Compute sum (and sum of squares for L2) while quantizing
+        // Compute sum (and sum of squares for L2) while quantizing.
+        // Accumulators are FP32 to preserve metadata precision for FP16 inputs.
         // 4 independent accumulators (sum)
-        DataType s0{}, s1{}, s2{}, s3{};
+        float s0{}, s1{}, s2{}, s3{};
 
         // 4 independent accumulators (sum of squares), only used for L2
-        DataType q0{}, q1{}, q2{}, q3{};
+        float q0{}, q1{}, q2{}, q3{};
 
         size_t i = 0;
         // round dim down to the nearest multiple of 4
@@ -252,11 +278,11 @@ class QuantPreprocessor : public PreprocessorInterface {
 
         // Quantize the values
         for (; i < dim_round_down; i += 4) {
-            // Load once
-            const DataType x0 = input[i + 0];
-            const DataType x1 = input[i + 1];
-            const DataType x2 = input[i + 2];
-            const DataType x3 = input[i + 3];
+            // Load once (widened to FP32 if DataType is FP16).
+            const float x0 = to_fp32<DataType>(input[i + 0]);
+            const float x1 = to_fp32<DataType>(input[i + 1]);
+            const float x2 = to_fp32<DataType>(input[i + 2]);
+            const float x3 = to_fp32<DataType>(input[i + 3]);
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
@@ -280,12 +306,13 @@ class QuantPreprocessor : public PreprocessorInterface {
             }
         }
 
-        // Tail: 0..3 remaining elements (still the same pass, just finishing work)
-        DataType sum = (s0 + s1) + (s2 + s3);
-        DataType sum_squares = (q0 + q1) + (q2 + q3);
+        // Tail: 0..3 remaining elements (still the same pass, just finishing work).
+        // Sum/sum_squares become metadata, so they are MetadataType.
+        MetadataType sum = (s0 + s1) + (s2 + s3);
+        MetadataType sum_squares = (q0 + q1) + (q2 + q3);
 
         for (; i < this->dim; ++i) {
-            const DataType x = input[i];
+            const float x = to_fp32<DataType>(input[i]);
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x - min_val) * inv_delta));
             sum += x;
             if constexpr (Metric == VecSimMetric_L2) {
@@ -293,37 +320,39 @@ class QuantPreprocessor : public PreprocessorInterface {
             }
         }
 
-        DataType *metadata = reinterpret_cast<DataType *>(quantized + this->dim);
-
-        // Store min_val, delta, in the metadata
-        metadata[sq8::MIN_VAL] = min_val;
-        metadata[sq8::DELTA] = delta;
-
-        // Store sum (for all metrics) and sum_squares (for L2 only)
-        metadata[sq8::SUM] = sum;
+        // Metadata uses MetadataType. Use memcpy because the metadata offset
+        // (dim * sizeof(uint8_t)) is not guaranteed to be sizeof(MetadataType)-aligned.
+        void *meta_dst = quantized + this->dim;
         if constexpr (Metric == VecSimMetric_L2) {
-            metadata[sq8::SUM_SQUARES] = sum_squares;
+            const MetadataType buf[4] = {min_val, delta, sum, sum_squares};
+            memcpy(meta_dst, buf, sizeof(buf));
+        } else {
+            const MetadataType buf[3] = {min_val, delta, sum};
+            memcpy(meta_dst, buf, sizeof(buf));
         }
     }
 
-    // Computes and assigns query metadata in a single pass over the input vector.
-    // For IP/Cosine: assigns y_sum = Σy_i
-    // For L2: assigns y_sum = Σy_i and y_sum_squares = Σy_i²
-    void assign_query_metadata(const DataType *input, DataType *output_metadata) const {
+    // Computes and writes query metadata (FP32) in a single pass over the input vector.
+    // For IP/Cosine: writes y_sum = Σy_i
+    // For L2: writes y_sum = Σy_i and y_sum_squares = Σy_i²
+    // The output pointer addresses the metadata region after the query body and may not be
+    // 4-byte aligned (e.g. FP16 query body with odd dim), so writes go through memcpy.
+    void assign_query_metadata(const DataType *input, void *output_metadata) const {
+        // Accumulators are FP32 to preserve precision for FP16 inputs.
         // 4 independent accumulators for sum
-        DataType s0{}, s1{}, s2{}, s3{};
+        float s0{}, s1{}, s2{}, s3{};
         // 4 independent accumulators for sum of squares (only used for L2)
-        DataType q0{}, q1{}, q2{}, q3{};
+        float q0{}, q1{}, q2{}, q3{};
 
         size_t i = 0;
         // round dim down to the nearest multiple of 4
         size_t dim_round_down = this->dim & ~size_t(3);
 
         for (; i < dim_round_down; i += 4) {
-            const DataType y0 = input[i + 0];
-            const DataType y1 = input[i + 1];
-            const DataType y2 = input[i + 2];
-            const DataType y3 = input[i + 3];
+            const float y0 = to_fp32<DataType>(input[i + 0]);
+            const float y1 = to_fp32<DataType>(input[i + 1]);
+            const float y2 = to_fp32<DataType>(input[i + 2]);
+            const float y3 = to_fp32<DataType>(input[i + 3]);
 
             s0 += y0;
             s1 += y1;
@@ -338,22 +367,28 @@ class QuantPreprocessor : public PreprocessorInterface {
             }
         }
 
-        DataType sum = (s0 + s1) + (s2 + s3);
-        DataType sum_squares = (q0 + q1) + (q2 + q3);
+        // Sum/sum_squares become metadata, so they are MetadataType.
+        MetadataType sum = (s0 + s1) + (s2 + s3);
+        MetadataType sum_squares = (q0 + q1) + (q2 + q3);
 
         // Tail: handle remaining elements
         for (; i < this->dim; ++i) {
-            const DataType y = input[i];
+            const float y = to_fp32<DataType>(input[i]);
             sum += y;
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += y * y;
             }
         }
 
-        // Assign the computed metadata
-        output_metadata[sq8::SUM_QUERY] = sum; // y_sum for all metrics
+        // Metadata uses MetadataType. Use memcpy because the metadata offset (after the query
+        // body of dim * sizeof(DataType)) is not guaranteed to be sizeof(MetadataType)-aligned
+        // when DataType is float16 and dim is odd.
         if constexpr (Metric == VecSimMetric_L2) {
-            output_metadata[sq8::SUM_SQUARES_QUERY] = sum_squares; // y_sum_squares for L2 only
+            const MetadataType buf[2] = {sum, sum_squares};
+            memcpy(output_metadata, buf, sizeof(buf));
+        } else {
+            const MetadataType buf[1] = {sum};
+            memcpy(output_metadata, buf, sizeof(buf));
         }
     }
 
@@ -362,12 +397,10 @@ public:
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
                               (vecsim_types::sq8::storage_metadata_count<Metric>()) *
-                                  sizeof(DataType)),
-          query_bytes_count((dim + vecsim_types::sq8::query_metadata_count<Metric>()) *
-                            sizeof(DataType)) {
-        static_assert(std::is_floating_point_v<DataType>,
-                      "QuantPreprocessor only supports floating-point types");
-    }
+                                  sizeof(MetadataType)),
+          query_bytes_count(dim * sizeof(DataType) +
+                            (vecsim_types::sq8::query_metadata_count<Metric>()) *
+                                sizeof(MetadataType)) {}
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &input_blob_size, unsigned char alignment) const override {
@@ -434,7 +467,7 @@ public:
     /**
      * Preprocesses the query vector for asymmetric distance computation.
      *
-     * The query blob contains the original float values followed by precomputed values:
+     * The query blob contains the original DataType values followed by FP32 precomputed values:
      * - For IP/Cosine: y_sum = Σy_i (sum of query values)
      * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query
      *                                                                      values)
@@ -444,8 +477,8 @@ public:
      * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
      *
      * Query blob size:
-     * - For IP/Cosine: (dim + 1) * sizeof(DataType)
-     * - For L2:        (dim + 2) * sizeof(DataType)
+     * - For IP/Cosine: dim * sizeof(DataType) + 1 * sizeof(float)
+     * - For L2:        dim * sizeof(DataType) + 2 * sizeof(float)
      */
     void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
                          unsigned char alignment) const override {
@@ -453,12 +486,14 @@ public:
 
         // Allocate aligned memory for the query blob
         blob = this->allocator->allocate_aligned(this->query_bytes_count, alignment);
-        memcpy(blob, original_blob, this->dim * sizeof(DataType));
+        const size_t body_bytes = this->dim * sizeof(DataType);
+        memcpy(blob, original_blob, body_bytes);
         const DataType *input = static_cast<const DataType *>(original_blob);
-        DataType *output = static_cast<DataType *>(blob);
 
-        // Compute and assign query metadata (sum for IP/Cosine, sum and sum_squares for L2)
-        assign_query_metadata(input, output + this->dim);
+        // Compute and write FP32 query metadata after the query body. The metadata offset is
+        // body_bytes, which is not guaranteed to be 4-byte aligned for FP16 query bodies.
+        void *metadata_dst = static_cast<uint8_t *>(blob) + body_bytes;
+        assign_query_metadata(input, metadata_dst);
 
         query_blob_size = this->query_bytes_count;
     }
@@ -473,9 +508,13 @@ public:
     }
 
 private:
-    std::pair<DataType, DataType> find_min_max(const DataType *input) const {
+    // Returns (min, max) of the input vector evaluated in MetadataType. Both float and float16
+    // expose a usable operator< (float16's overload delegates to FP32 semantics), so a single
+    // std::minmax_element call covers both DataTypes. The returned values are written verbatim
+    // into the metadata region.
+    std::pair<MetadataType, MetadataType> find_min_max(const DataType *input) const {
         auto [min_it, max_it] = std::minmax_element(input, input + dim);
-        return {*min_it, *max_it};
+        return {to_fp32<DataType>(*min_it), to_fp32<DataType>(*max_it)};
     }
 
     const size_t dim;
