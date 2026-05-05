@@ -16,10 +16,11 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:jammy
-  focal:
-    uses: ./.github/workflows/task-unit-test.yml
-    with:
-      container: ubuntu:focal
+# TODO: re-enable once Launchpad PPA flakiness is resolved (pre-built CI image planned).
+#  focal:
+#    uses: ./.github/workflows/task-unit-test.yml
+#    with:
+#      container: ubuntu:focal
 #  bionic:
 #    uses: ./.github/workflows/task-unit-test.yml
 #    with:
