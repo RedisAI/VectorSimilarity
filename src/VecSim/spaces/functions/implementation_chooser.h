@@ -50,7 +50,7 @@
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \
-        switch ((dim) % (chunk)) { CASES##chunk(func) }                                            \
+        switch ((dim) % (chunk)) { CASES##chunk(func) default: __builtin_unreachable(); }          \
         out = __ret_dist_func;                                                                     \
     } while (0)
 
@@ -74,6 +74,7 @@
             SVE_CASE(base_func, 1);                                                                \
             SVE_CASE(base_func, 2);                                                                \
             SVE_CASE(base_func, 3);                                                                \
+            default: __builtin_unreachable();                                                      \
         }                                                                                          \
         out = __ret_dist_func;                                                                     \
     } while (0)
