@@ -696,6 +696,7 @@ private:
 
 public:
     void fitMemory() override {}
+    size_t indexMetaDataCapacity() const override { return this->indexCapacity(); }
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
 
         // For compressed/quantized indices, this function is not meaningful
