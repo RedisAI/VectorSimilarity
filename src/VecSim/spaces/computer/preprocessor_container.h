@@ -19,7 +19,7 @@ struct ProcessedBlobs;
 
 class PreprocessorsContainerAbstract : public VecsimBaseObject {
 public:
-    // Legacy ctor: same value applies to both query and storage alignment (homogeneous case).
+    // Homogeneous ctor: same value applies to both query and storage alignment.
     PreprocessorsContainerAbstract(std::shared_ptr<VecSimAllocator> allocator,
                                    unsigned char alignment)
         : PreprocessorsContainerAbstract(allocator, alignment, alignment) {}
@@ -70,7 +70,7 @@ protected:
     std::array<PreprocessorInterface *, n_preprocessors> preprocessors;
 
 public:
-    // Legacy ctor: same value applies to both query and storage alignment (homogeneous case).
+    // Homogeneous ctor: same value applies to both query and storage alignment.
     MultiPreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment)
         : MultiPreprocessorsContainer(allocator, alignment, alignment) {}
 

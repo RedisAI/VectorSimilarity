@@ -134,8 +134,11 @@ public:
         assert(storedDataSize);
         assert(inputBlobSize);
         // DataBlocksContainer holds the persistent storage vectors, so it must honor the storage
-        // alignment hint (not the query alignment). Today this only aligns the block-base address;
-        // per-element stride padding is a follow-up (see MOD-13837).
+        // alignment hint (not the query alignment). Note: this only aligns the base address of
+        // each block; vectors inside a block are packed back-to-back at stride `storedDataSize`,
+        // so only the first vector in every block is guaranteed to be aligned. Aligning every
+        // vector would require padding `storedDataSize` up to a multiple of the alignment, which
+        // is a separate change.
         this->vectors = new (this->allocator) DataBlocksContainer(
             this->blockSize, this->storedDataSize, this->allocator, this->getStorageAlignment());
     }

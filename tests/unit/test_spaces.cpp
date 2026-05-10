@@ -3916,7 +3916,7 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values L2 should match baseline";
 }
 
-// MOD-13837: assert the exact alignment-hint values published by the SQ8 distance dispatchers.
+// Assert the exact alignment-hint values published by the SQ8 distance dispatchers.
 // The hint refers to the SQ8 (first / storage) operand per the GetDistFunc contract documented
 // in spaces/spaces.h. These tests guard against silent regressions of the per-kernel hints used
 // by the preprocessor pipeline to align the storage blob.

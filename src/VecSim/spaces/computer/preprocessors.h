@@ -96,9 +96,10 @@ public:
 
     void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
                               unsigned char storage_alignment) const override {
-        // The asserts here verify that if a blob was allocated by a previous preprocessor, its size
-        // matches our expected processed size, allowing in-place normalization. Dynamic resizing is
-        // intentionally not supported (see commit history for rationale).
+        // The assert here verifies that if a blob was allocated by a previous preprocessor, its
+        // size matches our expected processed size, allowing in-place normalization. Dynamic
+        // resizing is intentionally not supported: handling it would require runtime size checks
+        // and reallocation logic in a hot path, and no current caller needs it.
         assert(blob == nullptr || input_blob_size == processed_bytes_count);
 
         if (blob == nullptr) {
