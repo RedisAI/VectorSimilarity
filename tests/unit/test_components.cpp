@@ -1393,7 +1393,8 @@ protected:
             size_t query_blob_size = original_blob_size;
 
             quant_preprocessor->preprocess(original_blob, storage_blob, query_blob,
-                                           storage_blob_size, query_blob_size, alignment);
+                                           storage_blob_size, query_blob_size, alignment,
+                                           alignment);
 
             // Verify storage blob layout/size
             ASSERT_NE(storage_blob, nullptr);
@@ -1505,7 +1506,7 @@ TEST(QuantPreprocessorFP16Test, QuantizeReconstructRoundTripL2) {
 
     void *storage_blob = nullptr;
     size_t storage_blob_size = 0;
-    preprocessor->preprocessForStorage(input, storage_blob, storage_blob_size);
+    preprocessor->preprocessForStorage(input, storage_blob, storage_blob_size, 0);
     ASSERT_NE(storage_blob, nullptr);
     ASSERT_EQ(storage_blob_size, dim * sizeof(uint8_t) + 4 * sizeof(float));
 
