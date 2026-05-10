@@ -87,6 +87,9 @@ public:
     static const char *TIERED_SVS_UPDATE_THRESHOLD_STRING;
     static const char *TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING;
 
+    // Memory allocated by the shared (global) SVS thread pool singleton.
+    static const char *SHARED_SVS_THREADPOOL_MEMORY_STRING;
+
     // Log levels
     static const char *LOG_DEBUG_STRING;
     static const char *LOG_VERBOSE_STRING;

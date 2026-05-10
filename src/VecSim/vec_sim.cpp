@@ -379,7 +379,17 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
-    return index->debugInfoIterator();
+    auto *infoIterator = index->debugInfoIterator();
+    // Append the shared (global) SVS thread pool memory at the top level only when the
+    // pool has actually allocated memory (i.e., the singleton has been constructed).
+    size_t shared_pool_mem = VecSimSVSThreadPool::getSharedAllocationSize();
+    if (shared_pool_mem > 0) {
+        infoIterator->addInfoField(
+            VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING,
+                             .fieldType = INFOFIELD_UINT64,
+                             .fieldValue = {FieldValue{.uintegerValue = shared_pool_mem}}});
+    }
+    return infoIterator;
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
@@ -387,7 +397,12 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
-    return index->statisticInfo();
+    VecSimIndexStatsInfo stats = index->statisticInfo();
+    // The shared SVS thread pool is process-wide; fold its allocation into the
+    // reported memory so per-index stats reflect total memory associated with
+    // the index. Returns 0 if the pool has never been initialized.
+    stats.memory += VecSimSVSThreadPool::getSharedAllocationSize();
+    return stats;
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,

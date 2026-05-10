@@ -355,7 +355,10 @@ typedef struct {
  * production without worrying about performance
  */
 typedef struct {
-    size_t memory;
+    size_t memory;                // Total memory associated with the index. Includes the bytes
+                                  // allocated by the shared (global) SVS thread pool singleton
+                                  // when it has been initialized (the pool is process-wide, so
+                                  // every index sees the same contribution).
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
     size_t directHNSWInsertions;  // Count of vectors inserted directly into HNSW by main thread

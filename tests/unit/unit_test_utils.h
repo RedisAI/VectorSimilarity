@@ -195,7 +195,12 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator);
 
-void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+// expect_shared_pool: when true, the iterator is the top-level one returned by the
+// C API VecSimIndex_DebugInfoIterator and the shared SVS thread pool memory field may
+// be appended (depending on whether the singleton has been initialized). When called
+// for a nested backend iterator (e.g. from a tiered-index comparison), pass false.
+void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                   bool expect_shared_pool = true);
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
