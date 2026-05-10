@@ -7,6 +7,9 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <utility>
 #include <random>
 #include <cmath>
@@ -361,6 +364,127 @@ TEST_F(SpacesTest, SQ8_FP32_l2sqr_no_optimization_func_test) {
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP32_L2Sqr failed to match expected distance";
 }
 
+/* ======================== Tests SQ8-FP16 ========================= */
+
+TEST_F(SpacesTest, SQ8_FP16_ip_no_optimization_norm_func_test) {
+    size_t dim = 5;
+
+    // Create V1 fp16 query with precomputed sum and sum_squares
+    // Query layout: [float16 values (dim)] [sum (float)] [sum_squares (float)]
+    // Allocate as std::vector<float16> so v1_query.data() is alignof(float16)-aligned, as
+    // required by the SQ8_FP16 production kernels' typed float16* loads. Add extra float16
+    // slots to cover the trailing FP32 metadata bytes.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    // Create V2 as SQ8 quantized vector with different seed
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+
+    float dist = SQ8_FP16_InnerProduct((const void *)v2_compressed.data(),
+                                       (const void *)v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_InnerProduct failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_cosine_no_optimization_norm_func_test) {
+    size_t dim = 5;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_Cosine(v2_compressed.data(), v1_query.data(), dim);
+
+    float dist =
+        SQ8_FP16_Cosine((const void *)v2_compressed.data(), (const void *)v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_Cosine failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_l2sqr_no_optimization_func_test) {
+    size_t dim = 5;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+
+    float dist =
+        SQ8_FP16_L2Sqr((const void *)v2_compressed.data(), (const void *)v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_L2Sqr failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_l2sqr_odd_dim_unaligned_metadata_test) {
+    constexpr size_t dim = 5;
+    constexpr size_t storage_bytes =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    static_assert(sizeof(float) % sizeof(float16) == 0);
+    constexpr size_t query_values_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float) / sizeof(float16);
+
+    alignas(float) std::array<uint8_t, storage_bytes> storage{};
+    alignas(float) std::array<float16, query_values_count> query{};
+
+    for (size_t i = 0; i < dim; i++) {
+        storage[i] = static_cast<uint8_t>(i + 1);
+    }
+
+    auto store_float = [](uint8_t *dst, float value) { std::memcpy(dst, &value, sizeof(value)); };
+
+    constexpr float min_val = 0.0f;
+    constexpr float delta = 1.0f;
+    constexpr float storage_sum = 15.0f;
+    constexpr float storage_sum_squares = 55.0f;
+    uint8_t *storage_meta = storage.data() + dim;
+    store_float(storage_meta + sq8::MIN_VAL * sizeof(float), min_val);
+    store_float(storage_meta + sq8::DELTA * sizeof(float), delta);
+    store_float(storage_meta + sq8::SUM * sizeof(float), storage_sum);
+    store_float(storage_meta + sq8::SUM_SQUARES * sizeof(float), storage_sum_squares);
+
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = vecsim_types::FP32_to_FP16(static_cast<float>(i + 2));
+    }
+
+    constexpr float query_sum = 20.0f;
+    constexpr float query_sum_squares = 90.0f;
+    uint8_t *query_meta = reinterpret_cast<uint8_t *>(query.data() + dim);
+    store_float(query_meta + sq8::SUM_QUERY * sizeof(float), query_sum);
+    store_float(query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float), query_sum_squares);
+
+    const auto *storage_sum_squares_addr = storage_meta + sq8::SUM_SQUARES * sizeof(float);
+    const auto *query_sum_squares_addr = query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float);
+    ASSERT_NE(reinterpret_cast<std::uintptr_t>(storage_sum_squares_addr) % alignof(float), 0u);
+    ASSERT_NE(reinterpret_cast<std::uintptr_t>(query_sum_squares_addr) % alignof(float), 0u);
+
+    const float dist = SQ8_FP16_L2Sqr(storage.data(), query.data(), dim);
+
+    ASSERT_FLOAT_EQ(dist, 5.0f);
+}
+
 /* ======================== Test Getters ======================== */
 
 TEST_F(SpacesTest, GetDistFuncInvalidMetricFP32) {
@@ -405,6 +529,12 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFloat) {
                                                          10, nullptr)),
                  std::invalid_argument);
 }
+TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFP16) {
+    // SQ8 storage with FP16 query (asymmetric)
+    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float16>((VecSimMetric)(VecSimMetric_Cosine + 1),
+                                                           10, nullptr)),
+                 std::invalid_argument);
+}
 
 // Positive tests for GetDistFunc - verify correct function is returned
 TEST_F(SpacesTest, GetDistFuncSQ8Symmetric) {
@@ -427,6 +557,22 @@ TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
     ASSERT_EQ(l2_func, L2_SQ8_FP32_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_FP32_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP32_GetDistFunc(dim, nullptr));
+}
+
+TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
+    // SQ8 storage with FP16 query (asymmetric) - should return scalar SQ8_FP16 functions.
+    // SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now the
+    // dispatcher returns the scalar implementations regardless of dim or arch.
+    size_t dim = 128;
+    auto l2_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_L2, dim, nullptr);
+    auto ip_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_IP, dim, nullptr);
+    auto cosine_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_Cosine, dim, nullptr);
+    ASSERT_EQ(l2_func, L2_SQ8_FP16_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(ip_func, IP_SQ8_FP16_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(l2_func, SQ8_FP16_L2Sqr);
+    ASSERT_EQ(ip_func, SQ8_FP16_InnerProduct);
+    ASSERT_EQ(cosine_func, SQ8_FP16_Cosine);
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -2848,6 +2994,175 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
     float result = arch_opt_func(v2_quantized.data(), v1.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values Cosine should match baseline";
+}
+
+/* ======================== Tests SQ8_FP16 (parameterized) ========================= */
+
+// Parameterized tests that verify the scalar SQ8_FP16 kernels against the not-optimized
+// baseline across multiple dimensions, including odd dimensions and SIMD-boundary residues.
+// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); the dispatcher always
+// returns the scalar implementation for now.
+class SQ8_FP16_NoOptimizationSpacesTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_L2SqrTest) {
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+    float dist = SQ8_FP16_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01f) << "SQ8_FP16_L2Sqr mismatch for dim " << dim;
+}
+
+TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_InnerProductTest) {
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+    float dist = SQ8_FP16_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01f) << "SQ8_FP16_InnerProduct mismatch for dim " << dim;
+}
+
+TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_CosineTest) {
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_Cosine(v2_compressed.data(), v1_query.data(), dim);
+    float dist = SQ8_FP16_Cosine(v2_compressed.data(), v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01f) << "SQ8_FP16_Cosine mismatch for dim " << dim;
+}
+
+// Cover small dims, odd dims, SIMD-boundary residues for upcoming AVX2 / AVX512 / SVE / NEON
+// register widths (8/16/32/64 elements per register for SQ8 storage).
+INSTANTIATE_TEST_SUITE_P(SQ8_FP16_NoOpt, SQ8_FP16_NoOptimizationSpacesTest,
+                         testing::Values(1, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 47, 48, 49, 63, 64,
+                                         65, 127, 128));
+
+/* ======================== Tests SQ8_FP16 (edge cases) ========================= */
+
+// Zero FP16 query against a non-zero SQ8 storage. IP must be exactly 1.0 (1 - 0),
+// L2² must equal Σ dequantized².
+TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
+    size_t dim = 64;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_zero_query(query_count, float16{0});
+    // Metadata bits are zero (sum = 0, sum_squares = 0); FP16 zero is bit-pattern 0.
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_nonzero_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, false,
+                                                        1234);
+
+    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_nonzero_quantized.data(),
+                                                                       v_zero_query.data(), dim);
+    float ip = SQ8_FP16_InnerProduct(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16_InnerProduct mismatch";
+    ASSERT_NEAR(ip, 1.0f, 0.01f) << "Zero-query IP must equal 1.0 (1 - 0)";
+
+    float l2_baseline = test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_nonzero_quantized.data(),
+                                                                v_zero_query.data(), dim);
+    float l2 = SQ8_FP16_L2Sqr(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Zero-query SQ8_FP16_L2Sqr mismatch";
+}
+
+// Constant SQ8 storage (all values identical => delta = 0). Storage quantizer sets delta to 1.0
+// to avoid div-by-zero, so verify the kernels still match the dequantization baseline.
+TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
+    size_t dim = 64;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_query(query_count);
+    test_utils::populate_sq8_fp16_query(v_query.data(), dim, false, 4321);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_const_quantized(quantized_size);
+    std::vector<float> v_const(dim, 0.5f);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
+                                                        v_const_quantized.data());
+
+    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_const_quantized.data(),
+                                                                       v_query.data(), dim);
+    float ip = SQ8_FP16_InnerProduct(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Constant-storage SQ8_FP16_InnerProduct mismatch";
+
+    float l2_baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
+    float l2 = SQ8_FP16_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Constant-storage SQ8_FP16_L2Sqr mismatch";
+}
+
+// Mixed-sign FP16 query (alternating positive/negative values) verifies sign handling
+// in the FP16->FP32 widening path and in the algebraic identity used by the kernels.
+TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
+    size_t dim = 64;
+
+    // Build an alternating +0.75 / -0.75 FP16 query manually so we don't depend on RNG sign mix.
+    // Allocated as std::vector<float16> so v_query.data() is alignof(float16)-aligned for
+    // the SQ8_FP16 production kernel.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_query(query_count);
+    for (size_t i = 0; i < dim; i++) {
+        v_query[i] = vecsim_types::FP32_to_FP16((i % 2 == 0) ? 0.75f : -0.75f);
+    }
+    test_utils::preprocess_sq8_fp16_query(v_query.data(), dim);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false, 9876);
+
+    float ip_baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_quantized.data(), v_query.data(), dim);
+    float ip = SQ8_FP16_InnerProduct(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16_InnerProduct mismatch";
+
+    float cos_baseline =
+        test_utils::SQ8_FP16_NotOptimized_Cosine(v_quantized.data(), v_query.data(), dim);
+    float cos = SQ8_FP16_Cosine(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(cos, cos_baseline, 0.01f) << "Mixed-sign SQ8_FP16_Cosine mismatch";
+
+    float l2_baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_quantized.data(), v_query.data(), dim);
+    float l2 = SQ8_FP16_L2Sqr(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Mixed-sign SQ8_FP16_L2Sqr mismatch";
 }
 
 /* ======================== Tests SQ8_SQ8 ========================= */

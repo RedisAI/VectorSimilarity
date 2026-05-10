@@ -2758,7 +2758,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
     EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
     // Verify new tiered-specific stats
@@ -2789,7 +2789,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     // Vector is in flat buffer, no direct insertions yet
     EXPECT_EQ(stats.flatBufferSize, 1);
     EXPECT_EQ(stats.directHNSWInsertions, 0);
@@ -2808,7 +2808,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
     // Vector moved from flat buffer to HNSW by background thread
     EXPECT_EQ(stats.flatBufferSize, 0);
     EXPECT_EQ(stats.directHNSWInsertions, 0);
@@ -2828,7 +2828,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                               info.tieredInfo.backendCommonInfo.memory +
                                               info.tieredInfo.frontendCommonInfo.memory);
         EXPECT_EQ(info.commonInfo.memory, stats.memory);
-        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     }
 
     VecSimIndex_DeleteVector(tiered_index, 1);
@@ -2845,7 +2845,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testDirectHNSWInsertionsStats) {

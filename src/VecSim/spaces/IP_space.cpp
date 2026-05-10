@@ -171,6 +171,34 @@ dist_func_t<float> Cosine_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignm
     return ret_dist_func;
 }
 
+// SQ8-FP16: asymmetric inner product distance between SQ8 storage and FP16 query.
+// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
+// returns the scalar implementation.
+dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
+                                           const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+    (void)dim;
+    (void)arch_opt;
+    return SQ8_FP16_InnerProduct;
+}
+
+// SQ8-FP16: asymmetric cosine distance between SQ8 storage and FP16 query.
+// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
+// returns the scalar implementation.
+dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
+                                               const void *arch_opt) {
+    unsigned char dummy_alignment;
+    if (alignment == nullptr) {
+        alignment = &dummy_alignment;
+    }
+    (void)dim;
+    (void)arch_opt;
+    return SQ8_FP16_Cosine;
+}
+
 // SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized with precomputed
 // sum)
 dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,

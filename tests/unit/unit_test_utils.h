@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <cmath>
+#include <cstring>
 #include <exception>
 #include <thread>
 
@@ -250,12 +251,10 @@ inline void ComputeSQ8Quantization(const float *original_blob, size_t dim, uint8
         sum_squares += original_blob[i] * original_blob[i];
     }
 
-    // Store metadata: min_val, delta, sum, sum_squares
-    float *metadata = reinterpret_cast<float *>(output + dim);
-    metadata[sq8::MIN_VAL] = min_val;
-    metadata[sq8::DELTA] = delta;
-    metadata[sq8::SUM] = sum;
-    metadata[sq8::SUM_SQUARES] = sum_squares;
+    // Store metadata: min_val, delta, sum, sum_squares. Use memcpy because the metadata region
+    // (output + dim) is not guaranteed to be 4-byte aligned for arbitrary dim values.
+    const float metadata[4] = {min_val, delta, sum, sum_squares};
+    std::memcpy(output + dim, metadata, sizeof(metadata));
 }
 
 // TODO: Move all test_utils to this namespace
