@@ -15,6 +15,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
+#include "VecSim/algorithms/svs/svs_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -27,6 +28,12 @@ constexpr size_t SVS = 25;
 constexpr size_t TIERED_HNSW = 16;
 constexpr size_t TIERED_SVS = 18;
 } // namespace DebugInfoIteratorFieldCount
+
+// True iff the shared SVS thread pool has been initialized and is therefore
+// reported as an extra field by the top-level VecSimIndex_DebugInfoIterator C API.
+static bool sharedSVSThreadPoolFieldExpected() {
+    return VecSimSVSThreadPool::getSharedAllocationSize() > 0;
+}
 
 static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
                                              VecSimDebugInfoIterator *infoIter);
@@ -424,6 +431,9 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo frontendIndexInfo,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator) {
+    // Iterators passed here are produced by the C++ debugInfoIterator() method, not the
+    // VecSimIndex_DebugInfoIterator C API, so the shared SVS thread pool field is never
+    // appended at this level.
     VecSimAlgo backendAlgo = backendIndexInfo.commonInfo.basicInfo.algo;
     if (backendAlgo == VecSimAlgo_HNSWLIB) {
         ASSERT_EQ(DebugInfoIteratorFieldCount::TIERED_HNSW,
@@ -526,6 +536,12 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue,
                       info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
+            // Top-level field appended by the C API VecSimIndex_DebugInfoIterator.
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue,
+                      VecSimSVSThreadPool::getSharedAllocationSize());
         } else {
             FAIL();
         }
@@ -539,15 +555,20 @@ static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
         compareHNSWIndexInfoToIterator(info, infoIter);
         break;
     case VecSimAlgo_SVS:
-        compareSVSIndexInfoToIterator(info, infoIter);
+        // Nested iterator built by the backend index directly (not via the C API),
+        // so the shared pool field is not appended here.
+        compareSVSIndexInfoToIterator(info, infoIter, /*expect_shared_pool=*/false);
         break;
     default:
         FAIL();
     }
 }
 
-void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
-    ASSERT_EQ(DebugInfoIteratorFieldCount::SVS, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                   bool expect_shared_pool) {
+    size_t extra = (expect_shared_pool && sharedSVSThreadPoolFieldExpected()) ? 1 : 0;
+    ASSERT_EQ(DebugInfoIteratorFieldCount::SVS + extra,
+              VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -659,6 +680,13 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // SVS epsilon parameter.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_FLOAT64);
             ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.svsInfo.epsilon);
+        } else if (!strcmp(infoField->fieldName,
+                           VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
+            // Top-level field appended by the C API VecSimIndex_DebugInfoIterator.
+            ASSERT_TRUE(expect_shared_pool);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue,
+                      VecSimSVSThreadPool::getSharedAllocationSize());
         } else {
             FAIL();
         }
@@ -799,6 +827,11 @@ std::vector<std::string> getSVSFields() {
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_BC_STRING);
     fields.push_back(VecSimCommonStrings::SVS_LEANVEC_DIM_STRING);
     fields.push_back(VecSimCommonStrings::EPSILON_STRING);
+    // Top-level field appended by the C API VecSimIndex_DebugInfoIterator when the
+    // shared SVS thread pool has allocated memory.
+    if (sharedSVSThreadPoolFieldExpected()) {
+        fields.push_back(VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING);
+    }
     return fields;
 }
 
@@ -830,6 +863,11 @@ std::vector<std::string> getTieredSVSFields() {
     fields.push_back(
         VecSimCommonStrings::
             TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING); // 17. TIERED_SVS_THREADS_RESERVE_TIMEOUT
+    // Top-level field appended by the C API VecSimIndex_DebugInfoIterator when the
+    // shared SVS thread pool has allocated memory.
+    if (sharedSVSThreadPoolFieldExpected()) {
+        fields.push_back(VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING);
+    }
     return fields;
 }
 

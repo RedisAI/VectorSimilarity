@@ -361,8 +361,8 @@ public:
           leanvec_dim{
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
-          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)}, threadpool_{this->logCallbackCtx},
-          impl_{nullptr} {
+          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
+          threadpool_{this->allocator, this->logCallbackCtx}, impl_{nullptr} {
         logger_ = makeLogger();
         if (params.num_threads != 0) {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,
