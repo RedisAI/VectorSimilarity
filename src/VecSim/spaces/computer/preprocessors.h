@@ -409,9 +409,7 @@ public:
                               unsigned char storage_alignment) const override {
         assert(!blob && "storage_blob must be nullptr");
 
-        blob = storage_alignment
-                   ? this->allocator->allocate_aligned(storage_bytes_count, storage_alignment)
-                   : this->allocator->allocate(storage_bytes_count);
+        blob = this->allocator->allocate_aligned(storage_bytes_count, storage_alignment);
         // Cast to appropriate types
         const DataType *input = static_cast<const DataType *>(original_blob);
         OUTPUT_TYPE *quantized = static_cast<OUTPUT_TYPE *>(blob);
