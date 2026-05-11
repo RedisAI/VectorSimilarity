@@ -133,8 +133,14 @@ public:
         assert(VecSimType_sizeof(vecType));
         assert(storedDataSize);
         assert(inputBlobSize);
+        // DataBlocksContainer holds the persistent storage vectors, so it must honor the storage
+        // alignment hint (not the query alignment). Note: this only aligns the base address of
+        // each block; vectors inside a block are packed back-to-back at stride `storedDataSize`,
+        // so only the first vector in every block is guaranteed to be aligned. Aligning every
+        // vector would require padding `storedDataSize` up to a multiple of the alignment, which
+        // is a separate change.
         this->vectors = new (this->allocator) DataBlocksContainer(
-            this->blockSize, this->storedDataSize, this->allocator, this->getAlignment());
+            this->blockSize, this->storedDataSize, this->allocator, this->getStorageAlignment());
     }
 
     /**
@@ -202,7 +208,8 @@ public:
     inline size_t getStoredDataSize() const { return storedDataSize; }
     inline size_t getInputBlobSize() const { return inputBlobSize; }
     inline size_t getBlockSize() const { return blockSize; }
-    inline auto getAlignment() const { return this->preprocessors->getAlignment(); }
+    inline auto getQueryAlignment() const { return this->preprocessors->getQueryAlignment(); }
+    inline auto getStorageAlignment() const { return this->preprocessors->getStorageAlignment(); }
 
     virtual inline VecSimIndexStatsInfo statisticInfo() const override {
         return VecSimIndexStatsInfo{

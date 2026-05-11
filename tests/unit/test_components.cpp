@@ -72,22 +72,14 @@ public:
     }
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
-        // This assert verifies that there's no use for this function for now - different sizes for
-        // storage and query blobs. If such a use case arises, we can remove the assert and
-        // implement the logic to handle different sizes.
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         assert(storage_blob_size == query_blob_size);
-
-        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
-    }
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
-
-        this->preprocessForStorage(original_blob, storage_blob, input_blob_size);
+        this->preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                   storage_alignment);
     }
 
-    void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t &input_blob_size) const override {
+    void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
         // If the blob was not allocated yet, allocate it.
         if (blob == nullptr) {
             blob = this->allocator->allocate(input_blob_size);
@@ -125,22 +117,13 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
-        // This assert verifies that there's no use for this function for now - different sizes for
-        // storage and query blobs. If such a use case arises, we can remove the assert and
-        // implement the logic to handle different sizes.
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         assert(storage_blob_size == query_blob_size);
-
-        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
+        this->preprocessQuery(original_blob, query_blob, query_blob_size, query_alignment);
     }
 
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
-        this->preprocessQuery(original_blob, query_blob, input_blob_size, alignment);
-    }
-
-    void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t &input_blob_size) const override {
+    void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
         /* do nothing*/
     }
 
@@ -170,29 +153,26 @@ public:
           value_to_add_query(value_to_add_query) {}
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
-        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
-    }
-
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
+        assert(storage_blob_size == query_blob_size);
 
         // One blob was already allocated by a previous preprocessor(s) that process both blobs the
         // same. The blobs are pointing to the same memory, we need to allocate another memory slot
         // to split them.
         if ((storage_blob == query_blob) && (query_blob != nullptr)) {
-            storage_blob = this->allocator->allocate(input_blob_size);
-            memcpy(storage_blob, query_blob, input_blob_size);
+            storage_blob = this->allocator->allocate(storage_blob_size);
+            memcpy(storage_blob, query_blob, storage_blob_size);
         }
 
         // Either both are nullptr or they are pointing to different memory slots. Both cases are
         // handled by the designated functions.
-        this->preprocessForStorage(original_blob, storage_blob, input_blob_size);
-        this->preprocessQuery(original_blob, query_blob, input_blob_size, alignment);
+        this->preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                   storage_alignment);
+        this->preprocessQuery(original_blob, query_blob, query_blob_size, query_alignment);
     }
 
-    void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t &input_blob_size) const override {
+    void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
         // If the blob was not allocated yet, allocate it.
         if (blob == nullptr) {
             blob = this->allocator->allocate(input_blob_size);
@@ -234,27 +214,21 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
-        // if the blobs are equal,
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
+        // if the blobs are equal, allocate a single shared buffer aligned to satisfy both hints.
         if (storage_blob == query_blob) {
-            preprocessGeneral(original_blob, storage_blob, storage_blob_size, alignment);
+            assert(storage_blob_size == query_blob_size);
+            const unsigned char shared_alignment =
+                spaces::combineAlignments(storage_alignment, query_alignment);
+            preprocessGeneral(original_blob, storage_blob, storage_blob_size, shared_alignment);
             query_blob = storage_blob;
             query_blob_size = storage_blob_size;
-        }
-    }
-
-    // If the input blob size is not enough
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
-        // if the blobs are equal,
-        if (storage_blob == query_blob) {
-            preprocessGeneral(original_blob, storage_blob, input_blob_size, alignment);
-            query_blob = storage_blob;
             return;
         }
         // The blobs are not equal
 
-        auto alloc_and_process = [&](void *&blob) {
+        auto alloc_and_process = [&](void *&blob, size_t &input_blob_size,
+                                     unsigned char alignment) {
             // If the input blob size is not enough
             if (input_blob_size < processed_bytes_count) {
                 auto new_blob = this->allocator->allocate_aligned(processed_bytes_count, alignment);
@@ -277,19 +251,17 @@ public:
                            input_blob_size - processed_bytes_count);
                 }
             }
+            input_blob_size = processed_bytes_count;
         };
 
-        alloc_and_process(storage_blob);
-        alloc_and_process(query_blob);
-
-        // update the input blob size
-        input_blob_size = processed_bytes_count;
+        alloc_and_process(storage_blob, storage_blob_size, storage_alignment);
+        alloc_and_process(query_blob, query_blob_size, query_alignment);
     }
 
-    void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t &input_blob_size) const override {
+    void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
 
-        this->preprocessGeneral(original_blob, blob, input_blob_size);
+        this->preprocessGeneral(original_blob, blob, input_blob_size, storage_alignment);
     }
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override {
@@ -344,7 +316,7 @@ TEST(PreprocessorsTest, PreprocessorsTestBasicAlignmentTest) {
     using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    unsigned char alignment = 5;
+    unsigned char alignment = 8;
     auto preprocessor = PreprocessorsContainerAbstract(allocator, alignment);
     const int original_blob[4] = {1, 1, 1, 1};
     size_t processed_bytes_count = sizeof(original_blob);
@@ -551,7 +523,7 @@ void multiPPContainerAlignment(dummyPreprocessors::pp_mode MODE) {
     using namespace dummyPreprocessors;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
-    unsigned char alignment = 5;
+    unsigned char alignment = 8;
     constexpr size_t n_preprocessors = 1;
     int initial_value = 1;
     int value_to_add = 7;
@@ -609,7 +581,7 @@ TEST(PreprocessorsTest, multiPPContainerCosineThenMixedPreprocess) {
 
     constexpr size_t n_preprocessors = 2;
     constexpr size_t dim = 4;
-    unsigned char alignment = 5;
+    unsigned char alignment = 8;
 
     float initial_value = 1.0f;
     float normalized_value = 0.5f;
@@ -677,7 +649,7 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
 
     constexpr size_t n_preprocessors = 2;
     constexpr size_t dim = 4;
-    unsigned char alignment = 5;
+    unsigned char alignment = 8;
 
     // In this test the first preprocessor allocates the memory for both blobs, according to the
     // size passed by the pp container. The second preprocessor expects that if the blobs are
@@ -749,7 +721,7 @@ TEST(PreprocessorsTest, multiPPContainerMixedThenCosinePreprocess) {
                 ProcessedBlobs processed_blobs = multiPPContainer.preprocess(
                     original_blob, normalized_blob_bytes_count - sizeof(float));
             },
-            testing::KilledBySignal(SIGABRT), "input_blob_size == processed_bytes_count");
+            testing::KilledBySignal(SIGABRT), "blob_size == processed_bytes_count");
 #endif
         // Use the correct size
         ProcessedBlobs processed_blobs =
@@ -786,7 +758,7 @@ void AsymmetricPPThenCosine(dummyPreprocessors::pp_mode MODE) {
 
     constexpr size_t n_preprocessors = 2;
     constexpr size_t dim = 4;
-    unsigned char alignment = 5;
+    unsigned char alignment = 8;
 
     float original_blob[dim] = {0};
     constexpr size_t original_blob_size = dim * sizeof(float);
@@ -869,7 +841,7 @@ TEST(PreprocessorsTest, DecreaseSizeThenFloatNormalize) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 2;
-    constexpr size_t alignment = 5;
+    constexpr size_t alignment = 8;
     constexpr size_t elements = 8;
     constexpr size_t decrease_amount = 2;
     constexpr size_t new_elem_amount = elements - decrease_amount;
@@ -929,7 +901,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     constexpr size_t n_preprocessors = 2;
-    constexpr size_t alignment = 5;
+    constexpr size_t alignment = 8;
     constexpr size_t elements = 7;
 
     // valgrind detects out of bound reads only if the considered memory is allocated on the heap,
@@ -995,7 +967,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
 TEST(PreprocessorsTest, QuantizationTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t n_preprocessors = 1;
-    constexpr size_t alignment = 5;
+    constexpr size_t alignment = 8;
     constexpr size_t dim = 6;
     constexpr size_t original_blob_size = dim * sizeof(float);
     float original_blob[dim] = {1, 2, 3, 4, 5, 6};
@@ -1097,6 +1069,59 @@ TEST(PreprocessorsTest, QuantizationTest) {
     }
 }
 
+// Verifies that the QuantPreprocessor honors distinct query_alignment and storage_alignment hints
+// independently. This guards the MOD-13837 contract: storage and query buffers can have different
+// SIMD alignment requirements (e.g. SQ8 storage vs FP32 query).
+TEST(PreprocessorsTest, QuantizationAsymmetricAlignment) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t n_preprocessors = 1;
+    constexpr unsigned char query_alignment = 32;
+    constexpr unsigned char storage_alignment = 16;
+    constexpr size_t dim = 6;
+    constexpr size_t original_blob_size = dim * sizeof(float);
+    float original_blob[dim] = {1, 2, 3, 4, 5, 6};
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+    auto multiPPContainer = MultiPreprocessorsContainer<float, n_preprocessors>(
+        allocator, query_alignment, storage_alignment);
+    multiPPContainer.addPreprocessor(quant_preprocessor);
+
+    // preprocess() exercises the joint storage+query allocation path.
+    {
+        ProcessedBlobs processed_blobs =
+            multiPPContainer.preprocess(original_blob, original_blob_size);
+        const void *storage_blob = processed_blobs.getStorageBlob();
+        const void *query_blob = processed_blobs.getQueryBlob();
+
+        ASSERT_NE(storage_blob, nullptr);
+        ASSERT_NE(query_blob, nullptr);
+        ASSERT_NE(storage_blob, query_blob);
+
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(storage_blob) % storage_alignment, 0u)
+            << "storage blob not aligned to " << static_cast<int>(storage_alignment);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(query_blob) % query_alignment, 0u)
+            << "query blob not aligned to " << static_cast<int>(query_alignment);
+    }
+
+    // preprocessForStorage() is the storage-only path; must honor storage_alignment.
+    {
+        auto storage_blob =
+            multiPPContainer.preprocessForStorage(original_blob, original_blob_size);
+        ASSERT_NE(storage_blob.get(), nullptr);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(storage_blob.get()) % storage_alignment, 0u)
+            << "storage blob not aligned to " << static_cast<int>(storage_alignment);
+    }
+
+    // preprocessQuery() is the query-only path; must honor query_alignment.
+    {
+        auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
+        ASSERT_NE(query_blob.get(), nullptr);
+        ASSERT_EQ(reinterpret_cast<uintptr_t>(query_blob.get()) % query_alignment, 0u)
+            << "query blob not aligned to " << static_cast<int>(query_alignment);
+    }
+}
+
 // Test edge case where all entries are equal
 TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
@@ -1113,7 +1138,7 @@ TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     size_t query_blob_size = dim * sizeof(float);
 
     quant_preprocessor->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
-                                   query_blob_size, alignment);
+                                   query_blob_size, alignment, alignment);
 
     ASSERT_NE(storage_blob, nullptr);
 
@@ -1200,7 +1225,8 @@ protected:
             size_t query_blob_size = original_blob_size;
 
             quant_preprocessor->preprocess(original_blob, storage_blob, query_blob,
-                                           storage_blob_size, query_blob_size, alignment);
+                                           storage_blob_size, query_blob_size, alignment,
+                                           alignment);
 
             // Verify storage blob
             ASSERT_NE(storage_blob, nullptr);
@@ -1242,7 +1268,7 @@ protected:
             void *blob = nullptr;
             size_t blob_size = original_blob_size;
 
-            quant_preprocessor->preprocessForStorage(original_blob, blob, blob_size);
+            quant_preprocessor->preprocessForStorage(original_blob, blob, blob_size, alignment);
 
             ASSERT_EQ(blob_size, expected_storage_size);
             allocator->free_allocation(blob);
@@ -1367,7 +1393,8 @@ protected:
             size_t query_blob_size = original_blob_size;
 
             quant_preprocessor->preprocess(original_blob, storage_blob, query_blob,
-                                           storage_blob_size, query_blob_size, alignment);
+                                           storage_blob_size, query_blob_size, alignment,
+                                           alignment);
 
             // Verify storage blob layout/size
             ASSERT_NE(storage_blob, nullptr);
@@ -1479,7 +1506,7 @@ TEST(QuantPreprocessorFP16Test, QuantizeReconstructRoundTripL2) {
 
     void *storage_blob = nullptr;
     size_t storage_blob_size = 0;
-    preprocessor->preprocessForStorage(input, storage_blob, storage_blob_size);
+    preprocessor->preprocessForStorage(input, storage_blob, storage_blob_size, 0);
     ASSERT_NE(storage_blob, nullptr);
     ASSERT_EQ(storage_blob_size, dim * sizeof(uint8_t) + 4 * sizeof(float));
 

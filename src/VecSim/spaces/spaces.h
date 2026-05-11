@@ -11,6 +11,8 @@
 #include "VecSim/vec_sim_common.h" // enum VecSimMetric
 #include "space_includes.h"
 
+#include <cassert>
+
 namespace spaces {
 
 template <typename RET_TYPE>
@@ -20,8 +22,24 @@ using dist_func_t = RET_TYPE (*)(const void *, const void *, size_t);
 // and dimension. The returned function has the signature: dist(VecType1*, VecType2*, size_t) ->
 // DistType. VecType2 defaults to VecType1 when both vectors are of the same type. The alignment
 // hint is set based on the chosen implementation and available optimizations.
+//
+// Asymmetric-types contract (e.g. VecType1 = SQ8 storage, VecType2 = FP32 query):
+//   The returned alignment hint refers to the FIRST operand only (the storage operand).
+//   The query operand alignment is governed by the symmetric query-type dispatcher
+//   (e.g. GetDistFunc<float, float>). Callers that need both operand alignments must
+//   query both dispatchers and combine the results with combineAlignments().
 template <typename VecType1, typename DistType, typename VecType2 = VecType1>
 dist_func_t<DistType> GetDistFunc(VecSimMetric metric, size_t dim, unsigned char *alignment);
+
+// Combine two alignment hints into the strictest requirement that satisfies both.
+// Each input must be a power of two or zero (zero means "no alignment requirement").
+// The result is the maximum of the two, which for power-of-two values is also the LCM
+// and therefore the smallest alignment that simultaneously satisfies both consumers.
+static inline unsigned char combineAlignments(unsigned char a, unsigned char b) {
+    assert((a == 0 || (a & (a - 1)) == 0) && "alignment must be a power of two or zero");
+    assert((b == 0 || (b & (b - 1)) == 0) && "alignment must be a power of two or zero");
+    return a > b ? a : b;
+}
 
 template <typename DataType>
 using normalizeVector_f = void (*)(void *input_vector, const size_t dim);

@@ -144,8 +144,8 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         (vectors_blocks->capacity() - vectors_blocks_capacity) * sizeof(DataBlock) +
         vecsimAllocationOverhead; // New vectors blocks
     expectedAllocationDelta += blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead +
-                               bfIndex->getAlignment(); // block vectors buffer
-    expectedAllocationDelta += hashTableNodeSize;       // New node in the label lookup
+                               bfIndex->getStorageAlignment(); // block vectors buffer
+    expectedAllocationDelta += hashTableNodeSize;              // New node in the label lookup
     // Account for the allocation of a new buckets in the labels_lookup hash table.
     expectedAllocationDelta +=
         (bfIndex->labelToIdLookup.bucket_count() - buckets_num_before) * sizeof(size_t);
@@ -180,7 +180,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationDelta += 2 * sizeof(labelType); // resize idToLabelMapping
     expectedAllocationDelta +=
         2 * (blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead +
-             bfIndex->getAlignment());                // Two block vectors buffer
+             bfIndex->getStorageAlignment());         // Two block vectors buffer
     expectedAllocationDelta += 2 * hashTableNodeSize; // New nodes in the label lookup
     expectedAllocationDelta +=
         (bfIndex->labelToIdLookup.bucket_count() - buckets_num_before) * sizeof(size_t);
@@ -214,7 +214,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         ASSERT_EQ(vectors_blocks->capacity(), vectors_blocks_capacity);
         expectedAllocationDelta -=
             blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead +
-            bfIndex->getAlignment();                  // Free the vector buffer in the vector block
+            bfIndex->getStorageAlignment();           // Free the vector buffer in the vector block
         expectedAllocationDelta -= hashTableNodeSize; // Remove node from the label lookup
         // idToLabelMapping and label:id should not change since count > capacity - 2 * blockSize
         ASSERT_EQ(bfIndex->labelToIdLookup.bucket_count(), buckets_num_before);
@@ -244,8 +244,8 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationDelta += (vectors_blocks->capacity() - vectors_blocks_capacity) *
                                sizeof(DataBlock); // New vector block
     expectedAllocationDelta += blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead +
-                               bfIndex->getAlignment(); // block vectors buffer
-    expectedAllocationDelta += hashTableNodeSize;       // New node in the label lookup
+                               bfIndex->getStorageAlignment(); // block vectors buffer
+    expectedAllocationDelta += hashTableNodeSize;              // New node in the label lookup
     {
         SCOPED_TRACE(
             "Verifying allocation delta for adding a vector to index size 2 with capacity 3");
@@ -283,7 +283,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         ASSERT_EQ(vectors_blocks->capacity(), vectors_blocks_capacity);
         expectedAllocationDelta -=
             2 * (blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead +
-                 bfIndex->getAlignment()); // Free the vector buffer in the vector block
+                 bfIndex->getStorageAlignment()); // Free the vector buffer in the vector block
         expectedAllocationDelta -= 2 * hashTableNodeSize; // Remove nodes from the label lookup
         // idToLabelMapping and label:id should shrink by block since count >= capacity - 2 *
         // blockSize
@@ -318,7 +318,7 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         ASSERT_EQ(vectors_blocks->capacity(), vectors_blocks_capacity);
         expectedAllocationDelta -=
             (blockSize * sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead +
-             bfIndex->getAlignment());                // Free the vector buffer in the vector block
+             bfIndex->getStorageAlignment());         // Free the vector buffer in the vector block
         expectedAllocationDelta -= hashTableNodeSize; // Remove nodes from the label lookup
         // idToLabelMapping and label:id should shrink by block since count >= capacity - 2 *
         // blockSize
@@ -567,7 +567,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // except for the bucket count of the labels_lookup hash table that is calculated separately.
     // Calculate the expected memory delta for adding a block.
     size_t data_containers_block_mem =
-        2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->getAlignment();
+        2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->getStorageAlignment();
     size_t size_total_data_per_element =
         hnswIndex->elementGraphDataSize + hnswIndex->getStoredDataSize();
     data_containers_block_mem += size_total_data_per_element * block_size;
@@ -592,7 +592,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     verify_containers_size(block_size, 1, 2 * block_size);
 
     size_t expected_allocation_size =
-        before_delete_mem - last_vec_graph_data_mem - hnswIndex->getAlignment();
+        before_delete_mem - last_vec_graph_data_mem - hnswIndex->getStorageAlignment();
     // Free the buffer of the last block in both data containers.
     expected_allocation_size -=
         size_total_data_per_element * block_size + 2 * vecsimAllocationOverhead;
