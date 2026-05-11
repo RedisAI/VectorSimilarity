@@ -355,16 +355,26 @@ typedef struct {
  * production without worrying about performance
  */
 typedef struct {
-    size_t memory;                // Total memory associated with the index. Includes the bytes
-                                  // allocated by the shared (global) SVS thread pool singleton
-                                  // when it has been initialized (the pool is process-wide, so
-                                  // every index sees the same contribution).
+    size_t memory;                // Memory tracked by the index's own allocator. Does NOT include
+                                  // process-wide allocations such as the shared SVS thread pool;
+                                  // those are reported via VecSim_GlobalStatsInfo() so callers
+                                  // that aggregate across indexes don't double-count them.
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
     size_t directHNSWInsertions;  // Count of vectors inserted directly into HNSW by main thread
                                   // (bypassing flat buffer). Tiered HNSW only.
     size_t flatBufferSize;        // Current flat buffer size. Tiered indexes only.
 } VecSimIndexStatsInfo;
+
+/**
+ * Process-wide VecSim statistics that are not associated with any single index.
+ * Use VecSim_GlobalStatsInfo() to retrieve. Adding new global counters to this
+ * struct is backward-compatible.
+ */
+typedef struct {
+    size_t svsSharedThreadPoolMemory; // Bytes allocated by the shared (global) SVS thread pool
+                                      // singleton; 0 if it has never been initialized.
+} VecSimGlobalStatsInfo;
 
 typedef struct {
     VecSimIndexBasicInfo basicInfo; // Index immutable meta-data.
