@@ -397,12 +397,13 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
-    VecSimIndexStatsInfo stats = index->statisticInfo();
-    // The shared SVS thread pool is process-wide; fold its allocation into the
-    // reported memory so per-index stats reflect total memory associated with
-    // the index. Returns 0 if the pool has never been initialized.
-    stats.memory += VecSimSVSThreadPool::getSharedAllocationSize();
-    return stats;
+    return index->statisticInfo();
+}
+
+extern "C" VecSimGlobalStatsInfo VecSim_GlobalStatsInfo(void) {
+    return VecSimGlobalStatsInfo{
+        .svsSharedThreadPoolMemory = VecSimSVSThreadPool::getSharedAllocationSize(),
+    };
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
