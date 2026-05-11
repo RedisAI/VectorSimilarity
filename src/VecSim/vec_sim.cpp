@@ -400,10 +400,8 @@ extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
     return index->statisticInfo();
 }
 
-extern "C" VecSimGlobalStatsInfo VecSim_GlobalStatsInfo(void) {
-    return VecSimGlobalStatsInfo{
-        .svsSharedThreadPoolMemory = VecSimSVSThreadPool::getSharedAllocationSize(),
-    };
+extern "C" size_t VecSim_GetGlobalMemory(void) {
+    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
