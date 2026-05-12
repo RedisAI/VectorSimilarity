@@ -380,15 +380,15 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
     auto *infoIterator = index->debugInfoIterator();
-    // Append the shared (global) SVS thread pool memory at the top level only when the
-    // pool has actually allocated memory (i.e., the singleton has been constructed).
-    size_t shared_pool_mem = VecSimSVSThreadPool::getSharedAllocationSize();
-    if (shared_pool_mem > 0) {
-        infoIterator->addInfoField(
-            VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING,
-                             .fieldType = INFOFIELD_UINT64,
-                             .fieldValue = {FieldValue{.uintegerValue = shared_pool_mem}}});
-    }
+    // Append VecSim_GetGlobalMemory() — process-wide VecSim memory not tied to
+    // any single index — at the top level of every algorithm's debug info.
+    // Always present (value may be 0); algorithm-specific breakdowns of this
+    // value (e.g. the SVS thread pool in SVS tiered) live in their respective
+    // debugInfoIterator() overrides.
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::GLOBAL_MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetGlobalMemory()}}});
     return infoIterator;
 }
 

@@ -20,20 +20,19 @@
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
-// Map index types to their expected number of debug iterator fields
+// Expected number of fields per debug iterator, as emitted by the **C++** method
+// (index->debugInfoIterator()).
+// The **C** API wrapper VecSimIndex_DebugInfoIterator
+// adds one extra GLOBAL_MEMORY field on top — call sites that compare against
+// the C API iterator pass expect_global_memory=true so the comparator asserts
+// COUNT + 1.
 namespace DebugInfoIteratorFieldCount {
 constexpr size_t FLAT = 11;
 constexpr size_t HNSW = 18;
-constexpr size_t SVS = 25;
+constexpr size_t SVS = 26;
 constexpr size_t TIERED_HNSW = 16;
 constexpr size_t TIERED_SVS = 18;
 } // namespace DebugInfoIteratorFieldCount
-
-// True iff the shared SVS thread pool has been initialized and is therefore
-// reported as an extra field by the top-level VecSimIndex_DebugInfoIterator C API.
-static bool sharedSVSThreadPoolFieldExpected() {
-    return VecSimSVSThreadPool::getSharedAllocationSize() > 0;
-}
 
 static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
                                              VecSimDebugInfoIterator *infoIter);
@@ -281,8 +280,11 @@ template void runRangeTieredIndexSearchTest<true, float, float>(
     const std::function<void(size_t, double, size_t)> &, size_t, VecSimQueryReply_Order,
     VecSimQueryParams *);
 
-void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
-    ASSERT_EQ(DebugInfoIteratorFieldCount::FLAT, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_global_memory) {
+    size_t extra = expect_global_memory ? 1 : 0;
+    ASSERT_EQ(DebugInfoIteratorFieldCount::FLAT + extra,
+              VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -333,14 +335,22 @@ void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             // Memory.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue, info.commonInfo.memory);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::GLOBAL_MEMORY_STRING)) {
+            // Top-level field unconditionally appended by VecSimIndex_DebugInfoIterator.
+            ASSERT_TRUE(expect_global_memory);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, VecSim_GetGlobalMemory());
         } else {
             FAIL();
         }
     }
 }
 
-void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter) {
-    ASSERT_EQ(DebugInfoIteratorFieldCount::HNSW, VecSimDebugInfoIterator_NumberOfFields(infoIter));
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_global_memory) {
+    size_t extra = expect_global_memory ? 1 : 0;
+    ASSERT_EQ(DebugInfoIteratorFieldCount::HNSW + extra,
+              VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
         VecSim_InfoField *infoField = VecSimDebugInfoIterator_NextField(infoIter);
         if (!strcmp(infoField->fieldName, VecSimCommonStrings::ALGORITHM_STRING)) {
@@ -421,6 +431,11 @@ void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIt
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue,
                       info.hnswInfo.numberOfMarkedDeletedNodes);
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::GLOBAL_MEMORY_STRING)) {
+            // Top-level field unconditionally appended by VecSimIndex_DebugInfoIterator.
+            ASSERT_TRUE(expect_global_memory);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, VecSim_GetGlobalMemory());
         } else {
             FAIL();
         }
@@ -432,8 +447,9 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator) {
     // Iterators passed here are produced by the C++ debugInfoIterator() method, not the
-    // VecSimIndex_DebugInfoIterator C API, so the shared SVS thread pool field is never
-    // appended at this level.
+    // VecSimIndex_DebugInfoIterator C API, so the top-level GLOBAL_MEMORY field is
+    // never appended at this level. SVS-tiered does append SHARED_SVS_THREADPOOL_MEMORY
+    // from its own debugInfoIterator() override.
     VecSimAlgo backendAlgo = backendIndexInfo.commonInfo.basicInfo.algo;
     if (backendAlgo == VecSimAlgo_HNSWLIB) {
         ASSERT_EQ(DebugInfoIteratorFieldCount::TIERED_HNSW,
@@ -500,7 +516,8 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
             ASSERT_EQ(infoField->fieldValue.integerValue, info.tieredInfo.backgroundIndexing);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::FRONTEND_INDEX_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
-            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue);
+            compareFlatIndexInfoToIterator(frontendIndexInfo, infoField->fieldValue.iteratorValue,
+                                           /*expect_global_memory=*/false);
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::BACKEND_INDEX_STRING)) {
             ASSERT_EQ(infoField->fieldType, INFOFIELD_ITERATOR);
             chooseCompareIndexInfoToIterator(backendIndexInfo, infoField->fieldValue.iteratorValue);
@@ -536,12 +553,6 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue,
                       info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
-            // Top-level field appended by the C API VecSimIndex_DebugInfoIterator.
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue,
-                      VecSimSVSThreadPool::getSharedAllocationSize());
         } else {
             FAIL();
         }
@@ -550,14 +561,14 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
 
 static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
                                              VecSimDebugInfoIterator *infoIter) {
+    // Nested iterator built by the backend index directly (not via the C API),
+    // so the top-level GLOBAL_MEMORY field is not appended here.
     switch (info.commonInfo.basicInfo.algo) {
     case VecSimAlgo_HNSWLIB:
-        compareHNSWIndexInfoToIterator(info, infoIter);
+        compareHNSWIndexInfoToIterator(info, infoIter, /*expect_global_memory=*/false);
         break;
     case VecSimAlgo_SVS:
-        // Nested iterator built by the backend index directly (not via the C API),
-        // so the shared pool field is not appended here.
-        compareSVSIndexInfoToIterator(info, infoIter, /*expect_shared_pool=*/false);
+        compareSVSIndexInfoToIterator(info, infoIter, /*expect_global_memory=*/false);
         break;
     default:
         FAIL();
@@ -565,8 +576,11 @@ static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
 }
 
 void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
-                                   bool expect_shared_pool) {
-    size_t extra = (expect_shared_pool && sharedSVSThreadPoolFieldExpected()) ? 1 : 0;
+                                   bool expect_global_memory) {
+    // GLOBAL_MEMORY is always appended by the C API VecSimIndex_DebugInfoIterator;
+    // nested backend iterators (built via the C++ method, e.g. when comparing the
+    // SVS backend of a tiered index) never have it appended.
+    size_t extra = expect_global_memory ? 1 : 0;
     ASSERT_EQ(DebugInfoIteratorFieldCount::SVS + extra,
               VecSimDebugInfoIterator_NumberOfFields(infoIter));
     while (VecSimDebugInfoIterator_HasNextField(infoIter)) {
@@ -682,11 +696,16 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.svsInfo.epsilon);
         } else if (!strcmp(infoField->fieldName,
                            VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
-            // Top-level field appended by the C API VecSimIndex_DebugInfoIterator.
-            ASSERT_TRUE(expect_shared_pool);
+            // Always emitted by SVSIndex::debugInfoIterator().
             ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
             ASSERT_EQ(infoField->fieldValue.uintegerValue,
                       VecSimSVSThreadPool::getSharedAllocationSize());
+        } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::GLOBAL_MEMORY_STRING)) {
+            // Top-level field unconditionally appended by the C API
+            // VecSimIndex_DebugInfoIterator; mirrors VecSim_GetGlobalMemory().
+            ASSERT_TRUE(expect_global_memory);
+            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
+            ASSERT_EQ(infoField->fieldValue.uintegerValue, VecSim_GetGlobalMemory());
         } else {
             FAIL();
         }
@@ -784,6 +803,7 @@ std::vector<std::string> getFlatFields() {
     auto commonFields = getCommonFields();
     fields.insert(fields.end(), commonFields.begin(), commonFields.end());
     fields.push_back(VecSimCommonStrings::BLOCK_SIZE_STRING); // BLOCK_SIZE
+    fields.push_back(VecSimCommonStrings::GLOBAL_MEMORY_STRING);
     return fields;
 }
 
@@ -802,10 +822,12 @@ std::vector<std::string> getHNSWFields() {
     fields.push_back(VecSimCommonStrings::HNSW_ENTRYPOINT);
     fields.push_back(VecSimCommonStrings::EPSILON_STRING);
     fields.push_back(VecSimCommonStrings::NUM_MARKED_DELETED);
+    fields.push_back(VecSimCommonStrings::GLOBAL_MEMORY_STRING);
     return fields;
 }
 
-// Imitates SVSIndex<DataType, DistType>::debugInfoIterator()
+// Imitates SVSIndex<DataType, DistType>::debugInfoIterator() followed by the
+// top-level GLOBAL_MEMORY field appended by VecSimIndex_DebugInfoIterator.
 std::vector<std::string> getSVSFields() {
     std::vector<std::string> fields;
     fields.push_back(VecSimCommonStrings::ALGORITHM_STRING); // ALGORITHM
@@ -827,11 +849,8 @@ std::vector<std::string> getSVSFields() {
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_BC_STRING);
     fields.push_back(VecSimCommonStrings::SVS_LEANVEC_DIM_STRING);
     fields.push_back(VecSimCommonStrings::EPSILON_STRING);
-    // Top-level field appended by the C API VecSimIndex_DebugInfoIterator when the
-    // shared SVS thread pool has allocated memory.
-    if (sharedSVSThreadPoolFieldExpected()) {
-        fields.push_back(VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING);
-    }
+    fields.push_back(VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING);
+    fields.push_back(VecSimCommonStrings::GLOBAL_MEMORY_STRING);
     return fields;
 }
 
@@ -851,33 +870,29 @@ std::vector<std::string> getTieredCommonFields() {
     return fields;
 }
 
-// Imitates TieredSVSIndex<DataType, DistType>::debugInfoIterator()
+// Imitates TieredSVSIndex<DataType, DistType>::debugInfoIterator() followed by
+// the top-level GLOBAL_MEMORY field appended by VecSimIndex_DebugInfoIterator.
+// SHARED_SVS_THREADPOOL_MEMORY is emitted by SVSIndex::debugInfoIterator() and
+// therefore appears inside the BACKEND_INDEX nested iterator, not at this level.
 std::vector<std::string> getTieredSVSFields() {
     auto fields = getTieredCommonFields();
     // Add SVS tiered-specific fields:
-    fields.push_back(
-        VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING); // 15.
-                                                                    // TIERED_SVS_TRAINING_THRESHOLD
-    fields.push_back(
-        VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING); // 16. TIERED_SVS_UPDATE_THRESHOLD
-    fields.push_back(
-        VecSimCommonStrings::
-            TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING); // 17. TIERED_SVS_THREADS_RESERVE_TIMEOUT
-    // Top-level field appended by the C API VecSimIndex_DebugInfoIterator when the
-    // shared SVS thread pool has allocated memory.
-    if (sharedSVSThreadPoolFieldExpected()) {
-        fields.push_back(VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING);
-    }
+    fields.push_back(VecSimCommonStrings::TIERED_SVS_TRAINING_THRESHOLD_STRING);
+    fields.push_back(VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING);
+    fields.push_back(VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING);
+    fields.push_back(VecSimCommonStrings::GLOBAL_MEMORY_STRING);
     return fields;
 }
 
-// Imitates TieredHNSWIndex<DataType, DistType>::debugInfoIterator()
+// Imitates TieredHNSWIndex<DataType, DistType>::debugInfoIterator() followed by
+// the top-level GLOBAL_MEMORY field appended by VecSimIndex_DebugInfoIterator.
 std::vector<std::string> getTieredHNSWFields() {
     auto fields = getTieredCommonFields();
     // Add HNSW tiered-specific field:
     fields.push_back(
         VecSimCommonStrings::
             TIERED_HNSW_SWAP_JOBS_THRESHOLD_STRING); // 15. TIERED_HNSW_SWAP_JOBS_THRESHOLD
+    fields.push_back(VecSimCommonStrings::GLOBAL_MEMORY_STRING);
     return fields;
 }
 

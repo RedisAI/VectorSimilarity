@@ -186,21 +186,21 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
 
 void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params);
 
-void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+// expect_global_memory: when true, the iterator is the top-level one returned by the
+// C API VecSimIndex_DebugInfoIterator, which always appends the GLOBAL_MEMORY field.
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_global_memory = true);
 
-void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_global_memory = true);
 
 void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo frontendIndexInfo,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator);
 
-// expect_shared_pool: when true, the iterator is the top-level one returned by the
-// C API VecSimIndex_DebugInfoIterator and the shared SVS thread pool memory field may
-// be appended (depending on whether the singleton has been initialized). When called
-// for a nested backend iterator (e.g. from a tiered-index comparison), pass false.
 void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
-                                   bool expect_shared_pool = true);
+                                   bool expect_global_memory = true);
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
