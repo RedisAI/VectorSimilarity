@@ -3381,4 +3381,56 @@ TEST(SVSTest, svs_not_supported) {
     ASSERT_EQ(size2, -1);
 }
 
+// SVS debug info exposes both:
+//   * GLOBAL_MEMORY — top-level field appended by VecSimIndex_DebugInfoIterator
+//                    (mirrors VecSim_GetGlobalMemory()).
+//   * SHARED_SVS_THREADPOOL_MEMORY — emitted by SVSIndex::debugInfoIterator().
+// They are sourced from the same VecSimSVSThreadPool::getSharedAllocationSize()
+// (the only contributor to global memory today), so their values must match.
+TYPED_TEST(SVSTest, debugInfoGlobalMemoryEqualsSharedSVSThreadPoolMemory) {
+    // Ensure the shared SVS thread pool singleton has allocated memory so both
+    // fields report a non-zero value. resize() always lazy-initializes the singleton.
+    VecSim_UpdateThreadPoolSize(2);
+    ASSERT_GT(VecSim_GetGlobalMemory(), 0u);
+
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    bool seen_global = false;
+    bool seen_shared = false;
+    uint64_t global_value = 0;
+    uint64_t shared_value = 0;
+    while (VecSimDebugInfoIterator_HasNextField(infoIterator)) {
+        VecSim_InfoField *f = VecSimDebugInfoIterator_NextField(infoIterator);
+        if (!strcmp(f->fieldName, VecSimCommonStrings::GLOBAL_MEMORY_STRING)) {
+            ASSERT_FALSE(seen_global) << "GLOBAL_MEMORY appears more than once";
+            ASSERT_EQ(f->fieldType, INFOFIELD_UINT64);
+            global_value = f->fieldValue.uintegerValue;
+            seen_global = true;
+        } else if (!strcmp(f->fieldName,
+                           VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
+            ASSERT_FALSE(seen_shared) << "SHARED_SVS_THREADPOOL_MEMORY appears more than once";
+            ASSERT_EQ(f->fieldType, INFOFIELD_UINT64);
+            shared_value = f->fieldValue.uintegerValue;
+            seen_shared = true;
+        }
+    }
+    EXPECT_TRUE(seen_global) << "GLOBAL_MEMORY field missing from SVS debug info";
+    EXPECT_TRUE(seen_shared) << "SHARED_SVS_THREADPOOL_MEMORY field missing from SVS debug info";
+    EXPECT_EQ(global_value, shared_value)
+        << "GLOBAL_MEMORY and SHARED_SVS_THREADPOOL_MEMORY should report the same bytes "
+           "(only the SVS thread pool contributes to VecSim global memory today)";
+    EXPECT_EQ(global_value, VecSim_GetGlobalMemory());
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+    VecSimIndex_Free(index);
+
+    // Reset to the default size so the next test is not affected.
+    VecSim_UpdateThreadPoolSize(0);
+}
+
 #endif
