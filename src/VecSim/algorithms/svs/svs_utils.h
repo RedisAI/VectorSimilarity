@@ -463,6 +463,17 @@ public:
     // outside of the pool, nor per-index wrapper state.
     size_t getAllocationSize() const { return allocator_->getAllocationSize(); }
 
+    // Bytes allocated by the shared pool singleton. Returns 0 if the singleton has
+    // never been constructed (e.g., no SVS index was ever created and
+    // VecSim_UpdateThreadPoolSize was never called). Safe to call from any context;
+    // does not force singleton construction.
+    static size_t getSharedAllocationSize() {
+        if (!isInitialized()) {
+            return 0;
+        }
+        return instance()->getAllocationSize();
+    }
+
     // Physically resize the pool. Creates new OS threads on grow, shuts down idle threads
     // on shrink. new_size is total parallelism including the calling thread (minimum 1).
     // Occupied threads (held by renters) survive shrink via the deferred-resize protocol —
@@ -711,19 +722,10 @@ public:
     // Shared pool size — used by scheduling to decide how many reserve jobs to submit.
     static size_t poolSize() { return VecSimSVSThreadPoolImpl::instance()->size(); }
 
-    // Bytes allocated by the shared pool singleton. Returns 0 if the singleton has
-    // never been constructed (e.g., no SVS index was ever created and
-    // VecSim_UpdateThreadPoolSize was never called). Safe to call from any context;
-    // does not force singleton construction.
+    // See VecSimSVSThreadPoolImpl::getSharedAllocationSize().
     static size_t getSharedAllocationSize() {
-        if (!VecSimSVSThreadPoolImpl::isInitialized()) {
-            return 0;
-        }
-        return VecSimSVSThreadPoolImpl::instance()->getAllocationSize();
+        return VecSimSVSThreadPoolImpl::getSharedAllocationSize();
     }
-
-    // True iff the shared pool singleton has been constructed.
-    static bool isSharedPoolInitialized() { return VecSimSVSThreadPoolImpl::isInitialized(); }
 
     // Delegates to the shared pool's parallel_for, passing the per-index log context.
     // n may be less than parallelism_ when the problem size is smaller than the
