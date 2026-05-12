@@ -1063,7 +1063,6 @@ public:
             .fieldValue = {FieldValue{
                 .uintegerValue =
                     info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime}}});
-
         return infoIterator;
     }
 

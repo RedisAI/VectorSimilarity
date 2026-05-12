@@ -3362,25 +3362,6 @@ TEST(SVSTest, NumThreadsParamIgnored) {
     VecSimIndexInterface::logCallback = nullptr;
 }
 
-#else // HAVE_SVS
-
-TEST(SVSTest, svs_not_supported) {
-    SVSParams params = {
-        .type = VecSimType_FLOAT32,
-        .dim = 16,
-        .metric = VecSimMetric_IP,
-    };
-    auto index_params = CreateParams(params);
-    auto index = VecSimIndex_New(&index_params);
-    ASSERT_EQ(index, nullptr);
-
-    auto size = VecSimIndex_EstimateInitialSize(&index_params);
-    ASSERT_EQ(size, -1);
-
-    auto size2 = VecSimIndex_EstimateElementSize(&index_params);
-    ASSERT_EQ(size2, -1);
-}
-
 // SVS debug info exposes both:
 //   * GLOBAL_MEMORY — top-level field appended by VecSimIndex_DebugInfoIterator
 //                    (mirrors VecSim_GetGlobalMemory()).
@@ -3429,8 +3410,29 @@ TYPED_TEST(SVSTest, debugInfoGlobalMemoryEqualsSharedSVSThreadPoolMemory) {
     VecSimDebugInfoIterator_Free(infoIterator);
     VecSimIndex_Free(index);
 
-    // Reset to the default size so the next test is not affected.
-    VecSim_UpdateThreadPoolSize(0);
+    // Reset the shared singleton pool to size 1 so the next test is not affected.
+    // Use VecSimSVSThreadPool::resize(1) directly (matching other thread-pool tests)
+    // to avoid the write-mode side effect that VecSim_UpdateThreadPoolSize(0) carries.
+    VecSimSVSThreadPool::resize(1);
+}
+
+#else // HAVE_SVS
+
+TEST(SVSTest, svs_not_supported) {
+    SVSParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 16,
+        .metric = VecSimMetric_IP,
+    };
+    auto index_params = CreateParams(params);
+    auto index = VecSimIndex_New(&index_params);
+    ASSERT_EQ(index, nullptr);
+
+    auto size = VecSimIndex_EstimateInitialSize(&index_params);
+    ASSERT_EQ(size, -1);
+
+    auto size2 = VecSimIndex_EstimateElementSize(&index_params);
+    ASSERT_EQ(size2, -1);
 }
 
 #endif

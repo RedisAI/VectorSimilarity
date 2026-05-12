@@ -448,8 +448,9 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimDebugInfoIterator *infoIterator) {
     // Iterators passed here are produced by the C++ debugInfoIterator() method, not the
     // VecSimIndex_DebugInfoIterator C API, so the top-level GLOBAL_MEMORY field is
-    // never appended at this level. SVS-tiered does append SHARED_SVS_THREADPOOL_MEMORY
-    // from its own debugInfoIterator() override.
+    // never appended at this level. For SVS-backed tiered indexes the
+    // SHARED_SVS_THREADPOOL_MEMORY field is emitted by SVSIndex::debugInfoIterator() and
+    // therefore appears inside the nested BACKEND_INDEX iterator, not at this level.
     VecSimAlgo backendAlgo = backendIndexInfo.commonInfo.basicInfo.algo;
     if (backendAlgo == VecSimAlgo_HNSWLIB) {
         ASSERT_EQ(DebugInfoIteratorFieldCount::TIERED_HNSW,
