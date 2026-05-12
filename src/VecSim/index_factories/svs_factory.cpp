@@ -13,12 +13,29 @@
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/algorithms/svs/svs.h"
+#include "VecSim/algorithms/svs/svs_utils.h"
 #include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/index_factories/factory_utils.h"
+#include <atomic>
 
 namespace SVSFactory {
 
 namespace {
+
+// Bytes consumed by the per-index VecSimSVSThreadPool::parallelism_ allocation
+// (a std::allocate_shared<std::atomic<size_t>> through the index's allocator).
+// The exact size of the inplace shared_ptr control block is implementation-defined,
+// so measure the allocation delta once at startup against a throwaway VecSimAllocator.
+size_t getThreadPoolParallelismAllocationSize() {
+    static const size_t size = []() {
+        auto allocator = VecSimAllocator::newVecsimAllocator();
+        size_t before = allocator->getAllocationSize();
+        auto p = std::allocate_shared<std::atomic<size_t>>(
+            VecsimSTLAllocator<std::atomic<size_t>>(allocator), size_t{1});
+        return allocator->getAllocationSize() - before;
+    }();
+    return size;
+}
 
 // NewVectorsImpl() is the chain of a template helper functions to create a new SVS index.
 template <typename MetricType, typename DataType, size_t QuantBits, size_t ResidualBits,
@@ -230,6 +247,9 @@ size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
     est += EstimateSVSIndexSize(params);
     est += EstimateComponentsMemorySVS(params->type, params->metric, is_normalized);
     est += sizeof(DataBlocksContainer) + allocations_overhead;
+    // Per-index VecSimSVSThreadPool::parallelism_ allocation tracked through
+    // the index's VecSimAllocator (see VecSimSVSThreadPool ctor).
+    est += getThreadPoolParallelismAllocationSize();
     return est;
 }
 
