@@ -258,8 +258,17 @@ extern "C" size_t VecSimParams_GetQueryBlobSize(VecSimType type, size_t dim, Vec
     assert(type == VecSimType_FLOAT32 || type == VecSimType_FLOAT64 ||
            type == VecSimType_BFLOAT16 || type == VecSimType_FLOAT16 || type == VecSimType_INT8 ||
            type == VecSimType_UINT8);
-    size_t blobSize = VecSimType_sizeof(type) * dim;
+
+    size_t element_size = VecSimType_sizeof(type);
+    if (dim != 0 && element_size > SIZE_MAX / dim) {
+        return 0;
+    }
+
+    size_t blobSize = element_size * dim;
     if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
+        if (blobSize > SIZE_MAX - sizeof(float)) {
+            return 0;
+        }
         blobSize += sizeof(float); // For the norm
     }
     return blobSize;

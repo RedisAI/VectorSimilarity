@@ -907,6 +907,23 @@ TEST_P(CommonTypeMetricTests, TestGetQueryBlobSize) {
     ASSERT_EQ(actual, expected);
 }
 
+TEST_P(CommonTypeMetricTests, TestGetQueryBlobSizeOverflow) {
+    // We don't need to create an index for this test, set to nullptr to avoid cleanup issues
+    this->index = nullptr;
+
+    VecSimType type = std::get<0>(GetParam());
+    VecSimMetric metric = std::get<1>(GetParam());
+
+    size_t element_size = VecSimType_sizeof(type);
+    size_t overflow_dim = SIZE_MAX / element_size + 1;
+    ASSERT_EQ(VecSimParams_GetQueryBlobSize(type, overflow_dim, metric), 0);
+
+    if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
+        size_t add_overflow_dim = SIZE_MAX - sizeof(float) + 1;
+        ASSERT_EQ(VecSimParams_GetQueryBlobSize(type, add_overflow_dim, metric), 0);
+    }
+}
+
 class CommonTypeMetricTieredTests : public CommonTypeMetricTests {
 protected:
     virtual void TearDown() override {}
