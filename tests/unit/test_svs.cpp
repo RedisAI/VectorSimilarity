@@ -3426,9 +3426,10 @@ TYPED_TEST(SVSTest, debugInfoGlobalMemoryEqualsSharedSVSThreadPoolMemory) {
 // ---------------------------------------------------------------------------
 TEST(SVSTest, ThreadPoolLazyInit) {
     // Reset the shared singleton to a clean state — earlier tests may have
-    // attached indexes and resized the pool. The allocator may still report a
-    // small non-zero baseline from internal bookkeeping; assertions below check
-    // deltas from this baseline rather than absolute zero.
+    // attached indexes and resized the pool. After reset, getAllocationSize()
+    // still reports sizeof(VecSimAllocator) (the allocator's self-accounting,
+    // see VecSimAllocator() ctor); assertions below compare against this
+    // baseline rather than absolute zero.
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
     const size_t baseline_mem = VecSim_GetGlobalMemory();
 
