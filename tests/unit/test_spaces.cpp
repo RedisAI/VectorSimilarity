@@ -3070,6 +3070,101 @@ INSTANTIATE_TEST_SUITE_P(SQ8_FP16_NoOpt, SQ8_FP16_NoOptimizationSpacesTest,
                          testing::Values(1, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 47, 48, 49, 63, 64,
                                          65, 127, 128));
 
+/* ======================== SQ8_FP16 SIMD optimisation tests ========================= */
+
+// Walks down the x86 ISA tiers (AVX-512 → AVX2+FMA → AVX2 → SSE4 → scalar) and asserts
+// that {IP,Cosine,L2}_SQ8_FP16_GetDistFunc returns the expected Choose_* symbol and that
+// its output matches the scalar baseline within 0.01.
+class SQ8_FP16_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_FP16_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+
+    // Per-tier assertion blocks are added by Tasks 3–6.
+
+    // Scalar fallback.
+    unsigned char alignment = 0;
+    arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_FP16_L2Sqr)
+        << "Unexpected scalar fallback function for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+        << "Scalar fallback with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "Scalar fallback should set no alignment hint for dim " << dim;
+}
+
+TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_FP16_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+
+    // Per-tier assertion blocks are added by Tasks 3–6.
+
+    unsigned char alignment = 0;
+    arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_FP16_InnerProduct)
+        << "Unexpected scalar fallback function for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+        << "Scalar fallback with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "Scalar fallback should set no alignment hint for dim " << dim;
+}
+
+TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_FP16_Cosine(v2_compressed.data(), v1_query.data(), dim);
+
+    // Per-tier assertion blocks are added by Tasks 3–6.
+
+    unsigned char alignment = 0;
+    arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_FP16_Cosine)
+        << "Unexpected scalar fallback function for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+        << "Scalar fallback with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "Scalar fallback should set no alignment hint for dim " << dim;
+}
+
+INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD, SQ8_FP16_SpacesOptimizationTest,
+                         testing::Range(16UL, 16 * 2UL + 1));
+
 /* ======================== Tests SQ8_FP16 (edge cases) ========================= */
 
 // Zero FP16 query against a non-zero SQ8 storage. IP must be exactly 1.0 (1 - 0),
