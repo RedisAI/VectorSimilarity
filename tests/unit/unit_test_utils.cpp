@@ -15,7 +15,6 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
-#include "VecSim/algorithms/svs/svs_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -568,14 +567,17 @@ static void chooseCompareIndexInfoToIterator(VecSimIndexDebugInfo info,
     case VecSimAlgo_HNSWLIB:
         compareHNSWIndexInfoToIterator(info, infoIter, /*expect_global_memory=*/false);
         break;
+#if HAVE_SVS
     case VecSimAlgo_SVS:
         compareSVSIndexInfoToIterator(info, infoIter, /*expect_global_memory=*/false);
         break;
+#endif
     default:
         FAIL();
     }
 }
 
+#if HAVE_SVS
 void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
                                    bool expect_global_memory) {
     // GLOBAL_MEMORY is always appended by the C API VecSimIndex_DebugInfoIterator;
@@ -712,6 +714,7 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
         }
     }
 }
+#endif // HAVE_SVS
 
 size_t getLabelsLookupNodeSize() {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
