@@ -172,31 +172,56 @@ dist_func_t<float> Cosine_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignm
 }
 
 // SQ8-FP16: asymmetric inner product distance between SQ8 storage and FP16 query.
-// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
-// returns the scalar implementation.
 dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    (void)dim;
-    (void)arch_opt;
-    return SQ8_FP16_InnerProduct;
+
+    dist_func_t<float> ret_dist_func = SQ8_FP16_InnerProduct;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+    // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        if (dim % 16 == 0) // SQ8 chunk = 16 bytes
+            *alignment = 16 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // x86_64
+    return ret_dist_func;
 }
 
 // SQ8-FP16: asymmetric cosine distance between SQ8 storage and FP16 query.
-// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
-// returns the scalar implementation.
 dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
                                                const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    (void)dim;
-    (void)arch_opt;
-    return SQ8_FP16_Cosine;
+
+    dist_func_t<float> ret_dist_func = SQ8_FP16_Cosine;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        if (dim % 16 == 0)
+            *alignment = 16 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // x86_64
+    return ret_dist_func;
 }
 
 // SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized with precomputed

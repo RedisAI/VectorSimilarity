@@ -104,17 +104,30 @@ dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
 }
 
 // SQ8-FP16: asymmetric L2 distance between SQ8 storage and FP16 query.
-// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
-// returns the scalar implementation.
 dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {
     unsigned char dummy_alignment;
     if (!alignment) {
         alignment = &dummy_alignment;
     }
-    (void)dim;
-    (void)arch_opt;
-    return SQ8_FP16_L2Sqr;
+
+    dist_func_t<float> ret_dist_func = SQ8_FP16_L2Sqr;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+    // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        if (dim % 16 == 0)
+            *alignment = 16 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // x86_64
+    return ret_dist_func;
 }
 
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {

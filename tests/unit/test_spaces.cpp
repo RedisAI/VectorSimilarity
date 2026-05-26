@@ -3094,7 +3094,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_FP16_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
 
-    // Per-tier assertion blocks are added by Tasks 3–6.
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
 
     // Scalar fallback.
     unsigned char alignment = 0;
@@ -3123,7 +3134,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_FP16_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
 
-    // Per-tier assertion blocks are added by Tasks 3–6.
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
 
     unsigned char alignment = 0;
     arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3151,7 +3173,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_FP16_Cosine(v2_compressed.data(), v1_query.data(), dim);
 
-    // Per-tier assertion blocks are added by Tasks 3–6.
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
 
     unsigned char alignment = 0;
     arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
