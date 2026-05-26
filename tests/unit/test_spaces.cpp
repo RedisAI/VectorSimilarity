@@ -560,19 +560,61 @@ TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
 }
 
 TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
-    // SQ8 storage with FP16 query (asymmetric) - should return scalar SQ8_FP16 functions.
-    // SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now the
-    // dispatcher returns the scalar implementations regardless of dim or arch.
+    // SQ8 storage with FP16 query (asymmetric). The dispatcher now returns the highest SIMD
+    // tier available at runtime; assert that and fall back to scalar only if no tier matches.
     size_t dim = 128;
     auto l2_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_L2, dim, nullptr);
     auto ip_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_IP, dim, nullptr);
     auto cosine_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_Cosine, dim, nullptr);
+
+    auto optimization = getCpuOptimizationFeatures();
+    dist_func_t<float> expected_l2 = SQ8_FP16_L2Sqr;
+    dist_func_t<float> expected_ip = SQ8_FP16_InnerProduct;
+    dist_func_t<float> expected_cos = SQ8_FP16_Cosine;
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    if (dim >= 16) {
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+            optimization.avx512vnni) {
+            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+        } else
+#endif
+#if defined(OPT_AVX2_FMA) && defined(OPT_F16C)
+            if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
+            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX2_FMA(dim);
+            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX2_FMA(dim);
+            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX2_FMA(dim);
+        } else
+#endif
+#if defined(OPT_AVX2) && defined(OPT_F16C)
+            if (optimization.avx2 && optimization.f16c) {
+            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX2(dim);
+            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX2(dim);
+            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX2(dim);
+        } else
+#endif
+#if defined(OPT_SSE4) && defined(OPT_F16C)
+            if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+            expected_l2 = Choose_SQ8_FP16_L2_implementation_SSE4(dim);
+            expected_ip = Choose_SQ8_FP16_IP_implementation_SSE4(dim);
+            expected_cos = Choose_SQ8_FP16_Cosine_implementation_SSE4(dim);
+        } else
+#endif
+        {
+            // Falls through to scalar.
+        }
+    }
+#endif // x86_64
+
     ASSERT_EQ(l2_func, L2_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
-    ASSERT_EQ(l2_func, SQ8_FP16_L2Sqr);
-    ASSERT_EQ(ip_func, SQ8_FP16_InnerProduct);
-    ASSERT_EQ(cosine_func, SQ8_FP16_Cosine);
+    ASSERT_EQ(l2_func, expected_l2);
+    ASSERT_EQ(ip_func, expected_ip);
+    ASSERT_EQ(cosine_func, expected_cos);
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
