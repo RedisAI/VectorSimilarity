@@ -23,8 +23,7 @@ float SQ8_FP16_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t
 
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const uint8_t *params_bytes = pVect1 + dimension;
-    const float x_sum_sq =
-        load_unaligned<float>(params_bytes + sq8::SUM_SQUARES * sizeof(float));
+    const float x_sum_sq = load_unaligned<float>(params_bytes + sq8::SUM_SQUARES * sizeof(float));
 
     const float16 *pVect2 = static_cast<const float16 *>(pVect2v);
     const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);

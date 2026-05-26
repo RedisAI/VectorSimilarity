@@ -17,8 +17,7 @@ using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;
 
 // Helper: load 16 SQ8 + 16 FP16 lanes, widen both to FP32, fused-multiply-add into sum.
-static inline void SQ8_FP16_InnerProductStep_AVX512(const uint8_t *&pVec1,
-                                                    const float16 *&pVec2,
+static inline void SQ8_FP16_InnerProductStep_AVX512(const uint8_t *&pVec1, const float16 *&pVec2,
                                                     __m512 &sum) {
     // 16 uint8 -> 16 fp32
     __m128i v1_128 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pVec1));
@@ -81,8 +80,7 @@ float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
     // 2-byte aligned only.
     const float16 *pVec2Base = static_cast<const float16 *>(pVec2v);
     const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVec2Base + dimension);
-    const float y_sum =
-        load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
+    const float y_sum = load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
 
     return min_val * y_sum + delta * quantized_dot;
 }

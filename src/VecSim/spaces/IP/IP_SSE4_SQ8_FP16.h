@@ -16,11 +16,9 @@ using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;
 
 // 4-wide SSE4+F16C step: 4 SQ8 lanes + 4 FP16 lanes -> mul + add into sum.
-static inline void SQ8_FP16_InnerProductStep_SSE4(const uint8_t *&pVect1,
-                                                  const float16 *&pVect2,
+static inline void SQ8_FP16_InnerProductStep_SSE4(const uint8_t *&pVect1, const float16 *&pVect2,
                                                   __m128 &sum) {
-    __m128i v1_i =
-        _mm_cvtepu8_epi32(_mm_cvtsi32_si128(*reinterpret_cast<const int32_t *>(pVect1)));
+    __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(*reinterpret_cast<const int32_t *>(pVect1)));
     pVect1 += 4;
     __m128 v1_f = _mm_cvtepi32_ps(v1_i);
 
@@ -45,15 +43,14 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
         __m128 v2_f;
 
         if constexpr (residual % 4 == 3) {
-            v1_f = _mm_set_ps(0.0f, static_cast<float>(pVec1[2]),
-                              static_cast<float>(pVec1[1]),
+            v1_f = _mm_set_ps(0.0f, static_cast<float>(pVec1[2]), static_cast<float>(pVec1[1]),
                               static_cast<float>(pVec1[0]));
             v2_f = _mm_set_ps(0.0f, vecsim_types::FP16_to_FP32(pVec2[2]),
                               vecsim_types::FP16_to_FP32(pVec2[1]),
                               vecsim_types::FP16_to_FP32(pVec2[0]));
         } else if constexpr (residual % 4 == 2) {
-            v1_f = _mm_set_ps(0.0f, 0.0f, static_cast<float>(pVec1[1]),
-                              static_cast<float>(pVec1[0]));
+            v1_f =
+                _mm_set_ps(0.0f, 0.0f, static_cast<float>(pVec1[1]), static_cast<float>(pVec1[0]));
             v2_f = _mm_set_ps(0.0f, 0.0f, vecsim_types::FP16_to_FP32(pVec2[1]),
                               vecsim_types::FP16_to_FP32(pVec2[0]));
         } else if constexpr (residual % 4 == 1) {
@@ -92,8 +89,7 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
 
     const float16 *pVec2Base = static_cast<const float16 *>(pVec2v);
     const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVec2Base + dimension);
-    const float y_sum =
-        load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
+    const float y_sum = load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
 
     return min_val * y_sum + delta * quantized_dot;
 }
