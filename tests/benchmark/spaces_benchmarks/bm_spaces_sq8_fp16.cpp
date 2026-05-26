@@ -50,8 +50,42 @@ public:
     }
 };
 
-// Naive (scalar) algorithms. SIMD chooser slots will be added by P1b (MOD-15152) and
-// P1c (MOD-15153), following the SQ8_FP32 layout in bm_spaces_sq8_fp32.cpp.
+#ifdef CPU_FEATURES_ARCH_X86_64
+cpu_features::X86Features opt = cpu_features::GetX86Info().features;
+
+// AVX-512 F+BW+VL+VNNI (no F16C requirement — _mm512_cvtph_ps is part of AVX512F).
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F_BW_VL_VNNI, 16,
+                                avx512_f_bw_vl_vnni_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F_BW_VL_VNNI, 16,
+                                 avx512_f_bw_vl_vnni_supported);
+#endif
+
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+bool avx2_fma3_f16c_supported = opt.avx2 && opt.fma3 && opt.f16c;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2_FMA, 16,
+                                avx2_fma3_f16c_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2_FMA, 16,
+                                 avx2_fma3_f16c_supported);
+#endif
+
+#ifdef OPT_AVX2
+bool avx2_f16c_supported = opt.avx2 && opt.f16c;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2, 16, avx2_f16c_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2, 16, avx2_f16c_supported);
+#endif
+
+#ifdef OPT_SSE4
+bool sse4_f16c_supported = opt.sse4_1 && opt.f16c && opt.avx;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, SSE4, 16, sse4_f16c_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, SSE4, 16, sse4_f16c_supported);
+#endif
+#endif // OPT_F16C
+#endif // x86_64
+
+// Naive (scalar) baseline — always registered as the comparison anchor.
 
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, Cosine, 16);
