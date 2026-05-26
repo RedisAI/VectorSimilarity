@@ -212,6 +212,16 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif
+#ifdef OPT_SSE4
+#ifdef OPT_F16C
+    // F16C is VEX-encoded — require AVX as well, matching the existing F16C/FP16 dispatcher.
+    if (features.sse4_1 && features.f16c && features.avx) {
+        if (dim % 4 == 0)
+            *alignment = 4 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_SSE4(dim);
+    }
+#endif
+#endif
 #endif // x86_64
     return ret_dist_func;
 }
@@ -253,6 +263,15 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
         if (dim % 8 == 0)
             *alignment = 8 * sizeof(uint8_t);
         return Choose_SQ8_FP16_Cosine_implementation_AVX2(dim);
+    }
+#endif
+#endif
+#ifdef OPT_SSE4
+#ifdef OPT_F16C
+    if (features.sse4_1 && features.f16c && features.avx) {
+        if (dim % 4 == 0)
+            *alignment = 4 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_SSE4(dim);
     }
 #endif
 #endif

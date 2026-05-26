@@ -3132,6 +3132,19 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
     }
 #endif
 #endif
+#ifdef OPT_SSE4
+#ifdef OPT_F16C
+    if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_SSE4(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SSE4 with dim " << dim;
+        optimization.sse4_1 = 0;
+    }
+#endif
+#endif
 
     // Scalar fallback.
     unsigned char alignment = 0;
@@ -3198,6 +3211,19 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     }
 #endif
 #endif
+#ifdef OPT_SSE4
+#ifdef OPT_F16C
+    if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_SSE4(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SSE4 with dim " << dim;
+        optimization.sse4_1 = 0;
+    }
+#endif
+#endif
 
     unsigned char alignment = 0;
     arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3260,6 +3286,19 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "AVX2 with dim " << dim;
         optimization.avx2 = 0;
+    }
+#endif
+#endif
+#ifdef OPT_SSE4
+#ifdef OPT_F16C
+    if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_SSE4(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SSE4 with dim " << dim;
+        optimization.sse4_1 = 0;
     }
 #endif
 #endif

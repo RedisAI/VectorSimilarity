@@ -144,6 +144,15 @@ dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif
+#ifdef OPT_SSE4
+#ifdef OPT_F16C
+    if (features.sse4_1 && features.f16c && features.avx) {
+        if (dim % 4 == 0)
+            *alignment = 4 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_L2_implementation_SSE4(dim);
+    }
+#endif
+#endif
 #endif // x86_64
     return ret_dist_func;
 }
