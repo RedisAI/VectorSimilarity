@@ -135,6 +135,15 @@ dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif
+#ifdef OPT_AVX2
+#ifdef OPT_F16C
+    if (features.avx2 && features.f16c) {
+        if (dim % 8 == 0)
+            *alignment = 8 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_L2_implementation_AVX2(dim);
+    }
+#endif
+#endif
 #endif // x86_64
     return ret_dist_func;
 }

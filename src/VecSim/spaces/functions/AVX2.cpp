@@ -13,6 +13,11 @@
 #include "VecSim/spaces/IP/IP_AVX2_SQ8_FP32.h"
 #include "VecSim/spaces/L2/L2_AVX2_SQ8_FP32.h"
 
+#ifdef OPT_F16C
+#include "VecSim/spaces/IP/IP_AVX2_SQ8_FP16.h"
+#include "VecSim/spaces/L2/L2_AVX2_SQ8_FP16.h"
+#endif
+
 namespace spaces {
 
 #include "implementation_chooser.h"
@@ -46,6 +51,24 @@ dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX2(size_t dim) {
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_L2SqrSIMD16_AVX2);
     return ret_dist_func;
 }
+
+#ifdef OPT_F16C
+dist_func_t<float> Choose_SQ8_FP16_IP_implementation_AVX2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_InnerProductSIMD16_AVX2);
+    return ret_dist_func;
+}
+dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_AVX2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_CosineSIMD16_AVX2);
+    return ret_dist_func;
+}
+dist_func_t<float> Choose_SQ8_FP16_L2_implementation_AVX2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_L2SqrSIMD16_AVX2);
+    return ret_dist_func;
+}
+#endif
 
 #include "implementation_chooser_cleanup.h"
 

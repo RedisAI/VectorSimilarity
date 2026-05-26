@@ -3119,6 +3119,19 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
     }
 #endif
 #endif
+#ifdef OPT_AVX2
+#ifdef OPT_F16C
+    if (optimization.avx2 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2 with dim " << dim;
+        optimization.avx2 = 0;
+    }
+#endif
+#endif
 
     // Scalar fallback.
     unsigned char alignment = 0;
@@ -3172,6 +3185,19 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     }
 #endif
 #endif
+#ifdef OPT_AVX2
+#ifdef OPT_F16C
+    if (optimization.avx2 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2 with dim " << dim;
+        optimization.avx2 = 0;
+    }
+#endif
+#endif
 
     unsigned char alignment = 0;
     arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3221,6 +3247,19 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "AVX2+FMA with dim " << dim;
         optimization.fma3 = 0;
+    }
+#endif
+#endif
+#ifdef OPT_AVX2
+#ifdef OPT_F16C
+    if (optimization.avx2 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2 with dim " << dim;
+        optimization.avx2 = 0;
     }
 #endif
 #endif
