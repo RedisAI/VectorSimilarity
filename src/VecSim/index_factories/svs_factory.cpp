@@ -30,7 +30,7 @@ size_t getThreadPoolParallelismAllocationSize() {
     static const size_t size = []() {
         auto allocator = VecSimAllocator::newVecsimAllocator();
         size_t before = allocator->getAllocationSize();
-        auto p = std::allocate_shared<std::atomic<size_t>>(
+        [[maybe_unused]] auto p = std::allocate_shared<std::atomic<size_t>>(
             VecsimSTLAllocator<std::atomic<size_t>>(allocator), size_t{1});
         return allocator->getAllocationSize() - before;
     }();

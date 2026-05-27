@@ -93,8 +93,9 @@ public:
     // contributes to it.
     static const char *GLOBAL_MEMORY_STRING;
     // Bytes allocated by the shared (global) SVS thread pool singleton. A
-    // breakdown of GLOBAL_MEMORY exposed in SVS index debug info (both flat
-    // and tiered), since that's where the pool semantically belongs.
+    // breakdown of GLOBAL_MEMORY emitted by SVSIndex::debugInfoIterator(),
+    // so it appears at the top level of a non-tiered SVS response and inside
+    // BACKEND_INDEX of a tiered SVS response — never on non-SVS algorithms.
     static const char *SHARED_SVS_THREADPOOL_MEMORY_STRING;
 
     // Log levels
