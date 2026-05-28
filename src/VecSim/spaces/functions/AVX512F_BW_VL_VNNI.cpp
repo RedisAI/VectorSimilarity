@@ -76,8 +76,6 @@ dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(size_t d
     return ret_dist_func;
 }
 
-// SQ8-to-FP16 dispatch lives in functions/AVX512F.cpp — the kernel only needs AVX-512F.
-
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
