@@ -45,7 +45,12 @@ float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
     const float16 *pVec2 = static_cast<const float16 *>(pVec2v); // FP16 query
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    __m512 sum = _mm512_setzero_ps();
+    // Four independent accumulators break the FMA dependency chain so the inner loop can
+    // saturate both FMA ports on Sapphire Rapids / Zen 4.
+    __m512 sum0 = _mm512_setzero_ps();
+    __m512 sum1 = _mm512_setzero_ps();
+    __m512 sum2 = _mm512_setzero_ps();
+    __m512 sum3 = _mm512_setzero_ps();
 
     if constexpr (residual > 0) {
         __mmask16 mask = (1U << residual) - 1;
@@ -60,15 +65,29 @@ float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
         __m512 v2_f = _mm512_cvtph_ps(v2_16);
 
         // Mask out unused lanes by folding the mask into the multiply.
-        sum = _mm512_maskz_mul_ps(mask, v1_f, v2_f);
+        sum0 = _mm512_maskz_mul_ps(mask, v1_f, v2_f);
 
         pVec1 += residual;
         pVec2 += residual;
     }
 
-    do {
+    // Main unrolled loop: 4 chunks of 16 lanes per iteration, one chunk per accumulator.
+    // Residual leaves `dim - residual` lanes remaining (a multiple of 16), so the
+    // pointer comparison stays exact.
+    while (pVec1 + 64 <= pEnd1) {
+        SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum0);
+        SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum1);
+        SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum2);
+        SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum3);
+    }
+
+    // Reduce the four accumulators into one.
+    __m512 sum = _mm512_add_ps(_mm512_add_ps(sum0, sum1), _mm512_add_ps(sum2, sum3));
+
+    // Tail: at most three remaining 16-lane chunks.
+    while (pVec1 < pEnd1) {
         SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum);
-    } while (pVec1 < pEnd1);
+    }
 
     float quantized_dot = _mm512_reduce_add_ps(sum);
 

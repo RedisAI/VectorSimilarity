@@ -51,7 +51,10 @@ float SQ8_FP16_InnerProductImp_AVX2_FMA(const void *pVec1v, const void *pVec2v, 
     const float16 *pVec2 = static_cast<const float16 *>(pVec2v);
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    __m256 sum256 = _mm256_setzero_ps();
+    // Two independent accumulators break the FMA dependency chain so consecutive iterations
+    // can issue in parallel through both FMA ports.
+    __m256 sum_a = _mm256_setzero_ps();
+    __m256 sum_b = _mm256_setzero_ps();
 
     if constexpr (residual % 8) {
         constexpr int mask = (1 << (residual % 8)) - 1;
@@ -70,18 +73,20 @@ float SQ8_FP16_InnerProductImp_AVX2_FMA(const void *pVec1v, const void *pVec2v, 
         v2_f = _mm256_blend_ps(_mm256_setzero_ps(), v2_f, mask);
         pVec2 += residual % 8;
 
-        sum256 = _mm256_mul_ps(v1_f, v2_f);
+        sum_a = _mm256_mul_ps(v1_f, v2_f);
     }
 
     if constexpr (residual >= 8) {
-        SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum256);
+        // Route the half-residual chunk to the second accumulator for ILP.
+        SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum_b);
     }
 
     do {
-        SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum256);
-        SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum256);
+        SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum_a);
+        SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum_b);
     } while (pVec1 < pEnd1);
 
+    __m256 sum256 = _mm256_add_ps(sum_a, sum_b);
     float quantized_dot = my_mm256_reduce_add_ps(sum256);
 
     const uint8_t *pVec1Base = static_cast<const uint8_t *>(pVec1v);

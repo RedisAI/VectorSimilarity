@@ -50,7 +50,9 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
     const float16 *pVec2 = static_cast<const float16 *>(pVec2v);
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    __m128 sum = _mm_setzero_ps();
+    // Two independent accumulators break the mul→add dependency chain (SSE4 lacks FMA).
+    __m128 sum_a = _mm_setzero_ps();
+    __m128 sum_b = _mm_setzero_ps();
 
     if constexpr (residual % 4) {
         __m128 v1_f;
@@ -75,23 +77,28 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
         pVec1 += residual % 4;
         pVec2 += residual % 4;
 
-        sum = _mm_mul_ps(v1_f, v2_f);
+        sum_a = _mm_mul_ps(v1_f, v2_f);
     }
 
+    // Alternate the residual-ladder steps across the two accumulators for ILP.
     if constexpr (residual >= 4) {
-        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum);
+        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_b);
     }
     if constexpr (residual >= 8) {
-        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum);
+        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_a);
     }
     if constexpr (residual >= 12) {
-        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum);
+        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_b);
     }
 
+    // Remaining lanes after the residual block are a multiple of 16, hence a multiple of 8,
+    // so two 4-lane steps per iteration consume the tail exactly.
     do {
-        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum);
+        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_a);
+        SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_b);
     } while (pVec1 < pEnd1);
 
+    __m128 sum = _mm_add_ps(sum_a, sum_b);
     float PORTABLE_ALIGN16 TmpRes[4];
     _mm_store_ps(TmpRes, sum);
     float quantized_dot = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
