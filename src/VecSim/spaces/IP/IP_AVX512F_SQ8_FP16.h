@@ -73,8 +73,10 @@ float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
 
     // Main unrolled loop: 4 chunks of 16 lanes per iteration, one chunk per accumulator.
     // Residual leaves `dim - residual` lanes remaining (a multiple of 16), so the
-    // pointer comparison stays exact.
-    while (pVec1 + 64 <= pEnd1) {
+    // pointer comparison stays exact. Compare via pointer subtraction (not
+    // `pVec1 + 64 <= pEnd1`) so we never form a pointer past one-past-the-end,
+    // which would be UB in C++ regardless of dereference.
+    while (static_cast<size_t>(pEnd1 - pVec1) >= 64) {
         SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum0);
         SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum1);
         SQ8_FP16_InnerProductStep_AVX512(pVec1, pVec2, sum2);
@@ -108,15 +110,15 @@ float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_FP16_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
+float SQ8_FP16_InnerProductSIMD16_AVX512F(const void *pVec1v, const void *pVec2v,
                                                      size_t dimension) {
     return 1.0f - SQ8_FP16_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_FP16_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
+float SQ8_FP16_CosineSIMD16_AVX512F(const void *pVec1v, const void *pVec2v,
                                                size_t dimension) {
     // Cosine distance = 1 - IP for pre-normalised vectors. Aliases InnerProduct, matching the
     // SQ8_FP32 pattern.
-    return SQ8_FP16_InnerProductSIMD16_AVX512F_BW_VL_VNNI<residual>(pVec1v, pVec2v, dimension);
+    return SQ8_FP16_InnerProductSIMD16_AVX512F<residual>(pVec1v, pVec2v, dimension);
 }

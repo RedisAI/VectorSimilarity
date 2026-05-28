@@ -8,7 +8,7 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_FP16.h"
+#include "VecSim/spaces/IP/IP_AVX512F_SQ8_FP16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/utils/alignment.h"
@@ -18,8 +18,7 @@ using float16 = vecsim_types::float16;
 
 // L2² = x_sum_squares + y_sum_squares - 2 * IP(x, y), computed via the AVX-512 IP impl above.
 template <unsigned char residual> // 0..15
-float SQ8_FP16_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
-                                              size_t dimension) {
+float SQ8_FP16_L2SqrSIMD16_AVX512F(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const float ip = SQ8_FP16_InnerProductImp_AVX512<residual>(pVect1v, pVect2v, dimension);
 
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v);

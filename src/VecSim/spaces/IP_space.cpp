@@ -191,7 +191,7 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes
             *alignment = 16 * sizeof(uint8_t);
-        return Choose_SQ8_FP16_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+        return Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_AVX2_FMA
@@ -245,7 +245,7 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 16 == 0)
             *alignment = 16 * sizeof(uint8_t);
-        return Choose_SQ8_FP16_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+        return Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_AVX2_FMA

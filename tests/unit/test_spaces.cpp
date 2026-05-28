@@ -577,9 +577,9 @@ TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
 #ifdef OPT_AVX512_F_BW_VL_VNNI
         if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
             optimization.avx512vnni) {
-            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX512F(dim);
+            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
+            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim);
         } else
 #endif
 #if defined(OPT_AVX2_FMA) && defined(OPT_F16C)
@@ -3142,7 +3142,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
         optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX512F_BW_VL_VNNI(dim))
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "AVX512 with dim " << dim;
@@ -3225,7 +3225,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
         optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX512F_BW_VL_VNNI(dim))
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "AVX512 with dim " << dim;
@@ -3306,7 +3306,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "AVX512 with dim " << dim;
