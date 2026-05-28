@@ -17,9 +17,6 @@
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_FP32.h"
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8_FP32.h"
 
-#include "VecSim/spaces/IP/IP_AVX512F_SQ8_FP16.h"
-#include "VecSim/spaces/L2/L2_AVX512F_SQ8_FP16.h"
-
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
 
@@ -79,23 +76,7 @@ dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(size_t d
     return ret_dist_func;
 }
 
-// SQ8-to-FP16 distance functions. The kernels themselves only use AVX-512F (cvtph_ps + FMA);
-// they register under the VNNI tier solely for CPU-feature dispatch.
-dist_func_t<float> Choose_SQ8_FP16_IP_implementation_AVX512F(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_InnerProductSIMD16_AVX512F);
-    return ret_dist_func;
-}
-dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_AVX512F(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_CosineSIMD16_AVX512F);
-    return ret_dist_func;
-}
-dist_func_t<float> Choose_SQ8_FP16_L2_implementation_AVX512F(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_L2SqrSIMD16_AVX512F);
-    return ret_dist_func;
-}
+// SQ8-to-FP16 dispatch lives in functions/AVX512F.cpp — the kernel only needs AVX-512F.
 
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {

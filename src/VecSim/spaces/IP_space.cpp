@@ -190,33 +190,32 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+    // AVX-512 tier only needs AVX-512F (cvtph_ps is part of AVX-512F, no VNNI/BW/VL required).
+#ifdef OPT_AVX512F
+    if (features.avx512f) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes
             *alignment = 16 * sizeof(uint8_t);
         return Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
     }
 #endif
-#ifdef OPT_AVX2_FMA
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three.
 #ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
     if (features.avx2 && features.fma3 && features.f16c) {
         if (dim % 8 == 0) // SQ8 chunk = 8 bytes
             *alignment = 8 * sizeof(uint8_t);
         return Choose_SQ8_FP16_IP_implementation_AVX2_FMA(dim);
     }
 #endif
-#endif
 #ifdef OPT_AVX2
-#ifdef OPT_F16C
     if (features.avx2 && features.f16c) {
         if (dim % 8 == 0)
             *alignment = 8 * sizeof(uint8_t);
         return Choose_SQ8_FP16_IP_implementation_AVX2(dim);
     }
 #endif
-#endif
 #ifdef OPT_SSE4
-#ifdef OPT_F16C
     // F16C is VEX-encoded — require AVX as well, matching the existing F16C/FP16 dispatcher.
     if (features.sse4_1 && features.f16c && features.avx) {
         if (dim % 4 == 0)
@@ -224,7 +223,7 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_SQ8_FP16_IP_implementation_SSE4(dim);
     }
 #endif
-#endif
+#endif // OPT_F16C
 #endif // x86_64
     return ret_dist_func;
 }
@@ -244,40 +243,36 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
     if (dim < 16) {
         return ret_dist_func;
     }
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+#ifdef OPT_AVX512F
+    if (features.avx512f) {
         if (dim % 16 == 0)
             *alignment = 16 * sizeof(uint8_t);
         return Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim);
     }
 #endif
-#ifdef OPT_AVX2_FMA
 #ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
     if (features.avx2 && features.fma3 && features.f16c) {
         if (dim % 8 == 0)
             *alignment = 8 * sizeof(uint8_t);
         return Choose_SQ8_FP16_Cosine_implementation_AVX2_FMA(dim);
     }
 #endif
-#endif
 #ifdef OPT_AVX2
-#ifdef OPT_F16C
     if (features.avx2 && features.f16c) {
         if (dim % 8 == 0)
             *alignment = 8 * sizeof(uint8_t);
         return Choose_SQ8_FP16_Cosine_implementation_AVX2(dim);
     }
 #endif
-#endif
 #ifdef OPT_SSE4
-#ifdef OPT_F16C
     if (features.sse4_1 && features.f16c && features.avx) {
         if (dim % 4 == 0)
             *alignment = 4 * sizeof(uint8_t);
         return Choose_SQ8_FP16_Cosine_implementation_SSE4(dim);
     }
 #endif
-#endif
+#endif // OPT_F16C
 #endif // x86_64
     return ret_dist_func;
 }

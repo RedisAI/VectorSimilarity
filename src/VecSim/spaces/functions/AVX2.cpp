@@ -13,7 +13,6 @@
 #include "VecSim/spaces/IP/IP_AVX2_SQ8_FP32.h"
 #include "VecSim/spaces/L2/L2_AVX2_SQ8_FP32.h"
 
-
 namespace spaces {
 
 #include "implementation_chooser.h"

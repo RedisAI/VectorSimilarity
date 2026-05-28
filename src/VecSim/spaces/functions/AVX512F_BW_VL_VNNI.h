@@ -24,11 +24,7 @@ dist_func_t<float> Choose_SQ8_FP32_IP_implementation_AVX512F_BW_VL_VNNI(size_t d
 dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 
-// SQ8-to-FP16 kernels only use AVX-512F instructions; they are declared here because
-// they register under the VNNI tier for CPU-feature dispatch.
-dist_func_t<float> Choose_SQ8_FP16_IP_implementation_AVX512F(size_t dim);
-dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_AVX512F(size_t dim);
-dist_func_t<float> Choose_SQ8_FP16_L2_implementation_AVX512F(size_t dim);
+// SQ8-to-FP16 dispatch declared in AVX512F.h — kernel only needs AVX-512F.
 
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim);

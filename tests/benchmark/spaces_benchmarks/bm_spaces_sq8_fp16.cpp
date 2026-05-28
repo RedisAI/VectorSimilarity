@@ -54,15 +54,11 @@ public:
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
-// AVX-512 F+BW+VL+VNNI (no F16C requirement — _mm512_cvtph_ps is part of AVX512F).
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
-// Kernel itself only needs AVX-512F (cvtph_ps + FMA); the VNNI feature check keeps it on the
-// same dispatch tier as the rest of this file.
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16,
-                                avx512_f_bw_vl_vnni_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16,
-                                 avx512_f_bw_vl_vnni_supported);
+// AVX-512F is sufficient — _mm512_cvtph_ps is part of AVX-512F, no F16C/VNNI/BW/VL needed.
+#ifdef OPT_AVX512F
+bool avx512f_supported = opt.avx512f;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16, avx512f_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16, avx512f_supported);
 #endif
 
 #ifdef OPT_F16C
