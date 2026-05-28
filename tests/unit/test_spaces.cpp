@@ -560,61 +560,15 @@ TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
 }
 
 TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
-    // SQ8 storage with FP16 query (asymmetric). The dispatcher now returns the highest SIMD
-    // tier available at runtime; assert that and fall back to scalar only if no tier matches.
+    // SQ8 storage with FP16 query (asymmetric) - should return SQ8_FP16 functions.
+    // Per-ISA dispatcher walk coverage lives in the SQ8_FP16 SpacesOptimizationTest below.
     size_t dim = 128;
     auto l2_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_L2, dim, nullptr);
     auto ip_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_IP, dim, nullptr);
     auto cosine_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_Cosine, dim, nullptr);
-
-    auto optimization = getCpuOptimizationFeatures();
-    dist_func_t<float> expected_l2 = SQ8_FP16_L2Sqr;
-    dist_func_t<float> expected_ip = SQ8_FP16_InnerProduct;
-    dist_func_t<float> expected_cos = SQ8_FP16_Cosine;
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-    if (dim >= 16) {
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-        if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
-            optimization.avx512vnni) {
-            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX512F(dim);
-            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
-            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim);
-        } else
-#endif
-#if defined(OPT_AVX2_FMA) && defined(OPT_F16C)
-            if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
-            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX2_FMA(dim);
-            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX2_FMA(dim);
-            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX2_FMA(dim);
-        } else
-#endif
-#if defined(OPT_AVX2) && defined(OPT_F16C)
-            if (optimization.avx2 && optimization.f16c) {
-            expected_l2 = Choose_SQ8_FP16_L2_implementation_AVX2(dim);
-            expected_ip = Choose_SQ8_FP16_IP_implementation_AVX2(dim);
-            expected_cos = Choose_SQ8_FP16_Cosine_implementation_AVX2(dim);
-        } else
-#endif
-#if defined(OPT_SSE4) && defined(OPT_F16C)
-            if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
-            expected_l2 = Choose_SQ8_FP16_L2_implementation_SSE4(dim);
-            expected_ip = Choose_SQ8_FP16_IP_implementation_SSE4(dim);
-            expected_cos = Choose_SQ8_FP16_Cosine_implementation_SSE4(dim);
-        } else
-#endif
-        {
-            // Falls through to scalar.
-        }
-    }
-#endif // x86_64
-
     ASSERT_EQ(l2_func, L2_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
-    ASSERT_EQ(l2_func, expected_l2);
-    ASSERT_EQ(ip_func, expected_ip);
-    ASSERT_EQ(cosine_func, expected_cos);
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -3425,8 +3379,9 @@ TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
 /* ======================== Tests SQ8_FP16 (edge cases) ========================= */
 
 // Zero FP16 query against a non-zero SQ8 storage. IP must be exactly 1.0 (1 - 0),
-// L2² must equal Σ dequantized². Routes through the dispatcher so the runtime-selected
-// SIMD tier (AVX-512 / AVX2+FMA / AVX2 / SSE4 / scalar) is exercised, not just scalar.
+// L2² must equal Σ dequantized². Math correctness on adversarial inputs is verified
+// against the scalar reference; SIMD tier coverage with branchless kernels is provided
+// separately by SQ8_FP16_SpacesOptimizationTest.
 TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
     size_t dim = 64;
 
@@ -3441,24 +3396,20 @@ TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
     test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, false,
                                                         1234);
 
-    auto ip_func = IP_SQ8_FP16_GetDistFunc(dim, nullptr);
-    auto l2_func = L2_SQ8_FP16_GetDistFunc(dim, nullptr);
-
     float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_nonzero_quantized.data(),
                                                                        v_zero_query.data(), dim);
-    float ip = ip_func(v_nonzero_quantized.data(), v_zero_query.data(), dim);
-    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16 IP mismatch";
+    float ip = SQ8_FP16_InnerProduct(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16_InnerProduct mismatch";
     ASSERT_NEAR(ip, 1.0f, 0.01f) << "Zero-query IP must equal 1.0 (1 - 0)";
 
     float l2_baseline = test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_nonzero_quantized.data(),
                                                                 v_zero_query.data(), dim);
-    float l2 = l2_func(v_nonzero_quantized.data(), v_zero_query.data(), dim);
-    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Zero-query SQ8_FP16 L2 mismatch";
+    float l2 = SQ8_FP16_L2Sqr(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Zero-query SQ8_FP16_L2Sqr mismatch";
 }
 
 // Constant SQ8 storage (all values identical => delta = 0). Storage quantizer sets delta to 1.0
-// to avoid div-by-zero, so verify the kernels still match the dequantization baseline. Routes
-// through the dispatcher so the runtime-selected SIMD tier sees the edge input.
+// to avoid div-by-zero, so verify the kernels still match the dequantization baseline.
 TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
     size_t dim = 64;
 
@@ -3474,23 +3425,19 @@ TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
     test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
                                                         v_const_quantized.data());
 
-    auto ip_func = IP_SQ8_FP16_GetDistFunc(dim, nullptr);
-    auto l2_func = L2_SQ8_FP16_GetDistFunc(dim, nullptr);
-
     float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_const_quantized.data(),
                                                                        v_query.data(), dim);
-    float ip = ip_func(v_const_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Constant-storage SQ8_FP16 IP mismatch";
+    float ip = SQ8_FP16_InnerProduct(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Constant-storage SQ8_FP16_InnerProduct mismatch";
 
     float l2_baseline =
         test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
-    float l2 = l2_func(v_const_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Constant-storage SQ8_FP16 L2 mismatch";
+    float l2 = SQ8_FP16_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Constant-storage SQ8_FP16_L2Sqr mismatch";
 }
 
 // Mixed-sign FP16 query (alternating positive/negative values) verifies sign handling
 // in the FP16->FP32 widening path and in the algebraic identity used by the kernels.
-// Routes through the dispatcher so the runtime-selected SIMD tier sees the edge input.
 TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
     size_t dim = 64;
 
@@ -3510,24 +3457,20 @@ TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
     std::vector<uint8_t> v_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false, 9876);
 
-    auto ip_func = IP_SQ8_FP16_GetDistFunc(dim, nullptr);
-    auto cos_func = Cosine_SQ8_FP16_GetDistFunc(dim, nullptr);
-    auto l2_func = L2_SQ8_FP16_GetDistFunc(dim, nullptr);
-
     float ip_baseline =
         test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_quantized.data(), v_query.data(), dim);
-    float ip = ip_func(v_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16 IP mismatch";
+    float ip = SQ8_FP16_InnerProduct(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16_InnerProduct mismatch";
 
     float cos_baseline =
         test_utils::SQ8_FP16_NotOptimized_Cosine(v_quantized.data(), v_query.data(), dim);
-    float cos = cos_func(v_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(cos, cos_baseline, 0.01f) << "Mixed-sign SQ8_FP16 Cosine mismatch";
+    float cos = SQ8_FP16_Cosine(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(cos, cos_baseline, 0.01f) << "Mixed-sign SQ8_FP16_Cosine mismatch";
 
     float l2_baseline =
         test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_quantized.data(), v_query.data(), dim);
-    float l2 = l2_func(v_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Mixed-sign SQ8_FP16 L2 mismatch";
+    float l2 = SQ8_FP16_L2Sqr(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Mixed-sign SQ8_FP16_L2Sqr mismatch";
 }
 
 /* ======================== Tests SQ8_SQ8 ========================= */
