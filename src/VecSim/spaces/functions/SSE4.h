@@ -16,10 +16,5 @@ dist_func_t<float> Choose_SQ8_FP32_IP_implementation_SSE4(size_t dim);
 dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_SSE4(size_t dim);
 dist_func_t<float> Choose_SQ8_FP32_L2_implementation_SSE4(size_t dim);
 
-#ifdef OPT_F16C
-dist_func_t<float> Choose_SQ8_FP16_IP_implementation_SSE4(size_t dim);
-dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_SSE4(size_t dim);
-dist_func_t<float> Choose_SQ8_FP16_L2_implementation_SSE4(size_t dim);
-#endif
 
 } // namespace spaces
