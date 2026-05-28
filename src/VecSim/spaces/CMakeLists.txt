@@ -50,9 +50,16 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		list(APPEND OPTIMIZATIONS functions/AVX512F_BW_VL_VNNI.cpp)
 	endif()
 
+	# F16C is VEX-encoded and requires AVX state, so it is only meaningful when the toolchain
+	# can also emit AVX/FMA. Mirrors the OPT_F16C macro condition in x86_64InstructionFlags.cmake.
+	set(_has_full_f16c FALSE)
+	if(CXX_F16C AND CXX_FMA AND CXX_AVX)
+		set(_has_full_f16c TRUE)
+	endif()
+
 	if(CXX_AVX2)
 		set(_avx2_flags "-mavx2")
-		if(CXX_F16C)
+		if(_has_full_f16c)
 			message("Building functions/AVX2.cpp with AVX2 and F16C")
 			set(_avx2_flags "${_avx2_flags} -mf16c")
 		else()
@@ -64,7 +71,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 
 	if(CXX_AVX2 AND CXX_FMA)
 		set(_avx2_fma_flags "-mavx2 -mfma")
-		if(CXX_F16C)
+		if(_has_full_f16c)
 			message("Building functions/AVX2_FMA.cpp with AVX2, FMA, and F16C")
 			set(_avx2_fma_flags "${_avx2_fma_flags} -mf16c")
 		else()
@@ -94,9 +101,11 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 
 	if(CXX_SSE4)
 		set(_sse4_flags "-msse4.1")
-		if(CXX_F16C)
-			message("Building functions/SSE4.cpp with SSE4.1 and F16C")
-			set(_sse4_flags "${_sse4_flags} -mf16c")
+		if(_has_full_f16c)
+			# F16C is VEX-encoded → must compile with -mavx alongside -mf16c, matching the
+			# F16C.cpp recipe above.
+			message("Building functions/SSE4.cpp with SSE4.1, AVX, and F16C")
+			set(_sse4_flags "${_sse4_flags} -mavx -mf16c")
 		else()
 			message("Building functions/SSE4.cpp with SSE4.1 (no F16C)")
 		endif()

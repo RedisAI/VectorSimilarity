@@ -15,8 +15,9 @@ using float16 = vecsim_types::float16;
 
 /**
  * SQ8-to-FP16 benchmarks: SQ8 quantized storage with FP16 query.
- * Only naive (scalar) benchmarks are registered for now; SIMD chooser symbols are added
- * by P1b (MOD-15152, x86) and P1c (MOD-15153, ARM).
+ * Registers the naive (scalar) baseline plus per-ISA SIMD variants (x86: AVX-512 / AVX2+FMA /
+ * AVX2 / SSE4 — gated on the matching OPT_* defines and runtime CPU features). ARM kernels
+ * land via MOD-14972.
  */
 class BM_VecSimSpaces_SQ8_FP16 : public benchmark::Fixture {
 protected:

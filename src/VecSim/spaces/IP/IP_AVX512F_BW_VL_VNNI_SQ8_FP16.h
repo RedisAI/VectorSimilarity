@@ -36,6 +36,9 @@ static inline void SQ8_FP16_InnerProductStep_AVX512(const uint8_t *&pVec1, const
 
 // Raw inner product Σ((min + delta * q_i) * y_i). Used by both InnerProduct/Cosine wrappers
 // and by the L2 kernel.
+// Precondition: dim >= 16. Caller is the dispatcher in IP_space.cpp / L2_space.cpp, which gates
+// this. The residual block reads 16 SQ8 bytes and 32 FP16 bytes unconditionally; shorter blobs
+// would under-read.
 template <unsigned char residual> // 0..15
 float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v); // SQ8 storage

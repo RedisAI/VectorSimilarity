@@ -15,10 +15,22 @@
 using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;
 
+/*
+ * Asymmetric SQ8 (storage) ↔ FP16 (query) inner product using algebraic identity:
+ *   IP(x, y) = Σ(x_i * y_i)
+ *            ≈ Σ((min + delta * q_i) * y_i)
+ *            = min * Σy_i + delta * Σ(q_i * y_i)
+ *            = min * y_sum + delta * quantized_dot_product
+ *
+ * FP16 query lanes are widened to FP32 per 4-lane chunk via _mm_cvtph_ps (F16C);
+ * inner-loop arithmetic runs in FP32 with separate _mm_mul_ps + _mm_add_ps (SSE4 has no FMA).
+ */
+
 // 4-wide SSE4+F16C step: 4 SQ8 lanes + 4 FP16 lanes -> mul + add into sum.
 static inline void SQ8_FP16_InnerProductStep_SSE4(const uint8_t *&pVect1, const float16 *&pVect2,
                                                   __m128 &sum) {
-    __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(*reinterpret_cast<const int32_t *>(pVect1)));
+    // Alignment-safe 4-byte load of SQ8 lanes via load_unaligned<int32_t> (no strict-aliasing UB).
+    __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(load_unaligned<int32_t>(pVect1)));
     pVect1 += 4;
     __m128 v1_f = _mm_cvtepi32_ps(v1_i);
 
@@ -29,6 +41,8 @@ static inline void SQ8_FP16_InnerProductStep_SSE4(const uint8_t *&pVect1, const 
     sum = _mm_add_ps(sum, _mm_mul_ps(v1_f, v2_f));
 }
 
+// Precondition: dim >= 16. Caller is the dispatcher in IP_space.cpp / L2_space.cpp.
+// Shorter blobs would underflow the residual ladder + final do-while loop.
 template <unsigned char residual> // 0..15
 float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2v,
                                            size_t dimension) {

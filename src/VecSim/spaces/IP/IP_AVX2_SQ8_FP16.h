@@ -16,6 +16,18 @@
 using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;
 
+/*
+ * Asymmetric SQ8 (storage) ↔ FP16 (query) inner product using algebraic identity:
+ *   IP(x, y) = Σ(x_i * y_i)
+ *            ≈ Σ((min + delta * q_i) * y_i)
+ *            = min * Σy_i + delta * Σ(q_i * y_i)
+ *            = min * y_sum + delta * quantized_dot_product
+ *
+ * FP16 query lanes are widened to FP32 per 8-lane chunk via _mm256_cvtph_ps (F16C);
+ * inner-loop arithmetic runs in FP32 with separate _mm256_mul_ps + _mm256_add_ps
+ * (no FMA tier — Haswell-era AVX2 without FMA support).
+ */
+
 // 8-wide AVX2 step (no FMA): 8 SQ8 lanes + 8 FP16 lanes -> mul + add into sum.
 static inline void SQ8_FP16_InnerProductStep_AVX2(const uint8_t *&pVect1, const float16 *&pVect2,
                                                   __m256 &sum256) {
@@ -31,6 +43,9 @@ static inline void SQ8_FP16_InnerProductStep_AVX2(const uint8_t *&pVect1, const 
     sum256 = _mm256_add_ps(sum256, _mm256_mul_ps(v1_f, v2_f));
 }
 
+// Precondition: dim >= 16. Caller is the dispatcher in IP_space.cpp / L2_space.cpp.
+// The residual block reads 8 SQ8 bytes and 16 FP16 bytes unconditionally; shorter blobs would
+// under-read.
 template <unsigned char residual> // 0..15
 float SQ8_FP16_InnerProductImp_AVX2(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
@@ -42,6 +57,9 @@ float SQ8_FP16_InnerProductImp_AVX2(const void *pVec1v, const void *pVec2v, size
     if constexpr (residual % 8) {
         constexpr int mask = (1 << (residual % 8)) - 1;
 
+        // Single-side mask is sufficient: SQ8 lanes beyond `residual` may hold garbage, but the
+        // FP16 query blend below forces those FP32 query lanes to 0, so garbage·0=0 contributes
+        // nothing to the dot product. SQ8 load is intentionally unmasked.
         __m128i v1_128 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(pVec1));
         pVec1 += residual % 8;
         __m256i v1_256 = _mm256_cvtepu8_epi32(v1_128);

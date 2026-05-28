@@ -3042,8 +3042,9 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
 
 // Parameterized tests that verify the scalar SQ8_FP16 kernels against the not-optimized
 // baseline across multiple dimensions, including odd dimensions and SIMD-boundary residues.
-// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); the dispatcher always
-// returns the scalar implementation for now.
+// The SIMD-tier dispatcher coverage lives in SQ8_FP16_SpacesOptimizationTest below; this
+// suite intentionally exercises the scalar reference directly to keep it as a fixed baseline
+// the SIMD tiers are compared against.
 class SQ8_FP16_NoOptimizationSpacesTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_L2SqrTest) {
@@ -3188,14 +3189,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
 #endif
 #endif
 
-    // Scalar fallback.
-    unsigned char alignment = 0;
+    // Scalar fallback. Init alignment to a sentinel (0xFF) so the assert below actually verifies
+    // that the dispatcher LEAVES THE VALUE UNTOUCHED on the scalar path — initialising to 0 then
+    // asserting `== 0` would pass even if the dispatcher were a no-op.
+    unsigned char alignment = 0xFF;
     arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_L2Sqr)
         << "Unexpected scalar fallback function for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
         << "Scalar fallback with dim " << dim;
-    ASSERT_EQ(alignment, 0) << "Scalar fallback should set no alignment hint for dim " << dim;
+    ASSERT_EQ(alignment, 0xFF) << "Scalar fallback must leave caller's alignment value untouched "
+                                  "(dim "
+                               << dim << ")";
 }
 
 TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
@@ -3267,13 +3272,16 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
 #endif
 #endif
 
-    unsigned char alignment = 0;
+    // Scalar fallback — see L2 test for the 0xFF sentinel rationale.
+    unsigned char alignment = 0xFF;
     arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_InnerProduct)
         << "Unexpected scalar fallback function for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
         << "Scalar fallback with dim " << dim;
-    ASSERT_EQ(alignment, 0) << "Scalar fallback should set no alignment hint for dim " << dim;
+    ASSERT_EQ(alignment, 0xFF) << "Scalar fallback must leave caller's alignment value untouched "
+                                  "(dim "
+                               << dim << ")";
 }
 
 TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
@@ -3345,22 +3353,80 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
 #endif
 #endif
 
-    unsigned char alignment = 0;
+    // Scalar fallback — see L2 test for the 0xFF sentinel rationale.
+    unsigned char alignment = 0xFF;
     arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_Cosine)
         << "Unexpected scalar fallback function for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
         << "Scalar fallback with dim " << dim;
-    ASSERT_EQ(alignment, 0) << "Scalar fallback should set no alignment hint for dim " << dim;
+    ASSERT_EQ(alignment, 0xFF) << "Scalar fallback must leave caller's alignment value untouched "
+                                  "(dim "
+                               << dim << ")";
 }
 
+// Dim range [16, 32] covers every residual class for the 16-element chunk used by every tier.
 INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD, SQ8_FP16_SpacesOptimizationTest,
                          testing::Range(16UL, 16 * 2UL + 1));
+
+// Higher dimensions surface multi-iteration loop bugs (pointer stride, do-while termination
+// off-by-one) that the [16, 32] range does not exercise because the AVX-512 inner loop runs at
+// most twice in that range.
+INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD_HighDim, SQ8_FP16_SpacesOptimizationTest,
+                         testing::Values(64UL, 128UL, 256UL, 512UL, 1024UL));
+
+// Surfaces which SIMD tiers were actually exercised on the current host. Without this, a CI
+// runner that lacks AVX-512 silently passes with zero tier-1 coverage. Logs per-tier presence
+// to stderr and GTEST_SKIPs only when no SIMD tier is available at all.
+TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
+    auto opt = getCpuOptimizationFeatures();
+    bool any_simd = false;
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
+        std::cerr << "[SQ8_FP16] AVX-512 F+BW+VL+VNNI tier exercised\n";
+        any_simd = true;
+    } else {
+        std::cerr << "[SQ8_FP16] AVX-512 F+BW+VL+VNNI tier NOT exercised on this host\n";
+    }
+#endif
+#if defined(OPT_AVX2_FMA) && defined(OPT_F16C)
+    if (opt.avx2 && opt.fma3 && opt.f16c) {
+        std::cerr << "[SQ8_FP16] AVX2+FMA+F16C tier exercised\n";
+        any_simd = true;
+    } else {
+        std::cerr << "[SQ8_FP16] AVX2+FMA+F16C tier NOT exercised on this host\n";
+    }
+#endif
+#if defined(OPT_AVX2) && defined(OPT_F16C)
+    if (opt.avx2 && opt.f16c) {
+        std::cerr << "[SQ8_FP16] AVX2+F16C tier exercised\n";
+        any_simd = true;
+    } else {
+        std::cerr << "[SQ8_FP16] AVX2+F16C tier NOT exercised on this host\n";
+    }
+#endif
+#if defined(OPT_SSE4) && defined(OPT_F16C)
+    if (opt.sse4_1 && opt.f16c && opt.avx) {
+        std::cerr << "[SQ8_FP16] SSE4+F16C+AVX tier exercised\n";
+        any_simd = true;
+    } else {
+        std::cerr << "[SQ8_FP16] SSE4+F16C+AVX tier NOT exercised on this host\n";
+    }
+#endif
+#endif // x86_64
+
+    if (!any_simd) {
+        GTEST_SKIP() << "No SQ8_FP16 SIMD tier available on this host — scalar fallback only.";
+    }
+}
 
 /* ======================== Tests SQ8_FP16 (edge cases) ========================= */
 
 // Zero FP16 query against a non-zero SQ8 storage. IP must be exactly 1.0 (1 - 0),
-// L2² must equal Σ dequantized².
+// L2² must equal Σ dequantized². Routes through the dispatcher so the runtime-selected
+// SIMD tier (AVX-512 / AVX2+FMA / AVX2 / SSE4 / scalar) is exercised, not just scalar.
 TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
     size_t dim = 64;
 
@@ -3375,20 +3441,24 @@ TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
     test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, false,
                                                         1234);
 
+    auto ip_func = IP_SQ8_FP16_GetDistFunc(dim, nullptr);
+    auto l2_func = L2_SQ8_FP16_GetDistFunc(dim, nullptr);
+
     float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_nonzero_quantized.data(),
                                                                        v_zero_query.data(), dim);
-    float ip = SQ8_FP16_InnerProduct(v_nonzero_quantized.data(), v_zero_query.data(), dim);
-    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16_InnerProduct mismatch";
+    float ip = ip_func(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16 IP mismatch";
     ASSERT_NEAR(ip, 1.0f, 0.01f) << "Zero-query IP must equal 1.0 (1 - 0)";
 
     float l2_baseline = test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_nonzero_quantized.data(),
                                                                 v_zero_query.data(), dim);
-    float l2 = SQ8_FP16_L2Sqr(v_nonzero_quantized.data(), v_zero_query.data(), dim);
-    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Zero-query SQ8_FP16_L2Sqr mismatch";
+    float l2 = l2_func(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Zero-query SQ8_FP16 L2 mismatch";
 }
 
 // Constant SQ8 storage (all values identical => delta = 0). Storage quantizer sets delta to 1.0
-// to avoid div-by-zero, so verify the kernels still match the dequantization baseline.
+// to avoid div-by-zero, so verify the kernels still match the dequantization baseline. Routes
+// through the dispatcher so the runtime-selected SIMD tier sees the edge input.
 TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
     size_t dim = 64;
 
@@ -3404,19 +3474,23 @@ TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
     test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
                                                         v_const_quantized.data());
 
+    auto ip_func = IP_SQ8_FP16_GetDistFunc(dim, nullptr);
+    auto l2_func = L2_SQ8_FP16_GetDistFunc(dim, nullptr);
+
     float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_const_quantized.data(),
                                                                        v_query.data(), dim);
-    float ip = SQ8_FP16_InnerProduct(v_const_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Constant-storage SQ8_FP16_InnerProduct mismatch";
+    float ip = ip_func(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Constant-storage SQ8_FP16 IP mismatch";
 
     float l2_baseline =
         test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
-    float l2 = SQ8_FP16_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Constant-storage SQ8_FP16_L2Sqr mismatch";
+    float l2 = l2_func(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Constant-storage SQ8_FP16 L2 mismatch";
 }
 
 // Mixed-sign FP16 query (alternating positive/negative values) verifies sign handling
 // in the FP16->FP32 widening path and in the algebraic identity used by the kernels.
+// Routes through the dispatcher so the runtime-selected SIMD tier sees the edge input.
 TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
     size_t dim = 64;
 
@@ -3436,20 +3510,24 @@ TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
     std::vector<uint8_t> v_quantized(quantized_size);
     test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false, 9876);
 
+    auto ip_func = IP_SQ8_FP16_GetDistFunc(dim, nullptr);
+    auto cos_func = Cosine_SQ8_FP16_GetDistFunc(dim, nullptr);
+    auto l2_func = L2_SQ8_FP16_GetDistFunc(dim, nullptr);
+
     float ip_baseline =
         test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_quantized.data(), v_query.data(), dim);
-    float ip = SQ8_FP16_InnerProduct(v_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16_InnerProduct mismatch";
+    float ip = ip_func(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16 IP mismatch";
 
     float cos_baseline =
         test_utils::SQ8_FP16_NotOptimized_Cosine(v_quantized.data(), v_query.data(), dim);
-    float cos = SQ8_FP16_Cosine(v_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(cos, cos_baseline, 0.01f) << "Mixed-sign SQ8_FP16_Cosine mismatch";
+    float cos = cos_func(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(cos, cos_baseline, 0.01f) << "Mixed-sign SQ8_FP16 Cosine mismatch";
 
     float l2_baseline =
         test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_quantized.data(), v_query.data(), dim);
-    float l2 = SQ8_FP16_L2Sqr(v_quantized.data(), v_query.data(), dim);
-    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Mixed-sign SQ8_FP16_L2Sqr mismatch";
+    float l2 = l2_func(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Mixed-sign SQ8_FP16 L2 mismatch";
 }
 
 /* ======================== Tests SQ8_SQ8 ========================= */
