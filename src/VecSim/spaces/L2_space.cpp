@@ -160,6 +160,16 @@ dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     if (dim < 16) {
         return ret_dist_func;
     }
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ8_FP16_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ8_FP16_L2_implementation_SVE(dim);
+    }
+#endif
 #ifdef OPT_NEON_HP
     if (features.asimdhp) {
         // No alignment write: the locked spec and the sister ARM SQ8_FP32 dispatchers
