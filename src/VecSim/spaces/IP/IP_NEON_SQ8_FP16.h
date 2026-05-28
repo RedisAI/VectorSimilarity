@@ -1,0 +1,135 @@
+/*
+ * Copyright (c) 2006-Present, Redis Ltd.
+ * All rights reserved.
+ *
+ * Licensed under your choice of the Redis Source Available License 2.0
+ * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
+ * GNU Affero General Public License v3 (AGPLv3).
+ */
+#pragma once
+#include "VecSim/spaces/space_includes.h"
+#include "VecSim/types/sq8.h"
+#include "VecSim/types/float16.h"
+#include <arm_neon.h>
+#include <cassert>
+
+using sq8 = vecsim_types::sq8;
+using float16 = vecsim_types::float16;
+
+/*
+ * Optimised asymmetric SQ8<->FP16 inner product using the algebraic identity:
+ *
+ *   IP(x, y) = sum(x_i * y_i)
+ *            ~= sum((min + delta * q_i) * y_i)
+ *            = min * y_sum + delta * sum(q_i * y_i)
+ *
+ * The hot loop only accumulates sum(q_i * y_i) - no per-element dequantisation.
+ * FP16 query lanes are widened to FP32 via vcvt_f32_f16 per 16-lane chunk.
+ */
+
+// Helper: 16 lanes per call, four FP32 accumulators (one per quarter).
+static inline void
+SQ8_FP16_InnerProductStep_NEON_HP(const uint8_t *&pVect1, const float16 *&pVect2,
+                                  float32x4_t &sum0, float32x4_t &sum1,
+                                  float32x4_t &sum2, float32x4_t &sum3) {
+    // SQ8 storage: 16 * uint8 -> 4 * float32x4_t
+    uint8x16_t v1_u8 = vld1q_u8(pVect1);
+    uint16x8_t v1_lo = vmovl_u8(vget_low_u8(v1_u8));
+    uint16x8_t v1_hi = vmovl_u8(vget_high_u8(v1_u8));
+    float32x4_t v1_0 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(v1_lo)));
+    float32x4_t v1_1 = vcvtq_f32_u32(vmovl_u16(vget_high_u16(v1_lo)));
+    float32x4_t v1_2 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(v1_hi)));
+    float32x4_t v1_3 = vcvtq_f32_u32(vmovl_u16(vget_high_u16(v1_hi)));
+
+    // FP16 query: 16 * f16 -> 4 * float32x4_t via vcvt_f32_f16
+    const float16_t *q = reinterpret_cast<const float16_t *>(pVect2);
+    float16x8_t q_lo = vld1q_f16(q);
+    float16x8_t q_hi = vld1q_f16(q + 8);
+    float32x4_t v2_0 = vcvt_f32_f16(vget_low_f16(q_lo));
+    float32x4_t v2_1 = vcvt_f32_f16(vget_high_f16(q_lo));
+    float32x4_t v2_2 = vcvt_f32_f16(vget_low_f16(q_hi));
+    float32x4_t v2_3 = vcvt_f32_f16(vget_high_f16(q_hi));
+
+    sum0 = vfmaq_f32(sum0, v1_0, v2_0);
+    sum1 = vfmaq_f32(sum1, v1_1, v2_1);
+    sum2 = vfmaq_f32(sum2, v1_2, v2_2);
+    sum3 = vfmaq_f32(sum3, v1_3, v2_3);
+
+    pVect1 += 16;
+    pVect2 += 16;
+}
+
+// pVect1v = SQ8 storage, pVect2v = FP16 query
+template <unsigned char residual> // 0..15
+float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *pVect2v,
+                                              size_t dimension) {
+    assert(dimension >= 16 && "kernel precondition: dispatcher must guard dim >= 16");
+
+    const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    const float16 *pVect2 = static_cast<const float16 *>(pVect2v); // FP16 query
+
+    float32x4_t sum0 = vdupq_n_f32(0.0f);
+    float32x4_t sum1 = vdupq_n_f32(0.0f);
+    float32x4_t sum2 = vdupq_n_f32(0.0f);
+    float32x4_t sum3 = vdupq_n_f32(0.0f);
+
+    const size_t num_of_chunks = dimension / 16;
+    for (size_t i = 0; i < num_of_chunks; i++) {
+        SQ8_FP16_InnerProductStep_NEON_HP(pVect1, pVect2, sum0, sum1, sum2, sum3);
+    }
+
+    // Residual handling: dim % 16 lanes.
+    // residual >= 8: one safe 8-lane SQ8 + 8-lane FP16 load (FP16 trailer is wide enough).
+    // residual <  8: scalar-only - a 4-lane FP16 load would overread y_sum metadata.
+    constexpr unsigned char r = residual;
+    if constexpr (r >= 8) {
+        uint8x8_t v1_u8 = vld1_u8(pVect1);
+        uint16x8_t v1_u16 = vmovl_u8(v1_u8);
+        float32x4_t v1_a = vcvtq_f32_u32(vmovl_u16(vget_low_u16(v1_u16)));
+        float32x4_t v1_b = vcvtq_f32_u32(vmovl_u16(vget_high_u16(v1_u16)));
+        float16x8_t q_h = vld1q_f16(reinterpret_cast<const float16_t *>(pVect2));
+        float32x4_t v2_a = vcvt_f32_f16(vget_low_f16(q_h));
+        float32x4_t v2_b = vcvt_f32_f16(vget_high_f16(q_h));
+        sum0 = vfmaq_f32(sum0, v1_a, v2_a);
+        sum1 = vfmaq_f32(sum1, v1_b, v2_b);
+        pVect1 += 8;
+        pVect2 += 8;
+    }
+    // Lane-by-lane scalar for the final 0..7 (residual % 8) elements.
+    constexpr unsigned char tail = r & 0x7;
+    float scalar_dot = 0.0f;
+    for (unsigned char k = 0; k < tail; ++k) {
+        scalar_dot += static_cast<float>(pVect1[k]) * vecsim_types::FP16_to_FP32(pVect2[k]);
+    }
+
+    // Reduce the four NEON accumulators.
+    float32x4_t sum_lo = vaddq_f32(sum0, sum1);
+    float32x4_t sum_hi = vaddq_f32(sum2, sum3);
+    float quantized_dot = vaddvq_f32(vaddq_f32(sum_lo, sum_hi)) + scalar_dot;
+
+    // Metadata loads - use load_unaligned because odd dim leaves trailers unaligned.
+    const uint8_t *params_bytes = static_cast<const uint8_t *>(pVect1v) + dimension;
+    const float min_val =
+        load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
+    const float delta =
+        load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
+    const uint8_t *query_meta_bytes =
+        reinterpret_cast<const uint8_t *>(static_cast<const float16 *>(pVect2v) + dimension);
+    const float y_sum =
+        load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
+
+    return min_val * y_sum + delta * quantized_dot;
+}
+
+template <unsigned char residual>
+float SQ8_FP16_InnerProductSIMD16_NEON_HP(const void *pVect1v, const void *pVect2v,
+                                          size_t dimension) {
+    return 1.0f -
+           SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP<residual>(pVect1v, pVect2v, dimension);
+}
+
+template <unsigned char residual>
+float SQ8_FP16_CosineSIMD16_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // Cosine = 1 - IP (vectors are pre-normalised); reuses the IP wrapper.
+    return SQ8_FP16_InnerProductSIMD16_NEON_HP<residual>(pVect1v, pVect2v, dimension);
+}
