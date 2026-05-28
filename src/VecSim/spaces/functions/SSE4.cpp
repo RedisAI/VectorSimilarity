@@ -10,7 +10,6 @@
 #include "VecSim/spaces/IP/IP_SSE4_SQ8_FP32.h"
 #include "VecSim/spaces/L2/L2_SSE4_SQ8_FP32.h"
 
-
 namespace spaces {
 
 #include "implementation_chooser.h"

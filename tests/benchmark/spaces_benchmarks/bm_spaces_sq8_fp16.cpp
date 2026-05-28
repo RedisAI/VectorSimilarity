@@ -58,7 +58,8 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 #ifdef OPT_AVX512F
 bool avx512f_supported = opt.avx512f;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16, avx512f_supported);
-INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16, avx512f_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16,
+                                 avx512f_supported);
 #endif
 
 #ifdef OPT_F16C

@@ -111,13 +111,12 @@ float SQ8_FP16_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
 
 template <unsigned char residual> // 0..15
 float SQ8_FP16_InnerProductSIMD16_AVX512F(const void *pVec1v, const void *pVec2v,
-                                                     size_t dimension) {
+                                          size_t dimension) {
     return 1.0f - SQ8_FP16_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 }
 
 template <unsigned char residual> // 0..15
-float SQ8_FP16_CosineSIMD16_AVX512F(const void *pVec1v, const void *pVec2v,
-                                               size_t dimension) {
+float SQ8_FP16_CosineSIMD16_AVX512F(const void *pVec1v, const void *pVec2v, size_t dimension) {
     // Cosine distance = 1 - IP for pre-normalised vectors. Aliases InnerProduct, matching the
     // SQ8_FP32 pattern.
     return SQ8_FP16_InnerProductSIMD16_AVX512F<residual>(pVec1v, pVec2v, dimension);
