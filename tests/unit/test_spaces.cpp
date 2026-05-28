@@ -3149,6 +3149,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
 #endif
 #endif // OPT_F16C
 
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
+
     unsigned char alignment = 0;
     arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_L2Sqr)
@@ -3224,6 +3236,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
 #endif
 #endif // OPT_F16C
 
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
+
     unsigned char alignment = 0;
     arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_InnerProduct)
@@ -3298,6 +3322,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
     }
 #endif
 #endif // OPT_F16C
+
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
 
     unsigned char alignment = 0;
     arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
