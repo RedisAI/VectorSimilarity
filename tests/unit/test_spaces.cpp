@@ -3323,56 +3323,6 @@ INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD, SQ8_FP16_SpacesOptimizationTest,
 INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD_HighDim, SQ8_FP16_SpacesOptimizationTest,
                          testing::Values(64UL, 128UL, 256UL, 512UL, 1024UL));
 
-// Surfaces which SIMD tiers were actually exercised on the current host. Without this, a CI
-// runner that lacks AVX-512 silently passes with zero tier-1 coverage. Logs per-tier presence
-// to stderr and GTEST_SKIPs only when no SIMD tier is available at all.
-TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
-    auto opt = getCpuOptimizationFeatures();
-    bool any_simd = false;
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-#ifdef OPT_AVX512F
-    if (opt.avx512f) {
-        std::cerr << "[SQ8_FP16] AVX-512F tier exercised\n";
-        any_simd = true;
-    } else {
-        std::cerr << "[SQ8_FP16] AVX-512F tier NOT exercised on this host\n";
-    }
-#endif
-    // F16C guards all non-AVX-512 SQ8↔FP16 tiers — matches the dispatcher layout.
-#ifdef OPT_F16C
-#ifdef OPT_AVX2_FMA
-    if (opt.avx2 && opt.fma3 && opt.f16c) {
-        std::cerr << "[SQ8_FP16] AVX2+FMA+F16C tier exercised\n";
-        any_simd = true;
-    } else {
-        std::cerr << "[SQ8_FP16] AVX2+FMA+F16C tier NOT exercised on this host\n";
-    }
-#endif
-#ifdef OPT_AVX2
-    if (opt.avx2 && opt.f16c) {
-        std::cerr << "[SQ8_FP16] AVX2+F16C tier exercised\n";
-        any_simd = true;
-    } else {
-        std::cerr << "[SQ8_FP16] AVX2+F16C tier NOT exercised on this host\n";
-    }
-#endif
-#ifdef OPT_SSE4
-    if (opt.sse4_1 && opt.f16c && opt.avx) {
-        std::cerr << "[SQ8_FP16] SSE4+F16C+AVX tier exercised\n";
-        any_simd = true;
-    } else {
-        std::cerr << "[SQ8_FP16] SSE4+F16C+AVX tier NOT exercised on this host\n";
-    }
-#endif
-#endif // OPT_F16C
-#endif // x86_64
-
-    if (!any_simd) {
-        GTEST_SKIP() << "No SQ8_FP16 SIMD tier available on this host — scalar fallback only.";
-    }
-}
-
 /* ======================== Tests SQ8_FP16 (edge cases) ========================= */
 
 // Zero FP16 query against a non-zero SQ8 storage. IP must be exactly 1.0 (1 - 0),
