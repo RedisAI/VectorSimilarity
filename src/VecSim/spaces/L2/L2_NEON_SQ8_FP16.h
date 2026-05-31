@@ -9,11 +9,6 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP_NEON_SQ8_FP16.h"
-#include "VecSim/types/sq8.h"
-#include "VecSim/types/float16.h"
-
-using sq8 = vecsim_types::sq8;
-using float16 = vecsim_types::float16;
 
 /*
  * Optimised asymmetric SQ8<->FP16 L2 squared distance using the algebraic identity:
