@@ -241,9 +241,6 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 #ifdef OPT_NEON_HP
     if (features.asimdhp) {
-        // No alignment write: the locked spec and the sister ARM SQ8_FP32 dispatchers
-        // leave *alignment untouched on ARM tiers. The corresponding tests assert
-        // 0xFF passthrough on the scalar path and do not assert any non-zero value here.
         return Choose_SQ8_FP16_IP_implementation_NEON_HP(dim);
     }
 #endif
@@ -313,9 +310,6 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
 #endif
 #ifdef OPT_NEON_HP
     if (features.asimdhp) {
-        // No alignment write: the locked spec and the sister ARM SQ8_FP32 dispatchers
-        // leave *alignment untouched on ARM tiers. The corresponding tests assert
-        // 0xFF passthrough on the scalar path and do not assert any non-zero value here.
         return Choose_SQ8_FP16_Cosine_implementation_NEON_HP(dim);
     }
 #endif
