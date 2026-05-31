@@ -3158,6 +3158,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
         optimization.sve2 = 0;
     }
 #endif
@@ -3169,6 +3170,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
         optimization.sve = 0;
     }
 #endif
@@ -3180,6 +3182,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
         optimization.asimdhp = 0;
     }
 #endif
@@ -3269,6 +3272,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
         optimization.sve2 = 0;
     }
 #endif
@@ -3280,6 +3284,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
         optimization.sve = 0;
     }
 #endif
@@ -3291,6 +3296,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
         optimization.asimdhp = 0;
     }
 #endif
@@ -3380,6 +3386,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
         optimization.sve2 = 0;
     }
 #endif
@@ -3391,6 +3398,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
         optimization.sve = 0;
     }
 #endif
@@ -3402,6 +3410,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
             << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
         optimization.asimdhp = 0;
     }
 #endif
