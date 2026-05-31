@@ -572,6 +572,12 @@ TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
     ASSERT_EQ(l2_func, L2_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
+
+    // dim < 16 takes the scalar early-return in every SQ8_FP16 dispatcher (no SIMD tier).
+    size_t small_dim = 8;
+    ASSERT_EQ(L2_SQ8_FP16_GetDistFunc(small_dim, nullptr), SQ8_FP16_L2Sqr);
+    ASSERT_EQ(IP_SQ8_FP16_GetDistFunc(small_dim, nullptr), SQ8_FP16_InnerProduct);
+    ASSERT_EQ(Cosine_SQ8_FP16_GetDistFunc(small_dim, nullptr), SQ8_FP16_Cosine);
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -3308,9 +3314,10 @@ INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD, SQ8_FP16_SpacesOptimizationTest,
 
 // Higher dimensions surface multi-iteration loop bugs (pointer stride, do-while termination
 // off-by-one) that the [16, 32] range does not exercise because the AVX-512 inner loop runs at
-// most twice in that range.
+// most twice in that range. 48 and 112 specifically hit the AVX-512 three-chunk tail
+// (remaining == 48, i.e. (dim / 16) % 4 == 3): 48 with zero main-loop iterations, 112 with one.
 INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD_HighDim, SQ8_FP16_SpacesOptimizationTest,
-                         testing::Values(64UL, 128UL, 256UL, 512UL, 1024UL));
+                         testing::Values(48UL, 64UL, 112UL, 128UL, 256UL, 512UL, 1024UL));
 
 /* ======================== Tests SQ8_FP16 (edge cases) ========================= */
 
