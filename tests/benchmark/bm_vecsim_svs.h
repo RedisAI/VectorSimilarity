@@ -466,19 +466,17 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)
 
 #if HAVE_SVS_LVQ
-#define QUANT_BITS_ARGS                                                                            \
-    { VecSimSvsQuant_8, VecSimSvsQuant_4x8_LeanVec }
+#define QUANT_BITS_ARGS {VecSimSvsQuant_8, VecSimSvsQuant_4x8_LeanVec}
 #define COMPRESSED_TRAINING_THRESHOLD_ARGS                                                         \
-    { static_cast<long int>(BM_VecSimGeneral::block_size), 5000, 10000 }
+    {static_cast<long int>(BM_VecSimGeneral::block_size), 5000, 10000}
 #define COMPRESSED_ASYNC_TRAINING_THRESHOLD_ARGS                                                   \
-    { static_cast<long int>(BM_VecSimGeneral::block_size), 5000, 10000, 50000 }
+    {static_cast<long int>(BM_VecSimGeneral::block_size), 5000, 10000, 50000}
 #else
-#define QUANT_BITS_ARGS                                                                            \
-    { VecSimSvsQuant_8 }
+#define QUANT_BITS_ARGS {VecSimSvsQuant_8}
 // Using smaller training TH to avoid long test times without LVQ
 #define COMPRESSED_TRAINING_THRESHOLD_ARGS                                                         \
-    { static_cast<long int>(BM_VecSimGeneral::block_size), 5000 }
+    {static_cast<long int>(BM_VecSimGeneral::block_size), 5000}
 #define COMPRESSED_ASYNC_TRAINING_THRESHOLD_ARGS                                                   \
-    { static_cast<long int>(BM_VecSimGeneral::block_size), 5000 }
+    {static_cast<long int>(BM_VecSimGeneral::block_size), 5000}
 
 #endif
