@@ -16,7 +16,8 @@ using float16 = vecsim_types::float16;
 /**
  * SQ8-to-FP16 benchmarks: SQ8 quantized storage with FP16 query.
  * Registers the naive (scalar) baseline plus per-ISA SIMD variants (x86: AVX-512 / AVX2+FMA /
- * AVX2 / SSE4 — gated on the matching OPT_* defines and runtime CPU features). ARM kernels (NEON_HP / SVE / SVE2) are registered below.
+ * AVX2 / SSE4 — gated on the matching OPT_* defines and runtime CPU features). ARM kernels (NEON_HP
+ * / SVE / SVE2) are registered below.
  */
 class BM_VecSimSpaces_SQ8_FP16 : public benchmark::Fixture {
 protected:
@@ -103,7 +104,7 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, SVE, 16, sv
 bool neon_hp_supported = arm_opt.asimdhp;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_HP, 16, neon_hp_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_HP, 16,
-                                  neon_hp_supported);
+                                 neon_hp_supported);
 #endif
 #endif // CPU_FEATURES_ARCH_AARCH64
 
