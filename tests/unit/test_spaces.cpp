@@ -3105,8 +3105,10 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
         optimization.avx512f = 0;
     }
 #endif
-#ifdef OPT_AVX2_FMA
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three — matches the dispatcher layout in L2_space.cpp.
 #ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
     if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3117,9 +3119,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
         optimization.fma3 = 0;
     }
 #endif
-#endif
 #ifdef OPT_AVX2
-#ifdef OPT_F16C
     if (optimization.avx2 && optimization.f16c) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3130,9 +3130,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
         optimization.avx2 = 0;
     }
 #endif
-#endif
 #ifdef OPT_SSE4
-#ifdef OPT_F16C
     if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3143,7 +3141,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
         optimization.sse4_1 = 0;
     }
 #endif
-#endif
+#endif // OPT_F16C
 
     // Scalar fallback. Init alignment to a sentinel (0xFF) so the assert below actually verifies
     // that the dispatcher LEAVES THE VALUE UNTOUCHED on the scalar path — initialising to 0 then
@@ -3187,8 +3185,10 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
         optimization.avx512f = 0;
     }
 #endif
-#ifdef OPT_AVX2_FMA
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three — matches the dispatcher layout in IP_space.cpp.
 #ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
     if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3199,9 +3199,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
         optimization.fma3 = 0;
     }
 #endif
-#endif
 #ifdef OPT_AVX2
-#ifdef OPT_F16C
     if (optimization.avx2 && optimization.f16c) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3212,9 +3210,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
         optimization.avx2 = 0;
     }
 #endif
-#endif
 #ifdef OPT_SSE4
-#ifdef OPT_F16C
     if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3225,7 +3221,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
         optimization.sse4_1 = 0;
     }
 #endif
-#endif
+#endif // OPT_F16C
 
     // Scalar fallback — see L2 test for the 0xFF sentinel rationale.
     unsigned char alignment = 0xFF;
@@ -3267,8 +3263,10 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         optimization.avx512f = 0;
     }
 #endif
-#ifdef OPT_AVX2_FMA
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three — matches the dispatcher layout in IP_space.cpp.
 #ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
     if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3279,9 +3277,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         optimization.fma3 = 0;
     }
 #endif
-#endif
 #ifdef OPT_AVX2
-#ifdef OPT_F16C
     if (optimization.avx2 && optimization.f16c) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3292,9 +3288,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         optimization.avx2 = 0;
     }
 #endif
-#endif
 #ifdef OPT_SSE4
-#ifdef OPT_F16C
     if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3305,7 +3299,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
         optimization.sse4_1 = 0;
     }
 #endif
-#endif
+#endif // OPT_F16C
 
     // Scalar fallback — see L2 test for the 0xFF sentinel rationale.
     unsigned char alignment = 0xFF;
@@ -3337,15 +3331,17 @@ TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
     bool any_simd = false;
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
-        std::cerr << "[SQ8_FP16] AVX-512 F+BW+VL+VNNI tier exercised\n";
+#ifdef OPT_AVX512F
+    if (opt.avx512f) {
+        std::cerr << "[SQ8_FP16] AVX-512F tier exercised\n";
         any_simd = true;
     } else {
-        std::cerr << "[SQ8_FP16] AVX-512 F+BW+VL+VNNI tier NOT exercised on this host\n";
+        std::cerr << "[SQ8_FP16] AVX-512F tier NOT exercised on this host\n";
     }
 #endif
-#if defined(OPT_AVX2_FMA) && defined(OPT_F16C)
+    // F16C guards all non-AVX-512 SQ8↔FP16 tiers — matches the dispatcher layout.
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
     if (opt.avx2 && opt.fma3 && opt.f16c) {
         std::cerr << "[SQ8_FP16] AVX2+FMA+F16C tier exercised\n";
         any_simd = true;
@@ -3353,7 +3349,7 @@ TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
         std::cerr << "[SQ8_FP16] AVX2+FMA+F16C tier NOT exercised on this host\n";
     }
 #endif
-#if defined(OPT_AVX2) && defined(OPT_F16C)
+#ifdef OPT_AVX2
     if (opt.avx2 && opt.f16c) {
         std::cerr << "[SQ8_FP16] AVX2+F16C tier exercised\n";
         any_simd = true;
@@ -3361,7 +3357,7 @@ TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
         std::cerr << "[SQ8_FP16] AVX2+F16C tier NOT exercised on this host\n";
     }
 #endif
-#if defined(OPT_SSE4) && defined(OPT_F16C)
+#ifdef OPT_SSE4
     if (opt.sse4_1 && opt.f16c && opt.avx) {
         std::cerr << "[SQ8_FP16] SSE4+F16C+AVX tier exercised\n";
         any_simd = true;
@@ -3369,6 +3365,7 @@ TEST(SQ8_FP16_SIMD_TierCoverage, ReportTiersExercised) {
         std::cerr << "[SQ8_FP16] SSE4+F16C+AVX tier NOT exercised on this host\n";
     }
 #endif
+#endif // OPT_F16C
 #endif // x86_64
 
     if (!any_simd) {
