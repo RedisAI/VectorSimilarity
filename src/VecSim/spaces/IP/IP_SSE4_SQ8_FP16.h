@@ -16,20 +16,16 @@ using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;
 
 /*
- * Asymmetric SQ8 (storage) ↔ FP16 (query) inner product using algebraic identity:
- *   IP(x, y) = Σ(x_i * y_i)
- *            ≈ Σ((min + delta * q_i) * y_i)
- *            = min * Σy_i + delta * Σ(q_i * y_i)
- *            = min * y_sum + delta * quantized_dot_product
+ * Asymmetric SQ8 (storage) <-> FP16 (query) inner product using algebraic identity:
+ *   IP(x, y) = min * y_sum + delta * Σ(q_i * y_i)
  *
  * FP16 query lanes are widened to FP32 per 4-lane chunk via _mm_cvtph_ps (F16C);
- * inner-loop arithmetic runs in FP32 with separate _mm_mul_ps + _mm_add_ps (SSE4 has no FMA).
+ * inner-loop arithmetic runs in FP32 with separate _mm_mul_ps + _mm_add_ps (no FMA).
  */
 
 // 4-wide SSE4+F16C step: 4 SQ8 lanes + 4 FP16 lanes -> mul + add into sum.
 static inline void SQ8_FP16_InnerProductStep_SSE4(const uint8_t *&pVect1, const float16 *&pVect2,
                                                   __m128 &sum) {
-    // Alignment-safe 4-byte load of SQ8 lanes via load_unaligned<int32_t> (no strict-aliasing UB).
     __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(load_unaligned<int32_t>(pVect1)));
     pVect1 += 4;
     __m128 v1_f = _mm_cvtepi32_ps(v1_i);
@@ -41,8 +37,7 @@ static inline void SQ8_FP16_InnerProductStep_SSE4(const uint8_t *&pVect1, const 
     sum = _mm_add_ps(sum, _mm_mul_ps(v1_f, v2_f));
 }
 
-// Precondition: dim >= 16. Caller is the dispatcher in IP_space.cpp / L2_space.cpp.
-// Shorter blobs would underflow the residual ladder + final do-while loop.
+// pVec1v = SQ8 storage, pVec2v = FP16 query. Precondition: dim >= 16 (enforced by dispatcher).
 template <unsigned char residual> // 0..15
 float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2v,
                                            size_t dimension) {
@@ -50,7 +45,7 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
     const float16 *pVec2 = static_cast<const float16 *>(pVec2v);
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    // Two independent accumulators break the mul→add dependency chain (SSE4 lacks FMA).
+    // Two accumulators break the mul->add dependency chain (no FMA on this tier).
     __m128 sum_a = _mm_setzero_ps();
     __m128 sum_b = _mm_setzero_ps();
 
@@ -80,7 +75,6 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
         sum_a = _mm_mul_ps(v1_f, v2_f);
     }
 
-    // Alternate the residual-ladder steps across the two accumulators for ILP.
     if constexpr (residual >= 4) {
         SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_b);
     }
@@ -91,8 +85,6 @@ float SQ8_FP16_InnerProductSIMD16_SSE4_IMP(const void *pVec1v, const void *pVec2
         SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_b);
     }
 
-    // Remaining lanes after the residual block are a multiple of 16, hence a multiple of 8,
-    // so two 4-lane steps per iteration consume the tail exactly.
     do {
         SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_a);
         SQ8_FP16_InnerProductStep_SSE4(pVec1, pVec2, sum_b);

@@ -11,8 +11,6 @@
 #include "VecSim/spaces/AVX_utils.h"
 #include "VecSim/spaces/IP/IP_AVX2_FMA_SQ8_FP16.h"
 #include "VecSim/types/sq8.h"
-#include "VecSim/types/float16.h"
-#include "VecSim/utils/alignment.h"
 
 using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;

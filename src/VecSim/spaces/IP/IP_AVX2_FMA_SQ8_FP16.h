@@ -17,11 +17,8 @@ using sq8 = vecsim_types::sq8;
 using float16 = vecsim_types::float16;
 
 /*
- * Asymmetric SQ8 (storage) ↔ FP16 (query) inner product using algebraic identity:
- *   IP(x, y) = Σ(x_i * y_i)
- *            ≈ Σ((min + delta * q_i) * y_i)
- *            = min * Σy_i + delta * Σ(q_i * y_i)
- *            = min * y_sum + delta * quantized_dot_product
+ * Asymmetric SQ8 (storage) <-> FP16 (query) inner product using algebraic identity:
+ *   IP(x, y) = min * y_sum + delta * Σ(q_i * y_i)
  *
  * FP16 query lanes are widened to FP32 per 8-lane chunk via _mm256_cvtph_ps (F16C);
  * inner-loop arithmetic runs in FP32 with _mm256_fmadd_ps.
@@ -42,32 +39,25 @@ static inline void SQ8_FP16_InnerProductStep_AVX2_FMA(const uint8_t *&pVect1,
     sum256 = _mm256_fmadd_ps(v1_f, v2_f, sum256);
 }
 
-// Precondition: dim >= 16. Caller is the dispatcher in IP_space.cpp / L2_space.cpp.
-// The residual block reads 8 SQ8 bytes and 16 FP16 bytes unconditionally; shorter blobs would
-// under-read.
+// pVec1v = SQ8 storage, pVec2v = FP16 query. Precondition: dim >= 16 (enforced by dispatcher).
 template <unsigned char residual> // 0..15
 float SQ8_FP16_InnerProductImp_AVX2_FMA(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const float16 *pVec2 = static_cast<const float16 *>(pVec2v);
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    // Two independent accumulators break the FMA dependency chain so consecutive iterations
-    // can issue in parallel through both FMA ports.
+    // Two accumulators break the FMA dependency chain across consecutive iterations.
     __m256 sum_a = _mm256_setzero_ps();
     __m256 sum_b = _mm256_setzero_ps();
 
     if constexpr (residual % 8) {
         constexpr int mask = (1 << (residual % 8)) - 1;
 
-        // Single-side mask is sufficient: SQ8 lanes beyond `residual` may hold garbage, but the
-        // FP16 query blend below forces those FP32 query lanes to 0, so garbage·0=0 contributes
-        // nothing to the dot product. SQ8 load is intentionally unmasked.
         __m128i v1_128 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(pVec1));
         pVec1 += residual % 8;
         __m256i v1_256 = _mm256_cvtepu8_epi32(v1_128);
         __m256 v1_f = _mm256_cvtepi32_ps(v1_256);
 
-        // FP16 side: load full 16-byte block (safe — dim >= 16 and metadata follows).
         __m128i v2_128 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pVec2));
         __m256 v2_f = _mm256_cvtph_ps(v2_128);
         v2_f = _mm256_blend_ps(_mm256_setzero_ps(), v2_f, mask);
@@ -77,7 +67,6 @@ float SQ8_FP16_InnerProductImp_AVX2_FMA(const void *pVec1v, const void *pVec2v, 
     }
 
     if constexpr (residual >= 8) {
-        // Route the half-residual chunk to the second accumulator for ILP.
         SQ8_FP16_InnerProductStep_AVX2_FMA(pVec1, pVec2, sum_b);
     }
 

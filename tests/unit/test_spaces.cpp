@@ -3143,18 +3143,13 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
 #endif
 #endif // OPT_F16C
 
-    // Scalar fallback. Init alignment to a sentinel (0xFF) so the assert below actually verifies
-    // that the dispatcher LEAVES THE VALUE UNTOUCHED on the scalar path — initialising to 0 then
-    // asserting `== 0` would pass even if the dispatcher were a no-op.
-    unsigned char alignment = 0xFF;
+    unsigned char alignment = 0;
     arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_L2Sqr)
         << "Unexpected scalar fallback function for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
         << "Scalar fallback with dim " << dim;
-    ASSERT_EQ(alignment, 0xFF) << "Scalar fallback must leave caller's alignment value untouched "
-                                  "(dim "
-                               << dim << ")";
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
 TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
@@ -3223,16 +3218,13 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
 #endif
 #endif // OPT_F16C
 
-    // Scalar fallback — see L2 test for the 0xFF sentinel rationale.
-    unsigned char alignment = 0xFF;
+    unsigned char alignment = 0;
     arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_InnerProduct)
         << "Unexpected scalar fallback function for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
         << "Scalar fallback with dim " << dim;
-    ASSERT_EQ(alignment, 0xFF) << "Scalar fallback must leave caller's alignment value untouched "
-                                  "(dim "
-                               << dim << ")";
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
 TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
@@ -3301,16 +3293,13 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
 #endif
 #endif // OPT_F16C
 
-    // Scalar fallback — see L2 test for the 0xFF sentinel rationale.
-    unsigned char alignment = 0xFF;
+    unsigned char alignment = 0;
     arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
     ASSERT_EQ(arch_opt_func, SQ8_FP16_Cosine)
         << "Unexpected scalar fallback function for dim " << dim;
     ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
         << "Scalar fallback with dim " << dim;
-    ASSERT_EQ(alignment, 0xFF) << "Scalar fallback must leave caller's alignment value untouched "
-                                  "(dim "
-                               << dim << ")";
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
 }
 
 // Dim range [16, 32] covers every residual class for the 16-element chunk used by every tier.

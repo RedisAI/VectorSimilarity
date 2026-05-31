@@ -61,8 +61,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# SQ8↔FP16 kernels (which require F16C) live in sibling TUs functions/AVX2_F16C.cpp and
 	# functions/AVX2_FMA_F16C.cpp, compiled only when _has_full_f16c is true.
 	if(CXX_AVX2)
-		message("Building functions/AVX2.cpp with AVX2")
-		set_source_files_properties(functions/AVX2.cpp PROPERTIES COMPILE_FLAGS "-mavx2")
+		message("Building with AVX2")
+		set_source_files_properties(functions/AVX2.cpp PROPERTIES COMPILE_FLAGS -mavx2)
 		list(APPEND OPTIMIZATIONS functions/AVX2.cpp)
 	endif()
 
@@ -73,7 +73,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 
 	if(CXX_AVX2 AND CXX_FMA)
-		message("Building functions/AVX2_FMA.cpp with AVX2 and FMA")
+		message("Building with AVX2 and FMA")
 		set_source_files_properties(functions/AVX2_FMA.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
 		list(APPEND OPTIMIZATIONS functions/AVX2_FMA.cpp)
 	endif()
@@ -103,8 +103,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 
 	if(CXX_SSE4)
-		message("Building functions/SSE4.cpp with SSE4.1")
-		set_source_files_properties(functions/SSE4.cpp PROPERTIES COMPILE_FLAGS "-msse4.1")
+		message("Building with SSE4")
+		set_source_files_properties(functions/SSE4.cpp PROPERTIES COMPILE_FLAGS -msse4.1)
 		list(APPEND OPTIMIZATIONS functions/SSE4.cpp)
 	endif()
 
