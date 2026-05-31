@@ -25,13 +25,12 @@ using float16 = vecsim_types::float16;
  */
 
 // Helper: one SVE-vector-width-of-FP32 step.
-static inline void
-SQ8_FP16_InnerProductStep_SVE(const uint8_t *pVect1, const float16 *pVect2, size_t &offset,
-                              svfloat32_t &sum, svbool_t pg, size_t chunk) {
+static inline void SQ8_FP16_InnerProductStep_SVE(const uint8_t *pVect1, const float16 *pVect2,
+                                                 size_t &offset, svfloat32_t &sum, svbool_t pg,
+                                                 size_t chunk) {
     svuint32_t v1_u32 = svld1ub_u32(pg, pVect1 + offset);
     svfloat32_t v1_f = svcvt_f32_u32_x(pg, v1_u32);
-    svuint32_t q_u32 =
-        svld1uh_u32(pg, reinterpret_cast<const uint16_t *>(pVect2 + offset));
+    svuint32_t q_u32 = svld1uh_u32(pg, reinterpret_cast<const uint16_t *>(pVect2 + offset));
     svfloat32_t v2_f = svcvt_f32_f16_x(pg, svreinterpret_f16_u32(q_u32));
     sum = svmla_f32_x(pg, sum, v1_f, v2_f);
     offset += chunk;
@@ -60,8 +59,8 @@ float SQ8_FP16_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v
             svbool_t pg_partial = svwhilelt_b32(uint32_t(0), uint32_t(remaining));
             svuint32_t v1_u32 = svld1ub_u32(pg_partial, pVect1 + offset);
             svfloat32_t v1_f = svcvt_f32_u32_z(pg_partial, v1_u32);
-            svuint32_t q_u32 = svld1uh_u32(
-                pg_partial, reinterpret_cast<const uint16_t *>(pVect2 + offset));
+            svuint32_t q_u32 =
+                svld1uh_u32(pg_partial, reinterpret_cast<const uint16_t *>(pVect2 + offset));
             svfloat32_t v2_f = svcvt_f32_f16_z(pg_partial, svreinterpret_f16_u32(q_u32));
             sum0 = svmla_f32_z(pg_partial, sum0, v1_f, v2_f);
             offset += remaining;
@@ -92,27 +91,23 @@ float SQ8_FP16_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v
     float quantized_dot = svaddv_f32(pg, sum);
 
     const uint8_t *params_bytes = static_cast<const uint8_t *>(pVect1v) + dimension;
-    const float min_val =
-        load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
-    const float delta =
-        load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
-    const uint8_t *query_meta_bytes = reinterpret_cast<const uint8_t *>(
-        static_cast<const float16 *>(pVect2v) + dimension);
-    const float y_sum =
-        load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
+    const float min_val = load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
+    const uint8_t *query_meta_bytes =
+        reinterpret_cast<const uint8_t *>(static_cast<const float16 *>(pVect2v) + dimension);
+    const float y_sum = load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
 
     return min_val * y_sum + delta * quantized_dot;
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ8_FP16_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v,
-                                    size_t dimension) {
+float SQ8_FP16_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return 1.0f - SQ8_FP16_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(
                       pVect1v, pVect2v, dimension);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ8_FP16_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return SQ8_FP16_InnerProductSIMD_SVE<partial_chunk, additional_steps>(
-        pVect1v, pVect2v, dimension);
+    return SQ8_FP16_InnerProductSIMD_SVE<partial_chunk, additional_steps>(pVect1v, pVect2v,
+                                                                          dimension);
 }

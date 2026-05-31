@@ -21,15 +21,13 @@
 
 template <unsigned char residual> // 0..15
 float SQ8_FP16_L2SqrSIMD16_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const float ip =
-        SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP<residual>(pVect1v, pVect2v, dimension);
+    const float ip = SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP<residual>(pVect1v, pVect2v, dimension);
 
     const uint8_t *params_bytes = static_cast<const uint8_t *>(pVect1v) + dimension;
-    const float x_sum_sq =
-        load_unaligned<float>(params_bytes + sq8::SUM_SQUARES * sizeof(float));
+    const float x_sum_sq = load_unaligned<float>(params_bytes + sq8::SUM_SQUARES * sizeof(float));
 
-    const uint8_t *query_meta_bytes = reinterpret_cast<const uint8_t *>(
-        static_cast<const float16 *>(pVect2v) + dimension);
+    const uint8_t *query_meta_bytes =
+        reinterpret_cast<const uint8_t *>(static_cast<const float16 *>(pVect2v) + dimension);
     const float y_sum_sq =
         load_unaligned<float>(query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float));
 

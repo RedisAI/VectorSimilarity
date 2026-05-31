@@ -23,10 +23,9 @@ using float16 = vecsim_types::float16;
  */
 
 // Helper: 16 lanes per call, four FP32 accumulators (one per quarter).
-static inline void
-SQ8_FP16_InnerProductStep_NEON_HP(const uint8_t *&pVect1, const float16 *&pVect2,
-                                  float32x4_t &sum0, float32x4_t &sum1,
-                                  float32x4_t &sum2, float32x4_t &sum3) {
+static inline void SQ8_FP16_InnerProductStep_NEON_HP(const uint8_t *&pVect1, const float16 *&pVect2,
+                                                     float32x4_t &sum0, float32x4_t &sum1,
+                                                     float32x4_t &sum2, float32x4_t &sum3) {
     uint8x16_t v1_u8 = vld1q_u8(pVect1);
     uint16x8_t v1_lo = vmovl_u8(vget_low_u8(v1_u8));
     uint16x8_t v1_hi = vmovl_u8(vget_high_u8(v1_u8));
@@ -77,8 +76,7 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
     if constexpr (r >= 4) {
         uint8x8_t v1_u8 = vld1_u8(pVect1);
         float32x4_t v1_a = vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(v1_u8))));
-        float32x4_t v2_a =
-            vcvt_f32_f16(vld1_f16(reinterpret_cast<const float16_t *>(pVect2)));
+        float32x4_t v2_a = vcvt_f32_f16(vld1_f16(reinterpret_cast<const float16_t *>(pVect2)));
         sum0 = vfmaq_f32(sum0, v1_a, v2_a);
         pVect1 += 4;
         pVect2 += 4;
@@ -86,8 +84,7 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
     if constexpr (r >= 8) {
         uint8x8_t v1_u8 = vld1_u8(pVect1);
         float32x4_t v1_b = vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(v1_u8))));
-        float32x4_t v2_b =
-            vcvt_f32_f16(vld1_f16(reinterpret_cast<const float16_t *>(pVect2)));
+        float32x4_t v2_b = vcvt_f32_f16(vld1_f16(reinterpret_cast<const float16_t *>(pVect2)));
         sum1 = vfmaq_f32(sum1, v1_b, v2_b);
         pVect1 += 4;
         pVect2 += 4;
@@ -95,8 +92,7 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
     if constexpr (r >= 12) {
         uint8x8_t v1_u8 = vld1_u8(pVect1);
         float32x4_t v1_c = vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(v1_u8))));
-        float32x4_t v2_c =
-            vcvt_f32_f16(vld1_f16(reinterpret_cast<const float16_t *>(pVect2)));
+        float32x4_t v2_c = vcvt_f32_f16(vld1_f16(reinterpret_cast<const float16_t *>(pVect2)));
         sum2 = vfmaq_f32(sum2, v1_c, v2_c);
         pVect1 += 4;
         pVect2 += 4;
@@ -112,14 +108,11 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
     float quantized_dot = vaddvq_f32(vaddq_f32(sum_lo, sum_hi)) + scalar_dot;
 
     const uint8_t *params_bytes = static_cast<const uint8_t *>(pVect1v) + dimension;
-    const float min_val =
-        load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
-    const float delta =
-        load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
+    const float min_val = load_unaligned<float>(params_bytes + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params_bytes + sq8::DELTA * sizeof(float));
     const uint8_t *query_meta_bytes =
         reinterpret_cast<const uint8_t *>(static_cast<const float16 *>(pVect2v) + dimension);
-    const float y_sum =
-        load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
+    const float y_sum = load_unaligned<float>(query_meta_bytes + sq8::SUM_QUERY * sizeof(float));
 
     return min_val * y_sum + delta * quantized_dot;
 }
@@ -127,8 +120,7 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
 template <unsigned char residual>
 float SQ8_FP16_InnerProductSIMD16_NEON_HP(const void *pVect1v, const void *pVect2v,
                                           size_t dimension) {
-    return 1.0f -
-           SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP<residual>(pVect1v, pVect2v, dimension);
+    return 1.0f - SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP<residual>(pVect1v, pVect2v, dimension);
 }
 
 template <unsigned char residual>
