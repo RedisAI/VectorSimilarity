@@ -35,11 +35,16 @@ SQ8_FP16_InnerProductStep_SVE(const uint8_t *pVect1, const float16 *pVect2, size
     svuint32_t v1_u32 = svld1ub_u32(pg, pVect1 + offset);
     svfloat32_t v1_f = svcvt_f32_u32_x(pg, v1_u32);
 
-    // FP16 query -> FP32. svld1_f16 uses a b16 predicate sized to `chunk` half lanes.
+    // FP16 query -> FP32.
+    // svcvt_f32_f16_x (FCVT) reads even-indexed FP16 elements: FP32[e] <- FP16[2e].
+    // Our chunk FP16 values land at consecutive positions 0..chunk-1 after the load.
+    // svzip1 interleaves them with zeros → positions 0,2,4,... hold the values,
+    // so FCVT correctly reads v[0], v[1], v[2], ... into FP32[0..chunk-1].
     svbool_t pg16 = svwhilelt_b16(uint32_t(0), uint32_t(chunk));
     svfloat16_t q_h =
         svld1_f16(pg16, reinterpret_cast<const float16_t *>(pVect2) + offset);
-    svfloat32_t v2_f = svcvt_f32_f16_x(pg, q_h);
+    svfloat16_t q_h_spread = svzip1_f16(q_h, svdup_f16(0.0f));
+    svfloat32_t v2_f = svcvt_f32_f16_x(pg, q_h_spread);
 
     sum = svmla_f32_x(pg, sum, v1_f, v2_f);
     offset += chunk;
@@ -75,7 +80,9 @@ float SQ8_FP16_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v
             svfloat32_t v1_f = svcvt_f32_u32_z(pg_partial, v1_u32);
             svfloat16_t q_h = svld1_f16(
                 pg16_partial, reinterpret_cast<const float16_t *>(pVect2) + offset);
-            svfloat32_t v2_f = svcvt_f32_f16_z(pg_partial, q_h);
+            // Same zip1 trick as the full step: spread values to even positions.
+            svfloat16_t q_h_spread = svzip1_f16(q_h, svdup_f16(0.0f));
+            svfloat32_t v2_f = svcvt_f32_f16_z(pg_partial, q_h_spread);
             sum0 = svmla_f32_z(pg_partial, sum0, v1_f, v2_f);
             offset += remaining;
         }
