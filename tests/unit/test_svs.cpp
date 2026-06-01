@@ -3383,7 +3383,6 @@ TYPED_TEST(SVSTest, debugInfoSharedMemoryEqualsSharedSVSThreadPoolMemory) {
 
     bool seen_shared_memory = false;
     bool seen_shared_svs = false;
-    uint64_t global_value = 0;
     uint64_t shared_memory_value = 0;
     uint64_t shared_svs_value = 0;
     while (VecSimDebugInfoIterator_HasNextField(infoIterator)) {
