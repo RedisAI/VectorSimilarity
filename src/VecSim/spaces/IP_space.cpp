@@ -225,6 +225,26 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 #endif // OPT_F16C
 #endif // x86_64
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ8_FP16_IP_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ8_FP16_IP_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (features.asimdhp) {
+        return Choose_SQ8_FP16_IP_implementation_NEON_HP(dim);
+    }
+#endif
+#endif // CPU_FEATURES_ARCH_AARCH64
     return ret_dist_func;
 }
 
@@ -274,6 +294,26 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
 #endif
 #endif // OPT_F16C
 #endif // x86_64
+#ifdef CPU_FEATURES_ARCH_AARCH64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ8_FP16_Cosine_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ8_FP16_Cosine_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (features.asimdhp) {
+        return Choose_SQ8_FP16_Cosine_implementation_NEON_HP(dim);
+    }
+#endif
+#endif // CPU_FEATURES_ARCH_AARCH64
     return ret_dist_func;
 }
 
