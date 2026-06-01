@@ -27,12 +27,15 @@ static inline void SQ8_FP16_InnerProductStep_NEON_HP(const uint8_t *&pVect1, con
                                                      float32x4_t &sum0, float32x4_t &sum1,
                                                      float32x4_t &sum2, float32x4_t &sum3) {
     uint8x16_t v1_u8 = vld1q_u8(pVect1);
-    uint16x8_t v1_lo = vmovl_u8(vget_low_u8(v1_u8));
-    uint16x8_t v1_hi = vmovl_u8(vget_high_u8(v1_u8));
-    float32x4_t v1_0 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(v1_lo)));
-    float32x4_t v1_1 = vcvtq_f32_u32(vmovl_u16(vget_high_u16(v1_lo)));
-    float32x4_t v1_2 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(v1_hi)));
-    float32x4_t v1_3 = vcvtq_f32_u32(vmovl_u16(vget_high_u16(v1_hi)));
+    // SQ8 values 0..255 are exact in FP16, so widen uint8 -> uint16 -> fp16 -> fp32.
+    // This drops two integer-widening ops per chunk versus the uint8 -> u16 -> u32 -> f32
+    // chain while producing bit-identical FP32 lane values.
+    float16x8_t v1_h_lo = vcvtq_f16_u16(vmovl_u8(vget_low_u8(v1_u8)));
+    float16x8_t v1_h_hi = vcvtq_f16_u16(vmovl_u8(vget_high_u8(v1_u8)));
+    float32x4_t v1_0 = vcvt_f32_f16(vget_low_f16(v1_h_lo));
+    float32x4_t v1_1 = vcvt_f32_f16(vget_high_f16(v1_h_lo));
+    float32x4_t v1_2 = vcvt_f32_f16(vget_low_f16(v1_h_hi));
+    float32x4_t v1_3 = vcvt_f32_f16(vget_high_f16(v1_h_hi));
 
     const float16_t *q = reinterpret_cast<const float16_t *>(pVect2);
     float16x8_t q_lo = vld1q_f16(q);
