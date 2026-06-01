@@ -50,16 +50,38 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		list(APPEND OPTIMIZATIONS functions/AVX512F_BW_VL_VNNI.cpp)
 	endif()
 
+	# F16C is VEX-encoded and requires AVX state, so it is only meaningful when the toolchain
+	# can also emit AVX/FMA. Mirrors the OPT_F16C macro condition in x86_64InstructionFlags.cmake.
+	set(_has_full_f16c FALSE)
+	if(CXX_F16C AND CXX_FMA AND CXX_AVX)
+		set(_has_full_f16c TRUE)
+	endif()
+
+	# Base AVX2 / AVX2+FMA dispatcher TUs hold only kernels with no F16C dependency.
+	# SQ8↔FP16 kernels (which require F16C) live in sibling TUs functions/AVX2_F16C.cpp and
+	# functions/AVX2_FMA_F16C.cpp, compiled only when _has_full_f16c is true.
 	if(CXX_AVX2)
 		message("Building with AVX2")
 		set_source_files_properties(functions/AVX2.cpp PROPERTIES COMPILE_FLAGS -mavx2)
 		list(APPEND OPTIMIZATIONS functions/AVX2.cpp)
 	endif()
 
+	if(CXX_AVX2 AND _has_full_f16c)
+		message("Building functions/AVX2_F16C.cpp with AVX2 and F16C")
+		set_source_files_properties(functions/AVX2_F16C.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -mf16c")
+		list(APPEND OPTIMIZATIONS functions/AVX2_F16C.cpp)
+	endif()
+
 	if(CXX_AVX2 AND CXX_FMA)
 		message("Building with AVX2 and FMA")
 		set_source_files_properties(functions/AVX2_FMA.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
 		list(APPEND OPTIMIZATIONS functions/AVX2_FMA.cpp)
+	endif()
+
+	if(CXX_AVX2 AND CXX_FMA AND _has_full_f16c)
+		message("Building functions/AVX2_FMA_F16C.cpp with AVX2, FMA, and F16C")
+		set_source_files_properties(functions/AVX2_FMA_F16C.cpp PROPERTIES COMPILE_FLAGS "-mavx2 -mfma -mf16c")
+		list(APPEND OPTIMIZATIONS functions/AVX2_FMA_F16C.cpp)
 	endif()
 
 	if(CXX_F16C AND CXX_FMA AND CXX_AVX)
@@ -84,6 +106,14 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 		message("Building with SSE4")
 		set_source_files_properties(functions/SSE4.cpp PROPERTIES COMPILE_FLAGS -msse4.1)
 		list(APPEND OPTIMIZATIONS functions/SSE4.cpp)
+	endif()
+
+	# SSE4 SQ8↔FP16 kernels need F16C, which is VEX-encoded → require -mavx alongside -mf16c
+	# (mirrors the F16C.cpp recipe above).
+	if(CXX_SSE4 AND _has_full_f16c)
+		message("Building functions/SSE4_F16C.cpp with SSE4.1, AVX, and F16C")
+		set_source_files_properties(functions/SSE4_F16C.cpp PROPERTIES COMPILE_FLAGS "-msse4.1 -mavx -mf16c")
+		list(APPEND OPTIMIZATIONS functions/SSE4_F16C.cpp)
 	endif()
 
 	if(CXX_SSE)

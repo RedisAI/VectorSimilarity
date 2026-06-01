@@ -20,9 +20,12 @@
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/AVX2_F16C.h"
 #include "VecSim/spaces/functions/AVX2_FMA.h"
+#include "VecSim/spaces/functions/AVX2_FMA_F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE4.h"
+#include "VecSim/spaces/functions/SSE4_F16C.h"
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
@@ -172,31 +175,106 @@ dist_func_t<float> Cosine_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignm
 }
 
 // SQ8-FP16: asymmetric inner product distance between SQ8 storage and FP16 query.
-// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
-// returns the scalar implementation.
 dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    (void)dim;
-    (void)arch_opt;
-    return SQ8_FP16_InnerProduct;
+
+    dist_func_t<float> ret_dist_func = SQ8_FP16_InnerProduct;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+    // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
+    // AVX-512 tier only needs AVX-512F (cvtph_ps is part of AVX-512F, no VNNI/BW/VL required).
+#ifdef OPT_AVX512F
+    if (features.avx512f) {
+        if (dim % 16 == 0) // SQ8 chunk = 16 bytes
+            *alignment = 16 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
+    }
+#endif
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three.
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+    if (features.avx2 && features.fma3 && features.f16c) {
+        if (dim % 8 == 0) // SQ8 chunk = 8 bytes
+            *alignment = 8 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_AVX2_FMA(dim);
+    }
+#endif
+#ifdef OPT_AVX2
+    if (features.avx2 && features.f16c) {
+        if (dim % 8 == 0)
+            *alignment = 8 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_AVX2(dim);
+    }
+#endif
+#ifdef OPT_SSE4
+    // F16C is VEX-encoded — require AVX as well, matching the existing F16C/FP16 dispatcher.
+    if (features.sse4_1 && features.f16c && features.avx) {
+        if (dim % 4 == 0)
+            *alignment = 4 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_SSE4(dim);
+    }
+#endif
+#endif // OPT_F16C
+#endif // x86_64
+    return ret_dist_func;
 }
 
 // SQ8-FP16: asymmetric cosine distance between SQ8 storage and FP16 query.
-// SIMD chooser slots are added by P1b (MOD-15152) / P1c (MOD-15153); for now this always
-// returns the scalar implementation.
 dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
                                                const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    (void)dim;
-    (void)arch_opt;
-    return SQ8_FP16_Cosine;
+
+    dist_func_t<float> ret_dist_func = SQ8_FP16_Cosine;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+#ifdef OPT_AVX512F
+    if (features.avx512f) {
+        if (dim % 16 == 0)
+            *alignment = 16 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim);
+    }
+#endif
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+    if (features.avx2 && features.fma3 && features.f16c) {
+        if (dim % 8 == 0)
+            *alignment = 8 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_AVX2_FMA(dim);
+    }
+#endif
+#ifdef OPT_AVX2
+    if (features.avx2 && features.f16c) {
+        if (dim % 8 == 0)
+            *alignment = 8 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_AVX2(dim);
+    }
+#endif
+#ifdef OPT_SSE4
+    if (features.sse4_1 && features.f16c && features.avx) {
+        if (dim % 4 == 0)
+            *alignment = 4 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_SSE4(dim);
+    }
+#endif
+#endif // OPT_F16C
+#endif // x86_64
+    return ret_dist_func;
 }
 
 // SQ8-to-SQ8 Inner Product distance function (both vectors are uint8 quantized with precomputed
