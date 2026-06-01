@@ -429,10 +429,14 @@ public:
 
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
-        // Capacity hint for the iterator. Must equal the number of addInfoField()
-        // calls below (1 for ALGORITHM + 9 from addCommonInfoToIterator + 16 SVS-specific).
+        // Capacity hint for the iterator: 26 fields added below (1 for ALGORITHM +
+        // 9 from addCommonInfoToIterator + 16 SVS-specific) plus 1 for the SHARED_MEMORY
+        // field that VecSimIndex_DebugInfoIterator (C API) appends after this method
+        // returns — reserving it here avoids a reallocation on the top-level path.
+        // (When this iterator is nested in a tiered BACKEND_INDEX the C API does not
+        // append that field, so the hint over-reserves by one — harmless.)
         // Update this number when fields are added or removed.
-        size_t numberOfInfoFields = 26;
+        size_t numberOfInfoFields = 27;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
