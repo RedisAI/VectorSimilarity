@@ -186,19 +186,16 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
 
 void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params);
 
-// expect_global_memory: when true, the iterator is the top-level one returned
-// by the C API VecSimIndex_DebugInfoIterator, which always appends the GLOBAL_MEMORY
-// field. Pass false when the iterator is a nested backend iterator built directly via
-// the C++ debugInfoIterator() method (no GLOBAL_MEMORY appended at that level).
+// When called with a C API iterator (VecSimIndex_DebugInfoIterator), pass the
+// default expect_shared_memory=true so the SHARED_MEMORY field is accounted for.
+// Pass false when comparing nested sub-iterators built by the C++ debugInfoIterator()
+// method directly (e.g. inside compareTieredIndexInfoToIterator).
 void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
-                                    bool expect_global_memory = true);
+                                    bool expect_shared_memory = true);
 
 void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
-                                    bool expect_global_memory = true);
+                                    bool expect_shared_memory = true);
 
-// Always called with the C++ debugInfoIterator() iterator (no GLOBAL_MEMORY field at
-// this level); the field-count assertion at the top of the function will fail loudly
-// if a C API iterator is ever passed.
 void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo frontendIndexInfo,
                                       VecSimIndexDebugInfo backendIndexInfo,
@@ -206,7 +203,7 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
 
 #if HAVE_SVS
 void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
-                                   bool expect_global_memory = true);
+                                   bool expect_shared_memory = true);
 #endif
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,

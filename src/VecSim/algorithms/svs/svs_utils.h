@@ -10,6 +10,7 @@
 #pragma once
 #include "VecSim/query_results.h"
 #include "VecSim/vec_sim_interface.h"
+#include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/types/float16.h"
 
 #include "svs/core/distance.h"
@@ -407,9 +408,7 @@ class VecSimSVSThreadPoolImpl {
         std::vector<ThreadSlot *> slots_;
     };
 
-    // Allocator type for the slots vector.
     using SlotPtr = std::shared_ptr<ThreadSlot>;
-    using SlotVecAllocator = VecsimSTLAllocator<SlotPtr>;
 
     // Create a pool with `num_threads` total parallelism (including the calling thread).
     // Spawns `num_threads - 1` worker OS threads. num_threads must be >= 1.
@@ -417,7 +416,7 @@ class VecSimSVSThreadPoolImpl {
     // only the calling thread participates).
     // Private — use instance() to access the shared singleton.
     explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1)
-        : allocator_(VecSimAllocator::newVecsimAllocator()), slots_(SlotVecAllocator(allocator_)) {
+        : allocator_(VecSimAllocator::newVecsimAllocator()), slots_(allocator_) {
         assert(num_threads && "VecSimSVSThreadPoolImpl should not be created with 0 threads");
         slots_.reserve(num_threads - 1);
         for (size_t i = 0; i < num_threads - 1; ++i) {
@@ -656,7 +655,7 @@ private:
 
     std::shared_ptr<VecSimAllocator> allocator_; // pool's own allocator for memory tracking
     mutable std::mutex pool_mutex_;
-    std::vector<SlotPtr, SlotVecAllocator> slots_;
+    vecsim_stl::vector<SlotPtr> slots_;
     size_t pending_jobs_ = 0;             // jobs currently scheduled / in-flight
     std::optional<size_t> deferred_size_; // resize target deferred until pending_jobs_ == 0
 };

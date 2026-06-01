@@ -379,17 +379,20 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
-    auto *infoIterator = index->debugInfoIterator();
-    // Append VecSim_GetGlobalMemory() — process-wide VecSim memory not tied to
-    // any single index — at the top level of every algorithm's debug info.
-    // Always present (value may be 0); algorithm-specific breakdowns of this
-    // value (e.g. the SVS thread pool in SVS tiered) live in their respective
-    // debugInfoIterator() overrides.
+    VecSimDebugInfoIterator *infoIterator = index->debugInfoIterator();
+    // Append the process-wide shared memory total. This field is not emitted by
+    // any algorithm's own debugInfoIterator(); it is injected here at the C API
+    // boundary so that every caller (regardless of algorithm) can account for
+    // memory not tied to any single index without special-casing SVS internals.
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::GLOBAL_MEMORY_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_MEMORY_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetGlobalMemory()}}});
+                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetSharedMemory()}}});
     return infoIterator;
+}
+
+extern "C" size_t VecSim_GetSharedMemory(void) {
+    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
@@ -398,10 +401,6 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 
 extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
     return index->statisticInfo();
-}
-
-extern "C" size_t VecSim_GetGlobalMemory(void) {
-    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
