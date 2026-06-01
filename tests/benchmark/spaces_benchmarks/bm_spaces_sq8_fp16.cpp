@@ -15,8 +15,9 @@ using float16 = vecsim_types::float16;
 
 /**
  * SQ8-to-FP16 benchmarks: SQ8 quantized storage with FP16 query.
- * Only naive (scalar) benchmarks are registered for now; SIMD chooser symbols are added
- * by P1b (MOD-15152, x86) and P1c (MOD-15153, ARM).
+ * Registers the naive (scalar) baseline plus per-ISA SIMD variants (x86: AVX-512 / AVX2+FMA /
+ * AVX2 / SSE4 — gated on the matching OPT_* defines and runtime CPU features). ARM kernels
+ * land via MOD-14972.
  */
 class BM_VecSimSpaces_SQ8_FP16 : public benchmark::Fixture {
 protected:
@@ -50,8 +51,41 @@ public:
     }
 };
 
-// Naive (scalar) algorithms. SIMD chooser slots will be added by P1b (MOD-15152) and
-// P1c (MOD-15153), following the SQ8_FP32 layout in bm_spaces_sq8_fp32.cpp.
+#ifdef CPU_FEATURES_ARCH_X86_64
+cpu_features::X86Features opt = cpu_features::GetX86Info().features;
+
+// AVX-512F is sufficient — _mm512_cvtph_ps is part of AVX-512F, no F16C/VNNI/BW/VL needed.
+#ifdef OPT_AVX512F
+bool avx512f_supported = opt.avx512f;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16, avx512f_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX512F, 16,
+                                 avx512f_supported);
+#endif
+
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+bool avx2_fma3_f16c_supported = opt.avx2 && opt.fma3 && opt.f16c;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2_FMA, 16,
+                                avx2_fma3_f16c_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2_FMA, 16,
+                                 avx2_fma3_f16c_supported);
+#endif
+
+#ifdef OPT_AVX2
+bool avx2_f16c_supported = opt.avx2 && opt.f16c;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2, 16, avx2_f16c_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, AVX2, 16, avx2_f16c_supported);
+#endif
+
+#ifdef OPT_SSE4
+bool sse4_f16c_supported = opt.sse4_1 && opt.f16c && opt.avx;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, SSE4, 16, sse4_f16c_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, SSE4, 16, sse4_f16c_supported);
+#endif
+#endif // OPT_F16C
+#endif // x86_64
+
+// Naive (scalar) baseline — always registered as the comparison anchor.
 
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, Cosine, 16);
