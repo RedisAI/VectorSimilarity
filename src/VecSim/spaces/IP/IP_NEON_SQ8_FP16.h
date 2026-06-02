@@ -97,10 +97,27 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
     float32x4_t sum3 = vdupq_n_f32(0.0f);
 
     const size_t num_of_chunks = dimension / 16;
-    for (size_t i = 0; i < num_of_chunks; i++) {
-        if constexpr (use_fhm) {
+    if constexpr (use_fhm) {
+        // 8 independent FP32 accumulators (32 lanes/iter) to hide FMLAL latency, matching the
+        // SVE2 kernel's ILP. The second set is merged back into sum0..3 before the shared tail.
+        float32x4_t sum4 = vdupq_n_f32(0.0f);
+        float32x4_t sum5 = vdupq_n_f32(0.0f);
+        float32x4_t sum6 = vdupq_n_f32(0.0f);
+        float32x4_t sum7 = vdupq_n_f32(0.0f);
+        size_t i = 0;
+        for (; i + 1 < num_of_chunks; i += 2) {
             SQ8_FP16_InnerProductStep_NEON_FHM(pVect1, pVect2, sum0, sum1, sum2, sum3);
-        } else {
+            SQ8_FP16_InnerProductStep_NEON_FHM(pVect1, pVect2, sum4, sum5, sum6, sum7);
+        }
+        if (i < num_of_chunks) { // odd 16-lane chunk
+            SQ8_FP16_InnerProductStep_NEON_FHM(pVect1, pVect2, sum0, sum1, sum2, sum3);
+        }
+        sum0 = vaddq_f32(sum0, sum4);
+        sum1 = vaddq_f32(sum1, sum5);
+        sum2 = vaddq_f32(sum2, sum6);
+        sum3 = vaddq_f32(sum3, sum7);
+    } else {
+        for (size_t i = 0; i < num_of_chunks; i++) {
             SQ8_FP16_InnerProductStep_NEON_HP(pVect1, pVect2, sum0, sum1, sum2, sum3);
         }
     }
