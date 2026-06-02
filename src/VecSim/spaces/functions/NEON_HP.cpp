@@ -10,6 +10,8 @@
 
 #include "VecSim/spaces/L2/L2_NEON_FP16.h"
 #include "VecSim/spaces/IP/IP_NEON_FP16.h"
+#include "VecSim/spaces/IP/IP_NEON_SQ8_FP16.h"
+#include "VecSim/spaces/L2/L2_NEON_SQ8_FP16.h"
 
 namespace spaces {
 
@@ -24,6 +26,43 @@ dist_func_t<float> Choose_FP16_L2_implementation_NEON_HP(size_t dim) {
 dist_func_t<float> Choose_FP16_IP_implementation_NEON_HP(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProduct_NEON_HP);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_FP16_IP_implementation_NEON_HP(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_InnerProductSIMD16_NEON_HP);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_FP16_L2_implementation_NEON_HP(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_L2SqrSIMD16_NEON_HP);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_NEON_HP(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_CosineSIMD16_NEON_HP);
+    return ret_dist_func;
+}
+
+// FMLAL (FEAT_FHM / asimdfhm) variants.
+dist_func_t<float> Choose_SQ8_FP16_IP_implementation_NEON_FHM(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_InnerProductSIMD16_NEON_FHM);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_FP16_L2_implementation_NEON_FHM(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_L2SqrSIMD16_NEON_FHM);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_CosineSIMD16_NEON_FHM);
     return ret_dist_func;
 }
 
