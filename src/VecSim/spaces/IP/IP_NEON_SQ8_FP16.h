@@ -60,9 +60,10 @@ static inline void SQ8_FP16_InnerProductStep_NEON_HP(const uint8_t *&pVect1, con
  * vfmlalq_low/high_f16, halving the conversion work: the SQ8 storage is widened uint8 -> fp16
  * (exact for 0..255) and the FP16 query is consumed in place, with no fp16 -> fp32 conversions.
  */
-static inline void SQ8_FP16_InnerProductStep_NEON_FHM(const uint8_t *&pVect1, const float16 *&pVect2,
-                                                      float32x4_t &sum0, float32x4_t &sum1,
-                                                      float32x4_t &sum2, float32x4_t &sum3) {
+static inline void SQ8_FP16_InnerProductStep_NEON_FHM(const uint8_t *&pVect1,
+                                                      const float16 *&pVect2, float32x4_t &sum0,
+                                                      float32x4_t &sum1, float32x4_t &sum2,
+                                                      float32x4_t &sum3) {
     uint8x16_t v1_u8 = vld1q_u8(pVect1);
     float16x8_t v1_h_lo = vcvtq_f16_u16(vmovl_u8(vget_low_u8(v1_u8)));
     float16x8_t v1_h_hi = vcvtq_f16_u16(vmovl_u8(vget_high_u8(v1_u8)));
