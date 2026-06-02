@@ -171,6 +171,9 @@ dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #ifdef OPT_NEON_HP
+    if (features.asimdfhm) {
+        return Choose_SQ8_FP16_L2_implementation_NEON_FHM(dim);
+    }
     if (features.asimdhp) {
         return Choose_SQ8_FP16_L2_implementation_NEON_HP(dim);
     }

@@ -54,8 +54,38 @@ static inline void SQ8_FP16_InnerProductStep_NEON_HP(const uint8_t *&pVect1, con
     pVect2 += 16;
 }
 
+/*
+ * FMLAL widening-FMA variant (FEAT_FHM / asimdfhm). Instead of widening both operands to FP32
+ * and issuing vfmaq_f32, this multiplies the FP16 lanes directly into FP32 accumulators via
+ * vfmlalq_low/high_f16, halving the conversion work: the SQ8 storage is widened uint8 -> fp16
+ * (exact for 0..255) and the FP16 query is consumed in place, with no fp16 -> fp32 conversions.
+ */
+static inline void SQ8_FP16_InnerProductStep_NEON_FHM(const uint8_t *&pVect1,
+                                                      const float16 *&pVect2, float32x4_t &sum0,
+                                                      float32x4_t &sum1, float32x4_t &sum2,
+                                                      float32x4_t &sum3) {
+    uint8x16_t v1_u8 = vld1q_u8(pVect1);
+    float16x8_t v1_h_lo = vcvtq_f16_u16(vmovl_u8(vget_low_u8(v1_u8)));
+    float16x8_t v1_h_hi = vcvtq_f16_u16(vmovl_u8(vget_high_u8(v1_u8)));
+
+    const float16_t *q = reinterpret_cast<const float16_t *>(pVect2);
+    float16x8_t q_lo = vld1q_f16(q);
+    float16x8_t q_hi = vld1q_f16(q + 8);
+
+    // low_f16 handles lanes 0..3, high_f16 lanes 4..7 of each 8-lane FP16 register.
+    sum0 = vfmlalq_low_f16(sum0, v1_h_lo, q_lo);
+    sum1 = vfmlalq_high_f16(sum1, v1_h_lo, q_lo);
+    sum2 = vfmlalq_low_f16(sum2, v1_h_hi, q_hi);
+    sum3 = vfmlalq_high_f16(sum3, v1_h_hi, q_hi);
+
+    pVect1 += 16;
+    pVect2 += 16;
+}
+
 // pVect1v = SQ8 storage, pVect2v = FP16 query. Precondition: dim >= 16 (enforced by dispatcher).
-template <unsigned char residual> // 0..15
+// use_fhm selects the FMLAL widening-FMA main loop (requires FEAT_FHM at runtime); the residual
+// tail is shared since it only reduces into the same FP32 accumulators.
+template <unsigned char residual, bool use_fhm = false> // residual 0..15
 float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *pVect2v,
                                               size_t dimension) {
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v);
@@ -68,7 +98,11 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP(const void *pVect1v, const void *p
 
     const size_t num_of_chunks = dimension / 16;
     for (size_t i = 0; i < num_of_chunks; i++) {
-        SQ8_FP16_InnerProductStep_NEON_HP(pVect1, pVect2, sum0, sum1, sum2, sum3);
+        if constexpr (use_fhm) {
+            SQ8_FP16_InnerProductStep_NEON_FHM(pVect1, pVect2, sum0, sum1, sum2, sum3);
+        } else {
+            SQ8_FP16_InnerProductStep_NEON_HP(pVect1, pVect2, sum0, sum1, sum2, sum3);
+        }
     }
 
     // Residual: up to three independent 4-lane sub-steps, leaving at most 3 elements
@@ -129,4 +163,17 @@ float SQ8_FP16_InnerProductSIMD16_NEON_HP(const void *pVect1v, const void *pVect
 template <unsigned char residual>
 float SQ8_FP16_CosineSIMD16_NEON_HP(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return SQ8_FP16_InnerProductSIMD16_NEON_HP<residual>(pVect1v, pVect2v, dimension);
+}
+
+// FMLAL (FEAT_FHM) variants — identical contract, FMLAL widening-FMA main loop.
+template <unsigned char residual>
+float SQ8_FP16_InnerProductSIMD16_NEON_FHM(const void *pVect1v, const void *pVect2v,
+                                           size_t dimension) {
+    return 1.0f -
+           SQ8_FP16_InnerProductSIMD16_NEON_HP_IMP<residual, true>(pVect1v, pVect2v, dimension);
+}
+
+template <unsigned char residual>
+float SQ8_FP16_CosineSIMD16_NEON_FHM(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return SQ8_FP16_InnerProductSIMD16_NEON_FHM<residual>(pVect1v, pVect2v, dimension);
 }

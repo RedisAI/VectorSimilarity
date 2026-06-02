@@ -240,6 +240,9 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #ifdef OPT_NEON_HP
+    if (features.asimdfhm) {
+        return Choose_SQ8_FP16_IP_implementation_NEON_FHM(dim);
+    }
     if (features.asimdhp) {
         return Choose_SQ8_FP16_IP_implementation_NEON_HP(dim);
     }
@@ -309,6 +312,9 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
     }
 #endif
 #ifdef OPT_NEON_HP
+    if (features.asimdfhm) {
+        return Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(dim);
+    }
     if (features.asimdhp) {
         return Choose_SQ8_FP16_Cosine_implementation_NEON_HP(dim);
     }
