@@ -105,6 +105,12 @@ bool neon_hp_supported = arm_opt.asimdhp;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_HP, 16, neon_hp_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_HP, 16,
                                  neon_hp_supported);
+
+bool neon_fhm_supported = arm_opt.asimdfhm;
+INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_FHM, 16,
+                                neon_fhm_supported);
+INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_FHM, 16,
+                                 neon_fhm_supported);
 #endif
 #endif // CPU_FEATURES_ARCH_AARCH64
 

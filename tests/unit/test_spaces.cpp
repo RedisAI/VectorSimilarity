@@ -3175,6 +3175,16 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
     }
 #endif
 #ifdef OPT_NEON_HP
+    if (optimization.asimdfhm) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_NEON_FHM(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_FHM with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_FHM with dim " << dim;
+        optimization.asimdfhm = 0;
+    }
     if (optimization.asimdhp) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3289,6 +3299,16 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     }
 #endif
 #ifdef OPT_NEON_HP
+    if (optimization.asimdfhm) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_NEON_FHM(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_FHM with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_FHM with dim " << dim;
+        optimization.asimdfhm = 0;
+    }
     if (optimization.asimdhp) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
@@ -3403,6 +3423,16 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
     }
 #endif
 #ifdef OPT_NEON_HP
+    if (optimization.asimdfhm) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_FHM with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_FHM with dim " << dim;
+        optimization.asimdfhm = 0;
+    }
     if (optimization.asimdhp) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
