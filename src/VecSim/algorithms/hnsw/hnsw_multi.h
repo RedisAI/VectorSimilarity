@@ -32,7 +32,7 @@ private:
         }
         labelLookup.at(label).push_back(id);
     }
-    inline vecsim_stl::vector<idType> getElementIds(size_t label) override {
+    inline vecsim_stl::vector<idType> getElementIds(size_t label) const override {
         auto it = labelLookup.find(label);
         if (it == labelLookup.end()) {
             return vecsim_stl::vector<idType>{this->allocator}; // return an empty collection
