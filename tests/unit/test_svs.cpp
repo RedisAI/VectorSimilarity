@@ -3362,15 +3362,13 @@ TEST(SVSTest, NumThreadsParamIgnored) {
     VecSimIndexInterface::logCallback = nullptr;
 }
 
-// SVS debug info exposes both:
-//   * SHARED_MEMORY — top-level field appended by VecSimIndex_DebugInfoIterator
-//                    (mirrors VecSim_GetSharedMemory()); present on every algorithm.
-//   * SHARED_SVS_THREADPOOL_MEMORY — emitted by SVSIndex::debugInfoIterator().
-// They are sourced from the same VecSimSVSThreadPool::getSharedAllocationSize()
-// (the only contributor to shared memory today), so their values must match.
-TYPED_TEST(SVSTest, debugInfoSharedMemoryEqualsSharedSVSThreadPoolMemory) {
-    // Ensure the shared SVS thread pool singleton has allocated memory so both
-    // fields report a non-zero value. resize() always lazy-initializes the singleton.
+// The SHARED_MEMORY field is a top-level field appended by
+// VecSimIndex_DebugInfoIterator (mirrors VecSim_GetSharedMemory()); it is
+// present on every algorithm. Verify it appears exactly once in an SVS
+// response and reports the same bytes as the public API.
+TYPED_TEST(SVSTest, debugInfoSharedMemoryMatchesApi) {
+    // Ensure the shared SVS thread pool singleton has allocated memory so the
+    // field reports a non-zero value. resize() always lazy-initializes the singleton.
     VecSim_UpdateThreadPoolSize(2);
     ASSERT_GT(VecSim_GetSharedMemory(), 0u);
 
@@ -3382,9 +3380,7 @@ TYPED_TEST(SVSTest, debugInfoSharedMemoryEqualsSharedSVSThreadPoolMemory) {
     VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
 
     bool seen_shared_memory = false;
-    bool seen_shared_svs = false;
     uint64_t shared_memory_value = 0;
-    uint64_t shared_svs_value = 0;
     while (VecSimDebugInfoIterator_HasNextField(infoIterator)) {
         VecSim_InfoField *f = VecSimDebugInfoIterator_NextField(infoIterator);
         if (!strcmp(f->fieldName, VecSimCommonStrings::SHARED_MEMORY_STRING)) {
@@ -3392,20 +3388,9 @@ TYPED_TEST(SVSTest, debugInfoSharedMemoryEqualsSharedSVSThreadPoolMemory) {
             ASSERT_EQ(f->fieldType, INFOFIELD_UINT64);
             shared_memory_value = f->fieldValue.uintegerValue;
             seen_shared_memory = true;
-        } else if (!strcmp(f->fieldName,
-                           VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
-            ASSERT_FALSE(seen_shared_svs) << "SHARED_SVS_THREADPOOL_MEMORY appears more than once";
-            ASSERT_EQ(f->fieldType, INFOFIELD_UINT64);
-            shared_svs_value = f->fieldValue.uintegerValue;
-            seen_shared_svs = true;
         }
     }
     EXPECT_TRUE(seen_shared_memory) << "SHARED_MEMORY field missing from SVS debug info";
-    EXPECT_TRUE(seen_shared_svs)
-        << "SHARED_SVS_THREADPOOL_MEMORY field missing from SVS debug info";
-    EXPECT_EQ(shared_memory_value, shared_svs_value)
-        << "SHARED_MEMORY and SHARED_SVS_THREADPOOL_MEMORY should report the same bytes "
-           "(only the SVS thread pool contributes to VecSim shared memory today)";
     EXPECT_EQ(shared_memory_value, VecSim_GetSharedMemory());
 
     VecSimDebugInfoIterator_Free(infoIterator);
@@ -3419,8 +3404,8 @@ TYPED_TEST(SVSTest, debugInfoSharedMemoryEqualsSharedSVSThreadPoolMemory) {
 
 // VecSim shared memory must actually track the SVS thread-pool allocation:
 // it grows when the pool grows and shrinks when the pool shrinks. Without this,
-// SHARED_MEMORY could be a constant and debugInfoSharedMemoryEqualsSharedSVSThreadPoolMemory
-// would still pass (all three readouts share the same getSharedAllocationSize() source).
+// SHARED_MEMORY could be a constant and debugInfoSharedMemoryMatchesApi would
+// still pass (both readouts share the same getSharedAllocationSize() source).
 TYPED_TEST(SVSTest, sharedMemoryTracksThreadPoolResize) {
     // Use the C API to ensure it is covered. VecSim_UpdateThreadPoolSize(0)
     // sets WriteInPlace and pool size 1.

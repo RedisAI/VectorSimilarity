@@ -429,14 +429,14 @@ public:
 
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
-        // Capacity hint: 27 = 26 fields added below (1 ALGORITHM + 9 from
-        // addCommonInfoToIterator + 16 SVS-specific) + 1 for the SHARED_MEMORY field
+        // Capacity hint: 26 = 25 fields added below (1 ALGORITHM + 9 from
+        // addCommonInfoToIterator + 15 SVS-specific) + 1 for the SHARED_MEMORY field
         // that the C API wrapper VecSimIndex_DebugInfoIterator appends after this
         // method returns. Reserving the extra slot avoids a reallocation on the
         // top-level path; when nested in a tiered BACKEND_INDEX the C API does not
         // append it, so the hint over-reserves by one (harmless).
         // Update this number when fields are added or removed.
-        size_t numberOfInfoFields = 27;
+        size_t numberOfInfoFields = 26;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
@@ -522,15 +522,6 @@ public:
             .fieldName = VecSimCommonStrings::EPSILON_STRING,
             .fieldType = INFOFIELD_FLOAT64,
             .fieldValue = {FieldValue{.floatingPointValue = info.svsInfo.epsilon}}});
-
-        // Bytes held by the shared SVS thread pool singleton (slot vector +
-        // per-slot ThreadSlot objects, allocated through the pool's tracked
-        // allocator). Always present (value may be 0).
-        infoIterator->addInfoField(VecSim_InfoField{
-            .fieldName = VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING,
-            .fieldType = INFOFIELD_UINT64,
-            .fieldValue = {
-                FieldValue{.uintegerValue = VecSimSVSThreadPool::getSharedAllocationSize()}}});
 
         return infoIterator;
     }

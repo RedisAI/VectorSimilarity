@@ -25,7 +25,7 @@ using float16 = vecsim_types::float16;
 namespace DebugInfoIteratorFieldCount {
 constexpr size_t FLAT = 11;
 constexpr size_t HNSW = 18;
-constexpr size_t SVS = 26;
+constexpr size_t SVS = 25;
 constexpr size_t TIERED_HNSW = 16;
 constexpr size_t TIERED_SVS = 18;
 } // namespace DebugInfoIteratorFieldCount
@@ -440,9 +440,6 @@ void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo frontendIndexInfo,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator) {
-    // For SVS-backed tiered indexes the SHARED_SVS_THREADPOOL_MEMORY field is emitted
-    // by SVSIndex::debugInfoIterator() and therefore appears inside the nested
-    // BACKEND_INDEX iterator, not at this level.
     // +1 for the SHARED_MEMORY field appended by VecSimIndex_DebugInfoIterator (C API).
     VecSimAlgo backendAlgo = backendIndexInfo.commonInfo.basicInfo.algo;
     if (backendAlgo == VecSimAlgo_HNSWLIB) {
@@ -692,12 +689,6 @@ void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIte
             // SVS epsilon parameter.
             ASSERT_EQ(infoField->fieldType, INFOFIELD_FLOAT64);
             ASSERT_EQ(infoField->fieldValue.floatingPointValue, info.svsInfo.epsilon);
-        } else if (!strcmp(infoField->fieldName,
-                           VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING)) {
-            // Always emitted by SVSIndex::debugInfoIterator().
-            ASSERT_EQ(infoField->fieldType, INFOFIELD_UINT64);
-            ASSERT_EQ(infoField->fieldValue.uintegerValue,
-                      VecSimSVSThreadPool::getSharedAllocationSize());
         } else if (!strcmp(infoField->fieldName, VecSimCommonStrings::SHARED_MEMORY_STRING)) {
             // Process-wide shared allocation appended by VecSimIndex_DebugInfoIterator.
             ASSERT_TRUE(expect_shared_memory);
@@ -848,7 +839,6 @@ std::vector<std::string> getSVSFields() {
     fields.push_back(VecSimCommonStrings::SVS_SEARCH_BC_STRING);
     fields.push_back(VecSimCommonStrings::SVS_LEANVEC_DIM_STRING);
     fields.push_back(VecSimCommonStrings::EPSILON_STRING);
-    fields.push_back(VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING);
     fields.push_back(VecSimCommonStrings::SHARED_MEMORY_STRING);
     return fields;
 }
@@ -870,8 +860,6 @@ std::vector<std::string> getTieredCommonFields() {
 }
 
 // Imitates TieredSVSIndex<DataType, DistType>::debugInfoIterator() + C API SHARED_MEMORY field.
-// SHARED_SVS_THREADPOOL_MEMORY is emitted by SVSIndex::debugInfoIterator() and
-// therefore appears inside the BACKEND_INDEX nested iterator, not at this level.
 std::vector<std::string> getTieredSVSFields() {
     auto fields = getTieredCommonFields();
     // Add SVS tiered-specific fields:
