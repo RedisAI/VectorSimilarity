@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -81,3 +82,18 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC)
     ->Arg(100)
     ->Arg(BM_VecSimGeneral::block_size)
     ->ArgName("SwapJobsThreshold");
+
+// Memory SQ8 Tiered
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered_SQ8), fp16_index_t)
+(benchmark::State &st) { Memory(st, INDEX_TIERED_HNSW_SQ8); }
+BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered_SQ8))->Iterations(1);
+
+// TopK SQ8 Tiered
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8), fp16_index_t)
+(benchmark::State &st) { TopK_Tiered_SQ8(st); }
+REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8));
+
+// Range SQ8 Tiered
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, Tiered_SQ8), fp16_index_t)
+(benchmark::State &st) { Range_Tiered_SQ8(st); }
+REGISTER_Range_HNSW(BM_FUNC_NAME(Range, Tiered_SQ8), fp16_index_t);

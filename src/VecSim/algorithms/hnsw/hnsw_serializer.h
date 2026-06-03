@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -22,6 +23,7 @@ public:
         DEPRECATED = 2, // Last deprecated version
         V3,
         V4,
+        V5, // SQ8 quantization fields (quantType + mean vector)
         INVALID
     };
 
@@ -37,6 +39,7 @@ protected:
     EncodingVersion m_version;
 
 private:
-    virtual void validateSave() const = 0;
+    virtual EncodingVersion getWriteVersion() const { return EncodingVersion::V4; }
+
     void saveIndexFields(std::ofstream &output) const = 0;
 };

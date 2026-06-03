@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -33,6 +34,8 @@ enum IndexTypeIndex {
     INDEX_SVS,
     INDEX_TIERED_SVS,
     INDEX_SVS_QUANTIZED,
+    INDEX_HNSW_SQ8,
+    INDEX_TIERED_HNSW_SQ8,
     NUMBER_OF_INDEX_TYPES // Keep last
 };
 
@@ -48,7 +51,9 @@ enum IndexTypeFlags {
     INDEX_MASK_TIERED_HNSW = 1 << 4,
     INDEX_MASK_SVS = 1 << 5,
     INDEX_MASK_TIERED_SVS = 1 << 6,
-    INDEX_MASK_SVS_COMPRESSED = 1 << 7
+    INDEX_MASK_SVS_COMPRESSED = 1 << 7,
+    INDEX_MASK_HNSW_SQ8 = 1 << 8,
+    INDEX_MASK_TIERED_HNSW_SQ8 = 1 << 9
 };
 
 // Smart pointer wrapper for VecSimIndex with configurable ownership

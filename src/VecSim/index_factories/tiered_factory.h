@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -42,7 +43,9 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&bf_params, nullptr, false);
     assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
-    assert(hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
+    const HNSWParams *hnsw_params = &params->primaryIndexParams->algoParams.hnswParams;
+    assert(hnsw_params->quantType != VecSimQuant_NONE ||
+           hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 

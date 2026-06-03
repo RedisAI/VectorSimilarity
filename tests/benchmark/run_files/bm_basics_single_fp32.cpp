@@ -1,3 +1,6 @@
+/*
+ * SPDX-FileCopyrightText: Modifications Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ */
 #include "benchmark/bm_vecsim_basics.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
@@ -7,7 +10,8 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
-uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
+uint32_t BM_VecSimGeneral::enabled_index_types =
+    DEFAULT_BM_INDEXES_MASK | INDEX_MASK_HNSW_SQ8 | INDEX_MASK_TIERED_HNSW_SQ8;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;

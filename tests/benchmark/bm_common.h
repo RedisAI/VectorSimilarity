@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -35,6 +36,7 @@ public:
     // with respect to the results returned by the flat index.
     static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0);
+    static void TopK_Tiered_SQ8(benchmark::State &st);
 
     // Does nothing but returning the index memory.
     static void Memory(benchmark::State &st, IndexTypeIndex index_type);
@@ -139,6 +141,53 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
         auto bf_results =
             VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF + index_offset),
                                   QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
+        BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
+
+        VecSimQueryReply_Free(bf_results);
+        VecSimQueryReply_Free(all_results[iter]);
+    }
+
+    st.counters["Recall"] = (float)correct / (float)(k * iter);
+    st.counters["num_threads"] = (double)BM_VecSimGeneral::mock_thread_pool->thread_pool_size;
+}
+
+template <typename index_type_t>
+void BM_VecSimCommon<index_type_t>::TopK_Tiered_SQ8(benchmark::State &st) {
+    size_t ef = st.range(0);
+    size_t k = st.range(1);
+    std::atomic_int correct = 0;
+    std::atomic_int iter = 0;
+    auto tiered_index =
+        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW_SQ8));
+    size_t total_iters = 50;
+    VecSimQueryReply *all_results[total_iters];
+
+    auto parallel_knn_search = [](AsyncJob *job) {
+        auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+        HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = search_job->ef};
+        auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
+        size_t cur_iter = search_job->iter;
+        auto hnsw_results = VecSimIndex_TopKQuery(GET_INDEX(INDEX_TIERED_HNSW_SQ8),
+                                                  QUERIES[cur_iter % N_QUERIES].data(),
+                                                  search_job->k, &query_params, BY_SCORE);
+        search_job->all_results[cur_iter] = hnsw_results;
+        delete job;
+    };
+
+    for (auto _ : st) {
+        auto search_job = new (tiered_index->getAllocator())
+            tieredIndexMock::SearchJobMock(tiered_index->getAllocator(), parallel_knn_search,
+                                           tiered_index, k, ef, iter++, all_results);
+        tiered_index->submitSingleJob(search_job);
+        if (iter == total_iters) {
+            BM_VecSimGeneral::mock_thread_pool->thread_pool_wait();
+        }
+    }
+
+    // Measure recall
+    for (iter = 0; iter < total_iters; iter++) {
+        auto bf_results = VecSimIndex_TopKQuery(
+            GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), k, nullptr, BY_SCORE);
         BM_VecSimGeneral::MeasureRecall(all_results[iter], bf_results, correct);
 
         VecSimQueryReply_Free(bf_results);
