@@ -186,16 +186,26 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
 
 void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params);
 
-void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+// expect_global_memory: when true, the iterator is the top-level one returned
+// by the C API VecSimIndex_DebugInfoIterator, which always appends the GLOBAL_MEMORY
+// field. Pass false when the iterator is a nested backend iterator built directly via
+// the C++ debugInfoIterator() method (no GLOBAL_MEMORY appended at that level).
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_global_memory = true);
 
-void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_global_memory = true);
 
+// Always called with the C++ debugInfoIterator() iterator (no GLOBAL_MEMORY field at
+// this level); the field-count assertion at the top of the function will fail loudly
+// if a C API iterator is ever passed.
 void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo frontendIndexInfo,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator);
 
-void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                   bool expect_global_memory = true);
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,

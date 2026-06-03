@@ -184,6 +184,18 @@ VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index);
 VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index);
 
 /**
+ * @brief Return process-wide VecSim statistics that are not tied to any single index.
+ * Currently exposes the memory used by the shared SVS thread pool singleton.
+ * Safe to call without holding any index lock; does not force initialization of the
+ * shared SVS pool (returns 0 in fields whose backing singleton has not been touched).
+ *
+ * @return Total bytes currently allocated by VecSim outside any single index
+ *         (e.g. the shared SVS thread pool singleton). 0 if no such allocations
+ *         have been made.
+ */
+size_t VecSim_GetGlobalMemory(void);
+
+/**
  * @brief Returns an info iterator for generic reply purposes.
  *
  * @param index this index to return its info.

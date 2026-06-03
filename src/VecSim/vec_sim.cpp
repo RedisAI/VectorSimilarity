@@ -379,7 +379,17 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
-    return index->debugInfoIterator();
+    auto *infoIterator = index->debugInfoIterator();
+    // Append VecSim_GetGlobalMemory() — process-wide VecSim memory not tied to
+    // any single index — at the top level of every algorithm's debug info.
+    // Always present (value may be 0); algorithm-specific breakdowns of this
+    // value (e.g. the SVS thread pool in SVS tiered) live in their respective
+    // debugInfoIterator() overrides.
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::GLOBAL_MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetGlobalMemory()}}});
+    return infoIterator;
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
@@ -388,6 +398,10 @@ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
 
 extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
     return index->statisticInfo();
+}
+
+extern "C" size_t VecSim_GetGlobalMemory(void) {
+    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,

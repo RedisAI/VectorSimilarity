@@ -87,6 +87,16 @@ public:
     static const char *TIERED_SVS_UPDATE_THRESHOLD_STRING;
     static const char *TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING;
 
+    // Total bytes returned by VecSim_GetGlobalMemory() — process-wide VecSim
+    // allocations not tied to any single index. Appended at the top level of
+    // every VECSIM_INFO response so callers don't need to know what specifically
+    // contributes to it.
+    static const char *GLOBAL_MEMORY_STRING;
+    // Bytes allocated by the shared (global) SVS thread pool singleton. A
+    // breakdown of GLOBAL_MEMORY exposed only in SVS tiered indexes' debug
+    // info, since that's where the pool semantically belongs.
+    static const char *SHARED_SVS_THREADPOOL_MEMORY_STRING;
+
     // Log levels
     static const char *LOG_DEBUG_STRING;
     static const char *LOG_VERBOSE_STRING;

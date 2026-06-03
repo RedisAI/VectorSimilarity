@@ -361,8 +361,8 @@ public:
           leanvec_dim{
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
-          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)}, threadpool_{this->logCallbackCtx},
-          impl_{nullptr} {
+          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
+          threadpool_{this->allocator, this->logCallbackCtx}, impl_{nullptr} {
         logger_ = makeLogger();
         if (params.num_threads != 0) {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -429,8 +429,10 @@ public:
 
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
-        // For readability. Update this number when needed.
-        size_t numberOfInfoFields = 23;
+        // Capacity hint for the iterator. Must equal the number of addInfoField()
+        // calls below (1 for ALGORITHM + 9 from addCommonInfoToIterator + 16 SVS-specific).
+        // Update this number when fields are added or removed.
+        size_t numberOfInfoFields = 26;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
@@ -516,6 +518,15 @@ public:
             .fieldName = VecSimCommonStrings::EPSILON_STRING,
             .fieldType = INFOFIELD_FLOAT64,
             .fieldValue = {FieldValue{.floatingPointValue = info.svsInfo.epsilon}}});
+
+        // Bytes held by the shared SVS thread pool singleton (slot vector +
+        // per-slot ThreadSlot objects, allocated through the pool's tracked
+        // allocator). Always present (value may be 0).
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::SHARED_SVS_THREADPOOL_MEMORY_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {
+                FieldValue{.uintegerValue = VecSimSVSThreadPool::getSharedAllocationSize()}}});
 
         return infoIterator;
     }
