@@ -339,7 +339,20 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
-    return index->debugInfoIterator();
+    VecSimDebugInfoIterator *infoIterator = index->debugInfoIterator();
+    // Append the process-wide shared memory total. This field is not emitted by
+    // any algorithm's own debugInfoIterator(); it is injected here at the C API
+    // boundary so that every caller (regardless of algorithm) can account for
+    // memory not tied to any single index without special-casing SVS internals.
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetSharedMemory()}}});
+    return infoIterator;
+}
+
+extern "C" size_t VecSim_GetSharedMemory(void) {
+    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {

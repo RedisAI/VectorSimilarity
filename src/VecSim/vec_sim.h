@@ -282,6 +282,14 @@ void VecSim_SetWriteMode(VecSimWriteMode mode);
  */
 void VecSim_UpdateThreadPoolSize(size_t new_size);
 
+/**
+ * @brief Return the total bytes of process-wide VecSim allocations that are NOT tied to any
+ *        single index (e.g. the shared SVS thread-pool allocation).
+ *        This does NOT include per-index memory; use VecSimIndex_Info() for per-index accounting.
+ * @return Process-wide shared VecSim allocation size in bytes.
+ */
+size_t VecSim_GetSharedMemory(void);
+
 #ifdef __cplusplus
 }
 #endif
