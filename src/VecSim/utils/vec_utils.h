@@ -86,6 +86,11 @@ public:
     static const char *TIERED_SVS_UPDATE_THRESHOLD_STRING;
     static const char *TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING;
 
+    // Process-wide VecSim allocations not tied to any single index (e.g. the
+    // shared SVS thread-pool allocation). Appended by VecSimIndex_DebugInfoIterator
+    // (C API) to every algorithm's response. Does NOT include per-index memory.
+    static const char *SHARED_MEMORY_STRING;
+
     // Log levels
     static const char *LOG_DEBUG_STRING;
     static const char *LOG_VERBOSE_STRING;

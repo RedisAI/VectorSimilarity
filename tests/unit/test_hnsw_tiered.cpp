@@ -2936,7 +2936,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     VecSimIndexDebugInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
 
-    VecSimDebugInfoIterator *infoIterator = tiered_index->debugInfoIterator();
+    // Use the C API wrapper (as RediSearch does) so the process-wide SHARED_MEMORY
+    // field is appended at the top level — compareTieredIndexInfoToIterator expects it.
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(tiered_index);
     compareTieredIndexInfoToIterator(info, frontendIndexInfo, backendIndexInfo, infoIterator);
 
     VecSimDebugInfoIterator_Free(infoIterator);
