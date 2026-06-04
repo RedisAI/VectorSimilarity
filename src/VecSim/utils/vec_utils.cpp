@@ -88,6 +88,8 @@ const char *VecSimCommonStrings::TIERED_SVS_UPDATE_THRESHOLD_STRING = "TIERED_SV
 const char *VecSimCommonStrings::TIERED_SVS_THREADS_RESERVE_TIMEOUT_STRING =
     "TIERED_SVS_THREADS_RESERVE_TIMEOUT";
 
+const char *VecSimCommonStrings::SHARED_MEMORY_STRING = "SHARED_MEMORY";
+
 // Log levels
 const char *VecSimCommonStrings::LOG_DEBUG_STRING = "debug";
 const char *VecSimCommonStrings::LOG_VERBOSE_STRING = "verbose";

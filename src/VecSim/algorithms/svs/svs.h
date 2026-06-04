@@ -361,8 +361,8 @@ public:
           leanvec_dim{
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
-          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)}, threadpool_{this->logCallbackCtx},
-          impl_{nullptr} {
+          is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
+          threadpool_{this->allocator, this->logCallbackCtx}, impl_{nullptr} {
         logger_ = makeLogger();
         if (params.num_threads != 0) {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -429,8 +429,14 @@ public:
 
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
-        // For readability. Update this number when needed.
-        size_t numberOfInfoFields = 23;
+        // Capacity hint: 26 = 25 fields added below (1 ALGORITHM + 9 from
+        // addCommonInfoToIterator + 15 SVS-specific) + 1 for the SHARED_MEMORY field
+        // that the C API wrapper VecSimIndex_DebugInfoIterator appends after this
+        // method returns. Reserving the extra slot avoids a reallocation on the
+        // top-level path; when nested in a tiered BACKEND_INDEX the C API does not
+        // append it, so the hint over-reserves by one (harmless).
+        // Update this number when fields are added or removed.
+        size_t numberOfInfoFields = 26;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
