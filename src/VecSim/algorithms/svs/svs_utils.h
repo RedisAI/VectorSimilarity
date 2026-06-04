@@ -10,6 +10,7 @@
 #pragma once
 #include "VecSim/query_results.h"
 #include "VecSim/vec_sim_interface.h"
+#include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/types/float16.h"
 
 #include "svs/core/distance.h"
@@ -407,17 +408,29 @@ class VecSimSVSThreadPoolImpl {
         std::vector<ThreadSlot *> slots_;
     };
 
+    using SlotPtr = std::shared_ptr<ThreadSlot>;
+
     // Create a pool with `num_threads` total parallelism (including the calling thread).
     // Spawns `num_threads - 1` worker OS threads. num_threads must be >= 1.
     // In write-in-place mode, the pool is created with num_threads == 1 (0 worker threads,
     // only the calling thread participates).
     // Private — use instance() to access the shared singleton.
-    explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1) {
+    explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1)
+        : allocator_(VecSimAllocator::newVecsimAllocator()), slots_(allocator_) {
         assert(num_threads && "VecSimSVSThreadPoolImpl should not be created with 0 threads");
         slots_.reserve(num_threads - 1);
         for (size_t i = 0; i < num_threads - 1; ++i) {
-            slots_.push_back(std::make_shared<ThreadSlot>());
+            slots_.push_back(
+                std::allocate_shared<ThreadSlot>(VecsimSTLAllocator<ThreadSlot>(allocator_)));
         }
+    }
+
+    // Set to true the first time instance() constructs the singleton. Allows other
+    // code paths (e.g., global stats reporting) to query whether the pool has been
+    // touched without forcing its lazy construction.
+    static std::atomic<bool> &initialized_flag() {
+        static std::atomic<bool> flag{false};
+        return flag;
     }
 
 public:
@@ -425,15 +438,39 @@ public:
     // Always valid — initialized with size 1 (write-in-place mode: 0 worker threads,
     // only the calling thread participates). Resized on VecSim_UpdateThreadPoolSize() calls.
     static std::shared_ptr<VecSimSVSThreadPoolImpl> instance() {
-        static auto shared_pool = std::shared_ptr<VecSimSVSThreadPoolImpl>(
-            new VecSimSVSThreadPoolImpl(1), [](VecSimSVSThreadPoolImpl *) { /* leak at exit */ });
+        static auto shared_pool = [] {
+            auto p = std::shared_ptr<VecSimSVSThreadPoolImpl>(
+                new VecSimSVSThreadPoolImpl(1),
+                [](VecSimSVSThreadPoolImpl *) { /* leak at exit */ });
+            initialized_flag().store(true, std::memory_order_release);
+            return p;
+        }();
         return shared_pool;
     }
+
+    // Returns true iff instance() has ever been called (singleton constructed).
+    static bool isInitialized() { return initialized_flag().load(std::memory_order_acquire); }
 
     // Total parallelism: worker slots + 1 (the calling thread always participates).
     size_t size() const {
         std::lock_guard lock{pool_mutex_};
         return slots_.size() + 1;
+    }
+
+    // Bytes currently allocated through the pool's internal allocator (the slots vector
+    // and the ThreadSlot objects). Does not include allocations performed by SVS itself
+    // outside of the pool, nor per-index wrapper state.
+    size_t getAllocationSize() const { return allocator_->getAllocationSize(); }
+
+    // Bytes allocated by the shared pool singleton. Returns 0 if the singleton has
+    // never been constructed (e.g., no SVS index was ever created and
+    // VecSim_UpdateThreadPoolSize was never called). Safe to call from any context;
+    // does not force singleton construction.
+    static size_t getSharedAllocationSize() {
+        if (!isInitialized()) {
+            return 0;
+        }
+        return instance()->getAllocationSize();
     }
 
     // Physically resize the pool. Creates new OS threads on grow, shuts down idle threads
@@ -599,7 +636,8 @@ private:
             // Grow (or same size): apply immediately, cancel any pending deferred shrink.
             deferred_size_.reset();
             for (size_t i = slots_.size(); i < target_workers; ++i) {
-                slots_.push_back(std::make_shared<ThreadSlot>());
+                slots_.push_back(
+                    std::allocate_shared<ThreadSlot>(VecsimSTLAllocator<ThreadSlot>(allocator_)));
             }
         } else {
             // Shrink.
@@ -615,8 +653,9 @@ private:
         }
     }
 
+    std::shared_ptr<VecSimAllocator> allocator_; // pool's own allocator for memory tracking
     mutable std::mutex pool_mutex_;
-    std::vector<std::shared_ptr<ThreadSlot>> slots_;
+    vecsim_stl::vector<SlotPtr> slots_;
     size_t pending_jobs_ = 0;             // jobs currently scheduled / in-flight
     std::optional<size_t> deferred_size_; // resize target deferred until pending_jobs_ == 0
 };
@@ -646,9 +685,14 @@ public:
     // parallelism_ starts at 1 (the calling thread always participates), matching the
     // pool's minimum size. Safe for immediate use in write-in-place mode without an
     // explicit setParallelism() call.
-    explicit VecSimSVSThreadPool(void *log_ctx = nullptr)
+    // parallelism_ is allocated through the provided VecsimAllocator so that the
+    // allocation is tracked by the index's memory accounting.
+    explicit VecSimSVSThreadPool(const std::shared_ptr<VecSimAllocator> &allocator,
+                                 void *log_ctx = nullptr)
         : pool_(VecSimSVSThreadPoolImpl::instance()),
-          parallelism_(std::make_shared<std::atomic<size_t>>(1)), log_ctx_(log_ctx) {}
+          parallelism_(std::allocate_shared<std::atomic<size_t>>(
+              VecsimSTLAllocator<std::atomic<size_t>>(allocator), size_t{1})),
+          log_ctx_(log_ctx) {}
 
     // Resize the shared pool singleton. Delegates to VecSimSVSThreadPoolImpl::instance().
     static void resize(size_t new_size) { VecSimSVSThreadPoolImpl::instance()->resize(new_size); }
@@ -676,6 +720,11 @@ public:
 
     // Shared pool size — used by scheduling to decide how many reserve jobs to submit.
     static size_t poolSize() { return VecSimSVSThreadPoolImpl::instance()->size(); }
+
+    // See VecSimSVSThreadPoolImpl::getSharedAllocationSize().
+    static size_t getSharedAllocationSize() {
+        return VecSimSVSThreadPoolImpl::getSharedAllocationSize();
+    }
 
     // Delegates to the shared pool's parallel_for, passing the per-index log context.
     // n may be less than parallelism_ when the problem size is smaller than the

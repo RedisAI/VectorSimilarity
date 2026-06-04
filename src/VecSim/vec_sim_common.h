@@ -355,7 +355,10 @@ typedef struct {
  * production without worrying about performance
  */
 typedef struct {
-    size_t memory;
+    size_t memory;                // Memory tracked by the index's own allocator. Does NOT include
+                                  // process-wide allocations such as the shared SVS thread pool;
+                                  // those are reported via VecSim_GetSharedMemory() so callers
+                                  // that aggregate across indexes don't double-count them.
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
     size_t directHNSWInsertions;  // Count of vectors inserted directly into HNSW by main thread
