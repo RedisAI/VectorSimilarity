@@ -32,6 +32,25 @@ public:
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
+    // Relabel all vectors stored under old_label to new_label without moving their data. No internal
+    // lock (see brute_force_single.h); the caller provides mutual exclusion.
+    int relabelVector(labelType old_label, labelType new_label) override {
+        auto it = this->labelToIdsLookup.find(old_label);
+        if (it == this->labelToIdsLookup.end()) {
+            return 0; // old_label not found
+        }
+        if (this->labelToIdsLookup.find(new_label) != this->labelToIdsLookup.end()) {
+            return 0; // new_label already exists; caller should fall back to delete + add
+        }
+        for (idType id : it->second) {
+            this->idToLabelMapping[id] = new_label;
+        }
+        auto ids = std::move(it->second);
+        this->labelToIdsLookup.erase(it);
+        this->labelToIdsLookup.emplace(new_label, std::move(ids));
+        return 1;
+    }
+
     inline std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
         return std::unique_ptr<vecsim_stl::abstract_results_container>(

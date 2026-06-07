@@ -250,6 +250,16 @@ public:
     void unlockIndexDataGuard() const;
     void lockSharedIndexDataGuard() const;
     void unlockSharedIndexDataGuard() const;
+    // Relabel an existing vector from old_label to new_label without touching the graph topology.
+    // The internal id is unchanged, so all neighbor edges (which reference internal ids) stay
+    // valid; only the label<->id mapping and idToMetaData[id].label are updated.
+    // relabelVectorUnsafe assumes the caller already holds indexDataGuard (used by the tiered index,
+    // which holds it while coordinating both tiers); relabelVector takes the exclusive guard itself.
+    virtual int relabelVectorUnsafe(labelType old_label, labelType new_label) = 0;
+    int relabelVector(labelType old_label, labelType new_label) override {
+        std::unique_lock<std::shared_mutex> guard(indexDataGuard);
+        return relabelVectorUnsafe(old_label, new_label);
+    }
     void lockNodeLinks(idType node_id) const;
     void unlockNodeLinks(idType node_id) const;
     void lockNodeLinks(ElementGraphData *node_data) const;
