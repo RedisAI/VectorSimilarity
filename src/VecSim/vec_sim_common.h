@@ -89,6 +89,10 @@ typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMet
 typedef size_t labelType;
 typedef unsigned int idType;
 
+// Return value of VecSimIndex_RelabelVector / relabelVector when the index type does not
+// implement relabeling and the caller should fall back to delete + add.
+#define VECSIM_RELABEL_NOT_SUPPORTED (-1)
+
 /**
  * @brief Query Runtime raw parameters.
  * Use VecSimIndex_ResolveParams to generate VecSimQueryParams from array of VecSimRawParams.
