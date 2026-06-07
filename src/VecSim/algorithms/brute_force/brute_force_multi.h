@@ -32,8 +32,8 @@ public:
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
-    // Relabel all vectors stored under old_label to new_label without moving their data. No internal
-    // lock (see brute_force_single.h); the caller provides mutual exclusion.
+    // Relabel all vectors stored under old_label to new_label without moving their data. No
+    // internal lock (see brute_force_single.h); the caller provides mutual exclusion.
     int relabelVector(labelType old_label, labelType new_label) override {
         auto it = this->labelToIdsLookup.find(old_label);
         if (it == this->labelToIdsLookup.end()) {
