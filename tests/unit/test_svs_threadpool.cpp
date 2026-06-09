@@ -44,6 +44,10 @@ protected:
         // don't assert on nullptr log_ctx (we don't have an index context).
         saved_callback_ = VecSimIndexInterface::logCallback;
         VecSimIndexInterface::logCallback = nullptr;
+        // Mark the shared pool as having an attached index so resize() behaves
+        // eagerly throughout the test (these unit tests exercise the pool in
+        // isolation, without constructing real SVS indexes). Idempotent.
+        VecSimSVSThreadPoolImpl::instance()->onIndexAttached();
         // Reset the shared singleton pool to size 1 — earlier test suites may have
         // resized it via VecSim_UpdateThreadPoolSize() and left it in that state.
         VecSimSVSThreadPool::resize(1);
@@ -330,15 +334,26 @@ TEST_F(SVSThreadPoolTest, TwoIndexesIndependentParallelism) {
 
 // ---------------------------------------------------------------------------
 // Test 6: VecSim_UpdateThreadPoolSize mode transitions
-// The C API sets write mode and resizes the shared singleton pool.
+// The C API always sets write mode immediately. The pool resize is lazy: it is
+// applied at first index attach if no index has attached yet, otherwise
+// immediately.
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, UpdateThreadPoolSizeModeTransitions) {
-    // 0 → 4: switch to async mode, pool resizes to 4.
+    // Reset to a fresh state — previous tests may have attached indexes via
+    // VecSimSVSThreadPool wrappers, leaving has_attached_index_ set.
+    VecSimSVSThreadPoolImpl::instance()->resetForTest();
+
+    // 0 → 4: switch to async mode immediately. Pool size stays at 1 because
+    // no SVS index has attached yet (resize is deferred).
     VecSim_UpdateThreadPoolSize(4);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteAsync);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
+
+    // Attaching an index applies the deferred size.
+    VecSimSVSThreadPool wrapper{allocator_};
     ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
 
-    // 4 → 8: stay in async mode (N→M, both > 0), pool resizes to 8.
+    // 4 → 8: now that an index is attached, resize is immediate.
     VecSim_UpdateThreadPoolSize(8);
     ASSERT_EQ(VecSimIndex::asyncWriteMode, VecSim_WriteAsync);
     ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 8);
