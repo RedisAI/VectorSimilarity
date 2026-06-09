@@ -34,9 +34,9 @@ extern "C" void VecSim_UpdateThreadPoolSize(size_t new_size) {
     } else {
         VecSimIndex::setWriteMode(VecSim_WriteAsync);
     }
-    // Resize the shared SVS thread pool. resize() clamps to minimum size 1.
-    // new_size == 0 → pool size 1 (only calling thread, write-in-place).
-    // new_size >  0 → pool size new_size (new_size - 1 worker threads).
+    // Resize the shared SVS pool. Clamped to a minimum of 1. OS threads are spawned
+    // lazily on first SVS index creation; once an index exists this resizes the
+    // shared pool immediately (cooperating with the deferred-shrink protocol).
     VecSimSVSThreadPool::resize(new_size);
 }
 
