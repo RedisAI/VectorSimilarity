@@ -566,8 +566,16 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Also account for all the memory allocation caused by the resizing that this vector triggered
     // except for the bucket count of the labels_lookup hash table that is calculated separately.
     // Calculate the expected memory delta for adding a block.
+    // The vectors container still uses a flat vector<DataBlock> (one backbone slot
+    // + one data-buffer allocation per block). The graph now uses the rooted
+    // GraphDataBlocks: a vector<GraphBlock> backbone slot, a separately-allocated
+    // GraphBlockBuffer object, and that buffer's data allocation per block.
     size_t data_containers_block_mem =
-        2 * (sizeof(DataBlock) + vecsimAllocationOverhead) + hnswIndex->getStorageAlignment();
+        (sizeof(DataBlock) + vecsimAllocationOverhead) + // vectors: backbone slot + data alloc overhead
+        sizeof(GraphBlock) +                             // graph: backbone slot growth
+        (sizeof(GraphBlockBuffer) + vecsimAllocationOverhead) + // graph: block buffer object
+        vecsimAllocationOverhead +                       // graph: data buffer alloc overhead
+        hnswIndex->getStorageAlignment();
     size_t size_total_data_per_element =
         hnswIndex->elementGraphDataSize + hnswIndex->getStoredDataSize();
     data_containers_block_mem += size_total_data_per_element * block_size;
@@ -596,9 +604,12 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // Free the buffer of the last block in both data containers.
     expected_allocation_size -=
         size_total_data_per_element * block_size + 2 * vecsimAllocationOverhead;
+    // The graph block also frees its GraphBlockBuffer object (the vectors block's
+    // DataBlock lives inline in the backbone vector and is covered below).
+    expected_allocation_size -= (sizeof(GraphBlockBuffer) + vecsimAllocationOverhead);
     expected_allocation_size -=
         (graph_data_blocks_capacity - hnswIndex->graphDataBlocks.capacity()) *
-        (sizeof(DataBlock) + vecsimAllocationOverhead);
+        (sizeof(GraphBlock) + vecsimAllocationOverhead);
     expected_allocation_size -= (vectors_blocks_capacity - vectors_blocks->capacity()) *
                                 (sizeof(DataBlock) + vecsimAllocationOverhead);
     ASSERT_EQ(allocator->getAllocationSize(), expected_allocation_size);
@@ -613,11 +624,13 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     // All data structures' memory returns to as it was, with the exceptional of the labels_lookup
     // (STL unordered_map with hash table implementation), that leaves some empty buckets.
     size_t hash_table_memory = hnswIndex->labelLookup.bucket_count() * sizeof(size_t);
-    // Data block vectors do not shrink on resize so extra memory is expected.
+    // Data block vectors do not shrink on resize so extra memory is expected. The
+    // graph backbone additionally retains its heap-allocated vector<GraphBlock>
+    // object (the vectors container's vector lives inline in the index).
     size_t block_vectors_memory =
-        sizeof(DataBlock) * (hnswIndex->graphDataBlocks.capacity() +
-                             dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors)->capacity()) +
-        2 * vecsimAllocationOverhead;
+        sizeof(DataBlock) * dynamic_cast<DataBlocksContainer *>(hnswIndex->vectors)->capacity() +
+        sizeof(GraphBlock) * hnswIndex->graphDataBlocks.capacity() +
+        sizeof(GraphDataBlocks::Backbone) + 3 * vecsimAllocationOverhead;
     // Current memory should be back as it was initially. The label_lookup hash table is an
     // exception, since in some platforms, empty buckets remain even when the capacity is set to
     // zero, while in others the entire capacity reduced to zero (including the header).

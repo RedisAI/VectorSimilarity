@@ -28,6 +28,12 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     // levels value than the loaded index.
     levelGenerator.seed(200);
 
+    // Configure the rooted COW stores with the registry before any sizing.
+    // restoreIndexFields (above) has set elementGraphDataSize / levelDataSize.
+    graphDataBlocks.configure(this->blockSize, this->elementGraphDataSize, this->levelDataSize,
+                              snapshotRegistry_);
+    idToMetaData.configure(snapshotRegistry_);
+
     // Set the initial capacity based on the number of elements in the loaded index.
     maxElements = RoundUpInitialCapacity(this->curElementCount, this->blockSize);
     this->idToMetaData.resize(maxElements);
@@ -190,8 +196,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
     size_t toplevel = 0;
     size_t num_blocks = dynamic_cast<DataBlocksContainer *>(this->vectors)->numBlocks();
     for (size_t i = 0; i < num_blocks; i++) {
-        this->graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize,
-                                           this->allocator);
+        this->graphDataBlocks.addBlock();
         unsigned int block_len = 0;
         readBinaryPOD(input, block_len);
         for (size_t j = 0; j < block_len; j++) {
@@ -209,8 +214,7 @@ void HNSWIndex<DataType, DistType>::restoreGraph(std::ifstream &input,
                 throw e;
             }
             // Add the current element to the current block, and update cur_egt to point to it.
-            this->graphDataBlocks.back().addElement(tmpData.get());
-            cur_egt = (ElementGraphData *)this->graphDataBlocks.back().getElement(j);
+            cur_egt = (ElementGraphData *)this->graphDataBlocks.addElement(tmpData.get());
 
             // Restore the current element's graph data
             for (size_t k = 0; k <= toplevel; k++) {
@@ -286,11 +290,11 @@ void HNSWIndex<DataType, DistType>::saveGraph(std::ofstream &output) const {
 
     // Save graph data blocks
     for (size_t i = 0; i < this->graphDataBlocks.size(); i++) {
-        auto &block = this->graphDataBlocks[i];
-        unsigned int block_len = block.getLength();
+        unsigned int block_len = this->graphDataBlocks.blockLength(i);
         writeBinaryPOD(output, block_len);
         for (size_t j = 0; j < block_len; j++) {
-            ElementGraphData *cur_element = (ElementGraphData *)block.getElement(j);
+            ElementGraphData *cur_element =
+                (ElementGraphData *)this->graphDataBlocks.getElementInBlock(i, j);
             writeBinaryPOD(output, cur_element->toplevel);
 
             // Save all the levels of the current element

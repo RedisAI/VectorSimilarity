@@ -14,6 +14,7 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/containers/data_block.h"
+#include "VecSim/algorithms/hnsw/graph_data_blocks.h"
 #include "VecSim/containers/raw_data_container_interface.h"
 #include "VecSim/containers/data_blocks_container.h"
 #include "VecSim/containers/vecsim_results_container.h"
@@ -79,6 +80,82 @@ struct ElementMetaData {
 };
 #pragma pack() // restore default packing
 
+// Rooted, copy-on-write store for the per-id metadata (label + flags) — the third
+// per-id container (after the graph and the vectors). It exposes the vector API
+// the index already uses (operator[], at, data, size, capacity, resize,
+// shrink_to_fit), so call sites are unchanged, but a *capacity change* (resize /
+// shrink) copies-on-write when a live snapshot can still see the current version
+// (driven by the shared RootedCowStore / SnapshotRegistry generation tag). A
+// snapshot therefore keeps reading its as-of-capture flags + labels even when a
+// concurrent insert reallocates the live metadata. In-place per-id writes
+// (markAs, setVectorId, swap) target ids the snapshot does not read (newly
+// inserted) or are the accepted weak deleted-flag semantics, so they are not
+// copied. Lazy: no allocation until the first resize (matching the previous flat
+// vector's footprint at capacity 0). Reclamation is refcount-driven.
+class MetaDataStore {
+public:
+    using Vector = vecsim_stl::vector<ElementMetaData>;
+    explicit MetaDataStore(std::shared_ptr<VecSimAllocator> allocator)
+        : allocator_(std::move(allocator)) {}
+
+    void configure(std::shared_ptr<SnapshotRegistry> registry) {
+        store_.setRegistry(std::move(registry));
+    }
+
+    ElementMetaData &operator[](size_t id) { return (*store_.root())[id]; }
+    const ElementMetaData &operator[](size_t id) const {
+        const Vector &v = *store_.root();
+        return v[id];
+    }
+    ElementMetaData &at(size_t id) { return store_.root()->at(id); }
+    const ElementMetaData &at(size_t id) const {
+        const Vector &v = *store_.root();
+        return v.at(id);
+    }
+    ElementMetaData *data() { return store_.hasRoot() ? store_.root()->data() : nullptr; }
+    const ElementMetaData *data() const {
+        return store_.hasRoot() ? store_.root()->data() : nullptr;
+    }
+    size_t size() const { return store_.hasRoot() ? store_.root()->size() : 0; }
+    size_t capacity() const { return store_.hasRoot() ? store_.root()->capacity() : 0; }
+
+    void resize(size_t n) {
+        ensureRoot();
+        cowForResize();
+        store_.root()->resize(n);
+    }
+    void shrink_to_fit() {
+        if (!store_.hasRoot()) {
+            return;
+        }
+        if (store_.root()->empty()) {
+            store_.reset(); // return to the initial (no-heap) footprint
+            return;
+        }
+        cowForResize();
+        store_.root()->shrink_to_fit();
+    }
+
+    // O(1) capture of the current metadata version (pins it for a snapshot).
+    std::shared_ptr<Vector> captureRoot() const { return store_.capture(); }
+
+private:
+    void ensureRoot() {
+        if (!store_.hasRoot()) {
+            store_.initRoot(std::shared_ptr<Vector>(new (allocator_) Vector(allocator_)));
+        }
+    }
+    void cowForResize() {
+        store_.cowForWrite([this](const Vector &old) {
+            auto fresh = std::shared_ptr<Vector>(new (allocator_) Vector(allocator_));
+            *fresh = old; // copy current contents; the resize/shrink mutates the copy
+            return fresh;
+        });
+    }
+    std::shared_ptr<VecSimAllocator> allocator_;
+    RootedCowStore<Vector> store_;
+};
+
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
 template <typename DataType, typename DistType>
@@ -115,8 +192,13 @@ protected:
     size_t maxLevel; // this is the top level of the entry point's element
 
     // Index data
-    vecsim_stl::vector<DataBlock> graphDataBlocks;
-    vecsim_stl::vector<ElementMetaData> idToMetaData;
+    GraphDataBlocks graphDataBlocks;
+    MetaDataStore idToMetaData;
+
+    // Live-snapshot generation registry (shared so it outlives the index if a
+    // snapshot does). Hands out monotonic ids at capture and tracks the live set;
+    // drives the SWAP-deferral gate (and, later, the clone/reclaim horizons).
+    std::shared_ptr<SnapshotRegistry> snapshotRegistry_ = std::make_shared<SnapshotRegistry>();
 
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
@@ -393,8 +475,7 @@ const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_i
 template <typename DataType, typename DistType>
 ElementGraphData *
 HNSWIndex<DataType, DistType>::getGraphDataByInternalId(idType internal_id) const {
-    return (ElementGraphData *)graphDataBlocks[internal_id / this->blockSize].getElement(
-        internal_id % this->blockSize);
+    return (ElementGraphData *)graphDataBlocks.getElement(internal_id);
 }
 
 template <typename DataType, typename DistType>
@@ -1090,10 +1171,10 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
         idType cur_id = 0;
-        for (DataBlock &graph_data_block : graphDataBlocks) {
-            size_t size = graph_data_block.getLength();
+        for (size_t b = 0; b < graphDataBlocks.size(); b++) {
+            size_t size = graphDataBlocks.blockLength(b);
             for (size_t i = 0; i < size; i++) {
-                auto cur_element = (ElementGraphData *)graph_data_block.getElement(i);
+                auto cur_element = (ElementGraphData *)graphDataBlocks.getElementInBlock(b, i);
                 if (cur_element->toplevel == maxLevel && cur_id != old_entry_point_id &&
                     !isMarkedDeleted(cur_id)) {
                     // Found a non element in the current max level.
@@ -1318,7 +1399,7 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
               maxElements + this->blockSize);
     maxElements += this->blockSize;
 
-    graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+    graphDataBlocks.addBlock();
 
     if (idToMetaData.capacity() == indexSize()) {
         resizeIndexCommon(maxElements);
@@ -1334,7 +1415,7 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
         this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
                   "Updating HNSW index capacity from %zu to %zu", maxElements,
                   maxElements - this->blockSize);
-        graphDataBlocks.pop_back();
+        graphDataBlocks.popLastBlock();
         assert(graphDataBlocks.size() == indexSize() / this->blockSize);
 
         // assuming idToMetaData reflects the capacity of the heavy reallocation containers.
@@ -1637,13 +1718,17 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M0;
     levelDataSize = sizeof(ElementLevelData) + sizeof(idType) * M;
+    graphDataBlocks.configure(this->blockSize, elementGraphDataSize, levelDataSize,
+                              snapshotRegistry_);
+    idToMetaData.configure(snapshotRegistry_);
 }
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::~HNSWIndex() {
-    for (idType id = 0; id < curElementCount; id++) {
-        getGraphDataByInternalId(id)->destroy(this->levelDataSize, this->allocator);
-    }
+    // Each block's GraphBlockBuffer owns its live elements' resources and frees
+    // them (and the raw buffer) when its last reference drops, which happens as
+    // graphDataBlocks' root is torn down here. No explicit per-element loop is
+    // needed; doing one would double-free the elements the buffer destroys.
 }
 
 /**
@@ -1684,8 +1769,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     // Get the last element's metadata and data.
     // If we are deleting the last element, we already destroyed it's metadata.
     auto *last_element_data = getDataByInternalId(curElementCount);
-    DataBlock &last_gd_block = graphDataBlocks.back();
-    auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
+    auto last_element = (ElementGraphData *)graphDataBlocks.removeAndFetchLastElement();
 
     // Swap the last id with the deleted one, and invalidate the last id data.
     if (curElementCount != internalId) {
@@ -1803,7 +1887,7 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
 
     // Insert the new element to the data block
     this->vectors->addElement(vector_data, state.newElementId);
-    this->graphDataBlocks.back().addElement(cur_egd);
+    this->graphDataBlocks.addElement(cur_egd);
     // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
     // set when checking if label .
     this->idToMetaData[state.newElementId] = ElementMetaData(label);
