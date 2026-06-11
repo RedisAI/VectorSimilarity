@@ -1576,6 +1576,20 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     nodes_to_update.push_back(node_id);
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
+
+    // Copy-on-write ALL touched nodes' blocks up front, BEFORE taking any per-node
+    // lock. Every node we mutate or lock below is in nodes_to_update, so after this
+    // loop their buffers are final (stamped the current generation). That matters
+    // under a live snapshot: a COW-aware write inside the locked region would
+    // otherwise fork a block and move a node (and its mutex) to a new buffer out
+    // from under the lock we hold — so lock(id) and unlock(id) would resolve to
+    // different mutexes. Forking first makes getGraphDataByInternalId(id) stable for
+    // the whole critical section (no re-fork: a new snapshot can't be captured here
+    // — capture takes the exclusive lock, repair holds it shared). No-op when no
+    // snapshot is live (cowBlock doesn't clone), so the default path is unchanged.
+    for (size_t i = 0; i < nodes_to_update_count; i++) {
+        getGraphDataByInternalIdForWrite(nodes_to_update[i]);
+    }
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         lockNodeLinks(nodes_to_update[i]);
     }

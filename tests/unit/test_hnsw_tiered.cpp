@@ -4714,3 +4714,122 @@ TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotIngestionProgressesWhileCursorOpen
     VecSimBatchIterator_Free(it);
     ASSERT_EQ(total, base);
 }
+
+// Repair rewrites links (not COW-safe under a live snapshot), so while a snapshot is
+// held the repair jobs are deferred (kept pending), and the associated swap stays
+// pending. Once the snapshot is released, a GC pass re-submits the deferred repairs;
+// after they run the swap becomes ready and recycles the slot.
+// Repair runs even while a snapshot is live: mutuallyUpdateForRepairedNode
+// copy-on-writes every touched node's block before locking, so the snapshot keeps
+// its frozen view and the link rewrite is consistent. Slot recycling (SWAP) is
+// gated by the reclaim horizon (= max curElementCount over live snapshots): a
+// deleted id below the horizon is deferred (the snapshot can still read that slot),
+// one at/above it recycles immediately.
+TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotRepairRunsHorizonRecycles) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw = tiered_index->getHNSWIndex();
+
+    size_t n = 16;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+
+    // Capture a snapshot at curElementCount == n, so the reclaim horizon is n.
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(hnsw->graphSnapshotActive());
+
+    // Delete a LOW id (< horizon). Its repair jobs RUN under the snapshot (no longer
+    // deferred): the swap becomes ready (pending repairs == 0). But the SWAP is
+    // deferred because the snapshot can still read slot 2.
+    ASSERT_EQ(tiered_index->deleteVector(2), 1);
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->idToSwapJob.count(2), 1u);
+    ASSERT_EQ(tiered_index->idToSwapJob.at(2)->pending_repair_jobs_counter.load(), 0)
+        << "repairs ran under the snapshot — the swap is ready, not parked";
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(2), 1u)
+        << "a swap below the reclaim horizon stays deferred while the snapshot is live";
+
+    // Grow past the snapshot's horizon, then delete a HIGH id (>= horizon = n). The
+    // snapshot cannot see that slot, so its swap recycles immediately even though the
+    // snapshot is still live.
+    for (size_t i = n; i < 2 * n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+    const idType high = (idType)(n + 3);
+    ASSERT_EQ(tiered_index->deleteVector(high), 1);
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(high), 0u)
+        << "a swap at/above the reclaim horizon recycles under a live snapshot";
+
+    // Releasing the snapshot drops the horizon to 0, so the deferred low-id swap runs.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_FALSE(hnsw->graphSnapshotActive());
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(2), 0u);
+}
+
+// Concurrency stress: many snapshot-backed cursors iterate lock-free while workers
+// ingest (flat->HNSW) and the main thread deletes (whose repairs now run under the
+// live cursors). Guards against the COW/use-after-free hazards in the concurrent
+// insert + delete + repair + snapshot-read path; run under ASan/TSan. Asserts
+// everyone makes progress (all cursors complete, ingestion finishes).
+TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearchSnapshot) {
+    size_t dim = 4, ef = 200, n = 1000;
+    bool isMulti = TypeParam::isMulti();
+    size_t per_label = isMulti ? 5 : 1;
+    size_t n_labels = n / per_label;
+    HNSWParams params = {.type = TypeParam::get_index_type(), .dim = dim,
+                         .metric = VecSimMetric_L2, .multi = isMulti, .efRuntime = ef};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+    std::atomic_int successful_searches(0);
+    auto snapshot_search = [](AsyncJob *job) {
+        auto *sj = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+        VecSimQueryParams qp = {};
+        qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+        VecSimBatchIterator *it = VecSimBatchIterator_New(sj->index, sj->query, &qp);
+        size_t iteration = 0;
+        while (iteration < 10 && VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, sj->k, BY_SCORE);
+            VecSimQueryReply_Free(r);
+            iteration++;
+        }
+        VecSimBatchIterator_Free(it);
+        (*sj->successful_searches)++;
+        delete job;
+    };
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, i % n_labels);
+        auto *sj = new (allocator) tieredIndexMock::SearchJobMock(
+            allocator, snapshot_search, tiered_index, 10, query, n, dim, &successful_searches);
+        tiered_index->submitSingleJob(sj);
+    }
+    mock_thread_pool.init_threads();
+    for (size_t label = 0; label < n_labels / 4; label++) {
+        tiered_index->deleteVector(label);
+    }
+    mock_thread_pool.thread_pool_join();
+    for (int round = 0; round < 4; round++) {
+        while (mock_thread_pool.jobQ.size() > 0) mock_thread_pool.thread_iteration();
+        tiered_index->executeReadySwapJobs();
+    }
+    EXPECT_EQ(successful_searches, n);
+}

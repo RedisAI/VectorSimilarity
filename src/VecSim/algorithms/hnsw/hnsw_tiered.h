@@ -355,6 +355,9 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
     // snapshot ⇒ everything recyclable.
     const size_t horizon = this->getHNSWIndex()->snapshotReclaimHorizon();
 
+    // (Repairs are no longer deferred under a snapshot — repairNodeConnections is
+    // now COW-safe — so there is no deferred-repair queue to drain here.)
+
     TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                "Tiered HNSW index GC: there are %zu ready swap jobs (reclaim horizon %zu)",
                readySwapJobs, horizon);
@@ -644,6 +647,12 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
         return;
     }
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
+
+    // Repair runs even while a snapshot is live: mutuallyUpdateForRepairedNode
+    // copy-on-writes every touched node's block before locking, so a snapshot keeps
+    // its frozen view (COW) and the live link rewrite is consistent (no mutex moves
+    // out from under a held lock). Slot recycling (SWAP) is still gated separately
+    // by the reclaim horizon.
 
     // Remove this job pointer from the repair jobs lookup BEFORE it has been executed. Had we done
     // it after executing the repair job, we might have see that there is a pending repair job for
