@@ -2726,3 +2726,170 @@ TYPED_TEST(HNSWTest, snapshotPinsUntraversedBlock) {
     snap = HNSWGraphSnapshot{};
     VecSimIndex_Free(index);
 }
+
+// Task 4.1 (read path): a lock-free KNN over a captured snapshot. (1) On the same
+// graph it returns the same results as the live search; (2) run with no lock, it
+// stays point-in-time consistent while a writer copy-on-writes the live graph
+// underneath. (Concurrent *inserts* would also grow the vectors container, which
+// is not yet snapshot-safe — gap 4-vector-data — so the writer here rewrites
+// existing links via the COW-aware path, which does not grow the index.)
+TYPED_TEST(HNSWTest, lockFreeSnapshotQuery) {
+    size_t dim = 4;
+    size_t M = 16;
+    size_t n = 1000;
+    size_t k = 10;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    const size_t lds = hnsw->levelDataSize;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Tie-free query (0.3 keeps all |i - 0.3| distinct), so the result order is
+    // unambiguous and the two search paths must agree exactly.
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0.3);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    auto fingerprint = [](VecSimQueryReply *r) {
+        uint64_t h = 1469598103934665603ull;
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            h = (h ^ (uint64_t)VecSimQueryResult_GetId(r->results.data() + i)) * 1099511628211ull;
+        }
+        return std::make_pair(h, len);
+    };
+
+    // (1) Correctness: the lock-free snapshot search == the live search on the
+    // same graph.
+    VecSimQueryReply *liveRep = hnsw->topKQuery(query, k, nullptr);
+    VecSimQueryReply *snapRep = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(liveRep), k);
+    ASSERT_EQ(VecSimQueryReply_Len(snapRep), VecSimQueryReply_Len(liveRep));
+    for (size_t i = 0; i < k; i++) {
+        ASSERT_EQ(VecSimQueryResult_GetId(liveRep->results.data() + i),
+                  VecSimQueryResult_GetId(snapRep->results.data() + i))
+            << "rank " << i;
+        ASSERT_EQ(VecSimQueryResult_GetScore(liveRep->results.data() + i),
+                  VecSimQueryResult_GetScore(snapRep->results.data() + i));
+    }
+    auto baseline = fingerprint(snapRep);
+    VecSimQueryReply_Free(liveRep);
+    VecSimQueryReply_Free(snapRep);
+
+    // (2) Lock-free + point-in-time consistent: repeatedly run the snapshot query
+    // with no lock while a writer COWs the live graph; the results must not change.
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> writes{0};
+    std::thread writer([&] {
+        std::mt19937 rng(99);
+        while (!stop.load(std::memory_order_relaxed)) {
+            idType id = rng() % n;
+            ElementGraphData *gd = hnsw->getGraphDataByInternalIdForWrite(id);
+            ElementLevelData &ld = gd->getElementLevelData(0, lds);
+            if (ld.getNumLinks() > 0) {
+                ld.setLinkAtPos(0, (idType)(rng() % n));
+                writes.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    bool consistent = true;
+    for (int it = 0; it < 300; it++) {
+        VecSimQueryReply *r = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+        auto f = fingerprint(r);
+        VecSimQueryReply_Free(r);
+        if (f != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(writes.load(), 0u);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Like lockFreeSnapshotQuery, but the writer performs *real inserts* (addVector),
+// which grow and reallocate all three per-id containers — the graph backbone, the
+// raw vectors, and idToMetaData (labels + flags). A snapshot pins as-of-capture
+// copies of all three, so the lock-free reader must keep returning identical
+// results and must be race-free (this is the test that must stay TSan-clean).
+TYPED_TEST(HNSWTest, lockFreeSnapshotQueryDuringInserts) {
+    size_t dim = 4;
+    size_t M = 16;
+    size_t n = 1000;   // captured population
+    size_t k = 10;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0.3);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    auto fingerprint = [](VecSimQueryReply *r) {
+        uint64_t h = 1469598103934665603ull;
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            h = (h ^ (uint64_t)VecSimQueryResult_GetId(r->results.data() + i)) * 1099511628211ull;
+        }
+        return std::make_pair(h, len);
+    };
+
+    VecSimQueryReply *snapRep = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(snapRep), k);
+    auto baseline = fingerprint(snapRep);
+    VecSimQueryReply_Free(snapRep);
+
+    // Writer keeps inserting new ids past the captured population, forcing the
+    // live containers to grow/realloc while the snapshot is read lock-free.
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> writes{0};
+    std::thread writer([&] {
+        std::mt19937 rng(99);
+        size_t next = n;
+        while (!stop.load(std::memory_order_relaxed)) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, next, (float)(rng() % 4096));
+            next++;
+            writes.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    bool consistent = true;
+    for (int it = 0; it < 300; it++) {
+        VecSimQueryReply *r = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+        auto f = fingerprint(r);
+        VecSimQueryReply_Free(r);
+        if (f != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(writes.load(), 0u);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}

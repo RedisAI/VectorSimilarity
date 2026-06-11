@@ -423,6 +423,13 @@ public:
                      const HNSWAddVectorState &state);
     VecSimQueryReply *topKQuery(const void *query_data, size_t k,
                                 VecSimQueryParams *queryParams) const override;
+    // Lock-free KNN over an immutable graph snapshot. Resolves all graph access
+    // through `snap` (no per-node locks — the snapshot's buffers are immutable),
+    // so it can run after the index read lock has been released and stays
+    // consistent with the index state at capture time while writers proceed. On
+    // the same graph and ef/k as the live path it returns the same results.
+    VecSimQueryReply *topKFromSnapshot(const HNSWGraphSnapshot &snap, const void *query_data,
+                                       size_t k, VecSimQueryParams *queryParams) const;
     VecSimQueryReply *rangeQuery(const void *query_data, double radius,
                                  VecSimQueryParams *queryParams) const override;
 
@@ -2156,6 +2163,132 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         }
     }
     delete results;
+    return rep;
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryReply *
+HNSWIndex<DataType, DistType>::topKFromSnapshot(const HNSWGraphSnapshot &snap,
+                                                const void *query_data, size_t k,
+                                                VecSimQueryParams *queryParams) const {
+    auto rep = new VecSimQueryReply(this->allocator);
+    if (!snap.valid() || snap.curElementCount == 0 || k == 0 ||
+        snap.entrypointNode == INVALID_ID) {
+        return rep;
+    }
+
+    auto processed_query_ptr = this->preprocessQuery(query_data);
+    const void *query = processed_query_ptr.get();
+    void *timeoutCtx = nullptr;
+    size_t ef = this->ef;
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.efRuntime != 0) {
+            ef = queryParams->hnswRuntimeParams.efRuntime;
+        }
+    }
+    ef = std::max(ef, k);
+
+    // A link can only reference an id that existed at capture; guard defensively.
+    const idType visibleCount = (idType)snap.curElementCount;
+    auto visible = [&](idType id) { return id < visibleCount; };
+
+    // Read flags + labels from the captured (frozen) metadata, not the live index,
+    // so a concurrent insert that reallocates idToMetaData can't race this scan.
+    const auto *meta = static_cast<const vecsim_stl::vector<ElementMetaData> *>(snap.metaData.get());
+    auto snapDeleted = [&](idType id) { return ((*meta)[id].flags & DELETE_MARK) != 0; };
+    auto snapInProcess = [&](idType id) { return ((*meta)[id].flags & IN_PROCESS) != 0; };
+    auto snapLabel = [&](idType id) { return (*meta)[id].label; };
+
+    // ---- Phase 1: greedy descent through the upper levels (no locks). ----
+    idType cur = snap.entrypointNode;
+    DistType curDist = this->calcDistance(query, snap.getVectorData(cur));
+    for (size_t level = snap.maxLevel; level > 0; level--) {
+        bool changed = true;
+        while (changed) {
+            if (VECSIM_TIMEOUT(timeoutCtx)) {
+                rep->code = VecSim_QueryReply_TimedOut;
+                return rep;
+            }
+            changed = false;
+            ElementLevelData &node_level = snap.getLevelData(cur, level);
+            for (linkListSize j = 0; j < node_level.getNumLinks(); j++) {
+                idType cand = node_level.getLinkAtPos(j);
+                if (!visible(cand) || snapInProcess(cand)) {
+                    continue;
+                }
+                DistType d = this->calcDistance(query, snap.getVectorData(cand));
+                if (d < curDist) {
+                    curDist = d;
+                    cur = cand;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // ---- Phase 2: ef-bounded best-first search at level 0 (no locks). ----
+    // Local visited set so the scan touches no shared/live state.
+    vecsim_stl::vector<bool> visited(snap.curElementCount, false, this->allocator);
+    candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
+
+    DistType lowerBound;
+    if (!snapDeleted(cur)) {
+        DistType dist = this->calcDistance(query, snap.getVectorData(cur));
+        lowerBound = dist;
+        top_candidates->emplace(dist, snapLabel(cur));
+        candidate_set.emplace(-dist, cur);
+    } else {
+        lowerBound = std::numeric_limits<DistType>::max();
+        candidate_set.emplace(-lowerBound, cur);
+    }
+    visited[cur] = true;
+
+    while (!candidate_set.empty()) {
+        auto curr_pair = candidate_set.top();
+        if ((-curr_pair.first) > lowerBound && top_candidates->size() >= ef) {
+            break;
+        }
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
+            rep->code = VecSim_QueryReply_TimedOut;
+            delete top_candidates;
+            return rep;
+        }
+        candidate_set.pop();
+
+        ElementLevelData &node_level = snap.getLevelData(curr_pair.second, 0);
+        for (linkListSize j = 0; j < node_level.getNumLinks(); j++) {
+            idType cand = node_level.getLinkAtPos(j);
+            if (!visible(cand) || visited[cand] || snapInProcess(cand)) {
+                continue;
+            }
+            visited[cand] = true;
+            DistType d = this->calcDistance(query, snap.getVectorData(cand));
+            if (lowerBound > d || top_candidates->size() < ef) {
+                candidate_set.emplace(-d, cand);
+                if (!snapDeleted(cand)) {
+                    top_candidates->emplace(d, snapLabel(cand));
+                }
+                if (top_candidates->size() > ef) {
+                    top_candidates->pop();
+                }
+                if (!top_candidates->empty()) {
+                    lowerBound = top_candidates->top().first;
+                }
+            }
+        }
+    }
+
+    while (top_candidates->size() > k) {
+        top_candidates->pop();
+    }
+    rep->results.resize(top_candidates->size());
+    for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
+        std::tie(result->score, result->id) = top_candidates->top();
+        top_candidates->pop();
+    }
+    delete top_candidates;
     return rep;
 }
 
