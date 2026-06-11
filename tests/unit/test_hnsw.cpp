@@ -2248,3 +2248,93 @@ TYPED_TEST(HNSWTest, FitMemoryTest) {
 
     VecSimIndex_Free(index);
 }
+
+// Phase 1 of the HNSW snapshot work: validate the block deep-copy primitive
+// (ElementGraphData::copyTo / ElementLevelData::copyInto) against the real,
+// production node layout. Ported from
+// docs/design/hnsw-snapshot/prototypes/block_deepcopy.cpp, which proved the
+// algorithm on a stand-in struct; this runs it on a genuine multi-level node
+// built by the index (FAM links + allocator-backed `others` + incoming edges).
+// The copy is the foundation of block-level copy-on-write: it must produce a
+// node with identical contents but fully independent storage and a fresh mutex.
+TYPED_TEST(HNSWTest, copyToDeepCopy) {
+    size_t dim = 4;
+    size_t M = 8;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+
+    // Insert vectors until at least one node is promoted above level 0, so the
+    // copy exercises the inline level 0 *and* the separately-allocated `others`.
+    size_t n = 0;
+    ElementGraphData *src = nullptr;
+    while (src == nullptr) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
+        if (hnsw->getGraphDataByInternalId(n)->toplevel > 0) {
+            src = hnsw->getGraphDataByInternalId(n);
+        }
+        n++;
+        ASSERT_LT(n, 100000u) << "no multi-level node was created";
+    }
+
+    const size_t egds = hnsw->elementGraphDataSize;
+    const size_t lds = hnsw->levelDataSize;
+    auto allocator = index->getAllocator();
+
+    // Deep-copy into freshly zeroed memory, exactly as block-COW will.
+    auto dstMem = allocator->allocate_unique(egds);
+    memset(dstMem.get(), 0, egds);
+    auto *dst = reinterpret_cast<ElementGraphData *>(dstMem.get());
+    src->copyTo(dst, lds, egds, allocator);
+
+    // (1) Identical contents but independent storage, at every level.
+    ASSERT_EQ(dst->toplevel, src->toplevel);
+    for (size_t lvl = 0; lvl <= src->toplevel; lvl++) {
+        ElementLevelData &s = src->getElementLevelData(lvl, lds);
+        ElementLevelData &d = dst->getElementLevelData(lvl, lds);
+        ASSERT_EQ(d.getNumLinks(), s.getNumLinks()) << "level " << lvl;
+        for (size_t j = 0; j < s.getNumLinks(); j++) {
+            ASSERT_EQ(d.getLinkAtPos(j), s.getLinkAtPos(j)) << "level " << lvl << " pos " << j;
+        }
+        // Incoming edges: equal content, but a distinct (independent) vector.
+        const auto &se = s.getIncomingEdges();
+        const auto &de = d.getIncomingEdges();
+        ASSERT_EQ(de.size(), se.size()) << "level " << lvl;
+        for (size_t j = 0; j < se.size(); j++) {
+            ASSERT_EQ(de[j], se[j]) << "level " << lvl << " incoming " << j;
+        }
+        ASSERT_NE(d.incomingUnidirectionalEdges, s.incomingUnidirectionalEdges) << "level " << lvl;
+        // Upper-level link arrays live in `others`, so they must be at distinct
+        // addresses; level 0 is inline in each struct and naturally differs.
+        if (lvl > 0) {
+            ASSERT_NE(d.links, s.links) << "level " << lvl;
+        }
+    }
+
+    // (2) Mutating the source after the copy must not touch the snapshot.
+    ElementLevelData &s0 = src->getElementLevelData(0, lds);
+    ElementLevelData &d0 = dst->getElementLevelData(0, lds);
+    ASSERT_GT(s0.getNumLinks(), 0u);
+    idType orig_link = s0.getLinkAtPos(0);
+    size_t dst_incoming_before = d0.getIncomingEdges().size();
+    s0.setLinkAtPos(0, 0xDEADBEEF);
+    s0.newIncomingUnidirectionalEdge(0xCAFE);
+    ASSERT_EQ(d0.getLinkAtPos(0), orig_link);
+    ASSERT_EQ(d0.getIncomingEdges().size(), dst_incoming_before);
+    // Restore the source so the index stays consistent for teardown.
+    s0.setLinkAtPos(0, orig_link);
+    s0.removeIncomingUnidirectionalEdgeIfExists(0xCAFE);
+
+    // (3) Both mutexes are fresh and independently lockable (lock state never
+    // aliased from source to copy).
+    ASSERT_TRUE(src->neighborsGuard.try_lock());
+    src->neighborsGuard.unlock();
+    ASSERT_TRUE(dst->neighborsGuard.try_lock());
+    dst->neighborsGuard.unlock();
+
+    // Free the deep copy's heap allocations (incoming-edges vectors + `others`).
+    // The ElementGraphData block itself is freed by dstMem's unique_ptr.
+    dst->destroy(lds, allocator);
+
+    VecSimIndex_Free(index);
+}
