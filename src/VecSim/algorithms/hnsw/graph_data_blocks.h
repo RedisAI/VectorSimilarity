@@ -391,3 +391,59 @@ private:
     size_t level_data_size;
     size_t block_size;
 };
+
+// An immutable, point-in-time view of the HNSW graph topology. It is captured by
+// copying the backbone root (an O(1) shared_ptr bump that pins every block buffer
+// referenced at capture time) together with the scalar entry-point / level /
+// count state. Because writers copy-on-write rather than mutate shared buffers,
+// the snapshot keeps observing the graph exactly as it was at capture, even as
+// the live index diverges. Reads through it resolve node access without touching
+// the live `graphDataBlocks` member.
+//
+// `generation` is the snapshot's id from the index's SnapshotRegistry; `liveToken`
+// is an opaque handle whose deleter removes that id from the registry when the
+// last copy of this snapshot is destroyed (registration lifetime == snapshot
+// lifetime, independent of the copy-on-write `root` refcount).
+struct HNSWGraphSnapshot {
+    GraphDataBlocks::Root root;
+    idType entrypointNode;
+    size_t maxLevel;
+    size_t curElementCount;
+    size_t blockSize;
+    size_t levelDataSize;
+    size_t elementGraphDataSize;
+    uint64_t generation = 0;
+    std::shared_ptr<void> liveToken;
+
+    // Captured per-block base pointers of the raw vector data (one per block at
+    // capture time), so a lock-free query reads vector data WITHOUT touching the
+    // live vectors container (whose block-header vector reallocs on insert). The
+    // pointers stay valid while the snapshot is live: the underlying data buffers
+    // don't move when the index grows (only the header vector reallocs; the buffer
+    // pointer is preserved), and SWAP/shrink reuse is deferred while a snapshot is
+    // held. Shared so handle copies don't re-capture. (Capture is O(#blocks)
+    // rather than strictly O(1); rooting the vectors container would restore O(1).)
+    std::shared_ptr<std::vector<const char *>> vectorBlocks;
+    size_t vectorElementBytes = 0;
+
+    // Captured per-id metadata version (the flat label+flags vector), type-erased
+    // because this header is below ElementMetaData's definition. It pins the
+    // as-of-capture metadata so a lock-free query reads its flags + labels without
+    // racing a concurrent insert that reallocates the live metadata. The reader
+    // (HNSWIndex::topKFromSnapshot) casts it back to vecsim_stl::vector<ElementMetaData>.
+    std::shared_ptr<void> metaData;
+
+    bool valid() const { return root != nullptr; }
+
+    ElementGraphData *getGraphData(idType id) const {
+        return reinterpret_cast<ElementGraphData *>(
+            (*root)[id / blockSize].data->getElement(id % blockSize));
+    }
+    ElementLevelData &getLevelData(idType id, size_t level) const {
+        return getGraphData(id)->getElementLevelData(level, levelDataSize);
+    }
+    const char *getVectorData(idType id) const {
+        return (*vectorBlocks)[id / blockSize] +
+               static_cast<size_t>(id % blockSize) * vectorElementBytes;
+    }
+};

@@ -2338,3 +2338,52 @@ TYPED_TEST(HNSWTest, copyToDeepCopy) {
 
     VecSimIndex_Free(index);
 }
+
+// Phase 3 of the HNSW snapshot work: the immutable snapshot handle. Capturing it
+// is O(1) (a shared_ptr bump + scalar state, no element allocation), it records
+// the entry-point / level / count as of capture, and reads through it resolve the
+// captured graph topology without touching the live `graphDataBlocks` member.
+// (Isolation under concurrent writes is a separate guarantee that depends on the
+// copy-on-write write path; it is exercised in the next branch.)
+TYPED_TEST(HNSWTest, snapshotHandleCapture) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    size_t n = bs * 3;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Capture is O(1): no element memory is allocated, only refcounts/scalars.
+    size_t mem_before = allocator->getAllocationSize();
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_EQ(allocator->getAllocationSize(), mem_before);
+    ASSERT_TRUE(snap.valid());
+    ASSERT_EQ(snap.curElementCount, n);
+    ASSERT_EQ(snap.entrypointNode, hnsw->entrypointNode);
+    ASSERT_EQ(snap.maxLevel, hnsw->maxLevel);
+
+    // The snapshot resolves node access through the captured backbone and returns
+    // the same level-0 topology the live index holds (no writes have occurred).
+    const size_t lds = hnsw->levelDataSize;
+    ElementLevelData &snapLd0 = snap.getLevelData(0, 0);
+    ElementLevelData &liveLd0 = hnsw->getElementLevelData((idType)0, (size_t)0);
+    ASSERT_EQ(snapLd0.getNumLinks(), liveLd0.getNumLinks());
+    ASSERT_GT(snapLd0.getNumLinks(), 0u);
+    for (size_t j = 0; j < snapLd0.getNumLinks(); j++) {
+        ASSERT_EQ(snapLd0.getLinkAtPos(j), liveLd0.getLinkAtPos(j));
+    }
+    // The snapshot's node 0 resolves to the same (still-shared) buffer as the live
+    // index, since nothing has been copied-on-write yet.
+    ASSERT_EQ(snap.getGraphData(0), hnsw->getGraphDataByInternalId(0));
+    (void)lds;
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}

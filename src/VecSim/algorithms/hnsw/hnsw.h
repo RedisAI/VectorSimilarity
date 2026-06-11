@@ -346,6 +346,57 @@ public:
     ElementGraphData *getGraphDataByInternalId(idType internal_id) const;
     ElementLevelData &getElementLevelData(idType internal_id, size_t level) const;
     ElementLevelData &getElementLevelData(ElementGraphData *element, size_t level) const;
+    // Capture an immutable, point-in-time view of the graph. Must be called under
+    // the index read lock; the returned handle is then usable without holding any
+    // lock, as writers copy-on-write rather than mutate the buffers it pins.
+    //
+    // Consistency contract (what a reader of the returned snapshot sees):
+    //   - STRICT point-in-time for graph TOPOLOGY and MEMBERSHIP: the set of ids
+    //     that existed at capture (ids < curElementCount) and their links/levels
+    //     are frozen — concurrent inserts copy-on-write, so they never perturb the
+    //     captured backbone/buffers.
+    //   - WEAK (best-effort) for per-element METADATA (deleted / in-process flags,
+    //     and a slot's label): metadata structural changes (resize) copy-on-write,
+    //     but per-element fields are written in place on the live metadata, so a
+    //     change that lands after capture (a delete-mark, or a label rewrite when a
+    //     freed slot is recycled) MAY or MAY NOT be observed by the snapshot reader.
+    //     This matches the live index's existing weak flag consistency; a snapshot
+    //     read is not a strict point-in-time view of deletion status. (A later phase
+    //     defers slot recycling for ids a live snapshot can still see, which makes
+    //     labels of visible ids effectively stable; flags remain weak.)
+    HNSWGraphSnapshot captureGraphSnapshot() const {
+        // Hand out a fresh generation id and a registration token whose deleter
+        // removes it from the live set when the last copy of the handle drops.
+        uint64_t generation = snapshotRegistry_->acquire();
+        auto registry = snapshotRegistry_;
+        auto liveToken = std::shared_ptr<void>(
+            static_cast<void *>(nullptr), [registry, generation](void *) {
+                registry->release(generation);
+            });
+        // Capture the per-block base pointers of the raw vector data so a
+        // lock-free query never reads the live (reallocating) vectors container.
+        // Called under the index read lock, so no concurrent writer is reallocating
+        // the block-header vector here.
+        auto *vectorsContainer = static_cast<const DataBlocksContainer *>(this->vectors);
+        auto vectorBlocks = std::make_shared<std::vector<const char *>>();
+        size_t numVectorBlocks = vectorsContainer->numBlocks();
+        vectorBlocks->reserve(numVectorBlocks);
+        for (size_t b = 0; b < numVectorBlocks; b++) {
+            vectorBlocks->push_back(vectorsContainer->getElement(b * this->blockSize));
+        }
+        return HNSWGraphSnapshot{graphDataBlocks.captureRoot(),
+                                 entrypointNode,
+                                 maxLevel,
+                                 curElementCount,
+                                 this->blockSize,
+                                 levelDataSize,
+                                 elementGraphDataSize,
+                                 generation,
+                                 std::move(liveToken),
+                                 std::move(vectorBlocks),
+                                 vectorsContainer->elementByteCount(),
+                                 std::static_pointer_cast<void>(idToMetaData.captureRoot())};
+    }
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryReply_Code *rc) const;
 
