@@ -17,6 +17,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -53,6 +54,9 @@
 //   - `newestLive()` = max(live ids) = the **clone threshold**: a backbone/block
 //     version stamped `gen` must be preserved (cloned on write) iff
 //     `newestLive() >= gen` — some live snapshot can still see it.
+//   - `maxVisibleCount()` = max captured curElementCount = the **reclaim horizon**:
+//     a freed slot `d` may be physically recycled (SWAP) only once
+//     `d >= maxVisibleCount()` — no live snapshot can still read it.
 // `currentGeneration()` = the next id to be handed out = strictly greater than
 // every already-captured id; freshly-written/cloned versions are stamped with it,
 // so writes that post-date all live snapshots stay in place.
@@ -61,17 +65,24 @@
 // lock-free atomics; the mutex guards the ordered set on capture/release.
 class SnapshotRegistry {
 public:
-    uint64_t acquire() {
+    // `visibleCount` is the snapshot's curElementCount at capture: it only ever
+    // reads ids < visibleCount, so it is the per-snapshot reclaim horizon (a SWAP
+    // of an id >= visibleCount can never be observed by it).
+    uint64_t acquire(size_t visibleCount = 0) {
         uint64_t g = nextGeneration_.fetch_add(1);
         std::lock_guard<std::mutex> lk(guard_);
         live_.insert(g);
+        genVisibleCount_[g] = visibleCount;
         maxLive_.store(*live_.rbegin());
+        maxVisibleCount_.store(recomputeMaxVisibleCount());
         return g;
     }
     void release(uint64_t generation) {
         std::lock_guard<std::mutex> lk(guard_);
         live_.erase(generation);
+        genVisibleCount_.erase(generation);
         maxLive_.store(live_.empty() ? 0 : *live_.rbegin());
+        maxVisibleCount_.store(recomputeMaxVisibleCount());
     }
     // "is any snapshot live?" — the degenerate gate (used by the SWAP deferral).
     bool anyLive() const { return maxLive_.load() != 0; }
@@ -79,12 +90,27 @@ public:
     uint64_t newestLive() const { return maxLive_.load(); }
     // next id to be handed out (> all captured ids). Lock-free.
     uint64_t currentGeneration() const { return nextGeneration_.load(); }
+    // Reclaim horizon for slot recycling: max curElementCount over live snapshots.
+    // A SWAP that overwrites internal id `d` is observable by a live snapshot iff
+    // `d < that snapshot's visibleCount`; so the swap is safe for ALL live snapshots
+    // iff `d >= maxVisibleCount()`. 0 when none live (everything recyclable).
+    // Lock-free.
+    size_t maxVisibleCount() const { return maxVisibleCount_.load(); }
 
 private:
+    size_t recomputeMaxVisibleCount() const { // caller holds guard_
+        size_t m = 0;
+        for (auto &kv : genVisibleCount_) {
+            m = std::max(m, kv.second);
+        }
+        return m;
+    }
     mutable std::mutex guard_;
     std::set<uint64_t> live_;            // unique, monotonic ids; begin=min, rbegin=max
+    std::map<uint64_t, size_t> genVisibleCount_; // gen -> curElementCount at capture
     std::atomic<uint64_t> nextGeneration_{1}; // 0 reserved for "no/invalid generation"
     std::atomic<uint64_t> maxLive_{0};   // cached max(live_) for the lock-free hot path
+    std::atomic<size_t> maxVisibleCount_{0}; // cached max(visibleCount) over live snapshots
 };
 
 // Generation-tagged, copy-on-write holder for a single `shared_ptr<T>` version

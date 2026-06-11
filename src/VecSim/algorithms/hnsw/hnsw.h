@@ -419,7 +419,9 @@ public:
     HNSWGraphSnapshot captureGraphSnapshot() const {
         // Hand out a fresh generation id and a registration token whose deleter
         // removes it from the live set when the last copy of the handle drops.
-        uint64_t generation = snapshotRegistry_->acquire();
+        // Pass curElementCount: this snapshot only reads ids < it, so it is the
+        // snapshot's slot-reclaim horizon (a SWAP of a higher id is unobservable).
+        uint64_t generation = snapshotRegistry_->acquire(curElementCount);
         auto registry = snapshotRegistry_;
         auto liveToken = std::shared_ptr<void>(
             static_cast<void *>(nullptr), [registry, generation](void *) {
@@ -458,6 +460,11 @@ public:
     // (the snapshot holds the *old* root), so use_count would wrongly report no
     // snapshot mid-stream — the registry tracks the snapshot's whole lifetime.
     bool graphSnapshotActive() const { return snapshotRegistry_->anyLive(); }
+    // Reclaim horizon for SWAP slot recycling: the max curElementCount over live
+    // snapshots. A swap that overwrites an internal id >= this is invisible to
+    // every live snapshot (each only reads ids < its captured curElementCount) and
+    // is safe to run; one below it must be deferred. 0 when no snapshot is live.
+    size_t snapshotReclaimHorizon() const { return snapshotRegistry_->maxVisibleCount(); }
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryReply_Code *rc) const;
 

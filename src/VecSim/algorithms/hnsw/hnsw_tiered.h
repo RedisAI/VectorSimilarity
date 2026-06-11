@@ -341,14 +341,32 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
 
     // Execute swap jobs - acquire hnsw write lock.
     this->lockMainIndexGuard();
+
+    // SWAP recycles a slot by overwriting its vector + metadata in place
+    // (SwapLastIdWithDeletedId), which copy-on-write does NOT version. A live
+    // snapshot only ever reads ids < its captured curElementCount, so it can only
+    // observe a swap that recycles an id below that. The reclaim *horizon* is the
+    // max curElementCount over all live snapshots: a swap whose freed id is >= the
+    // horizon is invisible to every live snapshot and is safe to run now; one below
+    // it stays a tombstone until the cursors that could see it are released. This
+    // keeps compaction flowing under a long-lived cursor (new, high-id churn is
+    // reclaimed) instead of stalling globally. The swap runs under the exclusive
+    // main lock, so its COWs can't race a concurrent reader. horizon == 0 ⇒ no
+    // snapshot ⇒ everything recyclable.
+    const size_t horizon = this->getHNSWIndex()->snapshotReclaimHorizon();
+
     TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
-               "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
-               readySwapJobs, std::min(readySwapJobs, maxJobsToRun));
+               "Tiered HNSW index GC: there are %zu ready swap jobs (reclaim horizon %zu)",
+               readySwapJobs, horizon);
 
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());
     for (auto &it : idToSwapJob) {
         auto *swap_job = it.second;
+        // Below the horizon: a live snapshot may still read this slot — defer.
+        if (swap_job->deleted_id < horizon) {
+            continue;
+        }
         if (swap_job->pending_repair_jobs_counter.load() == 0) {
             // Swap job is ready for execution - execute and delete it.
             this->getHNSWIndex()->removeAndSwapMarkDeletedElement(swap_job->deleted_id);
