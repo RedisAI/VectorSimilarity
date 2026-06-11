@@ -997,18 +997,26 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         }
         this->flat_results.swap(cur_flat_results->results);
         VecSimQueryReply_Free(cur_flat_results);
-        // Take the main index read lock to create the backend iterator. In the
-        // default (live) mode we hold it until the iterator is depleted or freed.
-        // In snapshot mode the backend iterator captures an immutable snapshot at
-        // creation, so we release the lock immediately afterwards and iterate
-        // lock-free — the snapshot's liveToken keeps graphSnapshotActive() true for
-        // the cursor's whole life, while ingestion and GC are no longer blocked by
-        // this cursor.
-        this->index->mainIndexGuard.lock_shared();
-        this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
-            this->flat_iterator->getQueryBlob(), queryParams);
+        // Create the backend iterator. In the default (live) mode we take the main
+        // index *read* lock and hold it until the iterator is depleted or freed.
+        // In snapshot mode we instead take the *write* (exclusive) lock briefly so
+        // capture is a quiescence point with no in-flight writer (tiered inserts
+        // wire the graph holding mainIndexGuard *shared*, so only the exclusive lock
+        // drains them). The backend captures + forks under it, then we release
+        // immediately and iterate lock-free — the snapshot's liveToken keeps
+        // graphSnapshotActive() true for the cursor's whole life, while ingestion
+        // and GC are no longer blocked by this cursor. (How concurrent SWAP / repair
+        // stay safe against the live snapshot is handled GC-side: see
+        // executeReadySwapJobs and executeRepairJob.)
         if (this->snapshot_mode) {
-            this->index->mainIndexGuard.unlock_shared();
+            this->index->lockMainIndexGuard();
+            this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
+                this->flat_iterator->getQueryBlob(), queryParams);
+            this->index->unlockMainIndexGuard();
+        } else {
+            this->index->mainIndexGuard.lock_shared();
+            this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
+                this->flat_iterator->getQueryBlob(), queryParams);
         }
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         hnsw_code = cur_hnsw_results->code;

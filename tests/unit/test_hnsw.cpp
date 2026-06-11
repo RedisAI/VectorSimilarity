@@ -2422,10 +2422,15 @@ TYPED_TEST(HNSWTest, snapshotHandleCapture) {
         GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
     }
 
-    // Capture is O(1): no element memory is allocated, only refcounts/scalars.
+    // Capture forks the backbone (so concurrent writers mutate a private copy while
+    // this snapshot keeps the captured one). That allocates a new backbone vector +
+    // per-block handles — O(#blocks) — but NOT element/vector data: the growth must
+    // be far below one block's worth of elements.
     size_t mem_before = allocator->getAllocationSize();
     auto snap = hnsw->captureGraphSnapshot();
-    ASSERT_EQ(allocator->getAllocationSize(), mem_before);
+    size_t capture_growth = allocator->getAllocationSize() - mem_before;
+    ASSERT_LT(capture_growth, bs * hnsw->elementGraphDataSize)
+        << "capture must copy only block handles, not element data";
     ASSERT_TRUE(snap.valid());
     ASSERT_EQ(snap.curElementCount, n);
     ASSERT_EQ(snap.entrypointNode, hnsw->entrypointNode);

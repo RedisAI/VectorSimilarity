@@ -133,6 +133,11 @@ public:
         return (registry_ ? registry_->newestLive() : 0) >= gen;
     }
     bool mustCloneRoot() const { return mustClone(gen_); }
+    // Cheap relaxed check: is any snapshot live (so a block COW / fork can happen)?
+    // Lets the read path skip the (spinlock-backed) atomic shared_ptr load when no
+    // snapshot exists. Safe for a reader holding at least the shared index lock:
+    // capture runs under the exclusive lock, so this value can't flip mid-read.
+    bool anySnapshotLive() const { return registry_ && registry_->anyLive(); }
 
     // Copy-on-write: if a live snapshot can still see this version, replace it with
     // `cloneFn(*root_)` and re-stamp; otherwise leave it (subsequent writes mutate
@@ -142,6 +147,21 @@ public:
             root_ = cloneFn(static_cast<const T &>(*root_));
             gen_ = currentGeneration();
         }
+    }
+
+    // Return the current version (pinned for a snapshot) AND install a private fork
+    // — `cloneFn(*root_)` — as the new live version, stamped with the current
+    // generation. Must run under the exclusive lock (it reassigns root_). Used at
+    // capture so the live index keeps mutating a private copy while the snapshot
+    // owns the captured one; the current-generation stamp means later writes COW at
+    // a finer grain off the fork instead of re-forking the root.
+    template <class CloneFn> std::shared_ptr<T> captureAndFork(CloneFn &&cloneFn) {
+        std::shared_ptr<T> captured = root_;
+        if (captured) {
+            root_ = cloneFn(static_cast<const T &>(*root_));
+            gen_ = currentGeneration();
+        }
+        return captured;
     }
 
 private:
@@ -235,9 +255,15 @@ private:
     uint64_t gen_; // generation last written in (clone decision; not the use_count)
 };
 
-// A backbone slot: a refcounted handle to one block's buffer. Trivially/cheaply
-// copyable, which is what keeps backbone copy-on-write (path-copying the header
-// vector) cheap — only refcounts are bumped, buffers are shared.
+// A backbone slot: a refcounted handle to one block's buffer. While a snapshot is
+// live, concurrent tiered inserts copy-on-write a block's buffer (a CAS swap in
+// cowBlock) while other inserts/readers load it; to avoid tearing the 16-byte
+// shared_ptr or racing reclamation, the LIVE backbone's handles are accessed with
+// the std::atomic_* free functions (load/compare_exchange). The handle stays a
+// plain shared_ptr (not std::atomic<shared_ptr>, which libstdc++ only provides
+// from GCC 12) so the slot remains trivially copyable — important because the
+// backbone vector is value-copied at capture-fork, which always runs under the
+// exclusive lock (no concurrent CAS), where a plain copy is safe.
 struct GraphBlock {
     std::shared_ptr<GraphBlockBuffer> data;
 };
@@ -289,14 +315,15 @@ public:
     }
 
     // ---- read path ----
+    // The backbone vector is structurally stable under the shared lock (it only
+    // grows / is replaced under the exclusive lock), so indexing it is safe; the
+    // per-block handle is loaded atomically (a concurrent insert may CAS-fork it).
     char *getElement(size_t id) const {
-        return (*backbone_.root())[id / block_size].data->getElement(id % block_size);
+        return blockData(id / block_size)->getElement(id % block_size);
     }
-    size_t blockLength(size_t blockIdx) const {
-        return (*backbone_.root())[blockIdx].data->getLength();
-    }
+    size_t blockLength(size_t blockIdx) const { return blockData(blockIdx)->getLength(); }
     char *getElementInBlock(size_t blockIdx, size_t offset) const {
-        return (*backbone_.root())[blockIdx].data->getElement(offset);
+        return blockData(blockIdx)->getElement(offset);
     }
 
     // ---- write path (copy-on-write aware; must run under the index write lock) ----
@@ -306,7 +333,7 @@ public:
     char *getElementForWrite(size_t id) {
         cowBackbone();
         cowBlock(id / block_size);
-        return (*backbone_.root())[id / block_size].data->getElement(id % block_size);
+        return blockData(id / block_size)->getElement(id % block_size);
     }
 
     // Append an empty block (graph growth). Path-copies the backbone first if a
@@ -322,7 +349,7 @@ public:
     char *addElement(const void *element_record) {
         cowBackbone();
         cowBlock(backbone_.root()->size() - 1);
-        return backbone_.root()->back().data->addElement(element_record);
+        return blockData(backbone_.root()->size() - 1)->addElement(element_record);
     }
 
     // Remove (decrement) the last record of the last block and return it. COWs
@@ -330,7 +357,7 @@ public:
     char *removeAndFetchLastElement() {
         cowBackbone();
         cowBlock(backbone_.root()->size() - 1);
-        return backbone_.root()->back().data->removeAndFetchLastElement();
+        return blockData(backbone_.root()->size() - 1)->removeAndFetchLastElement();
     }
 
     // Drop the last (empty) block. Path-copies the backbone first if shared.
@@ -344,7 +371,42 @@ public:
     // index read lock; reads through the returned Root are then lock-free.
     Root captureRoot() const { return backbone_.capture(); }
 
+    // Capture the current backbone for a snapshot AND install a private fork as the
+    // new live backbone (stamped with the current generation). Must run under the
+    // exclusive index lock. Effect: the snapshot owns the captured (now immutable)
+    // backbone; the live index keeps mutating the fork. Because the fork carries the
+    // current generation, a concurrent insert's cowBackbone is a no-op (the backbone
+    // is never re-forked under the shared lock — so the backbone vector stays
+    // structurally stable for lock-free readers), and only per-block buffers are
+    // copy-on-written (cowBlock, via an atomic CAS) as they are first written.
+    Root captureRootAndFork() {
+        return backbone_.captureAndFork([this](const Backbone &old) {
+            Root fresh(new (allocator) Backbone(allocator));
+            *fresh = old; // copies the per-block handles (atomic load/store); buffers shared
+            return fresh;
+        });
+    }
+
 private:
+    // Load a block's buffer handle. A concurrent insert may CAS-fork it ONLY while a
+    // snapshot is live, so the (spinlock-backed) atomic load is used only then; with
+    // no snapshot the handle is immutable and a plain read avoids the overhead. The
+    // gate is correct for callers holding at least the shared index lock (capture,
+    // which is the only thing that can make a snapshot live, runs under the
+    // exclusive lock and so cannot flip the gate mid-read).
+    // Returns a raw buffer pointer (no refcount traffic — matching the original
+    // in-place deref). With no snapshot the handle is immutable, so a plain read is
+    // safe. With a snapshot live a concurrent insert may CAS-fork the handle, so it
+    // is loaded atomically; the buffer it points at stays alive for this locked read
+    // because any fork pins the old buffer in the snapshot that forced it.
+    GraphBlockBuffer *blockData(size_t blockIdx) const {
+        const GraphBlock &blk = (*backbone_.root())[blockIdx];
+        if (!backbone_.anySnapshotLive()) {
+            return blk.data.get();
+        }
+        return std::atomic_load_explicit(&blk.data, std::memory_order_acquire).get();
+    }
+
     void ensureRoot() {
         if (!backbone_.hasRoot()) {
             // Allocate the backbone vector object through the index allocator (so
@@ -376,12 +438,30 @@ private:
     // A per-buffer use_count would be misleading before the backbone is cloned (a
     // shared backbone holds a single shared_ptr per block, so use_count == 1 even
     // though a snapshot sees it) — the generation tag is reliable.
+    // Safe under concurrent tiered inserts (shared lock + per-node mutexes): the
+    // fork is published with a compare-exchange so that if two writers race to COW
+    // the same block, exactly one fork wins and the loser adopts it. The generation
+    // tag makes the CAS idempotent: the winner stamps the fresh buffer with the
+    // current generation, so the loser — after its CAS fails and reloads the now
+    // current-gen buffer — sees mustClone()==false and uses the winner's fork
+    // instead of forking again. No lost updates: both `fresh` copies are pure
+    // copies of the committed pre-write state, so discarding the loser's is safe;
+    // the actual link writes happen afterwards, in place, on the single shared fork.
     void cowBlock(size_t blockIdx) {
         GraphBlock &blk = (*backbone_.root())[blockIdx];
-        if (backbone_.mustClone(blk.data->gen())) {
+        std::shared_ptr<GraphBlockBuffer> cur =
+            std::atomic_load_explicit(&blk.data, std::memory_order_acquire);
+        while (backbone_.mustClone(cur->gen())) {
             auto fresh = makeBuffer(); // carries currentGeneration()
-            blk.data->copyLiveInto(*fresh);
-            blk.data = std::move(fresh);
+            cur->copyLiveInto(*fresh);
+            // On success, publish our fork. On failure, `cur` is updated to the
+            // value another writer published; the loop re-checks mustClone (false
+            // once that value carries the current generation) and we adopt it.
+            if (std::atomic_compare_exchange_strong_explicit(&blk.data, &cur, fresh,
+                                                             std::memory_order_acq_rel,
+                                                             std::memory_order_acquire)) {
+                break;
+            }
         }
     }
 

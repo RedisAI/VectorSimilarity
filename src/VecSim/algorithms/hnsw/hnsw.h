@@ -102,27 +102,50 @@ public:
         store_.setRegistry(std::move(registry));
     }
 
-    ElementMetaData &operator[](size_t id) { return (*store_.root())[id]; }
-    const ElementMetaData &operator[](size_t id) const {
-        const Vector &v = *store_.root();
-        return v[id];
+    // Reads go through an atomically-published raw pointer to the current version's
+    // vector, NOT the shared_ptr root. Rationale: the per-id flags are read on some
+    // paths without the index lock (the weak deleted/in-process consistency), and a
+    // copy-on-write under a live snapshot reassigns the shared_ptr root. Reading a
+    // 16-byte shared_ptr there can tear -> crash; an 8-byte atomic pointer load
+    // cannot. The pointed-to vector stays alive across a COW because the COW only
+    // happens while a snapshot pins the old version, so a stale read still hits live
+    // memory (and yields the accepted as-of-capture flag value). No refcount traffic
+    // on the read path. Capacity changes (resize/shrink) republish under the write
+    // lock.
+    //
+    // NOTE: this published-pointer scheme removes the shared_ptr TEAR, but the
+    // per-element flag byte itself is still written in place and read without a lock
+    // (deliberate weak deleted/in-process consistency — pre-existing, see task 4.4a).
+    // That is a genuine data race ThreadSanitizer will report on the flag field; it
+    // is accepted by design (the read tolerates either the pre- or post-write value)
+    // and is NOT introduced by the snapshot work — a lock-free snapshot reader is
+    // just another participant in the same long-standing relaxed flag access.
+    ElementMetaData &operator[](size_t id) { return (*live())[id]; }
+    const ElementMetaData &operator[](size_t id) const { return (*live())[id]; }
+    ElementMetaData &at(size_t id) { return live()->at(id); }
+    const ElementMetaData &at(size_t id) const { return live()->at(id); }
+    ElementMetaData *data() {
+        Vector *v = live();
+        return v ? v->data() : nullptr;
     }
-    ElementMetaData &at(size_t id) { return store_.root()->at(id); }
-    const ElementMetaData &at(size_t id) const {
-        const Vector &v = *store_.root();
-        return v.at(id);
-    }
-    ElementMetaData *data() { return store_.hasRoot() ? store_.root()->data() : nullptr; }
     const ElementMetaData *data() const {
-        return store_.hasRoot() ? store_.root()->data() : nullptr;
+        Vector *v = live();
+        return v ? v->data() : nullptr;
     }
-    size_t size() const { return store_.hasRoot() ? store_.root()->size() : 0; }
-    size_t capacity() const { return store_.hasRoot() ? store_.root()->capacity() : 0; }
+    size_t size() const {
+        Vector *v = live();
+        return v ? v->size() : 0;
+    }
+    size_t capacity() const {
+        Vector *v = live();
+        return v ? v->capacity() : 0;
+    }
 
     void resize(size_t n) {
         ensureRoot();
         cowForResize();
         store_.root()->resize(n);
+        publish();
     }
     void shrink_to_fit() {
         if (!store_.hasRoot()) {
@@ -130,16 +153,26 @@ public:
         }
         if (store_.root()->empty()) {
             store_.reset(); // return to the initial (no-heap) footprint
+            publish();
             return;
         }
         cowForResize();
         store_.root()->shrink_to_fit();
+        publish();
     }
 
     // O(1) capture of the current metadata version (pins it for a snapshot).
     std::shared_ptr<Vector> captureRoot() const { return store_.capture(); }
 
 private:
+    // Current version's vector, read with an acquire load (tear-free, lock-free).
+    Vector *live() const { return live_.load(std::memory_order_acquire); }
+    // Publish the current root's vector pointer; call after any change to the root
+    // (init / COW / resize / reset). Must run under the index write lock.
+    void publish() {
+        live_.store(store_.hasRoot() ? store_.root().get() : nullptr,
+                    std::memory_order_release);
+    }
     void ensureRoot() {
         if (!store_.hasRoot()) {
             store_.initRoot(std::shared_ptr<Vector>(new (allocator_) Vector(allocator_)));
@@ -154,6 +187,8 @@ private:
     }
     std::shared_ptr<VecSimAllocator> allocator_;
     RootedCowStore<Vector> store_;
+    // Atomically-published pointer to store_'s current vector (see live()/publish()).
+    std::atomic<Vector *> live_{nullptr};
 };
 
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
@@ -358,9 +393,14 @@ public:
         return getGraphDataByInternalIdForWrite(internal_id)->getElementLevelData(
             level, this->levelDataSize);
     }
-    // Capture an immutable, point-in-time view of the graph. Must be called under
-    // the index read lock; the returned handle is then usable without holding any
-    // lock, as writers copy-on-write rather than mutate the buffers it pins.
+    // Capture an immutable, point-in-time view of the graph. **Must be called under
+    // the index *write* (exclusive) lock**, held briefly: capture is the quiescence
+    // point at which no writer is active, so it can (a) hand out a generation, (b)
+    // fork the backbone so the live index keeps mutating a private copy while this
+    // snapshot owns the captured one, and (c) snapshot the vector-block base
+    // pointers — all without racing an in-flight insert. The work is O(#blocks)
+    // (pointer copies; no element/vector data is copied); iteration afterward holds
+    // no lock, as writers copy-on-write per block rather than mutating pinned data.
     //
     // Consistency contract (what a reader of the returned snapshot sees):
     //   - STRICT point-in-time for graph TOPOLOGY and MEMBERSHIP: the set of ids
@@ -387,8 +427,7 @@ public:
             });
         // Capture the per-block base pointers of the raw vector data so a
         // lock-free query never reads the live (reallocating) vectors container.
-        // Called under the index read lock, so no concurrent writer is reallocating
-        // the block-header vector here.
+        // Under the exclusive lock, so no concurrent writer is reallocating here.
         auto *vectorsContainer = static_cast<const DataBlocksContainer *>(this->vectors);
         auto vectorBlocks = std::make_shared<std::vector<const char *>>();
         size_t numVectorBlocks = vectorsContainer->numBlocks();
@@ -396,7 +435,10 @@ public:
         for (size_t b = 0; b < numVectorBlocks; b++) {
             vectorBlocks->push_back(vectorsContainer->getElement(b * this->blockSize));
         }
-        return HNSWGraphSnapshot{graphDataBlocks.captureRoot(),
+        // Fork the live backbone (capture is const at the API level but legitimately
+        // mutates the live storage under the exclusive lock; the snapshot receives
+        // the pre-fork backbone). const_cast keeps newBatchIterator's const contract.
+        return HNSWGraphSnapshot{const_cast<GraphDataBlocks &>(graphDataBlocks).captureRootAndFork(),
                                  entrypointNode,
                                  maxLevel,
                                  curElementCount,
