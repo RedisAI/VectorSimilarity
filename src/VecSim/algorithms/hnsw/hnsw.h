@@ -344,8 +344,20 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     const char *getDataByInternalId(idType internal_id) const;
     ElementGraphData *getGraphDataByInternalId(idType internal_id) const;
+    // Copy-on-write aware accessor for mutation: ensures the backbone and the
+    // block holding `internal_id` are not shared with a live snapshot before
+    // returning a writable pointer. Must be called under the index write lock.
+    ElementGraphData *getGraphDataByInternalIdForWrite(idType internal_id);
     ElementLevelData &getElementLevelData(idType internal_id, size_t level) const;
     ElementLevelData &getElementLevelData(ElementGraphData *element, size_t level) const;
+    // COW-aware level-data accessor for mutation: copies the block holding
+    // `internal_id` out of any shared snapshot (idempotent per block) and returns
+    // a writable level record. Use at every site that mutates a node's links or
+    // incoming edges, so a live snapshot's buffers are never modified in place.
+    ElementLevelData &getElementLevelDataForWrite(idType internal_id, size_t level) {
+        return getGraphDataByInternalIdForWrite(internal_id)->getElementLevelData(
+            level, this->levelDataSize);
+    }
     // Capture an immutable, point-in-time view of the graph. Must be called under
     // the index read lock; the returned handle is then usable without holding any
     // lock, as writers copy-on-write rather than mutate the buffers it pins.
@@ -397,6 +409,13 @@ public:
                                  vectorsContainer->elementByteCount(),
                                  std::static_pointer_cast<void>(idToMetaData.captureRoot())};
     }
+    // True while any captured graph snapshot is still live. SWAP slot reuse must
+    // be deferred while this holds, so a freed id referenced by a snapshot is not
+    // physically recycled. Backed by the live-id registry rather than the root's
+    // use_count: after the first copy-on-write the live root is unshared again
+    // (the snapshot holds the *old* root), so use_count would wrongly report no
+    // snapshot mid-stream — the registry tracks the snapshot's whole lifetime.
+    bool graphSnapshotActive() const { return snapshotRegistry_->anyLive(); }
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryReply_Code *rc) const;
 
@@ -527,6 +546,12 @@ template <typename DataType, typename DistType>
 ElementGraphData *
 HNSWIndex<DataType, DistType>::getGraphDataByInternalId(idType internal_id) const {
     return (ElementGraphData *)graphDataBlocks.getElement(internal_id);
+}
+
+template <typename DataType, typename DistType>
+ElementGraphData *
+HNSWIndex<DataType, DistType>::getGraphDataByInternalIdForWrite(idType internal_id) {
+    return (ElementGraphData *)graphDataBlocks.getElementForWrite(internal_id);
 }
 
 template <typename DataType, typename DistType>
@@ -1027,14 +1052,17 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(top_candidates_list.size() <= M &&
            "Should be not be more than M candidates returned by the heuristic");
 
-    auto *new_node_level = getGraphDataByInternalId(new_node_id);
+    // COW-aware: copy the new node's block out of any shared snapshot before
+    // mutating its links (no-op when no snapshot is live).
+    auto *new_node_level = getGraphDataByInternalIdForWrite(new_node_id);
     ElementLevelData &new_node_level_data = getElementLevelData(new_node_level, level);
     assert(new_node_level_data.getNumLinks() == 0 &&
            "The newly inserted element should have blank link list");
 
     for (auto &neighbor_data : top_candidates_list) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
-        auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
+        // COW-aware: the neighbor's links are about to be updated.
+        auto *neighbor_graph_data = getGraphDataByInternalIdForWrite(selected_neighbor);
         if (new_node_id < selected_neighbor) {
             lockNodeLinks(new_node_level);
             lockNodeLinks(neighbor_graph_data);
@@ -1313,7 +1341,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     }
 
     // Move the last element's data to the deleted element's place
-    auto element = getGraphDataByInternalId(element_internal_id);
+    auto element = getGraphDataByInternalIdForWrite(element_internal_id);
     memcpy((void *)element, last_element, this->elementGraphDataSize);
 
     auto data = getDataByInternalId(element_internal_id);
@@ -1671,7 +1699,8 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
                                                                 size_t pos) {
     // Now we know that we are looking at a neighbor that needs to be removed.
     auto removed_node = node_level.getLinkAtPos(pos);
-    ElementLevelData &removed_node_level = getElementLevelData(removed_node, level);
+    // COW-aware: the removed node's incoming edges may be updated below.
+    ElementLevelData &removed_node_level = getElementLevelDataForWrite(removed_node, level);
     // Perform the mutual update:
     // if the removed node id (the node's neighbour to be removed)
     // wasn't pointing to the node (i.e., the edge was uni-directional),

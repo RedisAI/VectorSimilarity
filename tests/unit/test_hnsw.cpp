@@ -2339,12 +2339,74 @@ TYPED_TEST(HNSWTest, copyToDeepCopy) {
     VecSimIndex_Free(index);
 }
 
+// Phase 2 of the HNSW snapshot work: the rooted copy-on-write block storage.
+// Capturing the backbone (root) yields an immutable view; a subsequent write to
+// a shared block must copy that block so the snapshot keeps seeing the old data,
+// and dropping the snapshot must reclaim the superseded buffer automatically.
+// With no snapshot live, writes mutate in place with no extra allocation.
+TYPED_TEST(HNSWTest, cowStorageSnapshotIsolation) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64; // small blocks so a few hundred vectors span multiple blocks
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    size_t n = bs * 3;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_GE(hnsw->graphDataBlocks.size(), 3u);
+
+    const size_t lds = hnsw->levelDataSize;
+
+    // Capture a snapshot (registers a live generation — COW is now driven by the
+    // generation tag, so a bare backbone ref alone would not trigger a clone).
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(snap.valid());
+
+    // Record node 0's level-0 links as the snapshot sees them.
+    auto *snapNode0 = snap.getGraphData(0);
+    ElementLevelData &snapLd0 = snapNode0->getElementLevelData(0, lds);
+    std::vector<idType> recorded;
+    for (size_t j = 0; j < snapLd0.getNumLinks(); j++) {
+        recorded.push_back(snapLd0.getLinkAtPos(j));
+    }
+    ASSERT_GT(recorded.size(), 0u);
+
+    // A write to node 0 via the COW-aware accessor must copy block 0: the live
+    // node ends up at different storage and the allocator grows by a block.
+    size_t mem_before = allocator->getAllocationSize();
+    ElementGraphData *liveNode0 = hnsw->getGraphDataByInternalIdForWrite(0);
+    ASSERT_NE(liveNode0, snapNode0);
+    ASSERT_GT(allocator->getAllocationSize(), mem_before);
+    size_t mem_after_cow = allocator->getAllocationSize();
+
+    // Mutate the live node; the snapshot must not observe the change.
+    liveNode0->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xABCDE);
+    ASSERT_EQ(snapLd0.getNumLinks(), recorded.size());
+    for (size_t j = 0; j < recorded.size(); j++) {
+        ASSERT_EQ(snapLd0.getLinkAtPos(j), recorded[j]);
+    }
+
+    // Dropping the snapshot reclaims the superseded buffer automatically.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_LT(allocator->getAllocationSize(), mem_after_cow);
+
+    // With no snapshot live, a write mutates in place: no allocation.
+    size_t mem_steady = allocator->getAllocationSize();
+    (void)hnsw->getGraphDataByInternalIdForWrite(1);
+    ASSERT_EQ(allocator->getAllocationSize(), mem_steady);
+
+    VecSimIndex_Free(index);
+}
+
 // Phase 3 of the HNSW snapshot work: the immutable snapshot handle. Capturing it
 // is O(1) (a shared_ptr bump + scalar state, no element allocation), it records
-// the entry-point / level / count as of capture, and reads through it resolve the
-// captured graph topology without touching the live `graphDataBlocks` member.
-// (Isolation under concurrent writes is a separate guarantee that depends on the
-// copy-on-write write path; it is exercised in the next branch.)
+// the entry-point/level/count as of capture, and reads through it stay stable
+// while the live index inserts and copy-on-writes underneath.
 TYPED_TEST(HNSWTest, snapshotHandleCapture) {
     size_t dim = 4;
     size_t M = 8;
@@ -2369,20 +2431,297 @@ TYPED_TEST(HNSWTest, snapshotHandleCapture) {
     ASSERT_EQ(snap.entrypointNode, hnsw->entrypointNode);
     ASSERT_EQ(snap.maxLevel, hnsw->maxLevel);
 
-    // The snapshot resolves node access through the captured backbone and returns
-    // the same level-0 topology the live index holds (no writes have occurred).
+    // Record the snapshot's view of node 0.
     const size_t lds = hnsw->levelDataSize;
     ElementLevelData &snapLd0 = snap.getLevelData(0, 0);
-    ElementLevelData &liveLd0 = hnsw->getElementLevelData((idType)0, (size_t)0);
-    ASSERT_EQ(snapLd0.getNumLinks(), liveLd0.getNumLinks());
-    ASSERT_GT(snapLd0.getNumLinks(), 0u);
+    std::vector<idType> recorded;
     for (size_t j = 0; j < snapLd0.getNumLinks(); j++) {
-        ASSERT_EQ(snapLd0.getLinkAtPos(j), liveLd0.getLinkAtPos(j));
+        recorded.push_back(snapLd0.getLinkAtPos(j));
     }
-    // The snapshot's node 0 resolves to the same (still-shared) buffer as the live
-    // index, since nothing has been copied-on-write yet.
-    ASSERT_EQ(snap.getGraphData(0), hnsw->getGraphDataByInternalId(0));
-    (void)lds;
+    ASSERT_GT(recorded.size(), 0u);
+
+    // Mutate the live index after capture: grow it (new block) and rewrite a link
+    // on node 0 (forcing a block copy-on-write since the snapshot shares it).
+    for (size_t i = n; i < n + bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ElementGraphData *live0 = hnsw->getGraphDataByInternalIdForWrite(0);
+    live0->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xBEEF);
+
+    // The snapshot is unaffected: it still sees the original count and links, and
+    // node 0 now resolves to a different (pre-COW) buffer than the live index.
+    ASSERT_EQ(snap.curElementCount, n);
+    ElementLevelData &snapLd0b = snap.getLevelData(0, 0);
+    ASSERT_EQ(snapLd0b.getNumLinks(), recorded.size());
+    for (size_t j = 0; j < recorded.size(); j++) {
+        ASSERT_EQ(snapLd0b.getLinkAtPos(j), recorded[j]);
+    }
+    ASSERT_NE(snap.getGraphData(0), live0);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Phase 4 of the HNSW snapshot work: lock-free snapshot reads are consistent and
+// race-free while a concurrent writer copy-on-writes the live index. This is the
+// foundational guarantee behind "capture under the lock, then release it and
+// iterate lock-free while writers proceed". A reader thread repeatedly hashes the
+// captured snapshot's level-0 topology (which must never change), while a writer
+// thread rewrites links on the live index — each such write COWs the shared block
+// rather than mutating the buffer the snapshot pinned. Dropping the snapshot then
+// reclaims the superseded buffers automatically.
+TYPED_TEST(HNSWTest, snapshotLockFreeConsistency) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    const size_t n = bs * 5;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    const size_t lds = hnsw->levelDataSize;
+
+    // Capture the snapshot (as a query would, under the read lock) and fingerprint
+    // its level-0 topology over the whole visible set.
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(hnsw->graphSnapshotActive());
+    auto fingerprint = [&](const HNSWGraphSnapshot &s) {
+        uint64_t h = 1469598103934665603ull;
+        for (idType id = 0; id < (idType)s.curElementCount; id++) {
+            ElementLevelData &ld = s.getLevelData(id, 0);
+            h = (h ^ ld.getNumLinks()) * 1099511628211ull;
+            for (size_t j = 0; j < ld.getNumLinks(); j++) {
+                h = (h ^ ld.getLinkAtPos(j)) * 1099511628211ull;
+            }
+        }
+        return h;
+    };
+    const uint64_t baseline = fingerprint(snap);
+
+    // Single concurrent writer: rewrite links on the live index. Each write goes
+    // through the COW-aware accessor, so it copies the block the snapshot shares
+    // instead of mutating it. Only this thread touches the live graphDataBlocks;
+    // the reader below only touches its own captured `snap`.
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> writes{0};
+    std::thread writer([&] {
+        std::mt19937 rng(1234);
+        while (!stop.load(std::memory_order_relaxed)) {
+            idType id = rng() % n;
+            ElementGraphData *gd = hnsw->getGraphDataByInternalIdForWrite(id);
+            ElementLevelData &ld = gd->getElementLevelData(0, lds);
+            if (ld.getNumLinks() > 0) {
+                ld.setLinkAtPos(0, (idType)(rng() % n));
+                writes.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    // Reader: the snapshot fingerprint must stay invariant through many lock-free
+    // reads while the writer mutates the live index.
+    bool consistent = true;
+    for (int i = 0; i < 3000; i++) {
+        if (fingerprint(snap) != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(writes.load(), 0u);
+    ASSERT_EQ(fingerprint(snap), baseline);
+
+    // The live index has diverged (the writer COW'd blocks the snapshot pinned).
+    size_t mem_with_snapshot = allocator->getAllocationSize();
+    // Dropping the whole handle releases both the pinned root and the live-id
+    // registration, so the snapshot is no longer reported active.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_FALSE(hnsw->graphSnapshotActive());
+    // Dropping the snapshot reclaims the superseded buffers automatically.
+    ASSERT_LT(allocator->getAllocationSize(), mem_with_snapshot);
+
+    VecSimIndex_Free(index);
+}
+
+// Phase 4 (continued): a captured snapshot is preserved through *real* HNSW
+// inserts running concurrently on the live index. This exercises the COW-aware
+// write-site conversion: mutuallyConnectNewElement / revisitNeighborConnections /
+// mutuallyRemoveNeighborAtPos now copy a block out of the shared snapshot before
+// rewriting any node's links, so a full insert (which rewires existing neighbors)
+// never mutates a buffer the snapshot holds. A single writer matches the design's
+// "writes are serialized under the exclusive lock" model; the reader is fully
+// lock-free over the immutable snapshot.
+TYPED_TEST(HNSWTest, snapshotPreservedUnderConcurrentInserts) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    const size_t n0 = bs * 4;
+    for (size_t i = 0; i < n0; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Capture the snapshot, then fingerprint its level-0 topology over the whole
+    // visible set as of capture.
+    auto snap = hnsw->captureGraphSnapshot();
+    auto fingerprint = [&](const HNSWGraphSnapshot &s) {
+        uint64_t h = 1469598103934665603ull;
+        for (idType id = 0; id < (idType)s.curElementCount; id++) {
+            ElementLevelData &ld = s.getLevelData(id, 0);
+            h = (h ^ ld.getNumLinks()) * 1099511628211ull;
+            for (size_t j = 0; j < ld.getNumLinks(); j++) {
+                h = (h ^ ld.getLinkAtPos(j)) * 1099511628211ull;
+            }
+        }
+        return h;
+    };
+    const uint64_t baseline = fingerprint(snap);
+
+    // Single writer performing genuine HNSW insertions (which rewire existing
+    // nodes' neighbor lists) on the live index.
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> inserted{0};
+    std::thread writer([&] {
+        for (size_t i = n0; i < n0 + bs * 4; i++) {
+            if (stop.load(std::memory_order_relaxed)) {
+                break;
+            }
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+            inserted.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    // The snapshot fingerprint must stay invariant through lock-free reads while
+    // real inserts copy-on-write the live graph underneath.
+    bool consistent = true;
+    for (int i = 0; i < 4000; i++) {
+        if (fingerprint(snap) != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(inserted.load(), 0u);
+    ASSERT_EQ(fingerprint(snap), baseline);
+    // The live index grew/diverged; the snapshot still sees exactly n0 elements.
+    ASSERT_EQ(snap.curElementCount, n0);
+    ASSERT_GT(hnsw->indexSize(), n0);
+
+    size_t mem_with_snapshot = allocator->getAllocationSize();
+    snap = HNSWGraphSnapshot{};
+    ASSERT_LT(allocator->getAllocationSize(), mem_with_snapshot);
+
+    VecSimIndex_Free(index);
+}
+
+// Task 4.9: the COW clone decision is driven by the GENERATION TAG, not use_count.
+// The case that motivated it: write block A (which clones the backbone once), then
+// write a DIFFERENT block B — B must still be copy-on-written for the snapshot.
+// A container-level use_count check goes stale after the first backbone clone; the
+// generation tag (clone iff max_live_snapshot_id >= block.gen) stays correct.
+TYPED_TEST(HNSWTest, cowDecisionByGenerationNotUseCount) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    const size_t lds = hnsw->levelDataSize;
+
+    for (size_t i = 0; i < bs * 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_GE(hnsw->graphDataBlocks.size(), 3u);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    const idType idA = 0;      // block 0
+    const idType idB = bs + 1; // a different block (block 1)
+    ASSERT_NE(idA / bs, idB / bs);
+
+    ElementLevelData &snapA = snap.getLevelData(idA, 0);
+    ElementLevelData &snapB = snap.getLevelData(idB, 0);
+    ASSERT_GT(snapA.getNumLinks(), 0u);
+    ASSERT_GT(snapB.getNumLinks(), 0u);
+    const idType snapA0 = snapA.getLinkAtPos(0);
+    const idType snapB0 = snapB.getLinkAtPos(0);
+    const ElementGraphData *snapAptr = snap.getGraphData(idA);
+    const ElementGraphData *snapBptr = snap.getGraphData(idB);
+
+    // Write A: clones the (snapshot-shared) backbone once, plus block 0.
+    ElementGraphData *liveA = hnsw->getGraphDataByInternalIdForWrite(idA);
+    liveA->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xA11);
+    ASSERT_NE(liveA, snapAptr);
+
+    // Write B in a DIFFERENT block: backbone is already cloned, but the gen tag
+    // must still force a COW of block B for the snapshot.
+    ElementGraphData *liveB = hnsw->getGraphDataByInternalIdForWrite(idB);
+    liveB->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xB22);
+    ASSERT_NE(liveB, snapBptr) << "block B must be COW'd even after the backbone was cloned";
+
+    // The snapshot is intact for both blocks.
+    ASSERT_EQ(snap.getLevelData(idA, 0).getLinkAtPos(0), snapA0);
+    ASSERT_EQ(snap.getLevelData(idB, 0).getLinkAtPos(0), snapB0);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Task 4.9 / design.md "What pins a block version": a snapshot pins EVERY block
+// via the captured backbone, not via traversal order. A block the snapshot has
+// not yet read is still preserved when the writer COWs it — because capture is
+// eager and whole-backbone, and backbone COW clones the header vector before
+// repointing any slot (so the captured backbone keeps pointing at the old buffer).
+TYPED_TEST(HNSWTest, snapshotPinsUntraversedBlock) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    const size_t lds = hnsw->levelDataSize;
+
+    for (size_t i = 0; i < bs * 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_GE(hnsw->graphDataBlocks.size(), 3u);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    // A block the snapshot has not read yet. Record its as-of-capture pointer + link.
+    const idType idFar = bs + 1; // block 1
+    ElementLevelData &snapFar = snap.getLevelData(idFar, 0);
+    ASSERT_GT(snapFar.getNumLinks(), 0u);
+    const idType snapFar0 = snapFar.getLinkAtPos(0);
+    const ElementGraphData *snapFarPtr = snap.getGraphData(idFar);
+
+    // Writer COWs that block *before* the snapshot ever traverses to it.
+    ElementGraphData *liveFar = hnsw->getGraphDataByInternalIdForWrite(idFar);
+    liveFar->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xFA4);
+
+    // Reading it from the snapshot now must return the as-of-capture buffer: the
+    // captured backbone still pins it (not freed, not the live version), regardless
+    // of read order.
+    ASSERT_EQ(snap.getGraphData(idFar), snapFarPtr);
+    ASSERT_NE(snap.getGraphData(idFar), liveFar);
+    ASSERT_EQ(snap.getLevelData(idFar, 0).getLinkAtPos(0), snapFar0);
 
     snap = HNSWGraphSnapshot{};
     VecSimIndex_Free(index);
