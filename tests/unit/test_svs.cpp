@@ -3445,12 +3445,13 @@ TYPED_TEST(SVSTest, sharedMemoryTracksThreadPoolResize) {
 // ---------------------------------------------------------------------------
 TEST(SVSTest, ThreadPoolLazyInit) {
     // Reset the shared singleton to a clean state — earlier tests may have
-    // attached indexes and resized the pool. After reset, getAllocationSize()
-    // still reports sizeof(VecSimAllocator) (the allocator's self-accounting,
-    // see VecSimAllocator() ctor); assertions below compare against this
-    // baseline rather than absolute zero.
+    // attached indexes and resized the pool. resetForTest() clears
+    // has_attached_index_, so VecSim_GetSharedMemory() reports 0 even though the
+    // singleton object (and its self-accounting allocator) still exist: shared
+    // memory is only attributed once an SVS index attaches.
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
     const size_t baseline_mem = VecSim_GetSharedMemory();
+    EXPECT_EQ(baseline_mem, 0u) << "shared memory must be 0 before any SVS index attaches";
 
     // Recording a non-trivial requested size before any SVS index exists must
     // not allocate any worker slots.
