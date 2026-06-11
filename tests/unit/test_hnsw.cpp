@@ -2893,3 +2893,137 @@ TYPED_TEST(HNSWTest, lockFreeSnapshotQueryDuringInserts) {
     snap = HNSWGraphSnapshot{};
     VecSimIndex_Free(index);
 }
+
+// Drain a whole batch-iterator run into a flat (id, score) sequence.
+static std::vector<std::pair<size_t, double>>
+drainBatchIterator(VecSimIndex *index, const void *query, bool useSnapshot, size_t batch) {
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = useSnapshot;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+    std::vector<std::pair<size_t, double>> out;
+    while (VecSimBatchIterator_HasNext(it)) {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, batch, BY_SCORE);
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            out.emplace_back(VecSimQueryResult_GetId(r->results.data() + i),
+                             VecSimQueryResult_GetScore(r->results.data() + i));
+        }
+        VecSimQueryReply_Free(r);
+    }
+    VecSimBatchIterator_Free(it);
+    return out;
+}
+
+// The opt-in snapshot-backed batch iterator returns exactly the same paginated
+// results (ids + scores, in order) as the default live iterator on a static index.
+TYPED_TEST(HNSWTest, snapshotIterator_EquivalenceWithLive) {
+    size_t dim = 4, M = 16, n = 1000;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    // Query past the largest id so all distances are distinct (unambiguous order).
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    auto live = drainBatchIterator(index, query, /*useSnapshot=*/false, 7);
+    auto snap = drainBatchIterator(index, query, /*useSnapshot=*/true, 7);
+    ASSERT_EQ(live.size(), n);
+    ASSERT_EQ(snap.size(), live.size());
+    for (size_t i = 0; i < live.size(); i++) {
+        ASSERT_EQ(live[i].first, snap[i].first) << "rank " << i;
+        ASSERT_EQ(live[i].second, snap[i].second) << "rank " << i;
+    }
+    VecSimIndex_Free(index);
+}
+
+// A snapshot iterator is point-in-time: vectors inserted after it was created (the
+// capture) are never returned, and iterating while the live index grows + COWs is
+// safe.
+TYPED_TEST(HNSWTest, snapshotIterator_InsertDuringIterationInvisible) {
+    size_t dim = 4, M = 16, n = 1000;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+
+    size_t returned = 0;
+    bool first = true;
+    while (VecSimBatchIterator_HasNext(it)) {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, 25, BY_SCORE);
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            // No id captured after T (>= n) may ever appear.
+            ASSERT_LT(VecSimQueryResult_GetId(r->results.data() + i), n);
+        }
+        returned += len;
+        VecSimQueryReply_Free(r);
+        if (first) {
+            // Grow the live index by a full extra population mid-iteration.
+            for (size_t i = n; i < 2 * n; i++) {
+                GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+            }
+            first = false;
+        }
+    }
+    VecSimBatchIterator_Free(it);
+    ASSERT_EQ(returned, n); // exactly the as-of-capture population
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    VecSimIndex_Free(index);
+}
+
+// Reset re-iterates the same captured snapshot and yields the same sequence.
+TYPED_TEST(HNSWTest, snapshotIterator_Reset) {
+    size_t dim = 4, M = 16, n = 500;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+
+    auto collect = [&]() {
+        std::vector<size_t> ids;
+        while (VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, 10, BY_SCORE);
+            size_t len = VecSimQueryReply_Len(r);
+            for (size_t i = 0; i < len; i++) {
+                ids.push_back(VecSimQueryResult_GetId(r->results.data() + i));
+            }
+            VecSimQueryReply_Free(r);
+        }
+        return ids;
+    };
+    auto firstRun = collect();
+    VecSimBatchIterator_Reset(it);
+    auto secondRun = collect();
+    ASSERT_EQ(firstRun.size(), n);
+    ASSERT_EQ(firstRun, secondRun);
+    VecSimBatchIterator_Free(it);
+    VecSimIndex_Free(index);
+}

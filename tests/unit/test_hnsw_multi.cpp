@@ -1626,3 +1626,50 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
+// The opt-in snapshot-backed batch iterator returns the same paginated (deduped by
+// label) results as the default live iterator on a static multi-value index.
+TYPED_TEST(HNSWMultiTest, snapshotIterator_EquivalenceWithLive) {
+    size_t dim = 4, M = 16, n_labels = 500, perLabel = 5;
+    size_t n = n_labels * perLabel;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i / perLabel, i);
+    }
+    ASSERT_EQ(index->indexLabelCount(), n_labels);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    auto drain = [&](bool useSnapshot) {
+        VecSimQueryParams qp = {};
+        qp.hnswRuntimeParams.useGraphSnapshotIterator = useSnapshot;
+        VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+        std::vector<std::pair<size_t, double>> out;
+        while (VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, 9, BY_SCORE);
+            size_t len = VecSimQueryReply_Len(r);
+            for (size_t i = 0; i < len; i++) {
+                out.emplace_back(VecSimQueryResult_GetId(r->results.data() + i),
+                                 VecSimQueryResult_GetScore(r->results.data() + i));
+            }
+            VecSimQueryReply_Free(r);
+        }
+        VecSimBatchIterator_Free(it);
+        return out;
+    };
+    auto live = drain(false);
+    auto snap = drain(true);
+    ASSERT_EQ(live.size(), n_labels);
+    ASSERT_EQ(snap.size(), live.size());
+    for (size_t i = 0; i < live.size(); i++) {
+        ASSERT_EQ(live[i].first, snap[i].first) << "rank " << i;
+        ASSERT_EQ(live[i].second, snap[i].second) << "rank " << i;
+    }
+    VecSimIndex_Free(index);
+}

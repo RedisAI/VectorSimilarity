@@ -10,6 +10,7 @@
 
 #include "hnsw.h"
 #include "hnsw_single_batch_iterator.h"
+#include "hnsw_snapshot_batch_iterator.h"
 
 template <typename DataType, typename DistType>
 class HNSWIndex_Single : public HNSWIndex<DataType, DistType> {
@@ -182,6 +183,17 @@ HNSWIndex_Single<DataType, DistType>::newBatchIterator(const void *queryBlob,
 
     // take ownership of the blob copy and pass it to the batch iterator.
     auto *queryBlobCopyPtr = queryBlobCopy.release();
+
+    // Opt-in lock-free path: capture an immutable graph snapshot under the read
+    // lock, then iterate it without holding any lock (writers proceed meanwhile).
+    if (queryParams && queryParams->hnswRuntimeParams.useGraphSnapshotIterator) {
+        this->lockSharedIndexDataGuard();
+        auto snapshot = this->captureGraphSnapshot();
+        this->unlockSharedIndexDataGuard();
+        return new (this->allocator) HNSWSnapshotSingle_BatchIterator<DataType, DistType>(
+            queryBlobCopyPtr, this, std::move(snapshot), queryParams, this->allocator);
+    }
+
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWSingle_BatchIterator<DataType, DistType>(
         queryBlobCopyPtr, this, queryParams, this->allocator);
