@@ -4530,3 +4530,118 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
               hnsw_index->indexMetaDataCapacity() +
                   tiered_index->frontendIndex->indexMetaDataCapacity());
 }
+
+// The tiered batch iterator with the snapshot flag returns the same paginated
+// results as the default live iterator on a stable (fully-ingested) index.
+TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotIteratorEquivalence) {
+    size_t dim = 4, n = 1000;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .efRuntime = 200};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    // Drain all insert jobs so the population is stable (all in the backend graph).
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+    auto drain = [&](bool useSnapshot) {
+        VecSimQueryParams qp = {};
+        qp.hnswRuntimeParams.useGraphSnapshotIterator = useSnapshot;
+        VecSimBatchIterator *it = VecSimBatchIterator_New(tiered_index, query, &qp);
+        std::vector<size_t> ids;
+        while (VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, 11, BY_SCORE);
+            for (size_t i = 0; i < VecSimQueryReply_Len(r); i++) {
+                ids.push_back(VecSimQueryResult_GetId(r->results.data() + i));
+            }
+            VecSimQueryReply_Free(r);
+        }
+        VecSimBatchIterator_Free(it);
+        return ids;
+    };
+    auto live = drain(false);
+    auto snap = drain(true);
+    ASSERT_EQ(live.size(), n);
+    ASSERT_EQ(live, snap);
+}
+
+// The core win: a snapshot-backed cursor does NOT hold the main index read lock,
+// so ingestion (flat -> HNSW) proceeds while the cursor is open. This is driven
+// single-threaded: with the old live iterator the cursor would hold mainIndexGuard
+// shared and this in-thread ingestion (which takes the exclusive lock) would
+// self-deadlock; in snapshot mode the lock is released right after capture, so it
+// completes — and the cursor stays point-in-time (only the as-of-capture population
+// is ever returned).
+TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotIngestionProgressesWhileCursorOpen) {
+    size_t dim = 4, base = 500, extra = 500;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .efRuntime = 200};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    // Base population, fully ingested into the backend graph.
+    for (size_t i = 0; i < base; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), base);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+
+    // Open a snapshot cursor and pull the first batch (captures the backend snapshot
+    // and releases mainIndexGuard immediately).
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(base + extra + 5));
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(tiered_index, query, &qp);
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(it));
+    size_t total = 0;
+    {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, 10, BY_SCORE);
+        total += VecSimQueryReply_Len(r);
+        VecSimQueryReply_Free(r);
+    }
+    ASSERT_TRUE(tiered_index->getHNSWIndex()->graphSnapshotActive());
+
+    // While the cursor is open, insert MORE vectors and ingest them in-thread. This
+    // would self-deadlock under the live iterator (shared lock held); here it runs.
+    for (size_t i = base; i < base + extra; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), base + extra)
+        << "ingestion must progress while a snapshot cursor is open";
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+
+    // The cursor stayed point-in-time: drain it; every returned id is from the
+    // as-of-capture population and the total equals it.
+    while (VecSimBatchIterator_HasNext(it)) {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, 50, BY_SCORE);
+        for (size_t i = 0; i < VecSimQueryReply_Len(r); i++) {
+            ASSERT_LT(VecSimQueryResult_GetId(r->results.data() + i), base);
+        }
+        total += VecSimQueryReply_Len(r);
+        VecSimQueryReply_Free(r);
+    }
+    VecSimBatchIterator_Free(it);
+    ASSERT_EQ(total, base);
+}

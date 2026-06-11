@@ -171,6 +171,13 @@ public:
         // because of the approximate nature of the algorithm.
         vecsim_stl::unordered_set<labelType> returned_results_set;
 
+        // When the backend (HNSW) iterator is snapshot-backed, we hold the main
+        // index read lock only long enough to capture the snapshot, then release it
+        // and iterate lock-free — so a long-lived cursor no longer blocks ingestion
+        // or GC/swap. In that mode the depletion/destructor paths must NOT release
+        // mainIndexGuard again (it was already released right after capture).
+        bool snapshot_mode;
+
     private:
         template <bool isMultiValue>
         inline VecSimQueryReply *compute_current_batch(size_t n_res);
@@ -940,7 +947,8 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
                           std::move(allocator)),
       index(index), flat_results(this->allocator), hnsw_results(this->allocator),
       flat_iterator(this->index->frontendIndex->newBatchIterator(query_vector, queryParams)),
-      hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator) {
+      hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator),
+      snapshot_mode(queryParams && queryParams->hnswRuntimeParams.useGraphSnapshotIterator) {
     // Save a copy of the query params to initialize the HNSW iterator with (on first batch and
     // first batch after reset).
     if (queryParams) {
@@ -958,7 +966,11 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::~TieredHNSW_Batch
 
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
-        this->index->mainIndexGuard.unlock_shared();
+        // In snapshot mode the lock was released right after capture (see
+        // getNextResults); only the live-iterator mode still holds it here.
+        if (!this->snapshot_mode) {
+            this->index->mainIndexGuard.unlock_shared();
+        }
     }
 
     this->allocator->free_allocation(this->queryParams);
@@ -985,11 +997,19 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         }
         this->flat_results.swap(cur_flat_results->results);
         VecSimQueryReply_Free(cur_flat_results);
-        // We also take the lock on the main index on the first call to getNextResults, and we hold
-        // it until the iterator is depleted or freed.
+        // Take the main index read lock to create the backend iterator. In the
+        // default (live) mode we hold it until the iterator is depleted or freed.
+        // In snapshot mode the backend iterator captures an immutable snapshot at
+        // creation, so we release the lock immediately afterwards and iterate
+        // lock-free — the snapshot's liveToken keeps graphSnapshotActive() true for
+        // the cursor's whole life, while ingestion and GC are no longer blocked by
+        // this cursor.
         this->index->mainIndexGuard.lock_shared();
         this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
             this->flat_iterator->getQueryBlob(), queryParams);
+        if (this->snapshot_mode) {
+            this->index->mainIndexGuard.unlock_shared();
+        }
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         hnsw_code = cur_hnsw_results->code;
         this->hnsw_results.swap(cur_hnsw_results->results);
@@ -997,7 +1017,9 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         if (this->hnsw_iterator->isDepleted()) {
             delete this->hnsw_iterator;
             this->hnsw_iterator = DEPLETED;
-            this->index->mainIndexGuard.unlock_shared();
+            if (!this->snapshot_mode) {
+                this->index->mainIndexGuard.unlock_shared();
+            }
         }
     } else {
         while (this->flat_results.size() < n_res && !this->flat_iterator->isDepleted()) {
@@ -1036,7 +1058,9 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             if (this->hnsw_iterator->isDepleted()) {
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
-                this->index->mainIndexGuard.unlock_shared();
+                if (!this->snapshot_mode) {
+                    this->index->mainIndexGuard.unlock_shared();
+                }
             }
         }
     }
@@ -1072,11 +1096,23 @@ bool TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::isDepleted()
            this->hnsw_results.empty() && this->hnsw_iterator == DEPLETED;
 }
 
+// reset() tears down the backend iterator and rebuilds it on the next
+// getNextResults — the tiered iterator's established convention. In snapshot mode
+// that means a reset cursor RE-CAPTURES a fresh snapshot (a new point-in-time),
+// rather than replaying the original one. This is deliberate and differs from the
+// plain HNSWSnapshot_BatchIterator (which owns one snapshot for life and replays
+// it on reset); the tiered cursor mirrors how its live-mode counterpart re-reads
+// the index on reset. Callers needing a stable point-in-time across reset should
+// not rely on the tiered cursor preserving it.
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
-        this->index->mainIndexGuard.unlock_shared();
+        // Snapshot mode already released the lock right after capture (a fresh
+        // snapshot is captured on the next getNextResults); only live mode holds it.
+        if (!this->snapshot_mode) {
+            this->index->mainIndexGuard.unlock_shared();
+        }
     }
     this->resetResultsCount();
     this->flat_iterator->reset();
