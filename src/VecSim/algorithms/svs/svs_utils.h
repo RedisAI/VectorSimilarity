@@ -462,15 +462,25 @@ public:
     // outside of the pool, nor per-index wrapper state.
     size_t getAllocationSize() const { return allocator_->getAllocationSize(); }
 
-    // Bytes allocated by the shared pool singleton. Returns 0 if the singleton has
-    // never been constructed (e.g., no SVS index was ever created and
-    // VecSim_UpdateThreadPoolSize was never called). Safe to call from any context;
-    // does not force singleton construction.
+    // Bytes allocated by the shared pool singleton. Returns 0 until the first SVS index
+    // attaches, for either reason:
+    //   * the singleton was never constructed (no SVS index created and
+    //     VecSim_UpdateThreadPoolSize never called), or
+    //   * it was constructed to record a requested size (VecSim_UpdateThreadPoolSize at
+    //     module init) but no SVS index has attached yet.
+    // This keeps process-wide vector memory reported as 0 on deployments that only use
+    // non-SVS indexes (or none at all). Safe to call from any context; does not force
+    // singleton construction.
     static size_t getSharedAllocationSize() {
         if (!isInitialized()) {
             return 0;
         }
-        return instance()->getAllocationSize();
+        auto pool = instance();
+        std::lock_guard lock{pool->pool_mutex_};
+        if (!pool->has_attached_index_) {
+            return 0;
+        }
+        return pool->getAllocationSize();
     }
 
     // Resize the shared pool. in all cases the requested size is stored in
