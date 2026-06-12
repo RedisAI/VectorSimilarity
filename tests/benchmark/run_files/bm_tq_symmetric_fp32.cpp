@@ -58,7 +58,7 @@ public:
             auto input = GenerateUnitVector(rng);
             void *storage_blob = nullptr;
             size_t storage_blob_size = input.size() * sizeof(float);
-            preprocessor.preprocessForStorage(input.data(), storage_blob, storage_blob_size);
+            preprocessor.preprocessForStorage(input.data(), storage_blob, storage_blob_size, 0);
 
             auto *encoded = static_cast<uint8_t *>(storage_blob);
             storage_blobs.emplace_back(encoded, encoded + storage_blob_size);
