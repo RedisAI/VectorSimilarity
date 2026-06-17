@@ -3199,7 +3199,13 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     size_t dim = 4;
     size_t threshold = 1024;
     const size_t n = threshold * 3;
-    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    // svs::data::SimpleData::resize() keeps 1 empty block in case of size reducing, so we need to
+    // make sure that we have at least 2 blocks of vectors to be deleted:
+    const size_t block_size = threshold / 2;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .blockSize = block_size};
     VecSimParams svs_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
 
