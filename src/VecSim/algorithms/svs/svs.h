@@ -587,29 +587,58 @@ public:
         auto processed_query_ptr = this->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
 
-        auto query = svs::data::ConstSimpleDataView<DataType>{
-            static_cast<const DataType *>(processed_query), 1, this->dim};
-        auto result = svs::QueryResult<size_t>{query.size(), k};
         auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
                                                 is_two_level_lvq);
 
         auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
         auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
 
-        impl_->search(result.view(), query, sp, cancel);
-        if (cancel()) {
-            rep->code = VecSim_QueryReply_TimedOut;
-            return rep;
-        }
+        if constexpr (isMulti) {
+            auto query = svs::data::ConstSimpleDataView<DataType>{
+                static_cast<const DataType *>(processed_query), 1, this->dim};
+            auto result = svs::QueryResult<size_t>{query.size(), k};
+            impl_->search(result.view(), query, sp, cancel);
+            if (cancel()) {
+                rep->code = VecSim_QueryReply_TimedOut;
+                return rep;
+            }
 
-        assert(result.n_queries() == 1);
+            assert(result.n_queries() == 1);
 
-        const auto n_neighbors = result.n_neighbors();
-        rep->results.reserve(n_neighbors);
+            const auto n_neighbors = result.n_neighbors();
+            rep->results.reserve(n_neighbors);
 
-        for (size_t i = 0; i < n_neighbors; i++) {
-            rep->results.push_back(
-                VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
+            for (size_t i = 0; i < n_neighbors; i++) {
+                rep->results.push_back(
+                    VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
+            }
+        } else {
+            // Use the single-query search path of MutableVamanaIndex to avoid the
+            // parallel batch-search overhead for a single query.
+            auto scratch = impl_->scratchspace(sp);
+            // Ensure the scratch buffer can hold at least `k` neighbors.
+            if (scratch.buffer.target_capacity() < k) {
+                scratch.buffer.change_maxsize(k);
+            }
+
+            auto query = std::span<const DataType>{static_cast<const DataType *>(processed_query),
+                                                   this->dim};
+            impl_->search(query, scratch, cancel);
+            if (cancel()) {
+                rep->code = VecSim_QueryReply_TimedOut;
+                return rep;
+            }
+
+            const auto &buffer = scratch.buffer;
+            const auto n_neighbors = std::min(k, buffer.size());
+            rep->results.reserve(n_neighbors);
+
+            for (size_t i = 0; i < n_neighbors; i++) {
+                const auto neighbor = buffer[i];
+                rep->results.push_back(
+                    VecSimQueryResult{impl_->translate_internal_id(neighbor.id()),
+                                      toVecSimDistance(neighbor.distance())});
+            }
         }
         // Workaround for VecSim merge_results() that expects results to be sorted
         // by score, then by id from both indices.
