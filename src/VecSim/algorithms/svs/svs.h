@@ -263,11 +263,6 @@ protected:
         }
 
         int deleted_num = 0;
-        if constexpr (!isMulti) {
-            // SVS index does not support overriding vectors with the same label
-            // so we have to delete them first if needed
-            deleted_num = deleteVectorsImpl(labels, n);
-        }
 
         std::span<const labelType> ids(labels, n);
         auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
@@ -279,6 +274,11 @@ protected:
             // SVS index instance cannot be empty, so we have to construct it at first rows
             impl_ = initImpl(points, ids);
         } else {
+            if constexpr (!isMulti) {
+                // SVS index does not support overriding vectors with the same label
+                // so we have to delete them first if needed
+                deleted_num = deleteVectorsImpl(labels, n);
+            }
             // Add new points to existing SVS index
             impl_->add_points(points, ids);
         }
@@ -287,7 +287,7 @@ protected:
     }
 
     int deleteVectorImpl(const labelType label) {
-        if (indexLabelCount() == 0 || !impl_->has_id(label)) {
+        if (indexLabelCount() == 0) {
             return 0;
         }
 
@@ -302,20 +302,7 @@ protected:
             return 0;
         }
 
-        // SVS fails if we try to delete non-existing entries
-        std::vector<labelType> entries_to_delete;
-        entries_to_delete.reserve(n);
-        for (size_t i = 0; i < n; i++) {
-            if (impl_->has_id(labels[i])) {
-                entries_to_delete.push_back(labels[i]);
-            }
-        }
-
-        if (entries_to_delete.size() == 0) {
-            return 0;
-        }
-
-        const auto deleted_num = impl_->delete_entries(entries_to_delete);
+        const auto deleted_num = impl_->delete_entries(std::span{labels, n});
 
         this->markIndexUpdate(deleted_num);
         return deleted_num;
@@ -553,13 +540,16 @@ public:
     }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
-        if (!impl_ || !impl_->has_id(label)) {
-            return std::numeric_limits<double>::quiet_NaN();
-        };
+        if (!impl_) return std::numeric_limits<double>::quiet_NaN();
 
         auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
-        auto dist = impl_->get_distance(label, query_datum);
-        return toVecSimDistance(dist);
+        try {
+            auto dist = impl_->get_distance(label, query_datum);
+            return std::isnan(dist) ? std::numeric_limits<double>::quiet_NaN()
+                                    : toVecSimDistance(static_cast<float>(dist));
+        } catch (const svs::lib::ANNException &) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
     }
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
