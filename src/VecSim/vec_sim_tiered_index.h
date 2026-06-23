@@ -50,6 +50,7 @@ protected:
 
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
+    mutable std::shared_mutex updateJobMutex;
     void lockMainIndexGuard() const {
         mainIndexGuard.lock();
 #ifdef BUILD_TESTS
@@ -72,6 +73,16 @@ protected:
         for (size_t i = 0; i < jobs.size(); i++) {
             callbacks[i] = jobs[i]->Execute;
         }
+        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
+                                jobs.size());
+    }
+
+    void submitUpdateJobs(vecsim_stl::vector<AsyncJob *> &jobs) {
+        vecsim_stl::vector<JobCallback> callbacks(jobs.size(), this->allocator);
+        for (size_t i = 0; i < jobs.size(); i++) {
+            callbacks[i] = jobs[i]->Execute;
+        }
+        std::shared_lock lock(this->updateJobMutex);
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
                                 jobs.size());
     }
@@ -181,6 +192,7 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         // Simply query the main index and return the results while holding the lock.
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
+        assert(false);
         this->mainIndexGuard.lock_shared();
         auto res = this->backendIndex->topKQuery(processed_query, k, queryParams);
         this->mainIndexGuard.unlock_shared();
@@ -201,6 +213,7 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
+        assert(false);
         this->mainIndexGuard.lock_shared();
         auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
         this->mainIndexGuard.unlock_shared();
@@ -263,6 +276,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Simply query the main index and return the results while holding the lock.
+        assert(false);
         this->mainIndexGuard.lock_shared();
         auto res = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
         this->mainIndexGuard.unlock_shared();
@@ -286,6 +300,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
+        assert(false);
         this->mainIndexGuard.lock_shared();
         auto main_results = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
         this->mainIndexGuard.unlock_shared();

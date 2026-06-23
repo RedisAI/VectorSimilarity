@@ -233,7 +233,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     std::atomic_flag indexGCScheduled = ATOMIC_FLAG_INIT;
     // Used to prevent running multiple index update jobs in parallel.
     // Even if update jobs scheduled sequentially, they can be started in parallel.
-    mutable std::mutex updateJobMutex;
+    // mutable std::shared_mutex updateJobMutex;
 
     // The reason of following container just to properly destroy jobs which not executed yet
     SVSMultiThreadJob::JobsRegistry uncompletedJobs;
@@ -261,7 +261,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
         VecSimBatchIterator *flat_iterator;
         VecSimBatchIterator *svs_iterator;
-        std::shared_lock<std::shared_mutex> svs_lock;
 
         // On single value indices, this set holds the IDs of the results that were returned from
         // the flat buffer.
@@ -327,7 +326,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
         void acquire_svs_iterator() {
             assert(svs_iterator == nullptr);
-            this->index->mainIndexGuard.lock_shared();
             svs_iterator = index->backendIndex->newBatchIterator(
                 this->flat_iterator->getQueryBlob(), queryParams);
         }
@@ -336,7 +334,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             if (svs_iterator != nullptr && svs_iterator != depleted()) {
                 delete svs_iterator;
                 svs_iterator = nullptr;
-                this->index->mainIndexGuard.unlock_shared();
             }
         }
 
@@ -361,7 +358,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                                   std::move(allocator)),
               index(index), flat_results(this->allocator), svs_results(this->allocator),
               flat_iterator(index->frontendIndex->newBatchIterator(query_vector, queryParams)),
-              svs_iterator(nullptr), svs_lock(index->mainIndexGuard, std::defer_lock),
+              svs_iterator(nullptr),
               returned_results_set(this->allocator) {
             if (queryParams) {
                 this->queryParams =
@@ -548,7 +545,7 @@ private:
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
         // prevent parallel updates
-        std::lock_guard<std::mutex> lock(index->updateJobMutex);
+        std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
         // Update the SVS index
@@ -575,7 +572,6 @@ private:
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
 
-        std::lock_guard lock{index->mainIndexGuard};
         // Release the scheduled flag to allow scheduling again
         index->indexGCScheduled.clear();
 
@@ -605,7 +601,7 @@ public:
         auto jobs = SVSMultiThreadJob::createJobs(
             this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
-        this->submitJobs(jobs);
+        this->submitUpdateJobs(jobs);
     }
 
     void scheduleSVSIndexGC() {
@@ -678,29 +674,24 @@ private:
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
         { // lock backend index for writing and add vectors there
-            std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
             if (this->backendIndex->indexSize() == 0) {
-                // If backend index is empty, we need to initialize it first.
                 svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
                                                   labels_to_move.size());
 
-                // Upgrade to unique lock to set the new impl
-                main_shared_lock.unlock();
-                std::lock_guard lock(this->mainIndexGuard);
+                // std::lock_guard lock(this->mainIndexGuard);
                 svs_index->setImpl(std::move(impl));
             } else {
-                // Backend index is initialized - just add the vectors.
-                main_shared_lock.unlock();
-                std::lock_guard lock(this->mainIndexGuard);
-                // Upgrade to unique lock to add vectors
+                // std::lock_guard lock(this->mainIndexGuard);
+                // std::shared_lock lock(this->mainIndexGuard);
                 svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
             }
         }
+
         executeTracingCallback("UpdateJob::after_add_to_svs");
         // clean-up frontend index
         { // lock frontend index for writing and delete moved vectors
@@ -732,8 +723,6 @@ private:
         // delete vectors from backend index that were deleted from the frontend index during
         // the update process.
         {
-            std::lock_guard main_lock(this->mainIndexGuard);
-
             std::sort(deleted_labels_during_update.begin(), deleted_labels_during_update.end());
             auto it = std::unique(deleted_labels_during_update.begin(),
                                   deleted_labels_during_update.end());
@@ -791,7 +780,6 @@ public:
             // It is ok to lock everything at once for in-place mode,
             // but we will have to unlock averything before calling updateSVSIndexWrapper()
             // so make the minimal needed lock here.
-            std::shared_lock backend_shared_lock(this->mainIndexGuard);
             // Backend index initialization data have to be buffered for proper
             // compression/training.
             if (this->backendIndex->indexSize() == 0) {
@@ -807,18 +795,18 @@ public:
                 // ... move vectors to the backend index.
                 if (frontend_index_size >= this->trainingTriggerThreshold) {
                     // updateSVSIndexWrapper() accures it's own locks
-                    backend_shared_lock.unlock();
+                    // backend_shared_lock.unlock();
                     // initialize the SVS index synchonously using current thread only
                     updateSVSIndexWrapper(this, 1);
                 }
                 return ret;
             } else {
                 // backend index is initialized - we can add the vector directly
-                backend_shared_lock.unlock();
+                // backend_shared_lock.unlock();
                 auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
-                std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
+                std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
                 // Set available thread count to 1 for single vector write-in-place operation.
                 // This maintains the contract that single vector operations use exactly one thread.
                 // TODO: Replace this setNumThreads(1) call with an assertion once we establish
@@ -840,15 +828,7 @@ public:
                 }
             }
             // Remove vector from the backend index if it exists in case of non-MULTI.
-            auto label_exists = [&]() {
-                std::shared_lock lock(this->mainIndexGuard);
-                return svs_index->isLabelExists(label);
-            }();
-
-            if (label_exists) {
-                std::lock_guard lock(this->mainIndexGuard);
-                ret -= this->backendIndex->deleteVector(label);
-            }
+            ret -= this->backendIndex->deleteVector(label);
         }
         { // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
@@ -869,7 +849,6 @@ public:
         {
             // If main index is empty then update_threshold is trainingTriggerThreshold,
             // overwise it is updateTriggerThreshold.
-            std::shared_lock lock(this->mainIndexGuard);
             update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
                                                                     : this->updateTriggerThreshold;
         }
@@ -936,15 +915,7 @@ public:
             ret = this->deleteAndRecordSwaps_Unsafe(label);
         }
 
-        label_exists = [&]() {
-            std::shared_lock lock(this->mainIndexGuard);
-            return svs_index->isLabelExists(label);
-        }();
-
-        if (label_exists) {
-            std::lock_guard lock(this->mainIndexGuard);
-            ret += this->backendIndex->deleteVector(label);
-        }
+        ret += this->backendIndex->deleteVector(label);
         return ret;
     }
     size_t getNumMarkedDeleted() const override {
@@ -953,13 +924,11 @@ public:
 
     size_t indexSize() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
         return this->frontendIndex->indexSize() + this->backendIndex->indexSize();
     }
 
     size_t indexCapacity() const override {
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
         return this->frontendIndex->indexCapacity() + this->backendIndex->indexCapacity();
     }
 
@@ -997,7 +966,7 @@ public:
             // the entire training duration (which can take 40-85s on slow machines).
             // If the mutex is held, training is actively running, so we report
             // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
-            std::unique_lock<std::mutex> lock(this->updateJobMutex, std::try_to_lock);
+            std::unique_lock<std::shared_mutex> lock(this->updateJobMutex, std::try_to_lock);
             if (lock.owns_lock()) {
                 svsTieredInfo.indexUpdateScheduled =
                     this->indexUpdateScheduled.test() == VecSimBool_TRUE;
@@ -1052,17 +1021,81 @@ public:
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override {
-        // SVS implements it's own distance computation functions which may cause sligthly different
-        // distance values than VecSim Flat Index does, so we always have to merge results with set.
-        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
+        // SVS handles its own internal locking for concurrent search + modification,
+        // so we don't need mainIndexGuard for backend queries.
+        this->flatIndexGuard.lock_shared();
+
+        if (this->frontendIndex->indexSize() == 0) {
+            this->flatIndexGuard.unlock_shared();
+
+            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+            const void *processed_query = processed_query_ptr.get();
+            return this->backendIndex->topKQuery(processed_query, k, queryParams);
+        } else {
+            auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
+            this->flatIndexGuard.unlock_shared();
+
+            if (flat_results->code != VecSim_QueryReply_OK) {
+                assert(flat_results->results.empty());
+                return flat_results;
+            }
+
+            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+            const void *processed_query = processed_query_ptr.get();
+            auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
+
+            if (main_results->code != VecSim_QueryReply_OK) {
+                VecSimQueryReply_Free(flat_results);
+                assert(main_results->results.empty());
+                return main_results;
+            }
+
+            return merge_result_lists<true>(main_results, flat_results, k);
+        }
     }
 
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams,
                                  VecSimQueryReply_Order order) const override {
-        // SVS implements it's own distance computation functions which may cause sligthly different
-        // distance values than VecSim Flat Index does, so we always have to merge results with set.
-        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
+        // SVS handles its own internal locking for concurrent search + modification,
+        // so we don't need mainIndexGuard for backend queries.
+        this->flatIndexGuard.lock_shared();
+
+        if (this->frontendIndex->indexSize() == 0) {
+            this->flatIndexGuard.unlock_shared();
+
+            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+            const void *processed_query = processed_query_ptr.get();
+            auto res = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
+            sort_results(res, order);
+            return res;
+        } else {
+            auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
+            this->flatIndexGuard.unlock_shared();
+
+            if (flat_results->code != VecSim_QueryReply_OK) {
+                return flat_results;
+            }
+
+            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
+            const void *processed_query = processed_query_ptr.get();
+            auto main_results =
+                this->backendIndex->rangeQuery(processed_query, radius, queryParams);
+
+            if (BY_SCORE == order) {
+                sort_results_by_score_then_id(main_results);
+                sort_results_by_score_then_id(flat_results);
+
+                auto code = main_results->code;
+                VecSimQueryReply *ret = merge_result_lists<true>(main_results, flat_results, -1);
+                ret->code = code;
+                return ret;
+            } else { // BY_ID
+                concat_results(main_results, flat_results);
+                filter_results_by_id<true>(main_results);
+                return main_results;
+            }
+        }
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
@@ -1081,7 +1114,6 @@ public:
             TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                        "running synchronous GC for tiered SVS index in write-in-place mode");
             // In write-in-place mode, we run GC synchronously.
-            std::lock_guard lock{this->mainIndexGuard};
             if (this->backendIndex->indexSize() == 0) {
                 // No need to run GC on an empty index.
                 return;
@@ -1099,11 +1131,11 @@ public:
 
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
-        this->mainIndexGuard.lock_shared();
+        // this->mainIndexGuard.lock_shared();
     }
 
     void releaseSharedLocks() override {
-        this->mainIndexGuard.unlock_shared();
+        // this->mainIndexGuard.unlock_shared();
         this->flatIndexGuard.unlock_shared();
     }
 };
