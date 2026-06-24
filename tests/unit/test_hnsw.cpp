@@ -2248,3 +2248,787 @@ TYPED_TEST(HNSWTest, FitMemoryTest) {
 
     VecSimIndex_Free(index);
 }
+
+// Phase 1 of the HNSW snapshot work: validate the block deep-copy primitive
+// (ElementGraphData::copyTo / ElementLevelData::copyInto) against the real,
+// production node layout. Ported from
+// docs/design/hnsw-snapshot/prototypes/block_deepcopy.cpp, which proved the
+// algorithm on a stand-in struct; this runs it on a genuine multi-level node
+// built by the index (FAM links + allocator-backed `others` + incoming edges).
+// The copy is the foundation of block-level copy-on-write: it must produce a
+// node with identical contents but fully independent storage and a fresh mutex.
+TYPED_TEST(HNSWTest, copyToDeepCopy) {
+    size_t dim = 4;
+    size_t M = 8;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+
+    // Insert vectors until at least one node is promoted above level 0, so the
+    // copy exercises the inline level 0 *and* the separately-allocated `others`.
+    size_t n = 0;
+    ElementGraphData *src = nullptr;
+    while (src == nullptr) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n);
+        if (hnsw->getGraphDataByInternalId(n)->toplevel > 0) {
+            src = hnsw->getGraphDataByInternalId(n);
+        }
+        n++;
+        ASSERT_LT(n, 100000u) << "no multi-level node was created";
+    }
+
+    const size_t egds = hnsw->elementGraphDataSize;
+    const size_t lds = hnsw->levelDataSize;
+    auto allocator = index->getAllocator();
+
+    // Deep-copy into freshly zeroed memory, exactly as block-COW will.
+    auto dstMem = allocator->allocate_unique(egds);
+    memset(dstMem.get(), 0, egds);
+    auto *dst = reinterpret_cast<ElementGraphData *>(dstMem.get());
+    src->copyTo(dst, lds, egds, allocator);
+
+    // (1) Identical contents but independent storage, at every level.
+    ASSERT_EQ(dst->toplevel, src->toplevel);
+    for (size_t lvl = 0; lvl <= src->toplevel; lvl++) {
+        ElementLevelData &s = src->getElementLevelData(lvl, lds);
+        ElementLevelData &d = dst->getElementLevelData(lvl, lds);
+        ASSERT_EQ(d.getNumLinks(), s.getNumLinks()) << "level " << lvl;
+        for (size_t j = 0; j < s.getNumLinks(); j++) {
+            ASSERT_EQ(d.getLinkAtPos(j), s.getLinkAtPos(j)) << "level " << lvl << " pos " << j;
+        }
+        // Incoming edges: equal content, but a distinct (independent) vector.
+        const auto &se = s.getIncomingEdges();
+        const auto &de = d.getIncomingEdges();
+        ASSERT_EQ(de.size(), se.size()) << "level " << lvl;
+        for (size_t j = 0; j < se.size(); j++) {
+            ASSERT_EQ(de[j], se[j]) << "level " << lvl << " incoming " << j;
+        }
+        ASSERT_NE(d.incomingUnidirectionalEdges, s.incomingUnidirectionalEdges) << "level " << lvl;
+        // Upper-level link arrays live in `others`, so they must be at distinct
+        // addresses; level 0 is inline in each struct and naturally differs.
+        if (lvl > 0) {
+            ASSERT_NE(d.links, s.links) << "level " << lvl;
+        }
+    }
+
+    // (2) Mutating the source after the copy must not touch the snapshot.
+    ElementLevelData &s0 = src->getElementLevelData(0, lds);
+    ElementLevelData &d0 = dst->getElementLevelData(0, lds);
+    ASSERT_GT(s0.getNumLinks(), 0u);
+    idType orig_link = s0.getLinkAtPos(0);
+    size_t dst_incoming_before = d0.getIncomingEdges().size();
+    s0.setLinkAtPos(0, 0xDEADBEEF);
+    s0.newIncomingUnidirectionalEdge(0xCAFE);
+    ASSERT_EQ(d0.getLinkAtPos(0), orig_link);
+    ASSERT_EQ(d0.getIncomingEdges().size(), dst_incoming_before);
+    // Restore the source so the index stays consistent for teardown.
+    s0.setLinkAtPos(0, orig_link);
+    s0.removeIncomingUnidirectionalEdgeIfExists(0xCAFE);
+
+    // (3) Both mutexes are fresh and independently lockable (lock state never
+    // aliased from source to copy).
+    ASSERT_TRUE(src->neighborsGuard.try_lock());
+    src->neighborsGuard.unlock();
+    ASSERT_TRUE(dst->neighborsGuard.try_lock());
+    dst->neighborsGuard.unlock();
+
+    // Free the deep copy's heap allocations (incoming-edges vectors + `others`).
+    // The ElementGraphData block itself is freed by dstMem's unique_ptr.
+    dst->destroy(lds, allocator);
+
+    VecSimIndex_Free(index);
+}
+
+// Phase 2 of the HNSW snapshot work: the rooted copy-on-write block storage.
+// Capturing the backbone (root) yields an immutable view; a subsequent write to
+// a shared block must copy that block so the snapshot keeps seeing the old data,
+// and dropping the snapshot must reclaim the superseded buffer automatically.
+// With no snapshot live, writes mutate in place with no extra allocation.
+TYPED_TEST(HNSWTest, cowStorageSnapshotIsolation) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64; // small blocks so a few hundred vectors span multiple blocks
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    size_t n = bs * 3;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_GE(hnsw->graphDataBlocks.size(), 3u);
+
+    const size_t lds = hnsw->levelDataSize;
+
+    // Capture a snapshot (registers a live generation — COW is now driven by the
+    // generation tag, so a bare backbone ref alone would not trigger a clone).
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(snap.valid());
+
+    // Record node 0's level-0 links as the snapshot sees them.
+    auto *snapNode0 = snap.getGraphData(0);
+    ElementLevelData &snapLd0 = snapNode0->getElementLevelData(0, lds);
+    std::vector<idType> recorded;
+    for (size_t j = 0; j < snapLd0.getNumLinks(); j++) {
+        recorded.push_back(snapLd0.getLinkAtPos(j));
+    }
+    ASSERT_GT(recorded.size(), 0u);
+
+    // A write to node 0 via the COW-aware accessor must copy block 0: the live
+    // node ends up at different storage and the allocator grows by a block.
+    size_t mem_before = allocator->getAllocationSize();
+    ElementGraphData *liveNode0 = hnsw->getGraphDataByInternalIdForWrite(0);
+    ASSERT_NE(liveNode0, snapNode0);
+    ASSERT_GT(allocator->getAllocationSize(), mem_before);
+    size_t mem_after_cow = allocator->getAllocationSize();
+
+    // Mutate the live node; the snapshot must not observe the change.
+    liveNode0->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xABCDE);
+    ASSERT_EQ(snapLd0.getNumLinks(), recorded.size());
+    for (size_t j = 0; j < recorded.size(); j++) {
+        ASSERT_EQ(snapLd0.getLinkAtPos(j), recorded[j]);
+    }
+
+    // Dropping the snapshot reclaims the superseded buffer automatically.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_LT(allocator->getAllocationSize(), mem_after_cow);
+
+    // With no snapshot live, a write mutates in place: no allocation.
+    size_t mem_steady = allocator->getAllocationSize();
+    (void)hnsw->getGraphDataByInternalIdForWrite(1);
+    ASSERT_EQ(allocator->getAllocationSize(), mem_steady);
+
+    VecSimIndex_Free(index);
+}
+
+// Phase 3 of the HNSW snapshot work: the immutable snapshot handle. Capturing it
+// is O(1) (a shared_ptr bump + scalar state, no element allocation), it records
+// the entry-point/level/count as of capture, and reads through it stay stable
+// while the live index inserts and copy-on-writes underneath.
+TYPED_TEST(HNSWTest, snapshotHandleCapture) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    size_t n = bs * 3;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Capture forks the backbone (so concurrent writers mutate a private copy while
+    // this snapshot keeps the captured one). That allocates a new backbone vector +
+    // per-block handles — O(#blocks) — but NOT element/vector data: the growth must
+    // be far below one block's worth of elements.
+    size_t mem_before = allocator->getAllocationSize();
+    auto snap = hnsw->captureGraphSnapshot();
+    size_t capture_growth = allocator->getAllocationSize() - mem_before;
+    ASSERT_LT(capture_growth, bs * hnsw->elementGraphDataSize)
+        << "capture must copy only block handles, not element data";
+    ASSERT_TRUE(snap.valid());
+    ASSERT_EQ(snap.curElementCount, n);
+    ASSERT_EQ(snap.entrypointNode, hnsw->entrypointNode);
+    ASSERT_EQ(snap.maxLevel, hnsw->maxLevel);
+
+    // Record the snapshot's view of node 0.
+    const size_t lds = hnsw->levelDataSize;
+    ElementLevelData &snapLd0 = snap.getLevelData(0, 0);
+    std::vector<idType> recorded;
+    for (size_t j = 0; j < snapLd0.getNumLinks(); j++) {
+        recorded.push_back(snapLd0.getLinkAtPos(j));
+    }
+    ASSERT_GT(recorded.size(), 0u);
+
+    // Mutate the live index after capture: grow it (new block) and rewrite a link
+    // on node 0 (forcing a block copy-on-write since the snapshot shares it).
+    for (size_t i = n; i < n + bs; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ElementGraphData *live0 = hnsw->getGraphDataByInternalIdForWrite(0);
+    live0->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xBEEF);
+
+    // The snapshot is unaffected: it still sees the original count and links, and
+    // node 0 now resolves to a different (pre-COW) buffer than the live index.
+    ASSERT_EQ(snap.curElementCount, n);
+    ElementLevelData &snapLd0b = snap.getLevelData(0, 0);
+    ASSERT_EQ(snapLd0b.getNumLinks(), recorded.size());
+    for (size_t j = 0; j < recorded.size(); j++) {
+        ASSERT_EQ(snapLd0b.getLinkAtPos(j), recorded[j]);
+    }
+    ASSERT_NE(snap.getGraphData(0), live0);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Phase 4 of the HNSW snapshot work: lock-free snapshot reads are consistent and
+// race-free while a concurrent writer copy-on-writes the live index. This is the
+// foundational guarantee behind "capture under the lock, then release it and
+// iterate lock-free while writers proceed". A reader thread repeatedly hashes the
+// captured snapshot's level-0 topology (which must never change), while a writer
+// thread rewrites links on the live index — each such write COWs the shared block
+// rather than mutating the buffer the snapshot pinned. Dropping the snapshot then
+// reclaims the superseded buffers automatically.
+TYPED_TEST(HNSWTest, snapshotLockFreeConsistency) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    const size_t n = bs * 5;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    const size_t lds = hnsw->levelDataSize;
+
+    // Capture the snapshot (as a query would, under the read lock) and fingerprint
+    // its level-0 topology over the whole visible set.
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(hnsw->graphSnapshotActive());
+    auto fingerprint = [&](const HNSWGraphSnapshot &s) {
+        uint64_t h = 1469598103934665603ull;
+        for (idType id = 0; id < (idType)s.curElementCount; id++) {
+            ElementLevelData &ld = s.getLevelData(id, 0);
+            h = (h ^ ld.getNumLinks()) * 1099511628211ull;
+            for (size_t j = 0; j < ld.getNumLinks(); j++) {
+                h = (h ^ ld.getLinkAtPos(j)) * 1099511628211ull;
+            }
+        }
+        return h;
+    };
+    const uint64_t baseline = fingerprint(snap);
+
+    // Single concurrent writer: rewrite links on the live index. Each write goes
+    // through the COW-aware accessor, so it copies the block the snapshot shares
+    // instead of mutating it. Only this thread touches the live graphDataBlocks;
+    // the reader below only touches its own captured `snap`.
+    std::atomic<bool> stop{false};
+    std::atomic<uint64_t> writes{0};
+    std::thread writer([&] {
+        std::mt19937 rng(1234);
+        while (!stop.load(std::memory_order_relaxed)) {
+            idType id = rng() % n;
+            ElementGraphData *gd = hnsw->getGraphDataByInternalIdForWrite(id);
+            ElementLevelData &ld = gd->getElementLevelData(0, lds);
+            if (ld.getNumLinks() > 0) {
+                ld.setLinkAtPos(0, (idType)(rng() % n));
+                writes.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    // Reader: the snapshot fingerprint must stay invariant through many lock-free
+    // reads while the writer mutates the live index.
+    bool consistent = true;
+    for (int i = 0; i < 3000; i++) {
+        if (fingerprint(snap) != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(writes.load(), 0u);
+    ASSERT_EQ(fingerprint(snap), baseline);
+
+    // The live index has diverged (the writer COW'd blocks the snapshot pinned).
+    size_t mem_with_snapshot = allocator->getAllocationSize();
+    // Dropping the whole handle releases both the pinned root and the live-id
+    // registration, so the snapshot is no longer reported active.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_FALSE(hnsw->graphSnapshotActive());
+    // Dropping the snapshot reclaims the superseded buffers automatically.
+    ASSERT_LT(allocator->getAllocationSize(), mem_with_snapshot);
+
+    VecSimIndex_Free(index);
+}
+
+// Phase 4 (continued): a captured snapshot is preserved through *real* HNSW
+// inserts running concurrently on the live index. This exercises the COW-aware
+// write-site conversion: mutuallyConnectNewElement / revisitNeighborConnections /
+// mutuallyRemoveNeighborAtPos now copy a block out of the shared snapshot before
+// rewriting any node's links, so a full insert (which rewires existing neighbors)
+// never mutates a buffer the snapshot holds. A single writer matches the design's
+// "writes are serialized under the exclusive lock" model; the reader is fully
+// lock-free over the immutable snapshot.
+TYPED_TEST(HNSWTest, snapshotPreservedUnderConcurrentInserts) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    auto allocator = index->getAllocator();
+
+    const size_t n0 = bs * 4;
+    for (size_t i = 0; i < n0; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Capture the snapshot, then fingerprint its level-0 topology over the whole
+    // visible set as of capture.
+    auto snap = hnsw->captureGraphSnapshot();
+    auto fingerprint = [&](const HNSWGraphSnapshot &s) {
+        uint64_t h = 1469598103934665603ull;
+        for (idType id = 0; id < (idType)s.curElementCount; id++) {
+            ElementLevelData &ld = s.getLevelData(id, 0);
+            h = (h ^ ld.getNumLinks()) * 1099511628211ull;
+            for (size_t j = 0; j < ld.getNumLinks(); j++) {
+                h = (h ^ ld.getLinkAtPos(j)) * 1099511628211ull;
+            }
+        }
+        return h;
+    };
+    const uint64_t baseline = fingerprint(snap);
+
+    // Single writer performing genuine HNSW insertions (which rewire existing
+    // nodes' neighbor lists) on the live index.
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> inserted{0};
+    std::thread writer([&] {
+        for (size_t i = n0; i < n0 + bs * 4; i++) {
+            if (stop.load(std::memory_order_relaxed)) {
+                break;
+            }
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+            inserted.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    // The snapshot fingerprint must stay invariant through lock-free reads while
+    // real inserts copy-on-write the live graph underneath.
+    bool consistent = true;
+    for (int i = 0; i < 4000; i++) {
+        if (fingerprint(snap) != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(inserted.load(), 0u);
+    ASSERT_EQ(fingerprint(snap), baseline);
+    // The live index grew/diverged; the snapshot still sees exactly n0 elements.
+    ASSERT_EQ(snap.curElementCount, n0);
+    ASSERT_GT(hnsw->indexSize(), n0);
+
+    size_t mem_with_snapshot = allocator->getAllocationSize();
+    snap = HNSWGraphSnapshot{};
+    ASSERT_LT(allocator->getAllocationSize(), mem_with_snapshot);
+
+    VecSimIndex_Free(index);
+}
+
+// Task 4.9: the COW clone decision is driven by the GENERATION TAG, not use_count.
+// The case that motivated it: write block A (which clones the backbone once), then
+// write a DIFFERENT block B — B must still be copy-on-written for the snapshot.
+// A container-level use_count check goes stale after the first backbone clone; the
+// generation tag (clone iff max_live_snapshot_id >= block.gen) stays correct.
+TYPED_TEST(HNSWTest, cowDecisionByGenerationNotUseCount) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    const size_t lds = hnsw->levelDataSize;
+
+    for (size_t i = 0; i < bs * 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_GE(hnsw->graphDataBlocks.size(), 3u);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    const idType idA = 0;      // block 0
+    const idType idB = bs + 1; // a different block (block 1)
+    ASSERT_NE(idA / bs, idB / bs);
+
+    ElementLevelData &snapA = snap.getLevelData(idA, 0);
+    ElementLevelData &snapB = snap.getLevelData(idB, 0);
+    ASSERT_GT(snapA.getNumLinks(), 0u);
+    ASSERT_GT(snapB.getNumLinks(), 0u);
+    const idType snapA0 = snapA.getLinkAtPos(0);
+    const idType snapB0 = snapB.getLinkAtPos(0);
+    const ElementGraphData *snapAptr = snap.getGraphData(idA);
+    const ElementGraphData *snapBptr = snap.getGraphData(idB);
+
+    // Write A: clones the (snapshot-shared) backbone once, plus block 0.
+    ElementGraphData *liveA = hnsw->getGraphDataByInternalIdForWrite(idA);
+    liveA->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xA11);
+    ASSERT_NE(liveA, snapAptr);
+
+    // Write B in a DIFFERENT block: backbone is already cloned, but the gen tag
+    // must still force a COW of block B for the snapshot.
+    ElementGraphData *liveB = hnsw->getGraphDataByInternalIdForWrite(idB);
+    liveB->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xB22);
+    ASSERT_NE(liveB, snapBptr) << "block B must be COW'd even after the backbone was cloned";
+
+    // The snapshot is intact for both blocks.
+    ASSERT_EQ(snap.getLevelData(idA, 0).getLinkAtPos(0), snapA0);
+    ASSERT_EQ(snap.getLevelData(idB, 0).getLinkAtPos(0), snapB0);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Task 4.9 / design.md "What pins a block version": a snapshot pins EVERY block
+// via the captured backbone, not via traversal order. A block the snapshot has
+// not yet read is still preserved when the writer COWs it — because capture is
+// eager and whole-backbone, and backbone COW clones the header vector before
+// repointing any slot (so the captured backbone keeps pointing at the old buffer).
+TYPED_TEST(HNSWTest, snapshotPinsUntraversedBlock) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t bs = 64;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .blockSize = bs, .M = M, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    const size_t lds = hnsw->levelDataSize;
+
+    for (size_t i = 0; i < bs * 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_GE(hnsw->graphDataBlocks.size(), 3u);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    // A block the snapshot has not read yet. Record its as-of-capture pointer + link.
+    const idType idFar = bs + 1; // block 1
+    ElementLevelData &snapFar = snap.getLevelData(idFar, 0);
+    ASSERT_GT(snapFar.getNumLinks(), 0u);
+    const idType snapFar0 = snapFar.getLinkAtPos(0);
+    const ElementGraphData *snapFarPtr = snap.getGraphData(idFar);
+
+    // Writer COWs that block *before* the snapshot ever traverses to it.
+    ElementGraphData *liveFar = hnsw->getGraphDataByInternalIdForWrite(idFar);
+    liveFar->getElementLevelData(0, lds).setLinkAtPos(0, (idType)0xFA4);
+
+    // Reading it from the snapshot now must return the as-of-capture buffer: the
+    // captured backbone still pins it (not freed, not the live version), regardless
+    // of read order.
+    ASSERT_EQ(snap.getGraphData(idFar), snapFarPtr);
+    ASSERT_NE(snap.getGraphData(idFar), liveFar);
+    ASSERT_EQ(snap.getLevelData(idFar, 0).getLinkAtPos(0), snapFar0);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Task 4.1 (read path): a lock-free KNN over a captured snapshot. (1) On the same
+// graph it returns the same results as the live search; (2) run with no lock, it
+// stays point-in-time consistent while a writer copy-on-writes the live graph
+// underneath. (Concurrent *inserts* would also grow the vectors container, which
+// is not yet snapshot-safe — gap 4-vector-data — so the writer here rewrites
+// existing links via the COW-aware path, which does not grow the index.)
+TYPED_TEST(HNSWTest, lockFreeSnapshotQuery) {
+    size_t dim = 4;
+    size_t M = 16;
+    size_t n = 1000;
+    size_t k = 10;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    const size_t lds = hnsw->levelDataSize;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Tie-free query (0.3 keeps all |i - 0.3| distinct), so the result order is
+    // unambiguous and the two search paths must agree exactly.
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0.3);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    auto fingerprint = [](VecSimQueryReply *r) {
+        uint64_t h = 1469598103934665603ull;
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            h = (h ^ (uint64_t)VecSimQueryResult_GetId(r->results.data() + i)) * 1099511628211ull;
+        }
+        return std::make_pair(h, len);
+    };
+
+    // (1) Correctness: the lock-free snapshot search == the live search on the
+    // same graph.
+    VecSimQueryReply *liveRep = hnsw->topKQuery(query, k, nullptr);
+    VecSimQueryReply *snapRep = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(liveRep), k);
+    ASSERT_EQ(VecSimQueryReply_Len(snapRep), VecSimQueryReply_Len(liveRep));
+    for (size_t i = 0; i < k; i++) {
+        ASSERT_EQ(VecSimQueryResult_GetId(liveRep->results.data() + i),
+                  VecSimQueryResult_GetId(snapRep->results.data() + i))
+            << "rank " << i;
+        ASSERT_EQ(VecSimQueryResult_GetScore(liveRep->results.data() + i),
+                  VecSimQueryResult_GetScore(snapRep->results.data() + i));
+    }
+    auto baseline = fingerprint(snapRep);
+    VecSimQueryReply_Free(liveRep);
+    VecSimQueryReply_Free(snapRep);
+
+    // (2) Lock-free + point-in-time consistent: repeatedly run the snapshot query
+    // with no lock while a writer COWs the live graph; the results must not change.
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> writes{0};
+    std::thread writer([&] {
+        std::mt19937 rng(99);
+        while (!stop.load(std::memory_order_relaxed)) {
+            idType id = rng() % n;
+            ElementGraphData *gd = hnsw->getGraphDataByInternalIdForWrite(id);
+            ElementLevelData &ld = gd->getElementLevelData(0, lds);
+            if (ld.getNumLinks() > 0) {
+                ld.setLinkAtPos(0, (idType)(rng() % n));
+                writes.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+
+    bool consistent = true;
+    for (int it = 0; it < 300; it++) {
+        VecSimQueryReply *r = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+        auto f = fingerprint(r);
+        VecSimQueryReply_Free(r);
+        if (f != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(writes.load(), 0u);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Like lockFreeSnapshotQuery, but the writer performs *real inserts* (addVector),
+// which grow and reallocate all three per-id containers — the graph backbone, the
+// raw vectors, and idToMetaData (labels + flags). A snapshot pins as-of-capture
+// copies of all three, so the lock-free reader must keep returning identical
+// results and must be race-free (this is the test that must stay TSan-clean).
+TYPED_TEST(HNSWTest, lockFreeSnapshotQueryDuringInserts) {
+    size_t dim = 4;
+    size_t M = 16;
+    size_t n = 1000;   // captured population
+    size_t k = 10;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0.3);
+
+    auto snap = hnsw->captureGraphSnapshot();
+
+    auto fingerprint = [](VecSimQueryReply *r) {
+        uint64_t h = 1469598103934665603ull;
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            h = (h ^ (uint64_t)VecSimQueryResult_GetId(r->results.data() + i)) * 1099511628211ull;
+        }
+        return std::make_pair(h, len);
+    };
+
+    VecSimQueryReply *snapRep = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(snapRep), k);
+    auto baseline = fingerprint(snapRep);
+    VecSimQueryReply_Free(snapRep);
+
+    // Writer keeps inserting new ids past the captured population, forcing the
+    // live containers to grow/realloc while the snapshot is read lock-free.
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> writes{0};
+    std::thread writer([&] {
+        std::mt19937 rng(99);
+        size_t next = n;
+        while (!stop.load(std::memory_order_relaxed)) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, next, (float)(rng() % 4096));
+            next++;
+            writes.fetch_add(1, std::memory_order_relaxed);
+        }
+    });
+
+    bool consistent = true;
+    for (int it = 0; it < 300; it++) {
+        VecSimQueryReply *r = hnsw->topKFromSnapshot(snap, query, k, nullptr);
+        auto f = fingerprint(r);
+        VecSimQueryReply_Free(r);
+        if (f != baseline) {
+            consistent = false;
+            break;
+        }
+        std::this_thread::yield();
+    }
+    stop.store(true);
+    writer.join();
+    ASSERT_TRUE(consistent);
+    ASSERT_GT(writes.load(), 0u);
+
+    snap = HNSWGraphSnapshot{};
+    VecSimIndex_Free(index);
+}
+
+// Drain a whole batch-iterator run into a flat (id, score) sequence.
+static std::vector<std::pair<size_t, double>>
+drainBatchIterator(VecSimIndex *index, const void *query, bool useSnapshot, size_t batch) {
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = useSnapshot;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+    std::vector<std::pair<size_t, double>> out;
+    while (VecSimBatchIterator_HasNext(it)) {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, batch, BY_SCORE);
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            out.emplace_back(VecSimQueryResult_GetId(r->results.data() + i),
+                             VecSimQueryResult_GetScore(r->results.data() + i));
+        }
+        VecSimQueryReply_Free(r);
+    }
+    VecSimBatchIterator_Free(it);
+    return out;
+}
+
+// The opt-in snapshot-backed batch iterator returns exactly the same paginated
+// results (ids + scores, in order) as the default live iterator on a static index.
+TYPED_TEST(HNSWTest, snapshotIterator_EquivalenceWithLive) {
+    size_t dim = 4, M = 16, n = 1000;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    // Query past the largest id so all distances are distinct (unambiguous order).
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    auto live = drainBatchIterator(index, query, /*useSnapshot=*/false, 7);
+    auto snap = drainBatchIterator(index, query, /*useSnapshot=*/true, 7);
+    ASSERT_EQ(live.size(), n);
+    ASSERT_EQ(snap.size(), live.size());
+    for (size_t i = 0; i < live.size(); i++) {
+        ASSERT_EQ(live[i].first, snap[i].first) << "rank " << i;
+        ASSERT_EQ(live[i].second, snap[i].second) << "rank " << i;
+    }
+    VecSimIndex_Free(index);
+}
+
+// A snapshot iterator is point-in-time: vectors inserted after it was created (the
+// capture) are never returned, and iterating while the live index grows + COWs is
+// safe.
+TYPED_TEST(HNSWTest, snapshotIterator_InsertDuringIterationInvisible) {
+    size_t dim = 4, M = 16, n = 1000;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+
+    size_t returned = 0;
+    bool first = true;
+    while (VecSimBatchIterator_HasNext(it)) {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, 25, BY_SCORE);
+        size_t len = VecSimQueryReply_Len(r);
+        for (size_t i = 0; i < len; i++) {
+            // No id captured after T (>= n) may ever appear.
+            ASSERT_LT(VecSimQueryResult_GetId(r->results.data() + i), n);
+        }
+        returned += len;
+        VecSimQueryReply_Free(r);
+        if (first) {
+            // Grow the live index by a full extra population mid-iteration.
+            for (size_t i = n; i < 2 * n; i++) {
+                GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+            }
+            first = false;
+        }
+    }
+    VecSimBatchIterator_Free(it);
+    ASSERT_EQ(returned, n); // exactly the as-of-capture population
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2 * n);
+    VecSimIndex_Free(index);
+}
+
+// Reset re-iterates the same captured snapshot and yields the same sequence.
+TYPED_TEST(HNSWTest, snapshotIterator_Reset) {
+    size_t dim = 4, M = 16, n = 500;
+    HNSWParams params = {.dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .M = M,
+                         .efConstruction = 200,
+                         .efRuntime = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, &qp);
+
+    auto collect = [&]() {
+        std::vector<size_t> ids;
+        while (VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, 10, BY_SCORE);
+            size_t len = VecSimQueryReply_Len(r);
+            for (size_t i = 0; i < len; i++) {
+                ids.push_back(VecSimQueryResult_GetId(r->results.data() + i));
+            }
+            VecSimQueryReply_Free(r);
+        }
+        return ids;
+    };
+    auto firstRun = collect();
+    VecSimBatchIterator_Reset(it);
+    auto secondRun = collect();
+    ASSERT_EQ(firstRun.size(), n);
+    ASSERT_EQ(firstRun, secondRun);
+    VecSimBatchIterator_Free(it);
+    VecSimIndex_Free(index);
+}

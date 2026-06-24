@@ -282,6 +282,11 @@ typedef enum {
 typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
     double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
+    // Opt-in: serve a batch iterator from an immutable point-in-time graph snapshot
+    // captured under the read lock, then iterate lock-free (writers proceed during
+    // iteration). Default false preserves the live-graph iterator. See the HNSW
+    // snapshot design (docs/design/hnsw-snapshot).
+    bool useGraphSnapshotIterator;
 } HNSWRuntimeParams;
 
 typedef struct {

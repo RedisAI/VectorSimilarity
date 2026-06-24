@@ -10,6 +10,7 @@
 
 #include "hnsw.h"
 #include "hnsw_multi_batch_iterator.h"
+#include "hnsw_snapshot_batch_iterator.h"
 #include "VecSim/utils/updatable_heap.h"
 
 template <typename DataType, typename DistType>
@@ -225,6 +226,20 @@ HNSWIndex_Multi<DataType, DistType>::newBatchIterator(const void *queryBlob,
 
     // take ownership of the blob copy and pass it to the batch iterator.
     auto *queryBlobCopyPtr = queryBlobCopy.release();
+
+    // Opt-in lock-free path: capture an immutable graph snapshot under the read
+    // lock, then iterate it without holding any lock (writers proceed meanwhile).
+    if (queryParams && queryParams->hnswRuntimeParams.useGraphSnapshotIterator) {
+        // Exclusive (write) lock: capture is the brief quiescence point where no
+        // writer is active, so the backbone fork + generation handout can't race an
+        // in-flight insert (see captureGraphSnapshot).
+        this->lockIndexDataGuard();
+        auto snapshot = this->captureGraphSnapshot();
+        this->unlockIndexDataGuard();
+        return new (this->allocator) HNSWSnapshotMulti_BatchIterator<DataType, DistType>(
+            queryBlobCopyPtr, this, std::move(snapshot), queryParams, this->allocator);
+    }
+
     // Ownership of queryBlobCopy moves to HNSW_BatchIterator that will free it at the end.
     return new (this->allocator) HNSWMulti_BatchIterator<DataType, DistType>(
         queryBlobCopyPtr, this, queryParams, this->allocator);

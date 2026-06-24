@@ -14,6 +14,7 @@
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/containers/data_block.h"
+#include "VecSim/algorithms/hnsw/graph_data_blocks.h"
 #include "VecSim/containers/raw_data_container_interface.h"
 #include "VecSim/containers/data_blocks_container.h"
 #include "VecSim/containers/vecsim_results_container.h"
@@ -79,6 +80,117 @@ struct ElementMetaData {
 };
 #pragma pack() // restore default packing
 
+// Rooted, copy-on-write store for the per-id metadata (label + flags) — the third
+// per-id container (after the graph and the vectors). It exposes the vector API
+// the index already uses (operator[], at, data, size, capacity, resize,
+// shrink_to_fit), so call sites are unchanged, but a *capacity change* (resize /
+// shrink) copies-on-write when a live snapshot can still see the current version
+// (driven by the shared RootedCowStore / SnapshotRegistry generation tag). A
+// snapshot therefore keeps reading its as-of-capture flags + labels even when a
+// concurrent insert reallocates the live metadata. In-place per-id writes
+// (markAs, setVectorId, swap) target ids the snapshot does not read (newly
+// inserted) or are the accepted weak deleted-flag semantics, so they are not
+// copied. Lazy: no allocation until the first resize (matching the previous flat
+// vector's footprint at capacity 0). Reclamation is refcount-driven.
+class MetaDataStore {
+public:
+    using Vector = vecsim_stl::vector<ElementMetaData>;
+    explicit MetaDataStore(std::shared_ptr<VecSimAllocator> allocator)
+        : allocator_(std::move(allocator)) {}
+
+    void configure(std::shared_ptr<SnapshotRegistry> registry) {
+        store_.setRegistry(std::move(registry));
+    }
+
+    // Reads go through an atomically-published raw pointer to the current version's
+    // vector, NOT the shared_ptr root. Rationale: the per-id flags are read on some
+    // paths without the index lock (the weak deleted/in-process consistency), and a
+    // copy-on-write under a live snapshot reassigns the shared_ptr root. Reading a
+    // 16-byte shared_ptr there can tear -> crash; an 8-byte atomic pointer load
+    // cannot. The pointed-to vector stays alive across a COW because the COW only
+    // happens while a snapshot pins the old version, so a stale read still hits live
+    // memory (and yields the accepted as-of-capture flag value). No refcount traffic
+    // on the read path. Capacity changes (resize/shrink) republish under the write
+    // lock.
+    //
+    // NOTE: this published-pointer scheme removes the shared_ptr TEAR, but the
+    // per-element flag byte itself is still written in place and read without a lock
+    // (deliberate weak deleted/in-process consistency — pre-existing, see task 4.4a).
+    // That is a genuine data race ThreadSanitizer will report on the flag field; it
+    // is accepted by design (the read tolerates either the pre- or post-write value)
+    // and is NOT introduced by the snapshot work — a lock-free snapshot reader is
+    // just another participant in the same long-standing relaxed flag access.
+    ElementMetaData &operator[](size_t id) { return (*live())[id]; }
+    const ElementMetaData &operator[](size_t id) const { return (*live())[id]; }
+    ElementMetaData &at(size_t id) { return live()->at(id); }
+    const ElementMetaData &at(size_t id) const { return live()->at(id); }
+    ElementMetaData *data() {
+        Vector *v = live();
+        return v ? v->data() : nullptr;
+    }
+    const ElementMetaData *data() const {
+        Vector *v = live();
+        return v ? v->data() : nullptr;
+    }
+    size_t size() const {
+        Vector *v = live();
+        return v ? v->size() : 0;
+    }
+    size_t capacity() const {
+        Vector *v = live();
+        return v ? v->capacity() : 0;
+    }
+
+    void resize(size_t n) {
+        ensureRoot();
+        cowForResize();
+        store_.root()->resize(n);
+        publish();
+    }
+    void shrink_to_fit() {
+        if (!store_.hasRoot()) {
+            return;
+        }
+        if (store_.root()->empty()) {
+            store_.reset(); // return to the initial (no-heap) footprint
+            publish();
+            return;
+        }
+        cowForResize();
+        store_.root()->shrink_to_fit();
+        publish();
+    }
+
+    // O(1) capture of the current metadata version (pins it for a snapshot).
+    std::shared_ptr<Vector> captureRoot() const { return store_.capture(); }
+
+private:
+    // Current version's vector, read with an acquire load (tear-free, lock-free).
+    Vector *live() const { return live_.load(std::memory_order_acquire); }
+    // Publish the current root's vector pointer; call after any change to the root
+    // (init / COW / resize / reset). Must run under the index write lock.
+    void publish() {
+        live_.store(store_.hasRoot() ? store_.root().get() : nullptr,
+                    std::memory_order_release);
+    }
+    void ensureRoot() {
+        if (!store_.hasRoot()) {
+            store_.initRoot(std::shared_ptr<Vector>(new (allocator_) Vector(allocator_)));
+        }
+    }
+    void cowForResize() {
+        store_.cowForWrite([this](const Vector &old) {
+            auto fresh = std::shared_ptr<Vector>(new (allocator_) Vector(allocator_));
+            *fresh = old; // copy current contents; the resize/shrink mutates the copy
+            return fresh;
+        });
+    }
+    std::shared_ptr<VecSimAllocator> allocator_;
+    RootedCowStore<Vector> store_;
+    // Atomically-published pointer to store_'s current vector (see live()/publish()).
+    std::atomic<Vector *> live_{nullptr};
+};
+
 //////////////////////////////////// HNSW index implementation ////////////////////////////////////
 
 template <typename DataType, typename DistType>
@@ -115,8 +227,13 @@ protected:
     size_t maxLevel; // this is the top level of the entry point's element
 
     // Index data
-    vecsim_stl::vector<DataBlock> graphDataBlocks;
-    vecsim_stl::vector<ElementMetaData> idToMetaData;
+    GraphDataBlocks graphDataBlocks;
+    MetaDataStore idToMetaData;
+
+    // Live-snapshot generation registry (shared so it outlives the index if a
+    // snapshot does). Hands out monotonic ids at capture and tracks the live set;
+    // drives the SWAP-deferral gate (and, later, the clone/reclaim horizons).
+    std::shared_ptr<SnapshotRegistry> snapshotRegistry_ = std::make_shared<SnapshotRegistry>();
 
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
@@ -262,8 +379,92 @@ public:
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     const char *getDataByInternalId(idType internal_id) const;
     ElementGraphData *getGraphDataByInternalId(idType internal_id) const;
+    // Copy-on-write aware accessor for mutation: ensures the backbone and the
+    // block holding `internal_id` are not shared with a live snapshot before
+    // returning a writable pointer. Must be called under the index write lock.
+    ElementGraphData *getGraphDataByInternalIdForWrite(idType internal_id);
     ElementLevelData &getElementLevelData(idType internal_id, size_t level) const;
     ElementLevelData &getElementLevelData(ElementGraphData *element, size_t level) const;
+    // COW-aware level-data accessor for mutation: copies the block holding
+    // `internal_id` out of any shared snapshot (idempotent per block) and returns
+    // a writable level record. Use at every site that mutates a node's links or
+    // incoming edges, so a live snapshot's buffers are never modified in place.
+    ElementLevelData &getElementLevelDataForWrite(idType internal_id, size_t level) {
+        return getGraphDataByInternalIdForWrite(internal_id)->getElementLevelData(
+            level, this->levelDataSize);
+    }
+    // Capture an immutable, point-in-time view of the graph. **Must be called under
+    // the index *write* (exclusive) lock**, held briefly: capture is the quiescence
+    // point at which no writer is active, so it can (a) hand out a generation, (b)
+    // fork the backbone so the live index keeps mutating a private copy while this
+    // snapshot owns the captured one, and (c) snapshot the vector-block base
+    // pointers — all without racing an in-flight insert. The work is O(#blocks)
+    // (pointer copies; no element/vector data is copied); iteration afterward holds
+    // no lock, as writers copy-on-write per block rather than mutating pinned data.
+    //
+    // Consistency contract (what a reader of the returned snapshot sees):
+    //   - STRICT point-in-time for graph TOPOLOGY and MEMBERSHIP: the set of ids
+    //     that existed at capture (ids < curElementCount) and their links/levels
+    //     are frozen — concurrent inserts copy-on-write, so they never perturb the
+    //     captured backbone/buffers.
+    //   - WEAK (best-effort) for per-element METADATA (deleted / in-process flags,
+    //     and a slot's label): metadata structural changes (resize) copy-on-write,
+    //     but per-element fields are written in place on the live metadata, so a
+    //     change that lands after capture (a delete-mark, or a label rewrite when a
+    //     freed slot is recycled) MAY or MAY NOT be observed by the snapshot reader.
+    //     This matches the live index's existing weak flag consistency; a snapshot
+    //     read is not a strict point-in-time view of deletion status. (A later phase
+    //     defers slot recycling for ids a live snapshot can still see, which makes
+    //     labels of visible ids effectively stable; flags remain weak.)
+    HNSWGraphSnapshot captureGraphSnapshot() const {
+        // Hand out a fresh generation id and a registration token whose deleter
+        // removes it from the live set when the last copy of the handle drops.
+        // Pass curElementCount: this snapshot only reads ids < it, so it is the
+        // snapshot's slot-reclaim horizon (a SWAP of a higher id is unobservable).
+        uint64_t generation = snapshotRegistry_->acquire(curElementCount);
+        auto registry = snapshotRegistry_;
+        auto liveToken = std::shared_ptr<void>(
+            static_cast<void *>(nullptr), [registry, generation](void *) {
+                registry->release(generation);
+            });
+        // Capture the per-block base pointers of the raw vector data so a
+        // lock-free query never reads the live (reallocating) vectors container.
+        // Under the exclusive lock, so no concurrent writer is reallocating here.
+        auto *vectorsContainer = static_cast<const DataBlocksContainer *>(this->vectors);
+        auto vectorBlocks = std::make_shared<std::vector<const char *>>();
+        size_t numVectorBlocks = vectorsContainer->numBlocks();
+        vectorBlocks->reserve(numVectorBlocks);
+        for (size_t b = 0; b < numVectorBlocks; b++) {
+            vectorBlocks->push_back(vectorsContainer->getElement(b * this->blockSize));
+        }
+        // Fork the live backbone (capture is const at the API level but legitimately
+        // mutates the live storage under the exclusive lock; the snapshot receives
+        // the pre-fork backbone). const_cast keeps newBatchIterator's const contract.
+        return HNSWGraphSnapshot{const_cast<GraphDataBlocks &>(graphDataBlocks).captureRootAndFork(),
+                                 entrypointNode,
+                                 maxLevel,
+                                 curElementCount,
+                                 this->blockSize,
+                                 levelDataSize,
+                                 elementGraphDataSize,
+                                 generation,
+                                 std::move(liveToken),
+                                 std::move(vectorBlocks),
+                                 vectorsContainer->elementByteCount(),
+                                 std::static_pointer_cast<void>(idToMetaData.captureRoot())};
+    }
+    // True while any captured graph snapshot is still live. SWAP slot reuse must
+    // be deferred while this holds, so a freed id referenced by a snapshot is not
+    // physically recycled. Backed by the live-id registry rather than the root's
+    // use_count: after the first copy-on-write the live root is unshared again
+    // (the snapshot holds the *old* root), so use_count would wrongly report no
+    // snapshot mid-stream — the registry tracks the snapshot's whole lifetime.
+    bool graphSnapshotActive() const { return snapshotRegistry_->anyLive(); }
+    // Reclaim horizon for SWAP slot recycling: the max curElementCount over live
+    // snapshots. A swap that overwrites an internal id >= this is invisible to
+    // every live snapshot (each only reads ids < its captured curElementCount) and
+    // is safe to run; one below it must be deferred. 0 when no snapshot is live.
+    size_t snapshotReclaimHorizon() const { return snapshotRegistry_->maxVisibleCount(); }
     idType searchBottomLayerEP(const void *query_data, void *timeoutCtx,
                                VecSimQueryReply_Code *rc) const;
 
@@ -271,6 +472,13 @@ public:
                      const HNSWAddVectorState &state);
     VecSimQueryReply *topKQuery(const void *query_data, size_t k,
                                 VecSimQueryParams *queryParams) const override;
+    // Lock-free KNN over an immutable graph snapshot. Resolves all graph access
+    // through `snap` (no per-node locks — the snapshot's buffers are immutable),
+    // so it can run after the index read lock has been released and stays
+    // consistent with the index state at capture time while writers proceed. On
+    // the same graph and ef/k as the live path it returns the same results.
+    VecSimQueryReply *topKFromSnapshot(const HNSWGraphSnapshot &snap, const void *query_data,
+                                       size_t k, VecSimQueryParams *queryParams) const;
     VecSimQueryReply *rangeQuery(const void *query_data, double radius,
                                  VecSimQueryParams *queryParams) const override;
 
@@ -393,8 +601,13 @@ const char *HNSWIndex<DataType, DistType>::getDataByInternalId(idType internal_i
 template <typename DataType, typename DistType>
 ElementGraphData *
 HNSWIndex<DataType, DistType>::getGraphDataByInternalId(idType internal_id) const {
-    return (ElementGraphData *)graphDataBlocks[internal_id / this->blockSize].getElement(
-        internal_id % this->blockSize);
+    return (ElementGraphData *)graphDataBlocks.getElement(internal_id);
+}
+
+template <typename DataType, typename DistType>
+ElementGraphData *
+HNSWIndex<DataType, DistType>::getGraphDataByInternalIdForWrite(idType internal_id) {
+    return (ElementGraphData *)graphDataBlocks.getElementForWrite(internal_id);
 }
 
 template <typename DataType, typename DistType>
@@ -895,14 +1108,17 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
     assert(top_candidates_list.size() <= M &&
            "Should be not be more than M candidates returned by the heuristic");
 
-    auto *new_node_level = getGraphDataByInternalId(new_node_id);
+    // COW-aware: copy the new node's block out of any shared snapshot before
+    // mutating its links (no-op when no snapshot is live).
+    auto *new_node_level = getGraphDataByInternalIdForWrite(new_node_id);
     ElementLevelData &new_node_level_data = getElementLevelData(new_node_level, level);
     assert(new_node_level_data.getNumLinks() == 0 &&
            "The newly inserted element should have blank link list");
 
     for (auto &neighbor_data : top_candidates_list) {
         idType selected_neighbor = neighbor_data.second; // neighbor's id
-        auto *neighbor_graph_data = getGraphDataByInternalId(selected_neighbor);
+        // COW-aware: the neighbor's links are about to be updated.
+        auto *neighbor_graph_data = getGraphDataByInternalIdForWrite(selected_neighbor);
         if (new_node_id < selected_neighbor) {
             lockNodeLinks(new_node_level);
             lockNodeLinks(neighbor_graph_data);
@@ -1090,10 +1306,10 @@ void HNSWIndex<DataType, DistType>::replaceEntryPoint() {
         // If there is no neighbors in the current level, check for any vector at
         // this level to be the new entry point.
         idType cur_id = 0;
-        for (DataBlock &graph_data_block : graphDataBlocks) {
-            size_t size = graph_data_block.getLength();
+        for (size_t b = 0; b < graphDataBlocks.size(); b++) {
+            size_t size = graphDataBlocks.blockLength(b);
             for (size_t i = 0; i < size; i++) {
-                auto cur_element = (ElementGraphData *)graph_data_block.getElement(i);
+                auto cur_element = (ElementGraphData *)graphDataBlocks.getElementInBlock(b, i);
                 if (cur_element->toplevel == maxLevel && cur_id != old_entry_point_id &&
                     !isMarkedDeleted(cur_id)) {
                     // Found a non element in the current max level.
@@ -1181,7 +1397,7 @@ void HNSWIndex<DataType, DistType>::SwapLastIdWithDeletedId(idType element_inter
     }
 
     // Move the last element's data to the deleted element's place
-    auto element = getGraphDataByInternalId(element_internal_id);
+    auto element = getGraphDataByInternalIdForWrite(element_internal_id);
     memcpy((void *)element, last_element, this->elementGraphDataSize);
 
     auto data = getDataByInternalId(element_internal_id);
@@ -1318,7 +1534,7 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
               maxElements + this->blockSize);
     maxElements += this->blockSize;
 
-    graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+    graphDataBlocks.addBlock();
 
     if (idToMetaData.capacity() == indexSize()) {
         resizeIndexCommon(maxElements);
@@ -1334,7 +1550,7 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
         this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
                   "Updating HNSW index capacity from %zu to %zu", maxElements,
                   maxElements - this->blockSize);
-        graphDataBlocks.pop_back();
+        graphDataBlocks.popLastBlock();
         assert(graphDataBlocks.size() == indexSize() / this->blockSize);
 
         // assuming idToMetaData reflects the capacity of the heavy reallocation containers.
@@ -1360,6 +1576,20 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
     nodes_to_update.push_back(node_id);
     std::sort(nodes_to_update.begin(), nodes_to_update.end());
     size_t nodes_to_update_count = nodes_to_update.size();
+
+    // Copy-on-write ALL touched nodes' blocks up front, BEFORE taking any per-node
+    // lock. Every node we mutate or lock below is in nodes_to_update, so after this
+    // loop their buffers are final (stamped the current generation). That matters
+    // under a live snapshot: a COW-aware write inside the locked region would
+    // otherwise fork a block and move a node (and its mutex) to a new buffer out
+    // from under the lock we hold — so lock(id) and unlock(id) would resolve to
+    // different mutexes. Forking first makes getGraphDataByInternalId(id) stable for
+    // the whole critical section (no re-fork: a new snapshot can't be captured here
+    // — capture takes the exclusive lock, repair holds it shared). No-op when no
+    // snapshot is live (cowBlock doesn't clone), so the default path is unchanged.
+    for (size_t i = 0; i < nodes_to_update_count; i++) {
+        getGraphDataByInternalIdForWrite(nodes_to_update[i]);
+    }
     for (size_t i = 0; i < nodes_to_update_count; i++) {
         lockNodeLinks(nodes_to_update[i]);
     }
@@ -1539,7 +1769,8 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
                                                                 size_t pos) {
     // Now we know that we are looking at a neighbor that needs to be removed.
     auto removed_node = node_level.getLinkAtPos(pos);
-    ElementLevelData &removed_node_level = getElementLevelData(removed_node, level);
+    // COW-aware: the removed node's incoming edges may be updated below.
+    ElementLevelData &removed_node_level = getElementLevelDataForWrite(removed_node, level);
     // Perform the mutual update:
     // if the removed node id (the node's neighbour to be removed)
     // wasn't pointing to the node (i.e., the edge was uni-directional),
@@ -1637,13 +1868,17 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
 
     elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M0;
     levelDataSize = sizeof(ElementLevelData) + sizeof(idType) * M;
+    graphDataBlocks.configure(this->blockSize, elementGraphDataSize, levelDataSize,
+                              snapshotRegistry_);
+    idToMetaData.configure(snapshotRegistry_);
 }
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType>::~HNSWIndex() {
-    for (idType id = 0; id < curElementCount; id++) {
-        getGraphDataByInternalId(id)->destroy(this->levelDataSize, this->allocator);
-    }
+    // Each block's GraphBlockBuffer owns its live elements' resources and frees
+    // them (and the raw buffer) when its last reference drops, which happens as
+    // graphDataBlocks' root is torn down here. No explicit per-element loop is
+    // needed; doing one would double-free the elements the buffer destroys.
 }
 
 /**
@@ -1684,8 +1919,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
     // Get the last element's metadata and data.
     // If we are deleting the last element, we already destroyed it's metadata.
     auto *last_element_data = getDataByInternalId(curElementCount);
-    DataBlock &last_gd_block = graphDataBlocks.back();
-    auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
+    auto last_element = (ElementGraphData *)graphDataBlocks.removeAndFetchLastElement();
 
     // Swap the last id with the deleted one, and invalidate the last id data.
     if (curElementCount != internalId) {
@@ -1803,7 +2037,7 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
 
     // Insert the new element to the data block
     this->vectors->addElement(vector_data, state.newElementId);
-    this->graphDataBlocks.back().addElement(cur_egd);
+    this->graphDataBlocks.addElement(cur_egd);
     // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
     // set when checking if label .
     this->idToMetaData[state.newElementId] = ElementMetaData(label);
@@ -1992,6 +2226,132 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::topKQuery(const void *query_dat
         }
     }
     delete results;
+    return rep;
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryReply *
+HNSWIndex<DataType, DistType>::topKFromSnapshot(const HNSWGraphSnapshot &snap,
+                                                const void *query_data, size_t k,
+                                                VecSimQueryParams *queryParams) const {
+    auto rep = new VecSimQueryReply(this->allocator);
+    if (!snap.valid() || snap.curElementCount == 0 || k == 0 ||
+        snap.entrypointNode == INVALID_ID) {
+        return rep;
+    }
+
+    auto processed_query_ptr = this->preprocessQuery(query_data);
+    const void *query = processed_query_ptr.get();
+    void *timeoutCtx = nullptr;
+    size_t ef = this->ef;
+    if (queryParams) {
+        timeoutCtx = queryParams->timeoutCtx;
+        if (queryParams->hnswRuntimeParams.efRuntime != 0) {
+            ef = queryParams->hnswRuntimeParams.efRuntime;
+        }
+    }
+    ef = std::max(ef, k);
+
+    // A link can only reference an id that existed at capture; guard defensively.
+    const idType visibleCount = (idType)snap.curElementCount;
+    auto visible = [&](idType id) { return id < visibleCount; };
+
+    // Read flags + labels from the captured (frozen) metadata, not the live index,
+    // so a concurrent insert that reallocates idToMetaData can't race this scan.
+    const auto *meta = static_cast<const vecsim_stl::vector<ElementMetaData> *>(snap.metaData.get());
+    auto snapDeleted = [&](idType id) { return ((*meta)[id].flags & DELETE_MARK) != 0; };
+    auto snapInProcess = [&](idType id) { return ((*meta)[id].flags & IN_PROCESS) != 0; };
+    auto snapLabel = [&](idType id) { return (*meta)[id].label; };
+
+    // ---- Phase 1: greedy descent through the upper levels (no locks). ----
+    idType cur = snap.entrypointNode;
+    DistType curDist = this->calcDistance(query, snap.getVectorData(cur));
+    for (size_t level = snap.maxLevel; level > 0; level--) {
+        bool changed = true;
+        while (changed) {
+            if (VECSIM_TIMEOUT(timeoutCtx)) {
+                rep->code = VecSim_QueryReply_TimedOut;
+                return rep;
+            }
+            changed = false;
+            ElementLevelData &node_level = snap.getLevelData(cur, level);
+            for (linkListSize j = 0; j < node_level.getNumLinks(); j++) {
+                idType cand = node_level.getLinkAtPos(j);
+                if (!visible(cand) || snapInProcess(cand)) {
+                    continue;
+                }
+                DistType d = this->calcDistance(query, snap.getVectorData(cand));
+                if (d < curDist) {
+                    curDist = d;
+                    cur = cand;
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // ---- Phase 2: ef-bounded best-first search at level 0 (no locks). ----
+    // Local visited set so the scan touches no shared/live state.
+    vecsim_stl::vector<bool> visited(snap.curElementCount, false, this->allocator);
+    candidatesLabelsMaxHeap<DistType> *top_candidates = getNewMaxPriorityQueue();
+    candidatesMaxHeap<DistType> candidate_set(this->allocator);
+
+    DistType lowerBound;
+    if (!snapDeleted(cur)) {
+        DistType dist = this->calcDistance(query, snap.getVectorData(cur));
+        lowerBound = dist;
+        top_candidates->emplace(dist, snapLabel(cur));
+        candidate_set.emplace(-dist, cur);
+    } else {
+        lowerBound = std::numeric_limits<DistType>::max();
+        candidate_set.emplace(-lowerBound, cur);
+    }
+    visited[cur] = true;
+
+    while (!candidate_set.empty()) {
+        auto curr_pair = candidate_set.top();
+        if ((-curr_pair.first) > lowerBound && top_candidates->size() >= ef) {
+            break;
+        }
+        if (VECSIM_TIMEOUT(timeoutCtx)) {
+            rep->code = VecSim_QueryReply_TimedOut;
+            delete top_candidates;
+            return rep;
+        }
+        candidate_set.pop();
+
+        ElementLevelData &node_level = snap.getLevelData(curr_pair.second, 0);
+        for (linkListSize j = 0; j < node_level.getNumLinks(); j++) {
+            idType cand = node_level.getLinkAtPos(j);
+            if (!visible(cand) || visited[cand] || snapInProcess(cand)) {
+                continue;
+            }
+            visited[cand] = true;
+            DistType d = this->calcDistance(query, snap.getVectorData(cand));
+            if (lowerBound > d || top_candidates->size() < ef) {
+                candidate_set.emplace(-d, cand);
+                if (!snapDeleted(cand)) {
+                    top_candidates->emplace(d, snapLabel(cand));
+                }
+                if (top_candidates->size() > ef) {
+                    top_candidates->pop();
+                }
+                if (!top_candidates->empty()) {
+                    lowerBound = top_candidates->top().first;
+                }
+            }
+        }
+    }
+
+    while (top_candidates->size() > k) {
+        top_candidates->pop();
+    }
+    rep->results.resize(top_candidates->size());
+    for (auto result = rep->results.rbegin(); result != rep->results.rend(); result++) {
+        std::tie(result->score, result->id) = top_candidates->top();
+        top_candidates->pop();
+    }
+    delete top_candidates;
     return rep;
 }
 

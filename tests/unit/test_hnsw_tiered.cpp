@@ -1860,6 +1860,75 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     EXPECT_EQ(allocator->getAllocationSize(), sizeof(size_t));
 }
 
+// Task 4.7b: slot reclamation is gated by a live snapshot. A "slot" (internal id)
+// spans three parallel containers, and SWAP recycles it by overwriting the vector
+// and metadata IN PLACE (copy-on-write only versions the graph). So while a
+// snapshot is live, executeReadySwapJobs must DEFER the swap (tombstone the slot)
+// rather than recycle it — otherwise the snapshot would read a different
+// element's embedding/identity in that slot.
+TYPED_TEST(HNSWTieredIndexTest, swapDeferredWhileSnapshotHeld) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw = tiered_index->getHNSWIndex();
+
+    // Three vectors directly in the backend graph (label == id, distinct values).
+    for (size_t i = 0; i < 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->indexSize(), 3);
+
+    // Delete label 0 and drain its repair jobs so the swap job becomes ready.
+    // We do this BEFORE capturing the snapshot: the graph-repair path is not yet
+    // copy-on-write-safe under a live snapshot (task 4.5 remainder), and this test
+    // targets the SWAP-deferral gate (4.7a), not repair-under-snapshot. Capturing
+    // after the repair still exercises the gate (it defers ALL swaps while any
+    // snapshot is live) without running repair while a snapshot is held.
+    ASSERT_EQ(tiered_index->deleteVector(0), 1);
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->idToSwapJob.count(0), 1u);
+
+    // Record slot 0's identity (the swap has not run yet, so it still holds it).
+    const size_t data_sz = hnsw->getStoredDataSize();
+    std::vector<char> vec0_before(data_sz);
+    memcpy(vec0_before.data(), hnsw->getDataByInternalId(0), data_sz);
+    labelType label0_before = hnsw->getExternalLabel(0);
+    ASSERT_TRUE(hnsw->isMarkedDeleted(0));
+
+    // Now capture a snapshot, then try to run the ready swap: it must be deferred
+    // because a snapshot is live (the slot must not be physically recycled).
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(hnsw->graphSnapshotActive());
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(0), 1u)
+        << "swap must be deferred while a snapshot is live";
+
+    // Slot 0 is intact: same embedding and same identity (NOT the swap source's),
+    // showing element 0's own (now-deleted) flag rather than a live element wrongly
+    // occupying the recycled slot.
+    ASSERT_EQ(memcmp(hnsw->getDataByInternalId(0), vec0_before.data(), data_sz), 0)
+        << "snapshot-referenced slot's vector must not be overwritten by a deferred SWAP";
+    ASSERT_EQ(hnsw->getExternalLabel(0), label0_before);
+    ASSERT_TRUE(hnsw->isMarkedDeleted(0));
+
+    // Releasing the snapshot lets the deferred swap recycle the slot.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_FALSE(hnsw->graphSnapshotActive());
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(0), 0u)
+        << "swap must proceed once no snapshot is live";
+
+    // The mock thread pool owns the index (index_strong_ref) and frees it on
+    // destruction — no explicit free here (matches swapJobBasic).
+}
+
 TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
@@ -4529,4 +4598,238 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
               hnsw_index->indexMetaDataCapacity() +
                   tiered_index->frontendIndex->indexMetaDataCapacity());
+}
+
+// The tiered batch iterator with the snapshot flag returns the same paginated
+// results as the default live iterator on a stable (fully-ingested) index.
+TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotIteratorEquivalence) {
+    size_t dim = 4, n = 1000;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .efRuntime = 200};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    // Drain all insert jobs so the population is stable (all in the backend graph).
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(n + 5));
+    auto drain = [&](bool useSnapshot) {
+        VecSimQueryParams qp = {};
+        qp.hnswRuntimeParams.useGraphSnapshotIterator = useSnapshot;
+        VecSimBatchIterator *it = VecSimBatchIterator_New(tiered_index, query, &qp);
+        std::vector<size_t> ids;
+        while (VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, 11, BY_SCORE);
+            for (size_t i = 0; i < VecSimQueryReply_Len(r); i++) {
+                ids.push_back(VecSimQueryResult_GetId(r->results.data() + i));
+            }
+            VecSimQueryReply_Free(r);
+        }
+        VecSimBatchIterator_Free(it);
+        return ids;
+    };
+    auto live = drain(false);
+    auto snap = drain(true);
+    ASSERT_EQ(live.size(), n);
+    ASSERT_EQ(live, snap);
+}
+
+// The core win: a snapshot-backed cursor does NOT hold the main index read lock,
+// so ingestion (flat -> HNSW) proceeds while the cursor is open. This is driven
+// single-threaded: with the old live iterator the cursor would hold mainIndexGuard
+// shared and this in-thread ingestion (which takes the exclusive lock) would
+// self-deadlock; in snapshot mode the lock is released right after capture, so it
+// completes — and the cursor stays point-in-time (only the as-of-capture population
+// is ever returned).
+TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotIngestionProgressesWhileCursorOpen) {
+    size_t dim = 4, base = 500, extra = 500;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti(),
+                         .efRuntime = 200};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    // Base population, fully ingested into the backend graph.
+    for (size_t i = 0; i < base; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), base);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+
+    // Open a snapshot cursor and pull the first batch (captures the backend snapshot
+    // and releases mainIndexGuard immediately).
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, (TEST_DATA_T)(base + extra + 5));
+    VecSimQueryParams qp = {};
+    qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+    VecSimBatchIterator *it = VecSimBatchIterator_New(tiered_index, query, &qp);
+    ASSERT_TRUE(VecSimBatchIterator_HasNext(it));
+    size_t total = 0;
+    {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, 10, BY_SCORE);
+        total += VecSimQueryReply_Len(r);
+        VecSimQueryReply_Free(r);
+    }
+    ASSERT_TRUE(tiered_index->getHNSWIndex()->graphSnapshotActive());
+
+    // While the cursor is open, insert MORE vectors and ingest them in-thread. This
+    // would self-deadlock under the live iterator (shared lock held); here it runs.
+    for (size_t i = base; i < base + extra; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), base + extra)
+        << "ingestion must progress while a snapshot cursor is open";
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+
+    // The cursor stayed point-in-time: drain it; every returned id is from the
+    // as-of-capture population and the total equals it.
+    while (VecSimBatchIterator_HasNext(it)) {
+        VecSimQueryReply *r = VecSimBatchIterator_Next(it, 50, BY_SCORE);
+        for (size_t i = 0; i < VecSimQueryReply_Len(r); i++) {
+            ASSERT_LT(VecSimQueryResult_GetId(r->results.data() + i), base);
+        }
+        total += VecSimQueryReply_Len(r);
+        VecSimQueryReply_Free(r);
+    }
+    VecSimBatchIterator_Free(it);
+    ASSERT_EQ(total, base);
+}
+
+// Repair rewrites links (not COW-safe under a live snapshot), so while a snapshot is
+// held the repair jobs are deferred (kept pending), and the associated swap stays
+// pending. Once the snapshot is released, a GC pass re-submits the deferred repairs;
+// after they run the swap becomes ready and recycles the slot.
+// Repair runs even while a snapshot is live: mutuallyUpdateForRepairedNode
+// copy-on-writes every touched node's block before locking, so the snapshot keeps
+// its frozen view and the link rewrite is consistent. Slot recycling (SWAP) is
+// gated by the reclaim horizon (= max curElementCount over live snapshots): a
+// deleted id below the horizon is deferred (the snapshot can still read that slot),
+// one at/above it recycles immediately.
+TYPED_TEST(HNSWTieredIndexTest, tieredSnapshotRepairRunsHorizonRecycles) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw = tiered_index->getHNSWIndex();
+
+    size_t n = 16;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+
+    // Capture a snapshot at curElementCount == n, so the reclaim horizon is n.
+    auto snap = hnsw->captureGraphSnapshot();
+    ASSERT_TRUE(hnsw->graphSnapshotActive());
+
+    // Delete a LOW id (< horizon). Its repair jobs RUN under the snapshot (no longer
+    // deferred): the swap becomes ready (pending repairs == 0). But the SWAP is
+    // deferred because the snapshot can still read slot 2.
+    ASSERT_EQ(tiered_index->deleteVector(2), 1);
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->idToSwapJob.count(2), 1u);
+    ASSERT_EQ(tiered_index->idToSwapJob.at(2)->pending_repair_jobs_counter.load(), 0)
+        << "repairs ran under the snapshot — the swap is ready, not parked";
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(2), 1u)
+        << "a swap below the reclaim horizon stays deferred while the snapshot is live";
+
+    // Grow past the snapshot's horizon, then delete a HIGH id (>= horizon = n). The
+    // snapshot cannot see that slot, so its swap recycles immediately even though the
+    // snapshot is still live.
+    for (size_t i = n; i < 2 * n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+    const idType high = (idType)(n + 3);
+    ASSERT_EQ(tiered_index->deleteVector(high), 1);
+    while (mock_thread_pool.jobQ.size() > 0) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(high), 0u)
+        << "a swap at/above the reclaim horizon recycles under a live snapshot";
+
+    // Releasing the snapshot drops the horizon to 0, so the deferred low-id swap runs.
+    snap = HNSWGraphSnapshot{};
+    ASSERT_FALSE(hnsw->graphSnapshotActive());
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->idToSwapJob.count(2), 0u);
+}
+
+// Concurrency stress: many snapshot-backed cursors iterate lock-free while workers
+// ingest (flat->HNSW) and the main thread deletes (whose repairs now run under the
+// live cursors). Guards against the COW/use-after-free hazards in the concurrent
+// insert + delete + repair + snapshot-read path; run under ASan/TSan. Asserts
+// everyone makes progress (all cursors complete, ingestion finishes).
+TYPED_TEST(HNSWTieredIndexTest, parallelBatchIteratorSearchSnapshot) {
+    size_t dim = 4, ef = 200, n = 1000;
+    bool isMulti = TypeParam::isMulti();
+    size_t per_label = isMulti ? 5 : 1;
+    size_t n_labels = n / per_label;
+    HNSWParams params = {.type = TypeParam::get_index_type(), .dim = dim,
+                         .metric = VecSimMetric_L2, .multi = isMulti, .efRuntime = ef};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+    std::atomic_int successful_searches(0);
+    auto snapshot_search = [](AsyncJob *job) {
+        auto *sj = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+        VecSimQueryParams qp = {};
+        qp.hnswRuntimeParams.useGraphSnapshotIterator = true;
+        VecSimBatchIterator *it = VecSimBatchIterator_New(sj->index, sj->query, &qp);
+        size_t iteration = 0;
+        while (iteration < 10 && VecSimBatchIterator_HasNext(it)) {
+            VecSimQueryReply *r = VecSimBatchIterator_Next(it, sj->k, BY_SCORE);
+            VecSimQueryReply_Free(r);
+            iteration++;
+        }
+        VecSimBatchIterator_Free(it);
+        (*sj->successful_searches)++;
+        delete job;
+    };
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i % n_labels, i);
+        auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+        GenerateVector<TEST_DATA_T>(query, dim, i % n_labels);
+        auto *sj = new (allocator) tieredIndexMock::SearchJobMock(
+            allocator, snapshot_search, tiered_index, 10, query, n, dim, &successful_searches);
+        tiered_index->submitSingleJob(sj);
+    }
+    mock_thread_pool.init_threads();
+    for (size_t label = 0; label < n_labels / 4; label++) {
+        tiered_index->deleteVector(label);
+    }
+    mock_thread_pool.thread_pool_join();
+    for (int round = 0; round < 4; round++) {
+        while (mock_thread_pool.jobQ.size() > 0) mock_thread_pool.thread_iteration();
+        tiered_index->executeReadySwapJobs();
+    }
+    EXPECT_EQ(successful_searches, n);
 }

@@ -95,6 +95,19 @@ struct ElementLevelData {
         assert(it != this->incomingUnidirectionalEdges->end());
         *it = id_after;
     }
+    // Deep-copy this level record into `dst`. `recordSize` is the full byte size
+    // of the record including the `links` flexible-array member (`levelDataSize`
+    // for upper levels; the level-0 region size for level 0). The destination
+    // gets an INDEPENDENT incoming-edges vector so a snapshot never shares a
+    // mutable vector with the live index. Used by block-level copy-on-write.
+    void copyInto(ElementLevelData *dst, size_t recordSize,
+                  const std::shared_ptr<VecSimAllocator> &allocator) const {
+        // Copies numLinks + the links FAM in one shot (also shallow-copies the
+        // incoming-edges pointer, which we immediately replace below).
+        memcpy(dst, this, recordSize);
+        dst->incomingUnidirectionalEdges =
+            new (allocator) vecsim_stl::vector<idType>(*this->incomingUnidirectionalEdges);
+    }
 };
 
 struct ElementGraphData {
@@ -135,5 +148,40 @@ struct ElementGraphData {
         }
         return *reinterpret_cast<ElementLevelData *>(reinterpret_cast<char *>(this->others) +
                                                      (level - 1) * levelDataSize);
+    }
+
+    // Deep-copy this element's graph data into raw, zeroed memory `dst` of size
+    // `elementGraphDataSize`. The copy gets a freshly-constructed mutex (lock
+    // state is never copied) and independent per-level incoming-edges vectors,
+    // so it shares no mutable state with the source. This is the foundational
+    // operation for block-level copy-on-write: it materializes an immutable
+    // snapshot version of a node that the live index can keep mutating.
+    void copyTo(ElementGraphData *dst, size_t levelDataSize, size_t elementGraphDataSize,
+                const std::shared_ptr<VecSimAllocator> &allocator) const {
+        dst->toplevel = this->toplevel;
+        // Fresh mutex; a snapshot reads immutable data and never locks, and the
+        // source's lock state must never be aliased into the copy.
+        new (&dst->neighborsGuard) std::mutex();
+        // Level 0 is inline; its links FAM occupies the tail of the element, so
+        // its record size is everything past the offset of `level0`.
+        const size_t level0Size =
+            elementGraphDataSize - (sizeof(ElementGraphData) - sizeof(ElementLevelData));
+        this->level0.copyInto(&dst->level0, level0Size, allocator);
+        if (this->toplevel > 0) {
+            dst->others =
+                (ElementLevelData *)allocator->callocate(levelDataSize * this->toplevel);
+            if (dst->others == nullptr) {
+                throw std::runtime_error("VecSim index low memory error");
+            }
+            for (size_t i = 0; i < this->toplevel; i++) {
+                auto *src_ld = reinterpret_cast<const ElementLevelData *>(
+                    reinterpret_cast<const char *>(this->others) + i * levelDataSize);
+                auto *dst_ld = reinterpret_cast<ElementLevelData *>(
+                    reinterpret_cast<char *>(dst->others) + i * levelDataSize);
+                src_ld->copyInto(dst_ld, levelDataSize, allocator);
+            }
+        } else {
+            dst->others = nullptr;
+        }
     }
 };
