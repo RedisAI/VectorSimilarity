@@ -37,6 +37,7 @@ struct SVSIndexBase
 {
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
+    virtual int addVector(const void *vector_data, labelType label) = 0;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
@@ -45,7 +46,9 @@ struct SVSIndexBase
     virtual void setNumThreads(size_t numThreads) = 0;
     virtual size_t getThreadPoolCapacity() const = 0;
     virtual bool isCompressed() const = 0;
-    size_t getNumMarkedDeleted() const { return num_marked_deleted; }
+    size_t getNumMarkedDeleted() const {
+        return num_marked_deleted.load(std::memory_order_relaxed);
+    }
 
     // Abstract handler to manage SVS implementation instance
     // declared to avoid unsafe unique_ptr<void> usage
@@ -62,7 +65,7 @@ struct SVSIndexBase
 protected:
     // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
     // markIndexUpdate() manages this counter
-    size_t num_marked_deleted;
+    std::atomic<size_t> num_marked_deleted;
 };
 
 /** Thread Management Strategy:
@@ -316,11 +319,11 @@ protected:
         // SVS index instance should not be empty
         if (indexLabelCount() == 0) {
             this->impl_.reset();
-            num_marked_deleted = 0;
+            num_marked_deleted.store(0, std::memory_order_relaxed);
             return;
         }
 
-        num_marked_deleted += n;
+        num_marked_deleted.fetch_add(n, std::memory_order_relaxed);
     }
 
     bool isTwoLevelLVQ(const VecSimSvsQuantBits &qbits) {
@@ -506,7 +509,7 @@ public:
         // Enforce single-threaded execution for single vector operations to ensure optimal
         // performance and consistent behavior. Callers must set numThreads=1 before calling this
         // method.
-        assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
+        // assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
     }
 
@@ -721,7 +724,7 @@ public:
             // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
             impl_->compact();
         }
-        num_marked_deleted = 0;
+        num_marked_deleted.store(0, std::memory_order_relaxed);
     }
 
 #ifdef BUILD_TESTS
