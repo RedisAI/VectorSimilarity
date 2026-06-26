@@ -718,10 +718,10 @@ private:
             this->invalidJobsLookupGuard.unlock();
             return;
         }
+        auto storage_blob = this->frontendIndex->preprocessForStorage(this->frontendIndex->getDataByInternalId(job->id));
         this->flatIndexGuard.unlock_shared();
 
         auto svs_index = GetSVSIndex();
-        auto storage_blob = this->frontendIndex->preprocessForStorage(this->frontendIndex->getDataByInternalId(job->id));
         svs_index->addVector(storage_blob.get(), job->label);
 
         // Remove the vector and the insert job from the flat buffer.
@@ -1005,7 +1005,8 @@ public:
             this->frontendIndex->addVector(blob, label);
 
             AsyncJob *new_insert_job = new (this->allocator)
-            SVSInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
+                SVSInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
+
             // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
             if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
                 // There's already a pending insert job for this label, add another one (without overwrite,
