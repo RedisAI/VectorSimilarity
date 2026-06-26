@@ -797,10 +797,12 @@ private:
                                                   labels_to_move.size());
 
                 svs_index->setImpl(std::move(impl));
+                svs_index->setNumThreads(1);
             } else {
-                // svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
+                svs_index->setNumThreads(1);
             }
         }
 
@@ -1020,36 +1022,6 @@ public:
             // Insert job to the queue and signal the workers' updater.
             this->submitSingleJob(new_insert_job);
             return ret;
-        // } else {
-        //     // // Add vector to the frontend index.
-        //     // std::lock_guard lock(this->flatIndexGuard);
-        //     // const auto ft_ret = this->frontendIndex->addVector(blob, label);
-
-        //     // if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
-        //     //     assert(!this->backendIndex->isMultiValue() &&
-        //     //            "addVector() may return 0 for single value indices only");
-        //     //     for (auto id : this->frontendIndex->getElementIds(label)) {
-        //     //         this->swaps_journal.emplace_back(SKIP_LABEL, id, id);
-        //     //     }
-        //     //     deleted_labels_journal.push_back(label);
-        //     // }
-        //     // ret = std::max(ret + ft_ret, 0);
-
-        //     // // Check frontend index size to determine if an update job schedule is needed.
-        //     // frontend_index_size = this->frontendIndex->indexSize();
-        //     // // if (this->backendInitSubmited.load(std::memory_order_acquire)) {
-        //     // //     if (frontend_index_size >= this->updateTriggerThreshold) {
-        //     // //         if (this->backendReady.load(std::memory_order_acquire)) {
-        //     // //             scheduleSVSIndexUpdate();
-        //     // //         }
-        //     // //     }
-        //     // // } else {
-        //     // if (frontend_index_size >= this->trainingTriggerThreshold) {
-        //     //     this->backendInitSubmited.store(true, std::memory_order_release);
-        //     //     scheduleSVSIndexUpdate();
-        //     // }
-        //     // // }
-        //     // return ret;
         }
     }
 
