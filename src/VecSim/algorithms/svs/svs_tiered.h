@@ -792,17 +792,17 @@ private:
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
             if (this->backendIndex->indexSize() == 0) {
-                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                // svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
                                                   labels_to_move.size());
 
                 svs_index->setImpl(std::move(impl));
-                svs_index->setNumThreads(1);
+                // svs_index->setNumThreads(1);
             } else {
-                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
+                // svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
-                svs_index->setNumThreads(1);
+                // svs_index->setNumThreads(1);
             }
         }
 
@@ -938,19 +938,6 @@ public:
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        if (!this->backendIndex->isMultiValue()) {
-            {
-                std::shared_lock lock(this->flatIndexGuard);
-                // If the label already exists in the frontend index, we should count it
-                // to prevent the case when existing vector is moved meanwhile by the update job.
-                if (this->frontendIndex->isLabelExists(label)) {
-                    ret = -1;
-                }
-            }
-            // Remove vector from the backend index if it exists in case of non-MULTI.
-            ret -= this->backendIndex->deleteVector(label);
-        }
-
         if (!this->backendInitSubmited.load(std::memory_order_acquire)) {
             // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
@@ -969,22 +956,23 @@ public:
             if (this->frontendIndex->indexSize() >= this->trainingTriggerThreshold) {
                 this->backendInitSubmited.store(true, std::memory_order_release);
                 scheduleSVSIndexUpdate();
-                // fprintf(stderr, "Init submited: this->frontendIndex->indexSize() = %ld\n", this->frontendIndex->indexSize());
             }
             return ret;
         }
 
-        // fprintf(stderr, "Waiting for backend ready\t");
         // spin-lock, while backend is initilizing
         while (!this->backendReady.load(std::memory_order_acquire)) {
             __builtin_ia32_pause();
         }
-        // fprintf(stderr, "done: this->frontendIndex->indexSize() = %ld\n", this->frontendIndex->indexSize());
 
+        this->flatIndexGuard.lock_shared();
         if (this->frontendIndex->indexSize() >= flat_buffer_bound) {
+            this->flatIndexGuard.unlock_shared();
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+
             return ret = svs_index->addVector(storage_blob.get(), label);
         } else {
+            this->flatIndexGuard.unlock_shared();
             this->flatIndexGuard.lock();
             idType new_flat_id = this->frontendIndex->indexSize();
             if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
