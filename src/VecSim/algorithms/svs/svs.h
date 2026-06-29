@@ -351,7 +351,7 @@ public:
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
+          threadpool_{1},
           impl_{nullptr} {
         logger_ = makeLogger();
     }
@@ -509,7 +509,7 @@ public:
         // Enforce single-threaded execution for single vector operations to ensure optimal
         // performance and consistent behavior. Callers must set numThreads=1 before calling this
         // method.
-        // assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
+        assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
     }
 
