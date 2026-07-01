@@ -772,7 +772,6 @@ private:
 
             auto flat_index = this->GetFlatIndex();
             const auto frontend_index_size = this->frontendIndex->indexSize();
-            // fprintf(stderr, "updateSVSIndex: frontend_index_size = %ld\n", frontend_index_size);
             const size_t dim = flat_index->getDim();
             labels_to_move.reserve(frontend_index_size);
             vectors_to_move.reserve(frontend_index_size * dim);
@@ -792,17 +791,13 @@ private:
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
             if (this->backendIndex->indexSize() == 0) {
-                // svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
                                                   labels_to_move.size());
 
                 svs_index->setImpl(std::move(impl));
-                // svs_index->setNumThreads(1);
             } else {
-                // svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
-                // svs_index->setNumThreads(1);
             }
         }
 
@@ -823,7 +818,6 @@ private:
             // improvement
             int deleted = 0;
             idType id = labels_to_move.size();
-            // fprintf(stderr, "updateSVSIndexMidle: frontend_index_size = %ld\n", this->frontendIndex->indexSize());
             while (id-- > 0) {
                 auto label = labels_to_move[id];
                 // Delete the vector from the frontend index if not in-place updated.
@@ -831,7 +825,6 @@ private:
                     deleted += this->frontendIndex->deleteVectorById(label, id);
                 }
             }
-            // fprintf(stderr, "updateSVSIndexEnd: frontend_index_size = %ld\n", this->frontendIndex->indexSize());
             assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
                                             [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
@@ -915,14 +908,12 @@ public:
                 // ... move vectors to the backend index.
                 if (frontend_index_size >= this->trainingTriggerThreshold) {
                     // updateSVSIndexWrapper() accures it's own locks
-                    // backend_shared_lock.unlock();
                     // initialize the SVS index synchonously using current thread only
                     updateSVSIndexWrapper(this, 1);
                 }
                 return ret;
             } else {
                 // backend index is initialized - we can add the vector directly
-                // backend_shared_lock.unlock();
                 auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
@@ -1286,11 +1277,9 @@ public:
 
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
-        // this->mainIndexGuard.lock_shared();
     }
 
     void releaseSharedLocks() override {
-        // this->mainIndexGuard.unlock_shared();
         this->flatIndexGuard.unlock_shared();
     }
 };
