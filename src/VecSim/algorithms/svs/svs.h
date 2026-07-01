@@ -543,16 +543,13 @@ public:
     }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
-        if (!impl_) return std::numeric_limits<double>::quiet_NaN();
+        if (!impl_ || !impl_->has_id(label)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        };
 
         auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
-        try {
-            auto dist = impl_->get_distance(label, query_datum);
-            return std::isnan(dist) ? std::numeric_limits<double>::quiet_NaN()
-                                    : toVecSimDistance(static_cast<float>(dist));
-        } catch (const svs::lib::ANNException &) {
-            return std::numeric_limits<double>::quiet_NaN();
-        }
+        auto dist = impl_->get_distance(label, query_datum);
+        return toVecSimDistance(dist);
     }
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,

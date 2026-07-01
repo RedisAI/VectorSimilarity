@@ -247,7 +247,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     std::atomic_flag indexGCScheduled = ATOMIC_FLAG_INIT;
     // Used to prevent running multiple index update jobs in parallel.
     // Even if update jobs scheduled sequentially, they can be started in parallel.
-    mutable std::shared_mutex updateJobMutex;
+    mutable std::mutex updateJobMutex;
 
     // The reason of following container just to properly destroy jobs which not executed yet
     SVSMultiThreadJob::JobsRegistry uncompletedJobs;
@@ -570,11 +570,11 @@ private:
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
         // prevent parallel updates
-        std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
-        // Update the SVS index
-        index->updateSVSIndex(availableThreads);
+        std::lock_guard<std::mutex> lock(index->updateJobMutex);
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
+        // Update the SVS index
+        index->updateSVSIndex(availableThreads);
     }
 
     static void executeInsertJobWrapper(AsyncJob *job) {
@@ -885,7 +885,6 @@ public:
     int addVector(const void *blob, labelType label) override {
         int ret = 0;
         auto svs_index = GetSVSIndex();
-        size_t update_threshold = 0;
         size_t frontend_index_size = 0;
 
         // In-Place mode - add vector syncronously to the backend index.
@@ -917,7 +916,7 @@ public:
                 auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
-                std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
+                std::lock_guard<std::mutex> lock(this->updateJobMutex);
                 // Set available thread count to 1 for single vector write-in-place operation.
                 // This maintains the contract that single vector operations use exactly one thread.
                 // TODO: Replace this setNumThreads(1) call with an assertion once we establish
@@ -1047,7 +1046,6 @@ public:
 
     int deleteVector(labelType label) override {
         int ret = 0;
-        auto svs_index = GetSVSIndex();
         // Backend index deletions to be synchronized with the frontend index,
         // elsewhere there is the risk of labels duplication in both indices which can lead to wrong
         // results of topK queries. In such case we should behave as if InPlace mode is always set.
@@ -1112,7 +1110,7 @@ public:
             // the entire training duration (which can take 40-85s on slow machines).
             // If the mutex is held, training is actively running, so we report
             // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
-            std::unique_lock<std::shared_mutex> lock(this->updateJobMutex, std::try_to_lock);
+            std::unique_lock<std::mutex> lock(this->updateJobMutex, std::try_to_lock);
             if (lock.owns_lock()) {
                 svsTieredInfo.indexUpdateScheduled =
                     this->indexUpdateScheduled.test() == VecSimBool_TRUE;
