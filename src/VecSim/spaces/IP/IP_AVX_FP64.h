@@ -17,7 +17,7 @@ static inline void InnerProductStep(double *&pVect1, double *&pVect2, __m256d &s
     sum256 = _mm256_add_pd(sum256, _mm256_mul_pd(v1, v2));
 }
 
-template <unsigned char residual> // 0..7
+template <unsigned char residual> // 0..15
 double FP64_InnerProductSIMD8_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
@@ -43,21 +43,23 @@ double FP64_InnerProductSIMD8_AVX(const void *pVect1v, const void *pVect2v, size
         sum0 = _mm256_mul_pd(v1, v2);
     }
 
-    // If the reminder is >=4, have another step of 4 doubles
+    // Handle the remaining full 4-double blocks of the residual (compile-time resolved).
     if constexpr (residual >= 4) {
         InnerProductStep(pVect1, pVect2, sum1);
     }
-
-    // We dealt with the residual part. We are left with some multiple of 8 doubles.
-    // The main loop handles 16 doubles per iteration; a possible leftover block of 8 doubles is
-    // handled after it. The loops may run zero times (dim can be as small as 4).
-    while (pVect1 + 16 <= pEnd1) {
-        InnerProductStep(pVect1, pVect2, sum0);
-        InnerProductStep(pVect1, pVect2, sum1);
+    if constexpr (residual >= 8) {
         InnerProductStep(pVect1, pVect2, sum2);
+    }
+    if constexpr (residual >= 12) {
         InnerProductStep(pVect1, pVect2, sum3);
     }
-    if (pVect1 < pEnd1) {
+
+    // We dealt with the residual part. We are left with some multiple of 16 doubles.
+    // In each iteration we calculate 16 doubles = 4 chunks of 256 bits. The loop may run zero
+    // times (dim can be as small as 4).
+    while (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
         InnerProductStep(pVect1, pVect2, sum2);
         InnerProductStep(pVect1, pVect2, sum3);
     }

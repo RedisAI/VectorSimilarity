@@ -19,7 +19,7 @@ static inline void L2SqrStep(float *&pVect1, float *&pVect2, __m256 &sum) {
     sum = _mm256_add_ps(sum, _mm256_mul_ps(diff, diff));
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float FP32_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
@@ -45,21 +45,23 @@ float FP32_L2SqrSIMD16_AVX(const void *pVect1v, const void *pVect2v, size_t dime
         sum0 = _mm256_mul_ps(diff, diff);
     }
 
-    // If the reminder is >=8, have another step of 8 floats
+    // Handle the remaining full 8-float blocks of the residual (compile-time resolved).
     if constexpr (residual >= 8) {
         L2SqrStep(pVect1, pVect2, sum1);
     }
-
-    // We dealt with the residual part. We are left with some multiple of 16 floats.
-    // The main loop handles 32 floats per iteration; a possible leftover block of 16 floats is
-    // handled after it. The loops may run zero times (dim can be as small as 8).
-    while (pVect1 + 32 <= pEnd1) {
-        L2SqrStep(pVect1, pVect2, sum0);
-        L2SqrStep(pVect1, pVect2, sum1);
+    if constexpr (residual >= 16) {
         L2SqrStep(pVect1, pVect2, sum2);
+    }
+    if constexpr (residual >= 24) {
         L2SqrStep(pVect1, pVect2, sum3);
     }
-    if (pVect1 < pEnd1) {
+
+    // We dealt with the residual part. We are left with some multiple of 32 floats.
+    // In each iteration we calculate 32 floats = 4 chunks of 256 bits. The loop may run zero
+    // times (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        L2SqrStep(pVect1, pVect2, sum0);
+        L2SqrStep(pVect1, pVect2, sum1);
         L2SqrStep(pVect1, pVect2, sum2);
         L2SqrStep(pVect1, pVect2, sum3);
     }

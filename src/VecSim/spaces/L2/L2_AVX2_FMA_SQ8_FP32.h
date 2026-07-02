@@ -28,7 +28,7 @@ using sq8 = vecsim_types::sq8;
  */
 
 // pVect1v = SQ8 storage, pVect2v = FP32 query
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_L2SqrSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Get the raw inner product using the common SIMD implementation
     const float ip = SQ8_FP32_InnerProductImp_FMA<residual>(pVect1v, pVect2v, dimension);

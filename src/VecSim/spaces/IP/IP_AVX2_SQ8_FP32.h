@@ -46,7 +46,7 @@ static inline void InnerProductStepSQ8_FP32(const uint8_t *&pVect1, const float 
 }
 
 // pVect1v = SQ8 storage, pVect2v = FP32 query
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
     const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
@@ -79,21 +79,23 @@ float SQ8_FP32_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, si
         sum0 = _mm256_mul_ps(v1_f, v2);
     }
 
-    // If the residual is >=8, have another step of 8 floats
+    // Handle the remaining full 8-element blocks of the residual (compile-time resolved).
     if constexpr (residual >= 8) {
         InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
     }
-
-    // We are left with some multiple of 16 elements. The main loop handles 32 per iteration;
-    // a possible leftover block of 16 is handled after it. The loops may run zero times
-    // (dim can be as small as 8).
-    while (pVect1 + 32 <= pEnd1) {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
+    if constexpr (residual >= 16) {
         InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
+    }
+    if constexpr (residual >= 24) {
         InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
     }
-    if (pVect1 < pEnd1) {
+
+    // We dealt with the residual part. We are left with some multiple of 32 elements.
+    // In each iteration we calculate 32 elements = 4 chunks of 8. The loop may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
         InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
         InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
     }
@@ -115,12 +117,12 @@ float SQ8_FP32_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, si
     return min_val * y_sum + delta * quantized_dot;
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_InnerProductSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return 1.0f - SQ8_FP32_InnerProductImp_AVX2<residual>(pVect1v, pVect2v, dimension);
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_CosineSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Calculate inner product using common implementation with normalization
     return SQ8_FP32_InnerProductSIMD16_AVX2<residual>(pVect1v, pVect2v, dimension);

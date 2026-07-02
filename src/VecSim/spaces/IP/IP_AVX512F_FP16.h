@@ -24,7 +24,7 @@ static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m512 &sum) {
     pVect2 += 16;
 }
 
-template <unsigned short residual> // 0..31
+template <unsigned short residual> // 0..63
 float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
     auto *pVect1 = (float16 *)pVect1v;
     auto *pVect2 = (float16 *)pVect2v;
@@ -52,20 +52,23 @@ float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, s
         pVect1 += residual % 16;
         pVect2 += residual % 16;
     }
+    // Handle the remaining full 16-element blocks of the residual (compile-time resolved).
     if constexpr (residual >= 16) {
         InnerProductStep(pVect1, pVect2, sum1);
     }
-
-    // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
-    // The main loop handles 64 elements per iteration; a possible leftover block of 32 is
-    // handled after it. The loops may run zero times (dim can be as small as 16).
-    while (pVect1 + 64 <= pEnd1) {
-        InnerProductStep(pVect1, pVect2, sum0);
-        InnerProductStep(pVect1, pVect2, sum1);
+    if constexpr (residual >= 32) {
         InnerProductStep(pVect1, pVect2, sum2);
+    }
+    if constexpr (residual >= 48) {
         InnerProductStep(pVect1, pVect2, sum3);
     }
-    if (pVect1 < pEnd1) {
+
+    // We dealt with the residual part. We are left with some multiple of 64 16-bit floats.
+    // In each iteration we calculate 64 elements = 4 chunks of 256 bits (converted to 512).
+    // The loop may run zero times (dim can be as small as 16).
+    while (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
         InnerProductStep(pVect1, pVect2, sum2);
         InnerProductStep(pVect1, pVect2, sum3);
     }
