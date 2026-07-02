@@ -573,7 +573,9 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
     data_containers_block_mem += size_total_data_per_element * block_size;
     // account for idToMetaData and visitedNodesHandlerPool entries.
     expected_mem_delta +=
-        (sizeof(tag_t) + sizeof(ElementMetaData)) * block_size + data_containers_block_mem;
+        (sizeof(tag_t) + sizeof(ElementMetaData) + sizeof(vecsim_stl::one_byte_mutex)) *
+            block_size +
+        data_containers_block_mem;
     // Account for the allocation of a new bucket in the labels_lookup hash table.
     expected_mem_delta +=
         (hnswIndex->labelLookup.bucket_count() - one_block_buckets) * sizeof(size_t);

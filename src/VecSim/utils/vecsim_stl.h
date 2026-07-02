@@ -9,6 +9,8 @@
 #pragma once
 
 #include "VecSim/memory/vecsim_base.h"
+#include <atomic>
+#include <cstdint>
 #include <vector>
 #include <algorithm>
 #include <set>
@@ -106,6 +108,42 @@ public:
         : VecsimBaseObject(alloc),
           std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
                                                                                        alloc) {}
+};
+
+struct one_byte_mutex {
+    one_byte_mutex() noexcept = default;
+    one_byte_mutex(const one_byte_mutex &) noexcept : state(unlocked) {}
+    one_byte_mutex(one_byte_mutex &&) noexcept : state(unlocked) {}
+    one_byte_mutex &operator=(const one_byte_mutex &) noexcept {
+        state.store(unlocked, std::memory_order_relaxed);
+        return *this;
+    }
+    one_byte_mutex &operator=(one_byte_mutex &&) noexcept {
+        state.store(unlocked, std::memory_order_relaxed);
+        return *this;
+    }
+
+    void lock() {
+        if (state.exchange(locked, std::memory_order_acquire) == unlocked) {
+            return;
+        }
+        while (state.exchange(sleeper, std::memory_order_acquire) != unlocked) {
+            state.wait(sleeper, std::memory_order_relaxed);
+        }
+    }
+
+    void unlock() {
+        if (state.exchange(unlocked, std::memory_order_release) == sleeper) {
+            state.notify_one();
+        }
+    }
+
+private:
+    std::atomic<uint8_t> state{unlocked};
+
+    static constexpr uint8_t unlocked = 0;
+    static constexpr uint8_t locked = 0b01;
+    static constexpr uint8_t sleeper = 0b10;
 };
 
 } // namespace vecsim_stl
