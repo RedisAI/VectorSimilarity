@@ -50,10 +50,15 @@ float SQ8_FP32_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVec
     const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
     const uint8_t *pEnd1 = pVect1 + dimension;
 
-    // Initialize sum accumulator for Σ(q_i * y_i)
-    __m128 sum = _mm_setzero_ps();
+    // Initialize sum accumulators for Σ(q_i * y_i). Four accumulators break the mul->add
+    // dependency chain, letting more loads/adds be in flight at once.
+    __m128 sum0 = _mm_setzero_ps();
+    __m128 sum1 = _mm_setzero_ps();
+    __m128 sum2 = _mm_setzero_ps();
+    __m128 sum3 = _mm_setzero_ps();
 
-    // Process residual elements first (1-3 elements)
+    // Process residual elements first (1-3 elements). Loads touch only the residual elements,
+    // so they are safe for any dimension.
     if constexpr (residual % 4) {
         __m128 v1_f;
         __m128 v2;
@@ -75,27 +80,31 @@ float SQ8_FP32_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVec
         pVect2 += residual % 4;
 
         // Compute q_i * y_i (no dequantization)
-        sum = _mm_mul_ps(v1_f, v2);
+        sum0 = _mm_mul_ps(v1_f, v2);
     }
 
     // Handle remaining residual in chunks of 4 (for residual 4-15)
     if constexpr (residual >= 4) {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
     }
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
     }
     if constexpr (residual >= 12) {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
     }
 
-    // Process remaining full chunks of 4 elements
-    // Using do-while since dim > 16 guarantees at least one iteration
-    do {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum);
-    } while (pVect1 < pEnd1);
+    // Process remaining full chunks of 16 elements (4x4). The loop may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
+    }
 
     // Horizontal sum to get Σ(q_i * y_i)
+    __m128 sum = _mm_add_ps(_mm_add_ps(sum0, sum1), _mm_add_ps(sum2, sum3));
     float PORTABLE_ALIGN16 TmpRes[4];
     _mm_store_ps(TmpRes, sum);
     float quantized_dot = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];

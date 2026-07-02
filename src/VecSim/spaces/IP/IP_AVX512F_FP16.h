@@ -31,11 +31,15 @@ float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, s
 
     const float16 *pEnd1 = pVect1 + dimension;
 
-    auto sum = _mm512_setzero_ps();
+    // Four accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
+    auto sum0 = _mm512_setzero_ps();
+    auto sum1 = _mm512_setzero_ps();
+    auto sum2 = _mm512_setzero_ps();
+    auto sum3 = _mm512_setzero_ps();
 
     if constexpr (residual % 16) {
-        // Deal with remainder first. `dim` is more than 32, so we have at least one block of 32
-        // 16-bit float so mask loading is guaranteed to be safe.
+        // Deal with remainder first. The full-width load of 16 16-bit floats is safe because
+        // `dim` is at least 16, so the vector spans at least 16 elements.
         __mmask16 constexpr residuals_mask = (1 << (residual % 16)) - 1;
         // Convert the first half-floats in the residual positions into floats and store them
         // 512 bits register, where the floats in the positions corresponding to the non-residuals
@@ -44,20 +48,28 @@ float FP16_InnerProductSIMD32_AVX512(const void *pVect1v, const void *pVect2v, s
                                       _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect1)));
         auto v2 = _mm512_maskz_mov_ps(residuals_mask,
                                       _mm512_cvtph_ps(_mm256_lddqu_si256((__m256i *)pVect2)));
-        sum = _mm512_mul_ps(v1, v2);
+        sum0 = _mm512_mul_ps(v1, v2);
         pVect1 += residual % 16;
         pVect2 += residual % 16;
     }
     if constexpr (residual >= 16) {
-        InnerProductStep(pVect1, pVect2, sum);
+        InnerProductStep(pVect1, pVect2, sum1);
     }
 
     // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
-    // In every iteration we process 2 chunks of 256bit (32 FP16)
-    do {
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
-    } while (pVect1 < pEnd1);
+    // The main loop handles 64 elements per iteration; a possible leftover block of 32 is
+    // handled after it. The loops may run zero times (dim can be as small as 16).
+    while (pVect1 + 64 <= pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
+    }
+    if (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
+    }
 
+    auto sum = _mm512_add_ps(_mm512_add_ps(sum0, sum1), _mm512_add_ps(sum2, sum3));
     return 1.0f - _mm512_reduce_add_ps(sum);
 }

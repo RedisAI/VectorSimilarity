@@ -24,30 +24,43 @@ float FP32_InnerProductSIMD16_AVX(const void *pVect1v, const void *pVect2v, size
 
     const float *pEnd1 = pVect1 + dimension;
 
-    __m256 sum256 = _mm256_setzero_ps();
+    // Four accumulators break the mul->add dependency chain, letting more loads/adds be in
+    // flight at once.
+    __m256 sum0 = _mm256_setzero_ps();
+    __m256 sum1 = _mm256_setzero_ps();
+    __m256 sum2 = _mm256_setzero_ps();
+    __m256 sum3 = _mm256_setzero_ps();
 
-    // Deal with 1-7 floats with mask loading, if needed. `dim` is >16, so we have at least one
-    // 16-float block, so mask loading is guaranteed to be safe.
+    // Deal with 1-7 floats with mask loading, if needed. The full-width load is safe because
+    // `dim` is at least 8, so the vector spans at least 8 floats.
     if constexpr (residual % 8) {
         __mmask8 constexpr mask = (1 << (residual % 8)) - 1;
         __m256 v1 = my_mm256_maskz_loadu_ps<mask>(pVect1);
         pVect1 += residual % 8;
         __m256 v2 = my_mm256_maskz_loadu_ps<mask>(pVect2);
         pVect2 += residual % 8;
-        sum256 = _mm256_mul_ps(v1, v2);
+        sum0 = _mm256_mul_ps(v1, v2);
     }
 
     // If the reminder is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
-        InnerProductStep(pVect1, pVect2, sum256);
+        InnerProductStep(pVect1, pVect2, sum1);
     }
 
     // We dealt with the residual part. We are left with some multiple of 16 floats.
-    // In each iteration we calculate 16 floats = 512 bits.
-    do {
-        InnerProductStep(pVect1, pVect2, sum256);
-        InnerProductStep(pVect1, pVect2, sum256);
-    } while (pVect1 < pEnd1);
+    // The main loop handles 32 floats per iteration; a possible leftover block of 16 floats is
+    // handled after it. The loops may run zero times (dim can be as small as 8).
+    while (pVect1 + 32 <= pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
+    }
+    if (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
+    }
 
-    return 1.0f - my_mm256_reduce_add_ps(sum256);
+    __m256 sum = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
+    return 1.0f - my_mm256_reduce_add_ps(sum);
 }

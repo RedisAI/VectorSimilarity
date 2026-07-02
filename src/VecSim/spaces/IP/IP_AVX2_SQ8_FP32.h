@@ -52,10 +52,15 @@ float SQ8_FP32_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, si
     const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
     const uint8_t *pEnd1 = pVect1 + dimension;
 
-    // Initialize sum accumulator for Σ(q_i * y_i)
-    __m256 sum256 = _mm256_setzero_ps();
+    // Initialize sum accumulators for Σ(q_i * y_i). Four accumulators break the mul->add
+    // dependency chain, letting more loads/adds be in flight at once.
+    __m256 sum0 = _mm256_setzero_ps();
+    __m256 sum1 = _mm256_setzero_ps();
+    __m256 sum2 = _mm256_setzero_ps();
+    __m256 sum3 = _mm256_setzero_ps();
 
-    // Handle residual elements first (0-7 elements)
+    // Handle residual elements first (0-7 elements). The full-width query load is safe because
+    // `dim` is at least 8, so the query spans at least 8 floats.
     if constexpr (residual % 8) {
         __mmask8 constexpr mask = (1 << (residual % 8)) - 1;
 
@@ -71,23 +76,31 @@ float SQ8_FP32_InnerProductImp_AVX2(const void *pVect1v, const void *pVect2v, si
         pVect2 += residual % 8;
 
         // Compute q_i * y_i (no dequantization)
-        sum256 = _mm256_mul_ps(v1_f, v2);
+        sum0 = _mm256_mul_ps(v1_f, v2);
     }
 
     // If the residual is >=8, have another step of 8 floats
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum256);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
     }
 
-    // Process remaining full chunks of 16 elements (2x8)
-    // Using do-while since dim > 16 guarantees at least one iteration
-    do {
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum256);
-        InnerProductStepSQ8_FP32(pVect1, pVect2, sum256);
-    } while (pVect1 < pEnd1);
+    // We are left with some multiple of 16 elements. The main loop handles 32 per iteration;
+    // a possible leftover block of 16 is handled after it. The loops may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 + 32 <= pEnd1) {
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
+    }
+    if (pVect1 < pEnd1) {
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FP32(pVect1, pVect2, sum3);
+    }
 
     // Reduce to get Σ(q_i * y_i)
-    float quantized_dot = my_mm256_reduce_add_ps(sum256);
+    float quantized_dot =
+        my_mm256_reduce_add_ps(_mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3)));
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);

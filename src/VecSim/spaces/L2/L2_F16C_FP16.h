@@ -32,11 +32,15 @@ float FP16_L2SqrSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dim
 
     const float16 *pEnd1 = pVect1 + dimension;
 
-    auto sum = _mm256_setzero_ps();
+    // Four accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
+    auto sum0 = _mm256_setzero_ps();
+    auto sum1 = _mm256_setzero_ps();
+    auto sum2 = _mm256_setzero_ps();
+    auto sum3 = _mm256_setzero_ps();
 
     if constexpr (residual % 8) {
-        // Deal with remainder first. `dim` is more than 32, so we have at least one block of 32
-        // 16-bit float so mask loading is guaranteed to be safe.
+        // Deal with remainder first. The full-width load of 8 16-bit floats is safe because
+        // `dim` is at least 8, so the vector spans at least 8 elements.
         __mmask16 constexpr residuals_mask = (1 << (residual % 8)) - 1;
         // Convert the first 8 half-floats into floats and store them 256 bits register,
         // where the floats in the positions corresponding to residuals are zeros.
@@ -48,28 +52,30 @@ float FP16_L2SqrSIMD32_F16C(const void *pVect1v, const void *pVect2v, size_t dim
                                   residuals_mask);
         // sum = (v1 * v2)^2 + sum
         auto c = _mm256_sub_ps(v1, v2);
-        sum = _mm256_fmadd_ps(c, c, sum);
+        sum0 = _mm256_fmadd_ps(c, c, sum0);
         pVect1 += residual % 8;
         pVect2 += residual % 8;
     }
     if constexpr (residual >= 8 && residual < 16) {
-        L2SqrStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum1);
     } else if constexpr (residual >= 16 && residual < 24) {
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum1);
+        L2SqrStep(pVect1, pVect2, sum2);
     } else if constexpr (residual >= 24) {
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
+        L2SqrStep(pVect1, pVect2, sum1);
+        L2SqrStep(pVect1, pVect2, sum2);
+        L2SqrStep(pVect1, pVect2, sum3);
     }
     // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
-    // In every iteration we process 4 chunk of 128bit (32 FP16)
-    do {
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
-        L2SqrStep(pVect1, pVect2, sum);
-    } while (pVect1 < pEnd1);
+    // In every iteration we process 4 chunk of 128bit (32 FP16). The loop may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        L2SqrStep(pVect1, pVect2, sum0);
+        L2SqrStep(pVect1, pVect2, sum1);
+        L2SqrStep(pVect1, pVect2, sum2);
+        L2SqrStep(pVect1, pVect2, sum3);
+    }
 
+    __m256 sum = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
     return my_mm256_reduce_add_ps(sum);
 }

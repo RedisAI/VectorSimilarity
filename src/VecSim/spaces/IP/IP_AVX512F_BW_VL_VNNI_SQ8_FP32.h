@@ -51,14 +51,20 @@ float SQ8_FP32_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
     const float *pVec2 = static_cast<const float *>(pVec2v);     // FP32 query
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    // Initialize sum accumulator for Σ(q_i * y_i)
-    __m512 sum = _mm512_setzero_ps();
+    // Initialize sum accumulators for Σ(q_i * y_i). Four accumulators break the FMA dependency
+    // chain, letting more FMAs be in flight at once.
+    __m512 sum0 = _mm512_setzero_ps();
+    __m512 sum1 = _mm512_setzero_ps();
+    __m512 sum2 = _mm512_setzero_ps();
+    __m512 sum3 = _mm512_setzero_ps();
 
     // Handle residual elements first (0 to 15)
     if constexpr (residual > 0) {
         __mmask16 mask = (1U << residual) - 1;
 
-        // Load uint8 elements (safe to load 16 bytes due to padding)
+        // Load uint8 elements (safe to load 16 bytes due to the metadata padding after the
+        // quantized values). The query load is masked, which suppresses faults on masked-out
+        // lanes, so both loads are safe for any dimension.
         __m128i v1_128 = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pVec1));
         __m512i v1_512 = _mm512_cvtepu8_epi32(v1_128);
         __m512 v1_f = _mm512_cvtepi32_ps(v1_512);
@@ -67,19 +73,31 @@ float SQ8_FP32_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
         __m512 v2 = _mm512_maskz_loadu_ps(mask, pVec2);
 
         // Compute q_i * y_i with mask (no dequantization)
-        sum = _mm512_maskz_mul_ps(mask, v1_f, v2);
+        sum0 = _mm512_maskz_mul_ps(mask, v1_f, v2);
 
         pVec1 += residual;
         pVec2 += residual;
     }
 
-    // Process full chunks of 16 elements
-    // Using do-while since dim > 16 guarantees at least one iteration
-    do {
-        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum);
-    } while (pVec1 < pEnd1);
+    // Process full chunks of 16 elements. The main loop handles 64 per iteration; leftover
+    // blocks of 16/32/48 are handled after it. The loops may run zero times (dim can be as
+    // small as 8).
+    while (pVec1 + 64 <= pEnd1) {
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum0);
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum1);
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum2);
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum3);
+    }
+    if (pVec1 + 32 <= pEnd1) {
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum1);
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum2);
+    }
+    if (pVec1 < pEnd1) {
+        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum3);
+    }
 
     // Reduce to get Σ(q_i * y_i)
+    __m512 sum = _mm512_add_ps(_mm512_add_ps(sum0, sum1), _mm512_add_ps(sum2, sum3));
     float quantized_dot = _mm512_reduce_add_ps(sum);
 
     // Get quantization parameters from stored vector (after quantized data)
