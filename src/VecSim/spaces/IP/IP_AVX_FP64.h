@@ -17,19 +17,17 @@ static inline void InnerProductStep(double *&pVect1, double *&pVect2, __m256d &s
     sum256 = _mm256_add_pd(sum256, _mm256_mul_pd(v1, v2));
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..7
 double FP64_InnerProductSIMD8_AVX(const void *pVect1v, const void *pVect2v, size_t dimension) {
     double *pVect1 = (double *)pVect1v;
     double *pVect2 = (double *)pVect2v;
 
     const double *pEnd1 = pVect1 + dimension;
 
-    // Four accumulators break the mul->add dependency chain, letting more loads/adds be in
-    // flight at once.
+    // Two accumulators break the mul->add dependency chain, letting more loads/adds be in
+    // flight at once. FP64 has too few lanes to benefit from more than two (measured).
     __m256d sum0 = _mm256_setzero_pd();
     __m256d sum1 = _mm256_setzero_pd();
-    __m256d sum2 = _mm256_setzero_pd();
-    __m256d sum3 = _mm256_setzero_pd();
 
     // Deal with 1-3 doubles with mask loading, if needed. The full-width load is safe because
     // `dim` is at least 4, so the vector spans at least 4 doubles.
@@ -43,28 +41,20 @@ double FP64_InnerProductSIMD8_AVX(const void *pVect1v, const void *pVect2v, size
         sum0 = _mm256_mul_pd(v1, v2);
     }
 
-    // Handle the remaining full 4-double blocks of the residual (compile-time resolved).
+    // Handle the remaining full 4-double block of the residual (compile-time resolved).
     if constexpr (residual >= 4) {
         InnerProductStep(pVect1, pVect2, sum1);
     }
-    if constexpr (residual >= 8) {
-        InnerProductStep(pVect1, pVect2, sum2);
-    }
-    if constexpr (residual >= 12) {
-        InnerProductStep(pVect1, pVect2, sum3);
-    }
 
-    // We dealt with the residual part. We are left with some multiple of 16 doubles.
-    // In each iteration we calculate 16 doubles = 4 chunks of 256 bits. The loop may run zero
+    // We dealt with the residual part. We are left with some multiple of 8 doubles.
+    // In each iteration we calculate 8 doubles = 2 chunks of 256 bits. The loop may run zero
     // times (dim can be as small as 4).
     while (pVect1 < pEnd1) {
         InnerProductStep(pVect1, pVect2, sum0);
         InnerProductStep(pVect1, pVect2, sum1);
-        InnerProductStep(pVect1, pVect2, sum2);
-        InnerProductStep(pVect1, pVect2, sum3);
     }
 
-    __m256d sum256 = _mm256_add_pd(_mm256_add_pd(sum0, sum1), _mm256_add_pd(sum2, sum3));
+    __m256d sum256 = _mm256_add_pd(sum0, sum1);
     double PORTABLE_ALIGN32 TmpRes[4];
     _mm256_store_pd(TmpRes, sum256);
     double sum = TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];

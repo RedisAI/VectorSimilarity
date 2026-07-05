@@ -32,8 +32,9 @@
 #define C32(func, N) C16(func, 2 * (N)) C16(func, 2 * (N) + 1)
 #define C64(func, N) C32(func, 2 * (N)) C32(func, 2 * (N) + 1)
 
-// Macros for 8, 16, 32 and 64 cases. Used to collapse the switch statement.
-// Expands into 0-7, 0-15, 0-31 or 0-63 cases respectively.
+// Macros for 4, 8, 16, 32 and 64 cases. Used to collapse the switch statement.
+// Expands into 0-3, 0-7, 0-15, 0-31 or 0-63 cases respectively.
+#define CASES4(func)  C4(func, 0)
 #define CASES8(func)  C8(func, 0)
 #define CASES16(func) C16(func, 0)
 #define CASES32(func) C32(func, 0)
