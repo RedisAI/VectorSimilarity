@@ -45,18 +45,16 @@ static inline void SQ8_FP32_InnerProductStep(const uint8_t *&pVec1, const float 
 
 // Common implementation for both inner product and cosine similarity
 // pVec1v = SQ8 storage, pVec2v = FP32 query
-template <unsigned char residual> // 0..63
+template <unsigned char residual> // 0..31
 float SQ8_FP32_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v); // SQ8 storage
     const float *pVec2 = static_cast<const float *>(pVec2v);     // FP32 query
     const uint8_t *pEnd1 = pVec1 + dimension;
 
-    // Initialize sum accumulators for Σ(q_i * y_i). Four accumulators break the FMA dependency
+    // Initialize sum accumulators for Σ(q_i * y_i). Two accumulators break the FMA dependency
     // chain, letting more FMAs be in flight at once.
     __m512 sum0 = _mm512_setzero_ps();
     __m512 sum1 = _mm512_setzero_ps();
-    __m512 sum2 = _mm512_setzero_ps();
-    __m512 sum3 = _mm512_setzero_ps();
 
     // Handle the sub-16 residual elements first
     if constexpr (residual % 16) {
@@ -79,29 +77,21 @@ float SQ8_FP32_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
         pVec2 += residual % 16;
     }
 
-    // Handle the remaining full 16-element blocks of the residual (compile-time resolved).
+    // Handle the remaining full 16-element block of the residual (compile-time resolved).
     if constexpr (residual >= 16) {
         SQ8_FP32_InnerProductStep(pVec1, pVec2, sum1);
     }
-    if constexpr (residual >= 32) {
-        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum2);
-    }
-    if constexpr (residual >= 48) {
-        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum3);
-    }
 
-    // We dealt with the residual part. We are left with some multiple of 64 elements.
-    // In each iteration we calculate 64 elements = 4 chunks of 16. The loop may run zero times
+    // We dealt with the residual part. We are left with some multiple of 32 elements.
+    // In each iteration we calculate 32 elements = 2 chunks of 16. The loop may run zero times
     // (dim can be as small as 8).
     while (pVec1 < pEnd1) {
         SQ8_FP32_InnerProductStep(pVec1, pVec2, sum0);
         SQ8_FP32_InnerProductStep(pVec1, pVec2, sum1);
-        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum2);
-        SQ8_FP32_InnerProductStep(pVec1, pVec2, sum3);
     }
 
     // Reduce to get Σ(q_i * y_i)
-    __m512 sum = _mm512_add_ps(_mm512_add_ps(sum0, sum1), _mm512_add_ps(sum2, sum3));
+    __m512 sum = _mm512_add_ps(sum0, sum1);
     float quantized_dot = _mm512_reduce_add_ps(sum);
 
     // Get quantization parameters from stored vector (after quantized data)
@@ -119,14 +109,14 @@ float SQ8_FP32_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
     return min_val * y_sum + delta * quantized_dot;
 }
 
-template <unsigned char residual> // 0..63
+template <unsigned char residual> // 0..31
 float SQ8_FP32_InnerProductSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                      size_t dimension) {
     // The inner product similarity is 1 - ip
     return 1.0f - SQ8_FP32_InnerProductImp_AVX512<residual>(pVec1v, pVec2v, dimension);
 }
 
-template <unsigned char residual> // 0..63
+template <unsigned char residual> // 0..31
 float SQ8_FP32_CosineSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
                                                size_t dimension) {
     // Cosine distance = 1 - IP (vectors are pre-normalized)

@@ -18,18 +18,16 @@ static inline void L2SqrStep(float *&pVect1, float *&pVect2, __m512 &sum) {
     sum = _mm512_fmadd_ps(diff, diff, sum);
 }
 
-template <unsigned char residual> // 0..63
+template <unsigned char residual> // 0..31
 float FP32_L2SqrSIMD16_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
     const float *pEnd1 = pVect1 + dimension;
 
-    // Four accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
+    // Two accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
     __m512 sum0 = _mm512_setzero_ps();
     __m512 sum1 = _mm512_setzero_ps();
-    __m512 sum2 = _mm512_setzero_ps();
-    __m512 sum3 = _mm512_setzero_ps();
 
     // Deal with the sub-16 remainder first. AVX-512 masked loads suppress faults on masked-out
     // lanes, so this is safe for any dimension.
@@ -43,27 +41,19 @@ float FP32_L2SqrSIMD16_AVX512(const void *pVect1v, const void *pVect2v, size_t d
         sum0 = _mm512_mul_ps(diff, diff);
     }
 
-    // Handle the remaining full 16-float blocks of the residual (compile-time resolved).
+    // Handle the remaining full 16-float block of the residual (compile-time resolved).
     if constexpr (residual >= 16) {
         L2SqrStep(pVect1, pVect2, sum1);
     }
-    if constexpr (residual >= 32) {
-        L2SqrStep(pVect1, pVect2, sum2);
-    }
-    if constexpr (residual >= 48) {
-        L2SqrStep(pVect1, pVect2, sum3);
-    }
 
-    // We dealt with the residual part. We are left with some multiple of 64 floats.
-    // In each iteration we calculate 64 floats = 4 chunks of 512 bits. The loop may run zero
+    // We dealt with the residual part. We are left with some multiple of 32 floats.
+    // In each iteration we calculate 32 floats = 2 chunks of 512 bits. The loop may run zero
     // times (dim can be as small as 8).
     while (pVect1 < pEnd1) {
         L2SqrStep(pVect1, pVect2, sum0);
         L2SqrStep(pVect1, pVect2, sum1);
-        L2SqrStep(pVect1, pVect2, sum2);
-        L2SqrStep(pVect1, pVect2, sum3);
     }
 
-    __m512 sum = _mm512_add_ps(_mm512_add_ps(sum0, sum1), _mm512_add_ps(sum2, sum3));
+    __m512 sum = _mm512_add_ps(sum0, sum1);
     return _mm512_reduce_add_ps(sum);
 }
