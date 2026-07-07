@@ -347,11 +347,23 @@ struct SVSGraphBuilder {
 };
 
 // A slot in the shared SVS thread pool. Wraps an SVS Thread with an occupancy flag
-// used by the rental mechanism. Stored as shared_ptr in the pool so that deferred
-// resize can safely shrink. Renters hold raw pointers (safe because the deferred-resize
-// protocol prevents slot destruction while jobs are in flight).
+// used by the rental mechanism. Slots are individually heap-allocated and are never
+// destroyed (the pool only grows physically; shrink is logical), so renters can hold
+// raw pointers safely.
+//
+// The OS thread is spawned lazily on first rent, not at slot creation. Growing the
+// pool (VecSim_UpdateThreadPoolSize on `CONFIG SET WORKERS N`) runs on the Redis main
+// thread; spawning N threads there is O(N) serialized thread-creates + boot handshakes
+// (each svs::threads::Thread ctor blocks until its worker reaches the Spinning state),
+// and freshly booted threads burn their idle-spin budget with no work, oversubscribing
+// the CPU so the handshakes stretch superlinearly — seconds for large N (MOD-16610).
+// Slot allocation is trivial, so resize returns immediately and each thread's spawn
+// cost is paid by the renter on the first job that actually uses the slot — at which
+// point the new thread's first spin window immediately catches its assigned partition.
 struct ThreadSlot {
-    svs::threads::Thread thread;
+    // Engaged on first ensureThread() call. Slots that are never rented never spawn
+    // an OS thread (and are destroyed for free on shrink — no shutdown handshake).
+    std::optional<svs::threads::Thread> thread;
     std::atomic<bool> occupied{false};
 
     ThreadSlot() = default;
@@ -361,6 +373,18 @@ struct ThreadSlot {
     ThreadSlot &operator=(const ThreadSlot &) = delete;
     ThreadSlot(ThreadSlot &&) = delete;
     ThreadSlot &operator=(ThreadSlot &&) = delete;
+
+    // Spawn the OS thread if not spawned yet. Must only be called by the renter that
+    // won the `occupied` compare-and-swap — that renter has exclusive ownership of the
+    // slot until it releases it, so no synchronization on `thread` is needed.
+    // May throw std::system_error if the OS refuses a new thread; callers must treat
+    // that as a degraded-execution trigger, not a fatal error.
+    svs::threads::Thread &ensureThread() {
+        if (!thread.has_value()) {
+            thread.emplace();
+        }
+        return *thread;
+    }
 };
 
 // Shared thread pool for SVS indexes with rental model.
@@ -370,12 +394,14 @@ struct ThreadSlot {
 // * Multiple callers can rent disjoint subsets of threads concurrently
 // * Shrinking while threads are rented is safe (shared_ptr lifecycle)
 class VecSimSVSThreadPoolImpl {
+    using SlotPtr = std::shared_ptr<ThreadSlot>;
+
     // RAII guard for threads rented from the shared pool. On destruction, marks all
-    // rented slots as unoccupied (lock-free atomic stores). Uses raw pointers to
-    // avoid shared_ptr ref-counting overhead on the hot path.
-    // Safety: raw pointers are safe because the deferred-resize protocol ensures the
-    // pool cannot shrink (destroy slots) while scheduled jobs are in flight, and all
-    // multi-threaded SVS operations run within scheduled jobs.
+    // rented slots as unoccupied (lock-free atomic stores). Holds raw pointers —
+    // safe because slots are never destroyed: the pool only grows physically (shrink
+    // is logical), slots are individually heap-allocated (stable addresses across the
+    // vector's reallocation on grow), and the pool singleton is deliberately leaked
+    // at exit.
     class RentedThreads {
     public:
         RentedThreads() = default;
@@ -392,9 +418,24 @@ class VecSimSVSThreadPoolImpl {
 
         size_t count() const { return slots_.size(); }
 
+        // Lazily spawn the OS thread for rented slot `i` (see ThreadSlot::ensureThread).
+        // May throw std::system_error on thread-resource exhaustion.
+        svs::threads::Thread &ensureThreadAt(size_t i) {
+            assert(i < slots_.size());
+            return slots_[i]->ensureThread();
+        }
+
+        // Destroy slot `i`'s OS thread (joins it); the slot reverts to the unspawned
+        // state and will lazily respawn on a future rent. Used to retire crashed threads.
+        void resetThreadAt(size_t i) {
+            assert(i < slots_.size());
+            slots_[i]->thread.reset();
+        }
+
         svs::threads::Thread &operator[](size_t i) {
             assert(i < slots_.size());
-            return slots_[i]->thread;
+            assert(slots_[i]->thread.has_value() && "Rented slot must have a spawned thread");
+            return *slots_[i]->thread;
         }
 
     private:
@@ -408,15 +449,15 @@ class VecSimSVSThreadPoolImpl {
         std::vector<ThreadSlot *> slots_;
     };
 
-    using SlotPtr = std::shared_ptr<ThreadSlot>;
-
     // Create a pool with `num_threads` total parallelism (including the calling thread).
-    // Spawns `num_threads - 1` worker OS threads. num_threads must be >= 1.
+    // Allocates `num_threads - 1` worker slots; OS threads are spawned lazily on first
+    // rent (see ThreadSlot). num_threads must be >= 1.
     // In write-in-place mode, the pool is created with num_threads == 1 (0 worker threads,
     // only the calling thread participates).
     // Private — use instance() to access the shared singleton.
     explicit VecSimSVSThreadPoolImpl(size_t num_threads = 1)
-        : allocator_(VecSimAllocator::newVecsimAllocator()), slots_(allocator_) {
+        : allocator_(VecSimAllocator::newVecsimAllocator()), slots_(allocator_),
+          logical_size_(num_threads - 1) {
         assert(num_threads && "VecSimSVSThreadPoolImpl should not be created with 0 threads");
         slots_.reserve(num_threads - 1);
         for (size_t i = 0; i < num_threads - 1; ++i) {
@@ -451,10 +492,12 @@ public:
     // Returns true iff instance() has ever been called (singleton constructed).
     static bool isInitialized() { return initialized_flag().load(std::memory_order_acquire); }
 
-    // Total parallelism: worker slots + 1 (the calling thread always participates).
+    // Total parallelism: logical worker count + 1 (the calling thread always
+    // participates). May be smaller than the physical slot capacity after a shrink —
+    // slots above the logical limit are retired lazily (see reclaimExcessThreads).
     size_t size() const {
         std::lock_guard lock{pool_mutex_};
-        return slots_.size() + 1;
+        return logical_size_ + 1;
     }
 
     // Bytes currently allocated through the pool's internal allocator (the slots vector
@@ -523,12 +566,27 @@ public:
     // has_attached_index_, deferred_size_, and pending_jobs_. Intended for unit
     // tests that need a clean baseline (the singleton itself is process-wide
     // and cannot be torn down). Caller must ensure no jobs are in flight.
+    // Number of slots whose OS thread is currently spawned (parked or in use).
+    // Test-only introspection: lets integration tests assert spawn/park/reclaim
+    // transitions without counting process-wide OS threads (which is noisy in a
+    // binary that runs thousands of unrelated tests).
+    size_t spawnedThreadCountForTest() const {
+        std::lock_guard lock{pool_mutex_};
+        size_t count = 0;
+        for (const auto &slot : slots_) {
+            count += slot->thread.has_value() ? 1 : 0;
+        }
+        return count;
+    }
+
     void resetForTest() {
         std::lock_guard lock{pool_mutex_};
         assert(pending_jobs_ == 0 && "resetForTest called with jobs in flight");
         // Swap with a fresh empty vector to release the capacity allocation
-        // (clear() destroys elements but retains capacity).
+        // (clear() destroys elements but retains capacity). Destroying the slots here
+        // joins any spawned threads — acceptable in tests.
         vecsim_stl::vector<SlotPtr>(allocator_).swap(slots_);
+        logical_size_ = 0;
         deferred_size_.reset();
         has_attached_index_ = false;
     }
@@ -538,16 +596,63 @@ public:
     size_t beginScheduledJob() {
         std::lock_guard lock{pool_mutex_};
         ++pending_jobs_;
-        return slots_.size() + 1;
+        return logical_size_ + 1;
     }
 
-    // Decrement the pending-jobs counter. When it reaches zero, apply any deferred resize.
+    // Decrement the pending-jobs counter. When it reaches zero, apply any deferred
+    // resize. Counter-and-size bookkeeping ONLY — never joins threads: this also runs
+    // from JobsRegistry teardown of unexecuted jobs (FT.DROPINDEX, main thread).
+    // Thread reclamation happens separately, on the worker-executed job completion
+    // path (see reclaimExcessThreads).
     void endScheduledJob() {
         std::lock_guard lock{pool_mutex_};
         assert(pending_jobs_ > 0 && "endScheduledJob called without matching beginScheduledJob");
         if (--pending_jobs_ == 0 && deferred_size_.has_value()) {
             resize_locked(deferred_size_.value());
             deferred_size_.reset();
+        }
+    }
+
+    // Join and destroy the OS threads of slots parked above the logical limit — the
+    // "GC" that trims the pool back to its configured size after a shrink. The joins
+    // happen on the calling thread; call only from background contexts (a worker that
+    // just completed a scheduled job), never from the resize caller (the Redis main
+    // thread). Cheap no-op when nothing is parked.
+    //
+    // Safety without a pending-jobs gate: rent() only hands out slots below
+    // logical_size_, and a lowered logical_size_ only takes effect at a point where no
+    // job holds an older, larger size snapshot (the deferred-shrink protocol). So an
+    // unoccupied slot at index >= logical_size_ can never become rented; the set is
+    // stable once observed under the lock. Slots still occupied by a pre-shrink rental
+    // are skipped and reclaimed on a later pass.
+    //
+    // Best-effort and non-throwing: runs after the job completion guard, where an
+    // exception would unwind into the C worker-thread boundary. The local container is
+    // reserved before any thread is detached, so an allocation failure aborts the pass
+    // cleanly (threads simply stay parked for the next pass).
+    void reclaimExcessThreads() noexcept {
+        try {
+            std::vector<svs::threads::Thread> doomed;
+            {
+                std::lock_guard lock{pool_mutex_};
+                if (slots_.size() <= logical_size_) {
+                    return;
+                }
+                doomed.reserve(slots_.size() - logical_size_);
+                for (size_t i = logical_size_; i < slots_.size(); ++i) {
+                    auto &slot = *slots_[i];
+                    if (slot.thread.has_value() &&
+                        !slot.occupied.load(std::memory_order_acquire)) {
+                        doomed.push_back(std::move(*slot.thread));
+                        slot.thread.reset();
+                    }
+                }
+            }
+            // ~Thread joins each detached thread (a parked worker wakes, sees
+            // RequestShutdown and exits promptly — no idle-spin burn), outside
+            // pool_mutex_ so a concurrent CONFIG SET resize is never blocked.
+        } catch (...) {
+            // Allocation failure — skip this pass; threads stay parked.
         }
     }
 
@@ -570,25 +675,74 @@ public:
             return;
         }
 
-        // Rent n-1 worker threads
+        // Rent n-1 worker threads. A shortfall (fewer slots than requested) is handled
+        // below by the degraded-execution path, like every other dispatch failure.
         auto rented = rent(n - 1, log_ctx);
 
-        // Assign work to rented workers (partitions 1..n-1)
+        // Dispatch partitions 1..n-1 to rented workers: for each slot, lazily spawn its
+        // OS thread and immediately assign its partition (interleaved, so the fresh
+        // thread's first spin window catches the work; runs outside pool_mutex_ so
+        // background spawns never block a concurrent CONFIG SET resize).
+        //
+        // Degraded execution: if a spawn throws (std::system_error — thread-resource
+        // exhaustion) or an assign throws (worker crashed between rents), stop
+        // dispatching. Partitions [dispatched+1, n) run on the calling thread below —
+        // partitions are never dropped, whatever the trigger (spawn failure, assign
+        // failure, or rent shortfall).
+        size_t dispatched = 0;
+        std::string dispatch_error;
         for (size_t i = 0; i < rented.count(); ++i) {
-            rented[i].assign({&f, i + 1});
+            try {
+                rented.ensureThreadAt(i);
+                rented[i].assign({&f, i + 1});
+            } catch (const std::exception &error) {
+                dispatch_error = error.what();
+                // If the failure came from a crashed worker, retire it so the slot
+                // lazily respawns a healthy thread on a future rent. Never throws
+                // past this point (joining an exited thread is cheap and safe).
+                rented.resetThreadAt(i);
+                break;
+            }
+            ++dispatched;
         }
 
-        // Run partition 0 on the calling thread
-        std::string main_thread_error;
+        if (!dispatch_error.empty() || dispatched < n - 1) {
+            auto msg = fmt::format("SVS thread pool: dispatched {} of {} partitions to "
+                                   "workers (rented {}); running the rest on the calling "
+                                   "thread.{}{}",
+                                   dispatched, n - 1, rented.count(),
+                                   dispatch_error.empty() ? "" : " Dispatch error: ",
+                                   dispatch_error);
+            if (VecSimIndexInterface::logCallback && log_ctx) {
+                VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
+            }
+        }
+
+        // Run partition 0 on the calling thread, then any partitions that were not
+        // dispatched. Errors are collected per-partition (parity with worker behavior:
+        // one failing partition does not prevent the others from running).
+        auto message = std::string{};
+        auto inserter = std::back_inserter(message);
+        bool has_error = false;
         try {
             f(0);
         } catch (const std::exception &error) {
-            main_thread_error = error.what();
+            has_error = true;
+            fmt::format_to(inserter, "Thread 0: {}\n", error.what());
+        }
+        for (size_t p = dispatched + 1; p < n; ++p) {
+            try {
+                f(p);
+            } catch (const std::exception &error) {
+                has_error = true;
+                fmt::format_to(inserter, "Partition {} (on calling thread): {}\n", p,
+                               error.what());
+            }
         }
 
-        // Wait for all rented workers and collect errors.
+        // Wait for all dispatched workers and collect errors.
         // RentedThreads destructor will release the slots after this block.
-        manage_workers_after_run(main_thread_error, rented);
+        manage_workers_after_run(has_error, std::move(message), dispatched, rented);
     }
 
 private:
@@ -605,7 +759,10 @@ private:
 
         std::lock_guard lock{pool_mutex_};
         size_t rented_count = 0;
-        for (auto &slot : slots_) {
+        // Only slots below the logical limit are rentable — slots above it (parked
+        // after a shrink) are reserved for reclamation and must not gain new renters.
+        for (size_t i = 0; i < logical_size_; ++i) {
+            auto &slot = slots_[i];
             bool expected = false;
             if (slot->occupied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                 rented.add(slot.get());
@@ -617,8 +774,8 @@ private:
 
         if (rented.count() < count) {
             auto msg = fmt::format("SVS thread pool: rented {} threads out of {} requested "
-                                   "(pool has {} slots). This should not happen.",
-                                   rented.count(), count, slots_.size());
+                                   "(pool has {} rentable slots). This should not happen.",
+                                   rented.count(), count, logical_size_);
             if (VecSimIndexInterface::logCallback) {
                 assert(log_ctx && "Log context must be provided when logging is available");
                 VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
@@ -628,18 +785,14 @@ private:
         return rented;
     }
 
-    // Wait for all rented workers to finish. If any worker (or the main thread) threw,
-    // restart crashed workers and throw a combined exception.
-    void manage_workers_after_run(const std::string &main_thread_error, RentedThreads &rented) {
-        auto message = std::string{};
+    // Wait for the first `dispatched` rented workers to finish (only those actually got
+    // a partition assigned). If any worker (or the calling thread) threw, retire crashed
+    // workers to the unspawned state and throw a combined exception.
+    void manage_workers_after_run(bool has_error, std::string message, size_t dispatched,
+                                  RentedThreads &rented) {
         auto inserter = std::back_inserter(message);
-        bool has_error = !main_thread_error.empty();
 
-        if (has_error) {
-            fmt::format_to(inserter, "Thread 0: {}\n", main_thread_error);
-        }
-
-        for (size_t i = 0; i < rented.count(); ++i) {
+        for (size_t i = 0; i < dispatched; ++i) {
             auto &thread = rented[i];
             thread.wait();
             if (!thread.is_okay()) {
@@ -649,9 +802,8 @@ private:
                 } catch (const std::exception &error) {
                     fmt::format_to(inserter, "Thread {}: {}\n", i + 1, error.what());
                 }
-                // Restart the crashed thread so the slot is usable again.
-                thread.shutdown();
-                thread = svs::threads::Thread{};
+                // Retire the crashed thread; the slot lazily respawns on a future rent.
+                rented.resetThreadAt(i);
             }
         }
 
@@ -662,33 +814,49 @@ private:
 
     // Actual resize logic. Caller must hold pool_mutex_.
     // Grow is always applied immediately. Shrink is deferred if pending_jobs_ > 0.
+    //
+    // Resize is LOGICAL: it moves logical_size_ (the limit rent() enforces) and only
+    // ever extends the physical slot vector — never destroys slots. Classification is
+    // against logical_size_, not slots_.size(): a grow from logical 1 to 4 inside a
+    // 2000-slot high-water pool is a grow. Shrinking parks the threads of slots above
+    // the new limit (they sleep; one final idle-spin window, no periodic wakeup);
+    // they are joined later by reclaimExcessThreads() on a background thread, or
+    // reused warm if the pool grows again first. This keeps both resize directions
+    // O(slots) on the Redis main thread — never O(thread create/join).
     void resize_locked(size_t new_size) {
         size_t target_workers = new_size - 1;
 
-        if (target_workers >= slots_.size()) {
+        if (target_workers >= logical_size_) {
             // Grow (or same size): apply immediately, cancel any pending deferred shrink.
             deferred_size_.reset();
             for (size_t i = slots_.size(); i < target_workers; ++i) {
                 slots_.push_back(
                     std::allocate_shared<ThreadSlot>(VecsimSTLAllocator<ThreadSlot>(allocator_)));
             }
+            logical_size_ = target_workers;
         } else {
             // Shrink.
             if (pending_jobs_ > 0) {
-                // Defer shrink — jobs in flight may still need these threads.
+                // Defer shrink — jobs in flight snapshotted the old size and may
+                // still rent up to it.
                 deferred_size_ = new_size;
             } else {
-                // Safe to shrink now — no jobs in flight.
-                // Occupied threads (held by renters) survive via shared_ptr.
-                // Idle threads are destroyed immediately.
-                slots_.resize(target_workers);
+                // Safe to shrink now — no jobs in flight. Purely logical: slots above
+                // the limit become unrentable; their threads (if spawned) stay parked
+                // until reclaimExcessThreads() joins them off the main thread.
+                logical_size_ = target_workers;
             }
         }
     }
 
     std::shared_ptr<VecSimAllocator> allocator_; // pool's own allocator for memory tracking
     mutable std::mutex pool_mutex_;
+    // Physical slots. Only grows (high-water mark); heap-allocated slots, so raw
+    // ThreadSlot* held by renters stay valid across vector reallocation on grow.
     vecsim_stl::vector<SlotPtr> slots_;
+    // Logical worker count = the rent() limit = configured pool size - 1. Slots at
+    // index >= logical_size_ are unrentable and eligible for thread reclamation.
+    size_t logical_size_ = 0;
     size_t pending_jobs_ = 0; // jobs currently scheduled / in-flight
     // Pending pool size to apply at the next safe point: either the first SVS index
     // attaches (onIndexAttached()) or pending_jobs_ drops to 0 (endScheduledJob()).

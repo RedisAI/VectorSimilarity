@@ -3407,11 +3407,17 @@ TYPED_TEST(SVSTest, debugInfoSharedMemoryMatchesApi) {
     VecSimSVSThreadPool::resize(1);
 }
 
-// VecSim shared memory must actually track the SVS thread-pool allocation:
-// it grows when the pool grows and shrinks when the pool shrinks. Without this,
-// SHARED_MEMORY could be a constant and debugInfoSharedMemoryMatchesApi would
-// still pass (both readouts share the same getSharedAllocationSize() source).
+// VecSim shared memory must track the SVS thread-pool slot allocation: it grows
+// when the pool grows. Shrink is LOGICAL (MOD-16610): slot capacity persists at
+// its high-water mark (slots are tiny structs; the OS threads — the expensive
+// part — are reclaimed separately, off the main thread), so shared memory does
+// NOT drop on shrink but must not grow either, and regrowing within the
+// high-water mark must not allocate new slots.
 TYPED_TEST(SVSTest, sharedMemoryTracksThreadPoolResize) {
+    // Slot capacity is a process-wide high-water mark now (logical shrink), so a
+    // previous run of this typed test leaves the pool at capacity 8 and the grow
+    // below would allocate nothing. Reset to a clean pool first.
+    VecSimSVSThreadPoolImpl::instance()->resetForTest();
     // With lazy init, resize() only records the requested size until an SVS index
     // has attached. Mark the pool attached up front so the resizes below apply
     // eagerly and their allocation effect is observable (idempotent, matches the
@@ -3429,11 +3435,19 @@ TYPED_TEST(SVSTest, sharedMemoryTracksThreadPoolResize) {
     size_t mem_8 = VecSim_GetSharedMemory();
     EXPECT_GT(mem_8, mem_baseline) << "shared memory must grow when the pool grows";
 
-    // Shrink back to size 1 (still WriteAsync).
+    // Shrink back to size 1 (still WriteAsync). Logical shrink: capacity — and
+    // therefore the slot allocation — stays at the high-water mark.
     VecSim_UpdateThreadPoolSize(1);
     ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1u);
     size_t mem_after = VecSim_GetSharedMemory();
-    EXPECT_LT(mem_after, mem_8) << "shared memory must shrink when the pool shrinks";
+    EXPECT_EQ(mem_after, mem_8)
+        << "logical shrink keeps slot capacity (high-water) — allocation must not change";
+
+    // Regrow within the high-water mark: reuses existing slots, no new allocation.
+    VecSim_UpdateThreadPoolSize(8);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 8u);
+    EXPECT_EQ(VecSim_GetSharedMemory(), mem_8)
+        << "regrow within high-water capacity must not allocate new slots";
 
     // Restore to default baseline.
     VecSim_UpdateThreadPoolSize(0);

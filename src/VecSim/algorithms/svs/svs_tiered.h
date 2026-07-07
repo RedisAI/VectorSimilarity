@@ -149,16 +149,53 @@ private:
     static void ExecuteMultiThreadJobImpl(AsyncJob *job) {
         auto *jobPtr = static_cast<SVSMultiThreadJob *>(job);
         auto controlBlock = jobPtr->controlBlock;
-        size_t num_threads = 1;
-        if (controlBlock) {
-            num_threads = controlBlock->waitForThreads();
+        // Saved before the guard scope: the guard deletes the job, so jobPtr must not
+        // be read afterwards.
+        const bool should_reclaim = jobPtr->isScheduled;
+
+        {
+            // Completion guard: whatever the task does — including throwing (e.g. a
+            // lazily spawned SVS pool thread failing with std::system_error, or an
+            // allocation failure mid-update) — the reserve jobs must be released and
+            // the job deleted. Otherwise reserved RediSearch workers block on the
+            // control block forever and the job's pending-scheduled-job reservation
+            // (endScheduledJob() in the dtor) never drops, wedging deferred pool
+            // resizes and thread reclamation.
+            struct CompletionGuard {
+                SVSMultiThreadJob *job;
+                const std::shared_ptr<ControlBlock> &controlBlock;
+                ~CompletionGuard() {
+                    if (controlBlock) {
+                        controlBlock->markJobDone();
+                    }
+                    job->jobsRegistry->delete_job(job);
+                }
+            } guard{jobPtr, controlBlock};
+
+            size_t num_threads = 1;
+            if (controlBlock) {
+                num_threads = controlBlock->waitForThreads();
+            }
+            assert(num_threads > 0);
+            try {
+                jobPtr->task(jobPtr->index, num_threads);
+            } catch (...) {
+                // Swallow after the fact: an async job has no caller to rethrow to (a
+                // throw here would unwind into the worker thread pool). Observability
+                // is handled by the typed task wrappers, which log with index context
+                // before rethrowing.
+            }
         }
-        assert(num_threads > 0);
-        jobPtr->task(jobPtr->index, num_threads);
-        if (controlBlock) {
-            jobPtr->controlBlock->markJobDone();
+
+        // Worker-executed completion path — the ONLY reclaim trigger. Runs after the
+        // guard released the job (so endScheduledJob() has applied any deferred
+        // logical shrink) and after the task released its index locks. Deliberately
+        // NOT in endScheduledJob() itself: that also fires from JobsRegistry teardown
+        // of unexecuted jobs on the Redis main thread, which must never join threads.
+        // reclaimExcessThreads() is noexcept.
+        if (should_reclaim) {
+            VecSimSVSThreadPoolImpl::instance()->reclaimExcessThreads();
         }
-        jobPtr->jobsRegistry->delete_job(job);
     }
 
     SVSMultiThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
@@ -570,8 +607,16 @@ private:
         std::lock_guard<std::mutex> lock(index->updateJobMutex);
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
-        // Update the SVS index
-        index->updateSVSIndex(availableThreads);
+        // Update the SVS index. A failed update must be visible, not a silent data lag:
+        // log with index context here (the generic job runner has no typed index access),
+        // then rethrow into the job's completion guard.
+        try {
+            index->updateSVSIndex(availableThreads);
+        } catch (const std::exception &error) {
+            index->backendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                                     "tiered SVS index update job failed: %s", error.what());
+            throw;
+        }
     }
 
     /**
@@ -608,8 +653,16 @@ private:
         }
         index->executeTracingCallback("GCJob::before_run_gc");
         svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
-        // VecSimIndexAbstract::runGC() is protected
-        static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+        // A failed GC must be visible: log with index context, then rethrow into the
+        // job's completion guard (see updateSVSIndexWrapper).
+        try {
+            // VecSimIndexAbstract::runGC() is protected
+            static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+        } catch (const std::exception &error) {
+            index->backendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                                     "tiered SVS index GC job failed: %s", error.what());
+            throw;
+        }
     }
 
 #ifdef BUILD_TESTS
