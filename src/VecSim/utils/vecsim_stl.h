@@ -112,38 +112,41 @@ public:
 
 struct one_byte_mutex {
     one_byte_mutex() noexcept = default;
-    one_byte_mutex(const one_byte_mutex &) noexcept : state(unlocked) {}
-    one_byte_mutex(one_byte_mutex &&) noexcept : state(unlocked) {}
+    one_byte_mutex(const one_byte_mutex &) noexcept : state(State::unlocked) {}
+    one_byte_mutex(one_byte_mutex &&) noexcept : state(State::unlocked) {}
     one_byte_mutex &operator=(const one_byte_mutex &) noexcept {
-        state.store(unlocked, std::memory_order_relaxed);
+        state.store(State::unlocked, std::memory_order_relaxed);
         return *this;
     }
     one_byte_mutex &operator=(one_byte_mutex &&) noexcept {
-        state.store(unlocked, std::memory_order_relaxed);
+        state.store(State::unlocked, std::memory_order_relaxed);
         return *this;
     }
 
     void lock() {
-        if (state.exchange(locked, std::memory_order_acquire) == unlocked) {
+        if (state.exchange(State::locked, std::memory_order_acquire) == State::unlocked) {
             return;
         }
-        while (state.exchange(sleeper, std::memory_order_acquire) != unlocked) {
-            state.wait(sleeper, std::memory_order_relaxed);
+        while (state.exchange(State::sleeper, std::memory_order_acquire) != State::unlocked) {
+            state.wait(State::sleeper, std::memory_order_relaxed);
         }
     }
 
     void unlock() {
-        if (state.exchange(unlocked, std::memory_order_release) == sleeper) {
+        if (state.exchange(State::unlocked, std::memory_order_release) == State::sleeper) {
             state.notify_one();
         }
     }
 
 private:
-    std::atomic<uint8_t> state{unlocked};
+    enum class State : uint8_t { unlocked, locked, sleeper };
 
-    static constexpr uint8_t unlocked = 0;
-    static constexpr uint8_t locked = 0b01;
-    static constexpr uint8_t sleeper = 0b10;
+    static_assert(sizeof(std::atomic<State>) == sizeof(uint8_t),
+                  "one_byte_mutex state must stay one byte");
+    std::atomic<State> state{State::unlocked};
 };
+static_assert(sizeof(one_byte_mutex) == sizeof(uint8_t), "one_byte_mutex must stay one byte");
+static_assert(alignof(one_byte_mutex) == alignof(uint8_t),
+              "one_byte_mutex alignment must stay one byte");
 
 } // namespace vecsim_stl
