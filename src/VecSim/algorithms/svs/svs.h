@@ -57,6 +57,10 @@ struct SVSIndexBase
     virtual std::unique_ptr<ImplHandler> createImpl(const void *vectors_data,
                                                     const labelType *labels, size_t n) = 0;
     virtual void setImpl(std::unique_ptr<ImplHandler> impl) = 0;
+
+    virtual std::unique_ptr<ImplHandler>
+    makeAddVectorsChanges(const void *vectors_data, const labelType *labels, size_t n) = 0;
+    virtual int applyAddVectorsChanges(std::unique_ptr<ImplHandler> changes) = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
 #endif
@@ -250,6 +254,64 @@ protected:
             throw std::logic_error("Failed to cast to SVSImplHandler");
         }
         this->impl_ = std::move(svs_handler->impl);
+    }
+
+    struct SVSChangesHandler : public ImplHandler {
+        using points_type = svs::data::SimpleDataView<DataType>;
+        using ids_type = std::span<const labelType>;
+        using changes_type = decltype(std::declval<impl_type>().add_points_compute_changes(
+            std::declval<points_type>(), std::declval<ids_type>()));
+
+        template <typename Impl>
+        SVSChangesHandler(MemoryUtils::unique_blob processed_blob, points_type points, ids_type ids,
+                          const Impl &impl, int result_num)
+            : processed_blob_{std::move(processed_blob)}, points_{std::move(points)},
+              ids_{std::move(ids)}, changes_{impl.add_points_compute_changes(points_, ids_)},
+              result_num_{result_num} {}
+        virtual ~SVSChangesHandler() = default;
+
+        MemoryUtils::unique_blob processed_blob_;
+        points_type points_;
+        ids_type ids_;
+        changes_type changes_;
+        int result_num_;
+    };
+
+    virtual std::unique_ptr<ImplHandler>
+    makeAddVectorsChanges(const void *vectors_data, const labelType *labels, size_t n) override {
+        assert(impl_ != nullptr);
+        if (n == 0) {
+            return nullptr;
+        }
+
+        int deleted_num = 0;
+        if constexpr (!isMulti) {
+            // SVS index does not support overriding vectors with the same label
+            // so we have to delete them first if needed
+            deleted_num = deleteVectorsImpl(labels, n);
+        }
+
+        std::span<const labelType> ids(labels, n);
+        auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
+        auto typed_vectors_data = static_cast<DataType *>(processed_blob.get());
+        // Wrap data into SVS SimpleDataView for SVS API
+        auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
+        return std::make_unique<SVSChangesHandler>(std::move(processed_blob), points, ids, *impl_,
+                                                   n - deleted_num);
+    }
+
+    virtual int applyAddVectorsChanges(std::unique_ptr<ImplHandler> changes) override {
+        assert(impl_ != nullptr);
+        if (!changes) {
+            return 0;
+        }
+
+        SVSChangesHandler *svs_changes_handler = dynamic_cast<SVSChangesHandler *>(changes.get());
+        if (!svs_changes_handler) {
+            throw std::logic_error("Failed to cast to SVSChangesHandler");
+        }
+        impl_->add_points_commit(svs_changes_handler->ids_, svs_changes_handler->changes_);
+        return svs_changes_handler->result_num_;
     }
 
     // Assuming parallelism was updated to reflect the number of available threads before this
