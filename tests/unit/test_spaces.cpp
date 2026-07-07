@@ -581,6 +581,28 @@ TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_SSE
+// Reproduces the _mm_loadr_ps alignment fault in the FP32 L2 SSE kernel (residual % 4 == 3
+// path). Buffers are placed at (16-aligned base) + 8 - exactly where VecSimAllocator::allocate()
+// puts vector data when no alignment hint is set, which is always the case on this path since
+// the dispatcher only sets a hint when dim % 4 == 0 and this path requires dim % 4 == 3.
+TEST_F(SpacesTest, FP32_L2Sqr_SSE_loadr_misaligned) {
+    constexpr size_t dim = 19; // dim % 16 == 3 -> residual 3 -> _mm_loadr_ps path
+    alignas(16) static char raw1[16 + dim * sizeof(float)];
+    alignas(16) static char raw2[16 + dim * sizeof(float)];
+    float *v1 = reinterpret_cast<float *>(raw1 + 8); // address == 8 (mod 16)
+    float *v2 = reinterpret_cast<float *>(raw2 + 8);
+    for (size_t i = 0; i < dim; i++) {
+        v1[i] = float(i);
+        v2[i] = float(i) + 1.5f;
+    }
+    float baseline = FP32_L2Sqr(v1, v2, dim);
+    dist_func_t<float> arch_opt_func = spaces::Choose_FP32_L2_implementation_SSE(dim);
+    // SIGSEGV here: the kernel's residual path executes movaps on the 8-mod-16 addresses.
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim));
+}
+#endif // OPT_SSE
+
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that small dimensions gets the no optimization function.
     for (size_t dim = 1; dim < 8; dim++) {

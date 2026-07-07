@@ -1,0 +1,43 @@
+name: SSE-only unit tests (loadr alignment repro)
+
+# Demonstrates MOD-16730: builds the library with the AVX-family instruction flags disabled,
+# which is the build any x86-64 machine without AVX gets. The dispatcher then selects the SSE
+# tier, and the FP32/L2 kernel's _mm_loadr_ps residual path (dim % 4 == 3) executes movaps on
+# the unaligned pointers produced by VecSimAllocator - crashing test_spaces / test_bruteforce.
+# This job is EXPECTED TO FAIL until the kernel is fixed.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  sse-only-unit-tests:
+    name: SSE-only build (AVX flags off) unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: install dependencies
+        run: .install/install_script.sh sudo
+      - name: Print CPU information
+        run: lscpu
+      - name: unit tests (SSE-only build)
+        env:
+          # Force the compiler-flag detection results off for every AVX-family tier, so no
+          # OPT_AVX*/OPT_F16C code is compiled and the dispatcher falls through to the SSE tiers
+          # at runtime - equivalent to running on a pre-AVX machine.
+          CMAKE_FLAGS: >-
+            -DCXX_AVX512VL=FALSE
+            -DCXX_AVX512BF16=FALSE
+            -DCXX_AVX512BW=FALSE
+            -DCXX_AVX512VBMI2=FALSE
+            -DCXX_AVX512FP16=FALSE
+            -DCXX_AVX512F=FALSE
+            -DCXX_AVX512VNNI=FALSE
+            -DCXX_AVX2=FALSE
+            -DCXX_AVX=FALSE
+            -DCXX_F16C=FALSE
+            -DCXX_FMA=FALSE
+        run: make unit_test CTEST_ARGS="-R 'spaces|bruteforce' --output-on-failure"

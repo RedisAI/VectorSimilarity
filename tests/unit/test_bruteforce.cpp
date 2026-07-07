@@ -39,6 +39,34 @@ protected:
 
 TYPED_TEST_SUITE(BruteForceTest, DataTypeSet);
 
+// End-to-end repro for the _mm_loadr_ps alignment fault: full index flow - factory, dispatcher,
+// preprocessor, allocator-placed vectors, TopK query. On a build/machine where the dispatcher
+// selects the SSE tier for FP32/L2 (no AVX), dim 19 routes to the _mm_loadr_ps residual path
+// with the allocator's 8-mod-16 pointers and crashes with SIGSEGV.
+TEST(BruteForceFlowRepro, fp32_l2_dim19_sse_loadr_flow) {
+    constexpr size_t dim = 19; // dim % 16 == 3 -> residual 3 -> _mm_loadr_ps path on SSE tier
+    BFParams bfParams = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams params = CreateParams(bfParams);
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_NE(index, nullptr);
+
+    float v[dim];
+    for (size_t label = 0; label < 4; label++) {
+        for (size_t i = 0; i < dim; i++)
+            v[i] = float(label + i);
+        VecSimIndex_AddVector(index, v, label);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 4);
+
+    float q[dim];
+    for (size_t i = 0; i < dim; i++)
+        q[i] = float(i) + 0.5f;
+    VecSimQueryReply *res = VecSimIndex_TopKQuery(index, q, 2, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 2);
+    VecSimQueryReply_Free(res);
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
 
     size_t dim = 4;
