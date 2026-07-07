@@ -40,4 +40,7 @@ jobs:
             -DCXX_AVX=FALSE
             -DCXX_F16C=FALSE
             -DCXX_FMA=FALSE
-        run: make unit_test CTEST_ARGS="-R 'spaces|bruteforce' --output-on-failure"
+        # ctest test names come from gtest_discover_tests, i.e. gtest case names like
+        # "SpacesTest.*" / "BruteForceTest/0.*". --no-tests=error guards against a regex
+        # matching nothing and silently passing.
+        run: make unit_test CTEST_ARGS="-R 'SpacesTest|BruteForce' --no-tests=error --output-on-failure"
