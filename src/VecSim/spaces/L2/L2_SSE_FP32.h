@@ -31,10 +31,15 @@ float FP32_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
     if constexpr (residual % 4) {
         __m128 v1, v2, diff;
         if constexpr (residual % 4 == 3) {
-            // Load 3 floats and set the last one to 0
-            v1 = _mm_loadr_ps(pVect1); // load 4 floats
-            v2 = _mm_loadr_ps(pVect2);
-            // sets the last float of v1 to the last of v2, so the diff is 0.
+            // Load 4 floats (unaligned) and reverse them, so the out-of-residual 4th element
+            // lands in the low lane. Vectors are not guaranteed to be 16-byte aligned here
+            // (block stride is dim * 4 and no alignment hint is set when dim % 4 != 0), so an
+            // aligned load (_mm_loadr_ps / movaps) would fault.
+            v1 = _mm_loadu_ps(pVect1);
+            v2 = _mm_loadu_ps(pVect2);
+            v1 = _mm_shuffle_ps(v1, v1, _MM_SHUFFLE(0, 1, 2, 3));
+            v2 = _mm_shuffle_ps(v2, v2, _MM_SHUFFLE(0, 1, 2, 3));
+            // sets the low float of v1 to the low float of v2, so the diff is 0.
             v1 = _mm_move_ss(v1, v2);
         } else if constexpr (residual % 4 == 2) {
             // Load 2 floats and set the last two to 0
