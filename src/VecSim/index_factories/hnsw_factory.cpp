@@ -133,9 +133,10 @@ size_t EstimateElementSize(const HNSWParams *params) {
     // label node (bucket).
     size_t size_label_lookup_entry = sizeof(void *);
 
-    // 1 entry in visited nodes + 1 entry in element metadata map + (approximately) 1 bucket in
-    // labels lookup hash map.
-    size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) + size_label_lookup_entry;
+    // 1 entry in visited nodes + 1 entry in element metadata map + 1 node lock + (approximately)
+    // 1 bucket in labels lookup hash map.
+    size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) +
+                            sizeof(vecsim_stl::one_byte_mutex) + size_label_lookup_entry;
 
     /* Disclaimer: we are neglecting two additional factors that consume memory:
      * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of
