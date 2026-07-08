@@ -32,28 +32,35 @@ float FP32_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
     __m128 sum3 = _mm_setzero_ps();
 
     // Deal with %4 remainder first. All the loads below touch at most `residual % 4` floats,
-    // except for the reversed load in the residual == 3 case, which reads a full (aligned)
-    // 16-byte block. This is safe because `dim` is at least 8 whenever residual % 4 == 3.
+    // except for the residual == 3 case, which reads a full (unaligned) 16-byte block and then
+    // masks the out-of-residual lane. This is safe because `dim` is at least 8 whenever
+    // residual % 4 == 3, so the 4 floats read from the start are always in-bounds.
     if constexpr (residual % 4) {
         __m128 v1, v2, diff;
         if constexpr (residual % 4 == 3) {
-            // Load 3 floats and set the last one to 0
-            v1 = _mm_loadr_ps(pVect1); // load 4 floats
-            v2 = _mm_loadr_ps(pVect2);
-            // sets the last float of v1 to the last of v2, so the diff is 0.
-            v1 = _mm_move_ss(v1, v2);
+            // Load 4 floats (unaligned). Vectors are not guaranteed to be 16-byte aligned here
+            // (block stride is dim * 4 and no alignment hint is set when dim % 4 != 0), so an
+            // aligned load (_mm_loadr_ps / movaps) would fault.
+            v1 = _mm_loadu_ps(pVect1);
+            v2 = _mm_loadu_ps(pVect2);
+            diff = _mm_sub_ps(v1, v2);
+            // Rotate the out-of-residual 4th element into the low lane and zero it - that
+            // element is processed by the next step.
+            diff = _mm_shuffle_ps(diff, diff, _MM_SHUFFLE(2, 1, 0, 3));
+            diff = _mm_move_ss(diff, _mm_setzero_ps());
         } else if constexpr (residual % 4 == 2) {
             // Load 2 floats and set the last two to 0
             v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
             v2 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect2);
+            diff = _mm_sub_ps(v1, v2);
         } else if constexpr (residual % 4 == 1) {
             // Load 1 float and set the last three to 0
             v1 = _mm_load_ss(pVect1);
             v2 = _mm_load_ss(pVect2);
+            diff = _mm_sub_ps(v1, v2);
         }
         pVect1 += residual % 4;
         pVect2 += residual % 4;
-        diff = _mm_sub_ps(v1, v2);
         sum0 = _mm_mul_ps(diff, diff);
     }
 

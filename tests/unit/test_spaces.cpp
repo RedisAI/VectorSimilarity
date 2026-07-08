@@ -581,6 +581,28 @@ TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
 }
 
 #ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_SSE
+// Regression test for MOD-16730: the FP32 L2 SSE kernel's residual % 4 == 3 path used
+// _mm_loadr_ps (movaps), which faults on non-16-byte-aligned addresses. Vectors are not
+// guaranteed such alignment: VecSimAllocator::allocate() returns malloc + 8 (allocation
+// header), and the dispatcher sets no alignment hint when dim % 4 != 0. This test feeds the
+// kernel buffers at that exact placement (16-aligned base + 8).
+TEST_F(SpacesTest, FP32_L2Sqr_SSE_misaligned_residual3) {
+    constexpr size_t dim = 19; // dim % 16 == 3 -> residual 3 path
+    alignas(16) static char raw1[16 + dim * sizeof(float)];
+    alignas(16) static char raw2[16 + dim * sizeof(float)];
+    float *v1 = reinterpret_cast<float *>(raw1 + 8); // address == 8 (mod 16)
+    float *v2 = reinterpret_cast<float *>(raw2 + 8);
+    for (size_t i = 0; i < dim; i++) {
+        v1[i] = float(i);
+        v2[i] = float(i) + 1.5f;
+    }
+    float baseline = FP32_L2Sqr(v1, v2, dim);
+    dist_func_t<float> arch_opt_func = spaces::Choose_FP32_L2_implementation_SSE(dim);
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim));
+}
+#endif // OPT_SSE
+
 TEST_F(SpacesTest, smallDimChooser) {
     // Verify that dimensions below each type's SIMD threshold get the no optimization function.
     // FP64 is optimized from dim >= 4.

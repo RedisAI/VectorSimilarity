@@ -9,6 +9,8 @@
 #pragma once
 
 #include "VecSim/memory/vecsim_base.h"
+#include <atomic>
+#include <cstdint>
 #include <vector>
 #include <algorithm>
 #include <set>
@@ -107,5 +109,44 @@ public:
           std::unordered_set<T, std::hash<T>, std::equal_to<T>, VecsimSTLAllocator<T>>(n_bucket,
                                                                                        alloc) {}
 };
+
+struct one_byte_mutex {
+    one_byte_mutex() noexcept = default;
+    one_byte_mutex(const one_byte_mutex &) noexcept : state(State::unlocked) {}
+    one_byte_mutex(one_byte_mutex &&) noexcept : state(State::unlocked) {}
+    one_byte_mutex &operator=(const one_byte_mutex &) noexcept {
+        state.store(State::unlocked, std::memory_order_relaxed);
+        return *this;
+    }
+    one_byte_mutex &operator=(one_byte_mutex &&) noexcept {
+        state.store(State::unlocked, std::memory_order_relaxed);
+        return *this;
+    }
+
+    void lock() {
+        if (state.exchange(State::locked, std::memory_order_acquire) == State::unlocked) {
+            return;
+        }
+        while (state.exchange(State::sleeper, std::memory_order_acquire) != State::unlocked) {
+            state.wait(State::sleeper, std::memory_order_relaxed);
+        }
+    }
+
+    void unlock() {
+        if (state.exchange(State::unlocked, std::memory_order_release) == State::sleeper) {
+            state.notify_one();
+        }
+    }
+
+private:
+    enum class State : uint8_t { unlocked, locked, sleeper };
+
+    static_assert(sizeof(std::atomic<State>) == sizeof(uint8_t),
+                  "one_byte_mutex state must stay one byte");
+    std::atomic<State> state{State::unlocked};
+};
+static_assert(sizeof(one_byte_mutex) == sizeof(uint8_t), "one_byte_mutex must stay one byte");
+static_assert(alignof(one_byte_mutex) == alignof(uint8_t),
+              "one_byte_mutex alignment must stay one byte");
 
 } // namespace vecsim_stl

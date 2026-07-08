@@ -18,7 +18,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          HNSWSerializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       HNSWSerializer(version), epsilon(params->epsilon), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      elementLocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -30,6 +31,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 
     // Set the initial capacity based on the number of elements in the loaded index.
     maxElements = RoundUpInitialCapacity(this->curElementCount, this->blockSize);
+    this->elementLocks.resize(maxElements);
     this->idToMetaData.resize(maxElements);
     this->visitedNodesHandlerPool.resize(maxElements);
 
