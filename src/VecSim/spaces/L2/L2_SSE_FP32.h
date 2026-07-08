@@ -37,10 +37,10 @@ float FP32_L2SqrSIMD16_SSE(const void *pVect1v, const void *pVect2v, size_t dime
             v1 = _mm_loadu_ps(pVect1);
             v2 = _mm_loadu_ps(pVect2);
             diff = _mm_sub_ps(v1, v2);
-            // Rotate the out-of-residual 4th element into the low lane and zero it via the
-            // (still zero) accumulator - that element is processed by the next step.
+            // Rotate the out-of-residual 4th element into the low lane and zero it - that
+            // element is processed by the next step.
             diff = _mm_shuffle_ps(diff, diff, _MM_SHUFFLE(2, 1, 0, 3));
-            diff = _mm_move_ss(diff, sum);
+            diff = _mm_move_ss(diff, _mm_setzero_ps());
         } else if constexpr (residual % 4 == 2) {
             // Load 2 floats and set the last two to 0
             v1 = _mm_loadh_pi(_mm_setzero_ps(), (__m64 *)pVect1);
