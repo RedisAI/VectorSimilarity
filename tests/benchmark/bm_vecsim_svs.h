@@ -54,6 +54,10 @@ public:
     // Deletes an amount of labels from the index that triggers inplace consolidation.
     void RunGC(benchmark::State &st);
 
+    // TopK search benchmark. The search window size and k are provided by the benchmark
+    // registration.
+    void TopK_SVS(benchmark::State &st);
+
 private:
     static const char *svs_index_tar_file;
     static std::string base_path;
@@ -461,6 +465,29 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
     ASSERT_EQ(info.svsInfo.numberOfMarkedDeletedNodes, 0);
 
     ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), N_VECTORS - num_deletions);
+}
+
+template <typename index_type_t>
+void BM_VecSimSVS<index_type_t>::TopK_SVS(benchmark::State &st) {
+    // Search window size (Vamana graph accuracy/latency tuning) and number of results, as
+    // defined by the benchmark registration.
+    size_t window_size = st.range(0);
+    size_t k = st.range(1);
+
+    // Load the SVS index from file (update_threshold is irrelevant for a search-only benchmark).
+    auto *index = CreateSVSIndexFromFile(1);
+
+    VecSimQueryParams query_params = {.svsRuntimeParams = {.windowSize = window_size}};
+
+    size_t iter = 0;
+    for (auto _ : st) {
+        auto results = VecSimIndex_TopKQuery(index, test_vectors[iter % N_QUERIES].data(), k,
+                                             &query_params, BY_SCORE);
+        VecSimQueryReply_Free(results);
+        iter++;
+    }
+
+    VecSimIndex_Free(index);
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)
