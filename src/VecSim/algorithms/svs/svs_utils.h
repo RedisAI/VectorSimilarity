@@ -641,8 +641,7 @@ public:
                 doomed.reserve(slots_.size() - logical_size_);
                 for (size_t i = logical_size_; i < slots_.size(); ++i) {
                     auto &slot = *slots_[i];
-                    if (slot.thread.has_value() &&
-                        !slot.occupied.load(std::memory_order_acquire)) {
+                    if (slot.thread.has_value() && !slot.occupied.load(std::memory_order_acquire)) {
                         doomed.push_back(std::move(*slot.thread));
                         slot.thread.reset();
                     }
@@ -707,12 +706,12 @@ public:
         }
 
         if (!dispatch_error.empty() || dispatched < n - 1) {
-            auto msg = fmt::format("SVS thread pool: dispatched {} of {} partitions to "
-                                   "workers (rented {}); running the rest on the calling "
-                                   "thread.{}{}",
-                                   dispatched, n - 1, rented.count(),
-                                   dispatch_error.empty() ? "" : " Dispatch error: ",
-                                   dispatch_error);
+            auto msg =
+                fmt::format("SVS thread pool: dispatched {} of {} partitions to "
+                            "workers (rented {}); running the rest on the calling "
+                            "thread.{}{}",
+                            dispatched, n - 1, rented.count(),
+                            dispatch_error.empty() ? "" : " Dispatch error: ", dispatch_error);
             if (VecSimIndexInterface::logCallback && log_ctx) {
                 VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
             }
@@ -735,8 +734,7 @@ public:
                 f(p);
             } catch (const std::exception &error) {
                 has_error = true;
-                fmt::format_to(inserter, "Partition {} (on calling thread): {}\n", p,
-                               error.what());
+                fmt::format_to(inserter, "Partition {} (on calling thread): {}\n", p, error.what());
             }
         }
 

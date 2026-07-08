@@ -532,6 +532,44 @@ static size_t osThreadCount() {
     return count;
 }
 
+// pthread_join returning does NOT guarantee the joined thread's /proc/self/task
+// entry is gone: the kernel wakes the joiner before it releases the task entry,
+// so a just-joined thread can linger in the count briefly (observed under
+// sanitizer slowdown in CI). Assertions about counts reached via joins must
+// poll. Thread *creation* is synchronous (the entry exists when pthread_create
+// returns), so upper-bound assertions after spawns can stay exact.
+static bool waitForOsThreadCount(size_t expected) {
+    auto deadline = std::chrono::steady_clock::now() + kTestTimeout;
+    while (osThreadCount() != expected) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+// Baseline capture after a reclaim has the same exit-lag problem: a lingering
+// task entry would inflate the baseline and make later equality checks fail
+// low. Poll until the count holds steady for a while before trusting it.
+static size_t settledOsThreadCount() {
+    auto deadline = std::chrono::steady_clock::now() + kTestTimeout;
+    size_t last = osThreadCount();
+    auto stable_since = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        size_t cur = osThreadCount();
+        if (cur != last) {
+            last = cur;
+            stable_since = std::chrono::steady_clock::now();
+        } else if (std::chrono::steady_clock::now() - stable_since >=
+                   std::chrono::milliseconds(50)) {
+            break;
+        }
+    }
+    return last;
+}
+
 // ---------------------------------------------------------------------------
 // Test 9: Lazy spawn — resize allocates slots without creating OS threads;
 // threads are spawned on first rent, reused on later rents, and shrink joins
@@ -542,7 +580,7 @@ TEST_F(SVSThreadPoolTest, LazySpawnOnFirstRent) {
     // the baseline is stable.
     auto pool = VecSimSVSThreadPoolImpl::instance();
     pool->reclaimExcessThreads();
-    const size_t baseline = osThreadCount();
+    const size_t baseline = settledOsThreadCount();
 
     // Growing the pool must not spawn any OS thread — this is the main-thread
     // cost CONFIG SET WORKERS pays.
@@ -573,7 +611,9 @@ TEST_F(SVSThreadPoolTest, LazySpawnOnFirstRent) {
     // Reclamation joins them (in production this runs on the worker-executed
     // job completion path; the integration test lives in test_svs_tiered.cpp).
     pool->reclaimExcessThreads();
-    ASSERT_EQ(osThreadCount(), baseline);
+    ASSERT_TRUE(waitForOsThreadCount(baseline))
+        << "reclaimed threads still in /proc/self/task: " << osThreadCount() << " vs baseline "
+        << baseline;
 }
 
 // ---------------------------------------------------------------------------
@@ -586,7 +626,7 @@ TEST_F(SVSThreadPoolTest, LazySpawnOnFirstRent) {
 TEST_F(SVSThreadPoolTest, LogicalShrinkParksAndReusesThreads) {
     auto pool = VecSimSVSThreadPoolImpl::instance();
     pool->reclaimExcessThreads();
-    const size_t baseline = osThreadCount();
+    const size_t baseline = settledOsThreadCount();
 
     VecSimSVSThreadPool::resize(4); // 3 worker slots
     std::atomic_int counter{0};
