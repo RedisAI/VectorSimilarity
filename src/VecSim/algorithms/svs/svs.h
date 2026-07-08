@@ -340,7 +340,9 @@ protected:
             deleted_num = impl_->delete_entries(std::span{labels, n});
         }
 
-        this->markIndexUpdate(deleted_num);
+        if (deleted_num > 0)
+            this->markIndexUpdate(deleted_num);
+
         return deleted_num;
     }
 
