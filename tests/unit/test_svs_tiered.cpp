@@ -489,7 +489,7 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
 
     // Submit the index update job.
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
     // Execute the job from the queue and validate that the index was updated properly.
@@ -1635,7 +1635,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertAdHoc) {
         tiered_index->submitSingleJob(search_job);
     }
 
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(successful_searches, n);

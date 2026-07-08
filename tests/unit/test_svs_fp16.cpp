@@ -2337,7 +2337,7 @@ protected:
             }
         }
         // Submit the index update job.
-        tiered_index->scheduleSVSIndexUpdate();
+        tiered_index->scheduleSVSIndexInit();
         ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
         // Execute the job from the queue and validate that the index was updated properly.

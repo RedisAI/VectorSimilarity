@@ -232,7 +232,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     using swap_record = std::tuple<labelType, idType, idType>;
     constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
     std::vector<swap_record> swaps_journal;
-    // deleted_labels_journal is used by updateSVSIndex() to track vectors that were deleted from
+    // deleted_labels_journal is used by initSVSIndex() to track vectors that were deleted from
     // Flat index during SVS index updating. The journal contains the deleted labels. These labels
     // are used to delete the same vectors from the SVS index at the end of the update.
     std::vector<labelType> deleted_labels_journal;
@@ -553,19 +553,19 @@ public:
 
 private:
     /**
-     * @brief Updates the SVS index in a thread-safe manner.
+     * @brief Init the SVS index in a thread-safe manner.
      *
      * This static wrapper function performs the following actions:
      * - Acquires a lock on the index's updateJobMutex to prevent concurrent updates.
      * - Clears the indexUpdateScheduled flag to allow future scheduling.
      * - Configures the number of threads for the underlying SVS index update operation.
-     * - Calls the updateSVSIndex method to perform the actual index update.
+     * - Calls the initSVSIndex method to perform the actual index update.
      *
      * @param idx Pointer to the VecSimIndex to be updated.
      * @param availableThreads The number of threads available for the update operation. Current
      * thread us used as well, so the minimal value is 1.
      */
-    static void updateSVSIndexWrapper(VecSimIndex *idx, size_t availableThreads) {
+    static void initSVSIndexWrapper(VecSimIndex *idx, size_t availableThreads) {
         assert(availableThreads > 0);
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
@@ -574,7 +574,7 @@ private:
         // Release the scheduled flag to allow scheduling again
         index->indexUpdateScheduled.clear();
         // Update the SVS index
-        index->updateSVSIndex(availableThreads);
+        index->initSVSIndex(availableThreads);
     }
 
     static void executeInsertJobWrapper(AsyncJob *job) {
@@ -640,7 +640,7 @@ public:
         }
     }
 
-    void scheduleSVSIndexUpdate() {
+    void scheduleSVSIndexInit() {
         // do not schedule if scheduled already
         if (indexUpdateScheduled.test_and_set()) {
             return;
@@ -648,7 +648,7 @@ public:
 
         auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
         auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this, total_threads,
+            this->allocator, SVS_BATCH_UPDATE_JOB, initSVSIndexWrapper, this, total_threads,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
@@ -764,39 +764,38 @@ private:
         this->flatIndexGuard.unlock();
     }
 
-    void updateSVSIndex(size_t availableThreads) {
+    void initSVSIndex(size_t availableThreads) {
         std::vector<idType> ids_to_move;
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
 
         { // lock frontendIndex from modifications
+            // The whole initialization is done under flatIndexGuard
             std::lock_guard flat_lock{this->flatIndexGuard};
-            auto svs_index = GetSVSIndex();
-            bool is_initialization = !svs_index->ready();
 
             auto flat_index = this->GetFlatIndex();
-            const auto frontend_index_size = this->frontendIndex->indexSize();
-            const auto init_batch_size = is_initialization ? ids_to_init_.size() : frontend_index_size;
+            const auto init_batch_size = ids_to_init_.size();
             const size_t dim = flat_index->getDim();
             ids_to_move.reserve(init_batch_size);
             labels_to_move.reserve(init_batch_size);
             vectors_to_move.reserve(init_batch_size * dim);
 
-            if (is_initialization) {
-                for (idType id : ids_to_init_) {
-                    ids_to_move.push_back(id);
-                    labels_to_move.push_back(flat_index->getVectorLabel(id));
-                    auto data = flat_index->getDataByInternalId(id);
-                    vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
-                }
-                ids_to_init_.clear();
-            } else {
-                for (idType id = 0; id < frontend_index_size; id++) {
-                    ids_to_move.push_back(id);
-                    labels_to_move.push_back(flat_index->getVectorLabel(id));
-                    auto data = flat_index->getDataByInternalId(id);
-                    vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
-                }
+            for (idType id : ids_to_init_) {
+                ids_to_move.push_back(id);
+                labels_to_move.push_back(flat_index->getVectorLabel(id));
+                auto data = flat_index->getDataByInternalId(id);
+                vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
+            }
+            ids_to_init_.clear();
+
+            executeTracingCallback("UpdateJob::before_add_to_svs");
+            {
+                auto svs_index = GetSVSIndex();
+                svs_index->setNumThreads(1);
+                assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
+                                                labels_to_move.size());
+                svs_index->setImpl(std::move(impl));
             }
 
             std::sort(ids_to_move.begin(), ids_to_move.end());
@@ -821,23 +820,7 @@ private:
             assert(total_deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
                                                   [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
-
         } // release frontend index
-
-        executeTracingCallback("UpdateJob::before_add_to_svs");
-        { // lock backend index for writing and add vectors there
-            auto svs_index = GetSVSIndex();
-            svs_index->setNumThreads(1);
-            assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
-            if (this->backendIndex->indexSize() == 0) {
-                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
-                                                  labels_to_move.size());
-                svs_index->setImpl(std::move(impl));
-            } else {
-                svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
-                                      labels_to_move.size());
-            }
-        }
     }
 
 public:
@@ -887,25 +870,29 @@ public:
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
             // It is ok to lock everything at once for in-place mode,
-            // but we will have to unlock averything before calling updateSVSIndexWrapper()
+            // but we will have to unlock averything before calling initSVSIndexWrapper()
             // so make the minimal needed lock here.
             // Backend index initialization data have to be buffered for proper
             // compression/training.
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index size is 0, first collect vectors in frontend index
                 // lock in scope to ensure that these will be released before
-                // updateSVSIndexWrapper() is called.
+                // initSVSIndexWrapper() is called.
                 {
                     std::lock_guard lock(this->flatIndexGuard);
+                    if (this->frontendIndex->isLabelExists(label)) {
+                        deleteAndUpdateInitIds(label);
+                    }
+                    ids_to_init_.insert(this->frontendIndex->indexSize());
                     ret = this->frontendIndex->addVector(blob, label);
                     // If frontend size exceeds the update job threshold, ...
                     frontend_index_size = this->frontendIndex->indexSize();
                 }
                 // ... move vectors to the backend index.
                 if (frontend_index_size >= this->trainingTriggerThreshold) {
-                    // updateSVSIndexWrapper() accures it's own locks
+                    // initSVSIndexWrapper() accures it's own locks
                     // initialize the SVS index synchonously using current thread only
-                    updateSVSIndexWrapper(this, 1);
+                    initSVSIndexWrapper(this, 1);
                 }
                 return ret;
             } else {
@@ -937,7 +924,7 @@ public:
 
             if (this->frontendIndex->indexSize() >= this->trainingTriggerThreshold) {
                 this->backendInitSubmited.store(true, std::memory_order_release);
-                scheduleSVSIndexUpdate();
+                scheduleSVSIndexInit();
             }
             return ret;
         }
@@ -1048,33 +1035,6 @@ public:
         }
     }
 
-    int deleteAndRecordSwaps_Unsafe(labelType label) {
-        auto deleting_ids = this->frontendIndex->getElementIds(label);
-        if (deleting_ids.size() == 0) return 0;
-
-        // assert if all elements of deleting_ids are unique
-        assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
-               "deleting_ids should contain unique ids");
-
-        // If id is deleted, don't use it for initialization
-        for (idType id : deleting_ids) {
-            ids_to_init_.erase(id);
-        }
-
-        if (this->labelToInsertJobs.count(label) > 0) {
-            // Invalidate the pending insert job(s) into SVS associated with this label
-            auto &insert_jobs = this->labelToInsertJobs.at(label);
-            for (auto *job : insert_jobs) {
-                job->id = this->setAndSaveInvalidJob(job);
-            }
-            // Remove the pending insert job(s) from the labelToInsertJobs mapping.
-            this->labelToInsertJobs.erase(label);
-        }
-
-        deleteAndUpdateInitIds(label);
-        return deleting_ids.size();
-    }
-
     int deleteVector(labelType label) override {
         int ret = 0;
 
@@ -1084,30 +1044,30 @@ public:
             this->flatIndexGuard.lock();
             // Check again if the label exists, as it may have been removed while we released the lock.
             if (this->frontendIndex->isLabelExists(label)) {
-                ret = this->deleteAndRecordSwaps_Unsafe(label);
-                // if (this->labelToInsertJobs.count(label) > 0) {
-                //     // Invalidate the pending insert job(s) into SVS associated with this label
-                //     auto &insert_jobs = this->labelToInsertJobs.at(label);
-                //     for (auto *job : insert_jobs) {
-                //         job->id = this->setAndSaveInvalidJob(job);
-                //     }
-                //     ret += insert_jobs.size();
-                //     // Remove the pending insert job(s) from the labelToInsertJobs mapping.
-                //     this->labelToInsertJobs.erase(label);
-                //     // Go over the every id that corresponds the label and remove it from the flat buffer.
-                //     // Every delete may cause a swap of the deleted id with the last id, and we return a
-                //     // mapping from id to the original id that resides in this id after the deletion(s) (see
-                //     // an example in this function implementation in MULTI index).
-                //     auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
-                //     for (auto &it : updated_ids) {
-                //         idType prev_id = it.second.first;
-                //         labelType updated_vec_label = it.second.second;
-                //         this->updateInsertJobInternalId(prev_id, it.first, updated_vec_label);
-                //     }
-                // } else {
-                //     // label was deleted during initilization stage
-                //     ret = this->deleteAndRecordSwaps_Unsafe(label);
-                // }
+                auto deleting_ids = this->frontendIndex->getElementIds(label);
+                if (deleting_ids.size() == 0) return 0;
+
+                // assert if all elements of deleting_ids are unique
+                assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
+                    "deleting_ids should contain unique ids");
+
+                // If id is deleted, don't use it for initialization
+                for (idType id : deleting_ids) {
+                    ids_to_init_.erase(id);
+                }
+
+                if (this->labelToInsertJobs.count(label) > 0) {
+                    // Invalidate the pending insert job(s) into SVS associated with this label
+                    auto &insert_jobs = this->labelToInsertJobs.at(label);
+                    for (auto *job : insert_jobs) {
+                        job->id = this->setAndSaveInvalidJob(job);
+                    }
+                    // Remove the pending insert job(s) from the labelToInsertJobs mapping.
+                    this->labelToInsertJobs.erase(label);
+                }
+
+                deleteAndUpdateInitIds(label);
+                return deleting_ids.size();
             }
             this->flatIndexGuard.unlock();
         } else {
@@ -1162,7 +1122,7 @@ public:
         };
         {
             // Use try_lock to avoid blocking the main thread during long-running
-            // training operations. updateSVSIndexWrapper holds updateJobMutex for
+            // training operations. initSVSIndexWrapper holds updateJobMutex for
             // the entire training duration (which can take 40-85s on slow machines).
             // If the mutex is held, training is actively running, so we report
             // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
@@ -1171,7 +1131,7 @@ public:
                 svsTieredInfo.indexUpdateScheduled =
                     this->indexUpdateScheduled.test() == VecSimBool_TRUE;
             } else {
-                // Mutex is held by updateSVSIndexWrapper — training is in progress.
+                // Mutex is held by initSVSIndexWrapper — training is in progress.
                 svsTieredInfo.indexUpdateScheduled = true;
             }
         }
