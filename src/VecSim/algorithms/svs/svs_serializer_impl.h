@@ -112,6 +112,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             distance_f(), std::move(threadpool_handle), false, logger_);
         impl_ = std::make_unique<impl_type>(std::move(loaded));
     }
+    setReady();
 }
 
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,

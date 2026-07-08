@@ -613,6 +613,12 @@ TYPED_TEST(SVSTieredIndexTest, background_indexing_check) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
+    // The backgroundIndexing flag tracks the batch update job only; individual async
+    // SVS_INSERT_VECTOR_JOBs may still be in flight, each transiently holding its vector in
+    // both the flat and backend indices. Drain the queue so the total size is stable before
+    // asserting the exact count.
+    mock_thread_pool.thread_pool_join();
+
     ASSERT_GT(tiered_index->GetBackendIndex()->indexSize(), training_th + second_batch / update_th);
     ASSERT_LT(tiered_index->GetFlatIndex()->indexSize(), update_th);
     ASSERT_EQ(tiered_index->indexSize(), second_batch + training_th);
@@ -1125,7 +1131,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
 
     // Move vectors to the backend
-    mock_thread_pool.thread_iteration();
+    while (mock_thread_pool.jobQ.size() > 0) mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), n);
@@ -1222,13 +1228,20 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexSize(), 2);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in SVS index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, other_vec_val);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
     mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
