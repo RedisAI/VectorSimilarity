@@ -477,7 +477,9 @@ void BM_VecSimSVS<index_type_t>::TopK_SVS(benchmark::State &st) {
     // Load the SVS index from file (update_threshold is irrelevant for a search-only benchmark).
     auto *index = CreateSVSIndexFromFile(1);
 
-    VecSimQueryParams query_params = {.svsRuntimeParams = {.windowSize = window_size}};
+    SVSRuntimeParams svs_params = {.windowSize = window_size};
+
+    VecSimQueryParams query_params = {.svsRuntimeParams = svs_params};
 
     size_t iter = 0;
     for (auto _ : st) {
