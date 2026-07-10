@@ -54,3 +54,19 @@ BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_AddVectorsDuringTraining))
                    {2, 4}})
     ->ArgNames({"training_threshold", "thread_count"})
     ->UseRealTime();
+
+// Parallel TopK searches running concurrently with a background update job.
+// Uses constant window_size=200 and k=100.
+// {update_threshold, n_parallel_searches, thread_count}
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_FUNC_NAME(BM_TopKSearchDuringUpdate),
+                            DATA_TYPE_INDEX_T)
+(benchmark::State &st) { TopKSearchDuringUpdate(st); }
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_TopKSearchDuringUpdate))
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations(1)
+    ->ArgsProduct({{static_cast<long int>(BM_VecSimGeneral::block_size),
+                    static_cast<long int>(10 * BM_VecSimGeneral::block_size)},
+                   {10, 50},
+                   {2, 4}})
+    ->ArgNames({"update_threshold", "n_parallel_searches", "thread_count"})
+    ->UseRealTime();
