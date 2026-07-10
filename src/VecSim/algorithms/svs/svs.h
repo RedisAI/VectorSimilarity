@@ -634,7 +634,7 @@ public:
             rep->results.reserve(n_neighbors);
 
             for (size_t i = 0; i < n_neighbors; i++) {
-                const auto neighbor = buffer[i];
+                const auto &neighbor = buffer[i];
                 rep->results.push_back(
                     VecSimQueryResult{impl_->translate_internal_id(neighbor.id()),
                                       toVecSimDistance(neighbor.distance())});
