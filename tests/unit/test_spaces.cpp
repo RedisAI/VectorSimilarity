@@ -835,7 +835,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
-                         testing::Range(8UL, 16 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -1030,7 +1030,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest,
-                         testing::Range(4UL, 8 * 2UL + 1));
+                         testing::Range(4UL, 16 * 2UL + 1));
 
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -2383,7 +2383,7 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_InnerProductTest) {
 
 // Instantiate the test suite with dimensions to test
 INSTANTIATE_TEST_SUITE_P(SQ8_FP32_Test, SQ8_FP32_SpacesOptimizationTest,
-                         testing::Range(8UL, 16 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_CosineTest) {
     auto optimization = getCpuOptimizationFeatures();

@@ -46,8 +46,8 @@
 // out:     The output variable that will be set to the chosen implementation.
 // dim:     The dimension.
 // func:    The templated function that we want to choose the implementation for.
-// chunk:   The chunk size. Can be 64, 32, 16 or 8. Should be the number of elements of the expected
-//          type fitting in the expected register size.
+// chunk:   The chunk size. Can be 64, 32, 16, 8 or 4. Should be the number of elements of the
+//          expected type fitting in the expected register size.
 #define CHOOSE_IMPLEMENTATION(out, dim, chunk, func)                                               \
     do {                                                                                           \
         decltype(out) __ret_dist_func;                                                             \
