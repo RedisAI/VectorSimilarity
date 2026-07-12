@@ -22,12 +22,6 @@ jobs:
 #      container: ubuntu:bionic
   bullseye:
     uses: ./.github/workflows/debian11.yml
-#  amazonlinux2:
-#    needs: [check-if-docs-only]
-#    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
-#    uses: ./.github/workflows/amazon2.yml
-  mariner2:
-    uses: ./.github/workflows/mariner2.yml
   rocky8:
     uses: ./.github/workflows/rocky8.yml
   rocky9:
@@ -50,8 +44,6 @@ jobs:
 #      - focal
 #      - bionic
       - bullseye
-#      - amazonlinux2
-      - mariner2
       - rocky8
       - rocky9
       - alpine3
