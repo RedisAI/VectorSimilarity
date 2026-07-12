@@ -604,44 +604,27 @@ TEST_F(SpacesTest, FP32_L2Sqr_SSE_misaligned_residual3) {
 #endif // OPT_SSE
 
 TEST_F(SpacesTest, smallDimChooser) {
-    // Verify that small dimensions gets the no optimization function.
+    // Verify that dimensions below each type's SIMD threshold get the no optimization function.
+    // FP64 is optimized from dim >= 4.
+    for (size_t dim = 1; dim < 4; dim++) {
+        ASSERT_EQ(L2_FP64_GetDistFunc(dim), FP64_L2Sqr);
+        ASSERT_EQ(IP_FP64_GetDistFunc(dim), FP64_InnerProduct);
+    }
+    // FP32 and FP16 are optimized from dim >= 8 (FP16 only on machines with F16C; for
+    // 8 <= dim < 32 the chosen FP16 function depends on the available features, so we only
+    // assert the range that is naive regardless of features).
     for (size_t dim = 1; dim < 8; dim++) {
         ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
-        ASSERT_EQ(L2_FP64_GetDistFunc(dim), FP64_L2Sqr);
-        ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
-        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
-        ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
-        ASSERT_EQ(L2_UINT8_GetDistFunc(dim), UINT8_L2Sqr);
         ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
-        ASSERT_EQ(IP_FP64_GetDistFunc(dim), FP64_InnerProduct);
-        ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
-        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
-        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
-        ASSERT_EQ(IP_UINT8_GetDistFunc(dim), UINT8_InnerProduct);
-        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
-        ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
-    }
-    for (size_t dim = 8; dim < 16; dim++) {
-        ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
-        ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
         ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
-        ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
-        ASSERT_EQ(L2_UINT8_GetDistFunc(dim), UINT8_L2Sqr);
-        ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
-        ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
-        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
-        ASSERT_EQ(IP_UINT8_GetDistFunc(dim), UINT8_InnerProduct);
-        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
-        ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
-    for (size_t dim = 16; dim < 32; dim++) {
+    // BF16, INT8 and UINT8 are optimized from dim >= 32.
+    for (size_t dim = 1; dim < 32; dim++) {
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
-        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
         ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
         ASSERT_EQ(L2_UINT8_GetDistFunc(dim), UINT8_L2Sqr);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
-        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
         ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
         ASSERT_EQ(IP_UINT8_GetDistFunc(dim), UINT8_InnerProduct);
         ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
@@ -852,7 +835,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
-                         testing::Range(16UL, 16 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -1047,7 +1030,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest,
-                         testing::Range(8UL, 8 * 2UL + 1));
+                         testing::Range(4UL, 16 * 2UL + 1));
 
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -1251,15 +1234,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
-    if (optimization.avx512f) {
+    // The AVX512F FP16 tier requires at least 16 elements; below that the dispatcher falls
+    // through to the next tier.
+    if (optimization.avx512f && dim >= 16) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
-        optimization.avx512f = 0;
     }
+    optimization.avx512f = 0;
 #endif
 #ifdef OPT_F16C
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
@@ -1308,15 +1293,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
-    if (optimization.avx512f) {
+    // The AVX512F FP16 tier requires at least 16 elements; below that the dispatcher falls
+    // through to the next tier.
+    if (optimization.avx512f && dim >= 16) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
-        optimization.avx512f = 0;
     }
+    optimization.avx512f = 0;
 #endif
 #ifdef OPT_F16C
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
@@ -1374,7 +1361,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
-                         testing::Range(32UL, 32 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 /** Since we are handling floats, the order of summation affect on the final result.
  * This is very significant when the entries are half precision floats, since the accumulated
@@ -2396,7 +2383,7 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_InnerProductTest) {
 
 // Instantiate the test suite with dimensions to test
 INSTANTIATE_TEST_SUITE_P(SQ8_FP32_Test, SQ8_FP32_SpacesOptimizationTest,
-                         testing::Range(16UL, 16 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_CosineTest) {
     auto optimization = getCpuOptimizationFeatures();

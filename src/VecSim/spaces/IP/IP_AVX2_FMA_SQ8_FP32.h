@@ -46,16 +46,21 @@ static inline void InnerProductStepSQ8_FMA(const uint8_t *&pVect1, const float *
 }
 
 // pVect1v = SQ8 storage, pVect2v = FP32 query
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_InnerProductImp_FMA(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
     const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
     const uint8_t *pEnd1 = pVect1 + dimension;
 
-    // Initialize sum accumulator for Σ(q_i * y_i)
-    __m256 sum256 = _mm256_setzero_ps();
+    // Initialize sum accumulators for Σ(q_i * y_i). Four accumulators break the FMA dependency
+    // chain, letting more FMAs be in flight at once.
+    __m256 sum0 = _mm256_setzero_ps();
+    __m256 sum1 = _mm256_setzero_ps();
+    __m256 sum2 = _mm256_setzero_ps();
+    __m256 sum3 = _mm256_setzero_ps();
 
-    // Handle residual elements first (0-7 elements)
+    // Handle residual elements first (0-7 elements). The full-width query load is safe because
+    // `dim` is at least 8, so the query spans at least 8 floats.
     if constexpr (residual % 8) {
         __mmask8 constexpr mask = (1 << (residual % 8)) - 1;
 
@@ -71,23 +76,33 @@ float SQ8_FP32_InnerProductImp_FMA(const void *pVect1v, const void *pVect2v, siz
         pVect2 += residual % 8;
 
         // Compute q_i * y_i (no dequantization)
-        sum256 = _mm256_mul_ps(v1_f, v2);
+        sum0 = _mm256_mul_ps(v1_f, v2);
     }
 
-    // If the residual is >=8, have another step of 8 floats
+    // Handle the remaining full 8-element blocks of the residual (compile-time resolved).
     if constexpr (residual >= 8) {
-        InnerProductStepSQ8_FMA(pVect1, pVect2, sum256);
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum1);
+    }
+    if constexpr (residual >= 16) {
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum2);
+    }
+    if constexpr (residual >= 24) {
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum3);
     }
 
-    // Process remaining full chunks of 16 elements (2x8)
-    // Using do-while since dim > 16 guarantees at least one iteration
-    do {
-        InnerProductStepSQ8_FMA(pVect1, pVect2, sum256);
-        InnerProductStepSQ8_FMA(pVect1, pVect2, sum256);
-    } while (pVect1 < pEnd1);
+    // We dealt with the residual part. We are left with some multiple of 32 elements.
+    // In each iteration we calculate 32 elements = 4 chunks of 8. The loop may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum0);
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum1);
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum2);
+        InnerProductStepSQ8_FMA(pVect1, pVect2, sum3);
+    }
 
     // Reduce to get Σ(q_i * y_i)
-    float quantized_dot = my_mm256_reduce_add_ps(sum256);
+    float quantized_dot =
+        my_mm256_reduce_add_ps(_mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3)));
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);
@@ -102,13 +117,13 @@ float SQ8_FP32_InnerProductImp_FMA(const void *pVect1v, const void *pVect2v, siz
     return min_val * y_sum + delta * quantized_dot;
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_InnerProductSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v,
                                            size_t dimension) {
     return 1.0f - SQ8_FP32_InnerProductImp_FMA<residual>(pVect1v, pVect2v, dimension);
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_CosineSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Cosine distance = 1 - IP (vectors are pre-normalized)
     return SQ8_FP32_InnerProductSIMD16_AVX2_FMA<residual>(pVect1v, pVect2v, dimension);

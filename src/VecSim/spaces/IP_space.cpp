@@ -69,8 +69,9 @@ dist_func_t<float> IP_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    if (dim < 16) {
+    // Optimizations assume at least 8 elements (see the residual handling in the kernels).
+    // Below that, the scalar implementation is at least as fast anyway.
+    if (dim < 8) {
         return ret_dist_func;
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
@@ -137,8 +138,9 @@ dist_func_t<float> Cosine_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignm
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    if (dim < 16) {
+    // Optimizations assume at least 8 elements (see the residual handling in the kernels).
+    // Below that, the scalar implementation is at least as fast anyway.
+    if (dim < 8) {
         return ret_dist_func;
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
@@ -447,8 +449,9 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 16 floats. If we have less, we use the naive implementation.
-    if (dim < 16) {
+    // Optimizations assume at least 8 floats (see the residual handling in the kernels).
+    // Below that, the scalar implementation is at least as fast anyway.
+    if (dim < 8) {
         return ret_dist_func;
     }
 #ifdef OPT_AVX512F
@@ -506,8 +509,9 @@ dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif
 
 #ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 8 doubles. If we have less, we use the naive implementation.
-    if (dim < 8) {
+    // Optimizations assume at least 4 doubles (see the residual handling in the kernels).
+    // Below that, the scalar implementation is at least as fast anyway.
+    if (dim < 4) {
         return ret_dist_func;
     }
 #ifdef OPT_AVX512F
@@ -626,28 +630,27 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif
 
 #if defined(CPU_FEATURES_ARCH_X86_64)
-    // Optimizations assume at least 32 16FPs. If we have less, we use the naive implementation.
-    if (dim < 32) {
-        return ret_dist_func;
-    }
+    // Each tier has a minimal dimension implied by its residual handling: the AVX512FP16_VL
+    // kernel loads full 512-bit blocks (32 elements), the AVX512F kernel loads full 256-bit
+    // blocks (16 elements), and the F16C kernel loads full 128-bit blocks (8 elements).
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
-    if (features.avx512_fp16 && features.avx512vl) {
+    if (dim >= 32 && features.avx512_fp16 && features.avx512vl) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(float16); // handles 32 floats
         return Choose_FP16_IP_implementation_AVX512FP16_VL(dim);
     }
 #endif
 #ifdef OPT_AVX512F
-    if (features.avx512f) {
+    if (dim >= 16 && features.avx512f) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(float16); // handles 32 floats
         return Choose_FP16_IP_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_F16C
-    if (features.f16c && features.fma3 && features.avx) {
+    if (dim >= 8 && features.f16c && features.fma3 && features.avx) {
         if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 16 * sizeof(float16); // handles 16 floats
         return Choose_FP16_IP_implementation_F16C(dim);
