@@ -22,9 +22,11 @@
 #endif
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -368,20 +370,26 @@ struct ThreadSlot {
 // * Pool is physically resizable (creates/destroys OS threads)
 // * Threads are rented for the duration of a parallel_for call
 // * Multiple callers can rent disjoint subsets of threads concurrently
+// * A renter that finds too few free slots waits for them to be released
 // * Shrinking while threads are rented is safe (shared_ptr lifecycle)
 class VecSimSVSThreadPoolImpl {
     // RAII guard for threads rented from the shared pool. On destruction, marks all
-    // rented slots as unoccupied (lock-free atomic stores). Uses raw pointers to
-    // avoid shared_ptr ref-counting overhead on the hot path.
+    // rented slots as unoccupied (lock-free atomic stores) and wakes renters waiting
+    // for slots. Uses raw pointers to avoid shared_ptr ref-counting overhead on the
+    // hot path.
     // Safety: raw pointers are safe because the deferred-resize protocol ensures the
     // pool cannot shrink (destroy slots) while scheduled jobs are in flight, and all
     // multi-threaded SVS operations run within scheduled jobs.
     class RentedThreads {
     public:
         RentedThreads() = default;
+        explicit RentedThreads(VecSimSVSThreadPoolImpl *pool) : pool_(pool) {}
 
         // Move-only
-        RentedThreads(RentedThreads &&other) noexcept : slots_(std::move(other.slots_)) {}
+        RentedThreads(RentedThreads &&other) noexcept
+            : pool_(other.pool_), slots_(std::move(other.slots_)) {
+            other.pool_ = nullptr;
+        }
         RentedThreads(const RentedThreads &) = delete;
         RentedThreads &operator=(const RentedThreads &) = delete;
         RentedThreads &operator=(RentedThreads &&) = delete;
@@ -399,12 +407,17 @@ class VecSimSVSThreadPoolImpl {
 
     private:
         void release() {
+            if (slots_.empty()) {
+                return;
+            }
             for (auto *slot : slots_) {
                 slot->occupied.store(false, std::memory_order_release);
             }
             slots_.clear();
+            pool_->notifySlotsReleased();
         }
 
+        VecSimSVSThreadPoolImpl *pool_ = nullptr;
         std::vector<ThreadSlot *> slots_;
     };
 
@@ -592,40 +605,78 @@ public:
     }
 
 private:
-    // Rent up to `count` worker threads from the pool. Returns an RAII guard that
-    // automatically releases the threads when destroyed.
-    // The SVS pool is sized to match the RediSearch thread pool, and RediSearch controls
-    // scheduling via reserve jobs, so all requested slots should always be available.
-    // Getting fewer threads than requested indicates a bug in the scheduling logic.
+    // Rent `count` worker threads from the pool, waiting for occupied slots to be
+    // released when fewer than `count` are currently free. Returns an RAII guard that
+    // automatically releases the threads (and wakes waiting renters) when destroyed.
+    //
+    // Waiting is required because the pool can be smaller than the RediSearch worker
+    // pool (it is capped at the available CPU count, MOD-16610), so scheduled jobs of
+    // two indexes can execute concurrently and contend for the same slots. Acquisition
+    // is all-or-nothing — a renter never holds a partial set of slots while waiting —
+    // so concurrent renters cannot deadlock each other; and slot holders never block
+    // on waiters (slots are always released via RAII when their parallel_for ends),
+    // so the wait always terminates.
+    //
+    // If `count` exceeds the pool's slot count (the pool shrank under a non-scheduled
+    // caller), waiting could never succeed: rent whatever is free, warn, and assert —
+    // that indicates a bug in the scheduling logic.
     RentedThreads rent(size_t count, void *log_ctx = nullptr) {
-        RentedThreads rented;
+        RentedThreads rented{this};
         if (count == 0) {
             return rented;
         }
 
-        std::lock_guard lock{pool_mutex_};
-        size_t rented_count = 0;
+        std::unique_lock lock{pool_mutex_};
+        while (count <= slots_.size()) {
+            size_t free_count = 0;
+            for (auto &slot : slots_) {
+                if (!slot->occupied.load(std::memory_order_acquire)) {
+                    ++free_count;
+                }
+            }
+            if (free_count >= count) {
+                claimFreeSlotsLocked(count, rented);
+                // Renting is serialized by pool_mutex_ and releases only add free
+                // slots, so the claim cannot come up short here.
+                assert(rented.count() == count);
+                return rented;
+            }
+            slots_released_.wait(lock);
+        }
+
+        claimFreeSlotsLocked(count, rented);
+        auto msg = fmt::format("SVS thread pool: rented {} threads out of {} requested "
+                               "(pool has {} slots). This should not happen.",
+                               rented.count(), count, slots_.size());
+        if (VecSimIndexInterface::logCallback) {
+            assert(log_ctx && "Log context must be provided when logging is available");
+            VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
+        }
+        assert(false && "Failed to rent the expected number of SVS threads");
+        return rented;
+    }
+
+    // Claim up to `count` free slots into `rented`. Caller must hold pool_mutex_.
+    void claimFreeSlotsLocked(size_t count, RentedThreads &rented) {
         for (auto &slot : slots_) {
             bool expected = false;
             if (slot->occupied.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                 rented.add(slot.get());
-                if (++rented_count >= count) {
-                    break;
+                if (rented.count() >= count) {
+                    return;
                 }
             }
         }
+    }
 
-        if (rented.count() < count) {
-            auto msg = fmt::format("SVS thread pool: rented {} threads out of {} requested "
-                                   "(pool has {} slots). This should not happen.",
-                                   rented.count(), count, slots_.size());
-            if (VecSimIndexInterface::logCallback) {
-                assert(log_ctx && "Log context must be provided when logging is available");
-                VecSimIndexInterface::logCallback(log_ctx, "warning", msg.c_str());
-            }
-            assert(false && "Failed to rent the expected number of SVS threads");
-        }
-        return rented;
+    // Wake renters waiting in rent(). Called by RentedThreads::release() after marking
+    // the slots unoccupied, without holding pool_mutex_. The empty lock/unlock pairs
+    // with the waiter's condition wait: a waiter that saw the slots still occupied is
+    // guaranteed to already be inside wait() when the notification fires, so the
+    // wakeup cannot be missed.
+    void notifySlotsReleased() {
+        { std::lock_guard lock{pool_mutex_}; }
+        slots_released_.notify_all();
     }
 
     // Wait for all rented workers to finish. If any worker (or the main thread) threw,
@@ -684,10 +735,16 @@ private:
                 slots_.resize(target_workers);
             }
         }
+        // The slot count may have changed: wake waiting renters so they re-evaluate
+        // (new free slots after a grow; an impossible request after a shrink).
+        slots_released_.notify_all();
     }
 
     std::shared_ptr<VecSimAllocator> allocator_; // pool's own allocator for memory tracking
     mutable std::mutex pool_mutex_;
+    // Signaled whenever slots are released or the slot count changes; rent() waits on
+    // this when fewer free slots are available than requested.
+    std::condition_variable slots_released_;
     vecsim_stl::vector<SlotPtr> slots_;
     size_t pending_jobs_ = 0; // jobs currently scheduled / in-flight
     // Pending pool size to apply at the next safe point: either the first SVS index

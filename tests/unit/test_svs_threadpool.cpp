@@ -452,15 +452,16 @@ TEST_F(SVSThreadPoolTest, ConcurrentRentalFromTwoIndexes) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 8: All threads occupied — graceful degradation
+// Test 8: All threads occupied — rent() waits instead of dropping work
 // When all pool threads are rented by wrapper A, wrapper B's parallel_for
-// cannot rent any workers. In debug builds, rent() asserts. In release
-// builds, parallel_for uses rented.count() (0 workers) and runs only
-// partition 0 on the calling thread.
+// must WAIT for A to release its slots, then run ALL of its partitions.
 //
-// NOTE: This should never happen in production. RediSearch's reserve job
-// mechanism guarantees that the number of concurrent renters never exceeds
-// the pool size. This test exercises the defensive fallback path.
+// This is reachable in production once the shared pool is capped at the CPU
+// count (MOD-16610): the RediSearch worker pool can then be larger than the
+// SVS pool, so a second index's scheduled job starts on spare workers while
+// the first index holds every slot. Before the wait semantics, rent() came up
+// short here — assert in debug, silent partition drop (incomplete update) in
+// release.
 // ---------------------------------------------------------------------------
 TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
     // Pool size 4 (3 worker slots). Wrapper A rents all 3.
@@ -474,7 +475,7 @@ TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
     std::atomic_int resultA{0};
 
     // Spawned thread: wrapper A grabs all 3 worker slots and blocks.
-    std::thread t([&] {
+    std::thread tA([&] {
         wrapperA.parallel_for(
             [&](size_t tid) {
                 if (tid > 0) {
@@ -491,26 +492,35 @@ TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
            "resultA="
         << resultA << ", pool_size=" << wrapperA.poolSize();
 
-    // All 3 worker slots are occupied. Wrapper B tries to rent 1 worker.
+    // All 3 worker slots are occupied. Wrapper B needs 1 worker; it must wait
+    // for A instead of proceeding with fewer threads than requested.
     VecSimSVSThreadPool wrapperB{allocator_};
     wrapperB.setParallelism(2);
-
-#ifdef NDEBUG
-    // Release: graceful degradation — rent() returns 0 workers, parallel_for
-    // runs only partition 0 on the calling thread. Work is silently dropped.
     std::atomic_int resultB{0};
-    wrapperB.parallel_for([&](size_t) { resultB++; }, 2);
-    ASSERT_EQ(resultB, 1); // only partition 0 ran
-#else
-    // Debug: rent() asserts because it can't fulfill the request.
-    ASSERT_DEATH(wrapperB.parallel_for([&](size_t) {}, 2),
-                 "Failed to rent the expected number of SVS threads");
-#endif
 
-    // Clean up: release wrapper A's blocked threads.
+    std::thread tB([&] {
+        wrapperB.parallel_for(
+            [&](size_t) {
+                // Slots are released only after all of A's partitions finished,
+                // so by the time B runs anything, A's work must be complete.
+                EXPECT_EQ(resultA.load(), 4) << "B ran while A still held the pool";
+                resultB++;
+            },
+            2);
+    });
+
+    // Give B ample time to reach rent(). It must be parked there having
+    // executed nothing — not degrading to "partition 0 only".
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    ASSERT_EQ(resultB.load(), 0)
+        << "wrapper B executed work while all slots were rented — rent() did not wait";
+
+    // Release A. B must then acquire a slot and run BOTH of its partitions.
     hold.count_down();
-    t.join();
+    tA.join();
+    tB.join();
     ASSERT_EQ(resultA, 4);
+    ASSERT_EQ(resultB, 2) << "wrapper B dropped partitions";
 }
 
 #endif // HAVE_SVS
