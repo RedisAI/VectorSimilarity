@@ -285,13 +285,17 @@ protected:
         }
 
         int deleted_num = 0;
+        std::span<const labelType> ids(labels, n);
         if constexpr (!isMulti) {
             // SVS index does not support overriding vectors with the same label
-            // so we have to delete them first if needed
-            deleted_num = deleteVectorsImpl(labels, n);
+            // and we cannot delete vectors now, so these had to be deleted in advance.
+            // We expect that the caller (SVSTiered) has already deleted any existing labels from
+            // SVS index before calling this function inside addVector(). so just use assert() to
+            // check that no existing labels are present in the input.
+            assert(!std::any_of(ids.begin(), ids.end(),
+                                [this](labelType label) { return impl_->has_id(label); }));
         }
 
-        std::span<const labelType> ids(labels, n);
         auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
         auto typed_vectors_data = static_cast<DataType *>(processed_blob.get());
         // Wrap data into SVS SimpleDataView for SVS API
