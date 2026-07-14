@@ -807,8 +807,7 @@ public:
         size_t frontend_index_size = 0;
 
         // In-Place mode - add vector syncronously to the backend index.
-        if (this->getWriteMode() == VecSim_WriteInPlace ||
-            frontend_index_size >= this->trainingTriggerThreshold) {
+        if (this->getWriteMode() == VecSim_WriteInPlace) {
             // It is ok to lock everything at once for in-place mode,
             // but we will have to unlock averything before calling updateSVSIndexWrapper()
             // so make the minimal needed lock here.
@@ -867,46 +866,6 @@ public:
             if (label_exists) {
                 std::lock_guard lock(this->mainIndexGuard);
                 ret -= this->backendIndex->deleteVector(label);
-            }
-        }
-
-        size_t flat_limit =
-            this->flatBufferLimit != 0 ? this->flatBufferLimit : this->trainingTriggerThreshold;
-
-        if (this->frontendIndex->indexSize() > flat_limit) {
-            // If the frontend index is full, we should directly add vectors to the backend index.
-            std::shared_lock backend_shared_lock(this->mainIndexGuard);
-            // Backend index initialization data have to be buffered for proper
-            // compression/training.
-            if (this->backendIndex->indexSize() == 0) {
-                // If backend index size is 0, enforce backend index initialization by adding the
-                // vector to the frontend index first.
-                {
-                    std::lock_guard lock(this->flatIndexGuard);
-                    ret = this->frontendIndex->addVector(blob, label);
-                    // If frontend size exceeds the update job threshold, ...
-                    frontend_index_size = this->frontendIndex->indexSize();
-                }
-                // ... move vectors to the backend index.
-                if (frontend_index_size >= this->trainingTriggerThreshold) {
-                    // updateSVSIndex() accures it's own locks
-                    backend_shared_lock.unlock();
-                    // initialize the SVS index synchonously using current thread only
-                    std::lock_guard lock(this->updateJobMutex);
-                    this->updateSVSIndex(1);
-                }
-                return ret;
-            } else {
-                // backend index is initialized - we can add the vector directly
-                auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-                // prevent update job from running in parallel and lock any access to the backend
-                // index
-                backend_shared_lock.unlock();
-                std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
-                // Defensive: ensure single-threaded operation for write-in-place mode.
-                // parallelism_ defaults to 1, so this is a no-op in the normal case.
-                svs_index->setParallelism(1);
-                return this->backendIndex->addVector(storage_blob.get(), label);
             }
         }
         { // Add vector to the frontend index.
