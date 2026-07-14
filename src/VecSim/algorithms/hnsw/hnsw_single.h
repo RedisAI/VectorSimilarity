@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -129,7 +130,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     }
     idType id = it->second;
 
-    return this->calcDistance(vector_data, this->getDataByInternalId(id));
+    return this->calcDistanceForQuery(this->getDataByInternalId(id), vector_data);
 }
 
 template <typename DataType, typename DistType>

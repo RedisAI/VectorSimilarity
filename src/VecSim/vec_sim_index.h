@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -87,7 +88,9 @@ protected:
 private:
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
     spaces::dist_func_t<DistType> cachedDistFunc;        // Cached dist func, used on the hot path.
-    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
+    spaces::dist_func_t<DistType>
+        cachedDistFuncForQuery; // Cached dist func for query, used on the hot path.
+    PreprocessorsContainerAbstract *preprocessors; // Storage and query preprocessors.
 
     size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
                           // sizeof(vecType) when vectors have been externally preprocessed (e.g.,
@@ -128,6 +131,9 @@ public:
           indexCalculator(components.indexCalculator),
           cachedDistFunc(components.indexCalculator ? components.indexCalculator->getDistFunc()
                                                     : nullptr),
+          cachedDistFuncForQuery(components.indexCalculator
+                                     ? components.indexCalculator->getDistFuncForQuery()
+                                     : nullptr),
           preprocessors(components.preprocessors), inputBlobSize(params.inputBlobSize),
           storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
@@ -166,6 +172,20 @@ public:
      */
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
         return cachedDistFunc(vector_data1, vector_data2, this->dim);
+    }
+
+    /**
+     * @brief Calculate the distance between a stored candidate vector and a query vector.
+     * Allows asymmetric distance computation (e.g., for quantized stored vectors).
+     *
+     * @note Precondition: @c cachedDistFuncForQuery must be non-null. Subclasses that construct
+     * this index with a null @c indexCalculator (e.g. SVS, which uses its own
+     * internal distance kernels) must not call this method.
+     *
+     * @return the distance between the candidate and the query.
+     */
+    DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector) const {
+        return cachedDistFuncForQuery(candidate_vector, query_vector, this->dim);
     }
 
     /**

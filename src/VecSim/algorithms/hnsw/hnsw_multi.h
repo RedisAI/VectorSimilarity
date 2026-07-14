@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -153,7 +154,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
-        DistType d = this->calcDistance(this->getDataByInternalId(id), vector_data);
+        DistType d = this->calcDistanceForQuery(this->getDataByInternalId(id), vector_data);
         dist = std::fmin(dist, d);
     }
 

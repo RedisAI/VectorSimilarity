@@ -20,35 +20,58 @@ class IndexCalculatorTest : public ::testing::Test {};
 namespace dummyCalcultor {
 
 using DummyType = int;
-using dummy_dist_func_t = DummyType (*)(int);
+using dummy_dist_func_t = DummyType (*)(int, int);
 
-int dummyDistFunc(int value) { return value; }
+int dummyDistFunc(int v1, int v2) { return v1 + v2; }
+int dummyQueryDistFunc(int candidate, int query) { return candidate - query; }
 
 template <typename DistType>
 class DistanceCalculatorDummy : public DistanceCalculatorInterface<DistType, dummy_dist_func_t> {
 public:
-    DistanceCalculatorDummy(std::shared_ptr<VecSimAllocator> allocator, dummy_dist_func_t dist_func)
-        : DistanceCalculatorInterface<DistType, dummy_dist_func_t>(allocator, dist_func) {}
+    DistanceCalculatorDummy(std::shared_ptr<VecSimAllocator> allocator, dummy_dist_func_t dist_func,
+                            dummy_dist_func_t query_dist_func = nullptr)
+        : DistanceCalculatorInterface<DistType, dummy_dist_func_t>(allocator, dist_func,
+                                                                   query_dist_func) {}
 
     virtual DistType calcDistance(const void *v1, const void *v2, size_t dim) const {
-        return this->dist_func(7);
+        int v1_int = *static_cast<const int *>(v1);
+        int v2_int = *static_cast<const int *>(v2);
+        return this->dist_func(v1_int, v2_int);
+    }
+
+    virtual DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector,
+                                          size_t dim) const {
+        int candidate_int = *static_cast<const int *>(candidate_vector);
+        int query_int = *static_cast<const int *>(query_vector);
+        return this->query_dist_func(candidate_int, query_int);
     }
 
     // Dummy uses a non-standard dist func signature, so the standard slot is unavailable.
     spaces::dist_func_t<DistType> getDistFunc() const override { return nullptr; }
+    spaces::dist_func_t<DistType> getDistFuncForQuery() const override { return nullptr; }
 };
 
 } // namespace dummyCalcultor
 
 TEST(IndexCalculatorTest, TestIndexCalculator) {
+    int v1 = 20, v2 = 10;
 
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
 
     // Test computer with a distance function signature different from dim(v1, v2, dim()).
     using namespace dummyCalcultor;
     auto distance_calculator = DistanceCalculatorDummy<DummyType>(allocator, dummyDistFunc);
+    ASSERT_EQ(distance_calculator.calcDistance(&v1, &v2, 0), 30);
+    ASSERT_EQ(distance_calculator.calcDistance(&v2, &v1, 0), 30);
+    ASSERT_EQ(distance_calculator.calcDistanceForQuery(&v1, &v2, 0), 30);
+    ASSERT_EQ(distance_calculator.calcDistanceForQuery(&v2, &v1, 0), 30);
 
-    ASSERT_EQ(distance_calculator.calcDistance(nullptr, nullptr, 0), 7);
+    auto asymmetric_distance_calculator =
+        DistanceCalculatorDummy<DummyType>(allocator, dummyDistFunc, dummyQueryDistFunc);
+    ASSERT_EQ(asymmetric_distance_calculator.calcDistance(&v1, &v2, 0), 30);
+    ASSERT_EQ(asymmetric_distance_calculator.calcDistance(&v2, &v1, 0), 30);
+    ASSERT_EQ(asymmetric_distance_calculator.calcDistanceForQuery(&v1, &v2, 0), 10);
+    ASSERT_EQ(asymmetric_distance_calculator.calcDistanceForQuery(&v2, &v1, 0), -10);
 }
 
 class PreprocessorsTest : public ::testing::Test {};
