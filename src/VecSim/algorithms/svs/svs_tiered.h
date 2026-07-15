@@ -25,6 +25,15 @@ struct SVSInsertJob : public AsyncJob {
         : AsyncJob(allocator, SVS_INSERT_VECTOR_JOB, insertCb, index_), label(label_), id(id_) {}
 };
 
+/**
+ * Definition of a job that launches GC on SVS Index.
+ */
+struct SVSGCJob : public AsyncJob {
+    SVSGCJob(std::shared_ptr<VecSimAllocator> allocator,
+                  JobCallback insertCb, VecSimIndex *index_)
+        : AsyncJob(allocator, SVS_GC2_JOB, insertCb, index_) {}
+};
+
 
 /**
  * @class SVSMultiThreadJob
@@ -601,13 +610,17 @@ private:
      * @note no need to implement extra non-static method, as GC logic is simple enough to be done
      * here.
      */
-    static void SVSIndexGCWrapper(VecSimIndex *idx, size_t availableThreads) {
-        assert(availableThreads > 0);
-        auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
-        assert(index);
+    // static void SVSIndexGCWrapper(VecSimIndex *idx) {
+    static void SVSIndexGCWrapper(AsyncJob *job) {
+        // assert(availableThreads > 0);
+        // auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
+        // assert(index);
 
-        // Release the scheduled flag to allow scheduling again
-        index->indexGCScheduled.clear();
+        auto gc_job = static_cast<SVSGCJob *>(job);
+        auto index = static_cast<TieredSVSIndex<DataType> *>(gc_job->index);
+
+        // // Release the scheduled flag to allow scheduling again
+        // index->indexGCScheduled.clear();
 
         // Do SVS index GC
         index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
@@ -617,9 +630,13 @@ private:
             // No need to run GC on an empty index.
             return;
         }
-        svs_index->setNumThreads(std::min(availableThreads, index->backendIndex->indexSize()));
+        // svs_index->setNumThreads(std::min(availableThreads, index->backendIndex->indexSize()));
+        svs_index->setNumThreads(1);
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+
+        // Release the scheduled flag to allow scheduling again
+        index->indexGCScheduled.clear();
     }
 
 #ifdef BUILD_TESTS
@@ -659,11 +676,11 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getThreadPoolCapacity();
-        auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this, total_threads,
-            std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
-        this->submitJobs(jobs);
+        AsyncJob *new_GC_job = new (this->allocator)
+            SVSGCJob(this->allocator, SVSIndexGCWrapper, this);
+
+        // Insert job to the queue.
+        this->submitSingleJob(new_GC_job);
     }
 
 private:
@@ -724,6 +741,7 @@ private:
         auto storage_blob = this->frontendIndex->preprocessForStorage(this->frontendIndex->getDataByInternalId(job->id));
         this->flatIndexGuard.unlock_shared();
 
+        svs_index->setNumThreads(1);
         svs_index->addVector(storage_blob.get(), job->label);
 
         // Remove the vector and the insert job from the flat buffer.
@@ -933,6 +951,7 @@ public:
         if (svs_index->ready() && (this->frontendIndex->indexSize() >= flat_buffer_bound)) {
             this->flatIndexGuard.unlock_shared();
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+            svs_index->setNumThreads(1);
 
             return ret = svs_index->addVector(storage_blob.get(), label);
         } else {
@@ -1041,7 +1060,7 @@ public:
         this->flatIndexGuard.lock_shared();
         if (this->frontendIndex->isLabelExists(label)) {
             this->flatIndexGuard.unlock_shared();
-            this->flatIndexGuard.lock();
+            std::lock_guard flat_lock{this->flatIndexGuard};
             // Check again if the label exists, as it may have been removed while we released the lock.
             if (this->frontendIndex->isLabelExists(label)) {
                 auto deleting_ids = this->frontendIndex->getElementIds(label);
@@ -1069,7 +1088,6 @@ public:
                 deleteAndUpdateInitIds(label);
                 return deleting_ids.size();
             }
-            this->flatIndexGuard.unlock();
         } else {
             this->flatIndexGuard.unlock_shared();
         }
