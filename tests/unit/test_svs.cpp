@@ -1970,22 +1970,6 @@ TYPED_TEST(SVSTest, svs_vector_search_test_cosine) {
 TYPED_TEST(SVSTest, testSizeEstimation) {
     size_t dim = 64;
     auto constexpr quantBits = TypeParam::get_quant_bits();
-#if HAVE_SVS_LVQ
-    // SVS block sizes always rounded to a power of 2
-    // This why, in case of quantization, actual block size can be differ than requested
-    // In addition, block size to be passed to graph and dataset counted in bytes,
-    // converted then to a number of elements.
-    // IMHO, would be better to always interpret block size to a number of elements
-    // rather than conversion to-from number of bytes
-    if constexpr (quantBits != VecSimSvsQuant_NONE) { // constexpr eliminates div-by-zero warning;
-                                                      // inner condition is runtime-only
-        if (!this->isFallbackToSQ()) {
-            // Extra data in LVQ vector
-            const auto lvq_vector_extra = sizeof(svs::quantization::lvq::ScalarBundle);
-            dim -= (lvq_vector_extra * 8) / quantBits;
-        }
-    }
-#endif
     size_t n = 0;
     size_t bs = DEFAULT_BLOCK_SIZE;
 
@@ -2016,8 +2000,7 @@ TYPED_TEST(SVSTest, testSizeEstimation) {
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     actual = index->getAllocationSize() - actual; // get the delta
     ASSERT_GT(actual, 0);
-    // LVQ element estimation accuracy is low
-    double estimation_accuracy = (quantBits != VecSimSvsQuant_NONE) ? 0.1 : 0.01;
+    double estimation_accuracy = 0.01;
     ASSERT_GE(estimation * (1.0 + estimation_accuracy), actual);
     ASSERT_LE(estimation * (1.0 - estimation_accuracy), actual);
 

@@ -115,7 +115,8 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
     static auto make_blocked_allocator(size_t block_size, size_t dim,
                                        std::shared_ptr<VecSimAllocator> allocator) {
         // SVS block size is a power of two, so we can use it directly
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        auto elem_size = std::max(primary_element_size(dim), residual_element_size(dim));
+        auto svs_bs = svs_details::SVSBlockSize(block_size, elem_size);
         allocator_type data_allocator{std::move(allocator)};
         return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
     }
@@ -144,13 +145,30 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
         return svs::lib::load_from_disk<index_storage_type>(path, /*alignment=*/0, blocked_alloc);
     }
 
-    static constexpr size_t element_size(size_t dims, size_t alignment = 0,
-                                         size_t /*leanvec_dim*/ = 0) {
+    static constexpr size_t primary_element_size(size_t dims, size_t alignment = 0,
+                                                 size_t /*leanvec_dim*/ = 0) {
         using primary_type = typename index_storage_type::primary_type;
         using layout_type = typename primary_type::helper_type;
         using layout_dims_type = svs::lib::MaybeStatic<index_storage_type::extent>;
         const auto layout_dims = layout_dims_type{dims};
         return primary_type::compute_data_dimensions(layout_type{layout_dims}, alignment);
+    }
+
+    static constexpr size_t residual_element_size(size_t dims, size_t alignment = 0) {
+        if constexpr (ResidualBits == 0) {
+            return 0;
+        } else {
+            using residual_type = typename index_storage_type::residual_type;
+            using dims_type = svs::lib::MaybeStatic<index_storage_type::extent>;
+            auto residual_dims = dims_type{dims};
+            return residual_type::total_bytes(residual_dims);
+        }
+    }
+
+    static constexpr size_t element_size(size_t dims, size_t alignment = 0,
+                                         size_t leanvec_dim = 0) {
+        return primary_element_size(dims, alignment, leanvec_dim) +
+               residual_element_size(dims, alignment);
     }
 
     static size_t storage_capacity(const index_storage_type &storage) {
@@ -191,7 +209,8 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
     static auto make_blocked_allocator(size_t block_size, size_t dim,
                                        std::shared_ptr<VecSimAllocator> allocator) {
         // SVS block size is a power of two, so we can use it directly
-        auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
+        auto elem_size = std::max(primary_element_size(dim), secondary_element_size(dim));
+        auto svs_bs = svs_details::SVSBlockSize(block_size, elem_size);
         allocator_type data_allocator{std::move(allocator)};
         return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
     }
@@ -223,11 +242,20 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
         return svs::lib::load_from_disk<index_storage_type>(path, /*alignment=*/0, blocked_alloc);
     }
 
+    static constexpr size_t primary_element_size(size_t dims, size_t alignment = 0,
+                                                 size_t leanvec_dim = 0) {
+        return SVSStorageTraits<DataType, QuantBits, 0, false>::element_size(
+            check_leanvec_dim(dims, leanvec_dim), alignment);
+    }
+
+    static constexpr size_t secondary_element_size(size_t dims, size_t alignment = 0) {
+        return SVSStorageTraits<DataType, ResidualBits, 0, false>::element_size(dims, alignment);
+    }
+
     static constexpr size_t element_size(size_t dims, size_t alignment = 0,
                                          size_t leanvec_dim = 0) {
-        return SVSStorageTraits<DataType, QuantBits, 0, false>::element_size(
-                   check_leanvec_dim(dims, leanvec_dim), alignment) +
-               SVSStorageTraits<DataType, ResidualBits, 0, false>::element_size(dims, alignment);
+        return primary_element_size(dims, alignment, leanvec_dim) +
+               secondary_element_size(dims, alignment);
     }
 
     static size_t storage_capacity(const index_storage_type &storage) {
