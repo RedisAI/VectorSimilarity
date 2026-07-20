@@ -44,7 +44,7 @@ CreatePreprocessorsContainerParams(VecSimMetric metric, size_t dim, bool is_norm
     size_t processed_bytes_count = dim * sizeof(DataType);
 
     VecSimMetric pp_metric = metric;
-    if (metric == VecSimMetric_Cosine) {
+    if (VecSimMetric_IsCosineFamily(metric)) {
         // if metric is cosine and DataType is integral, the processed_bytes_count includes the
         // norm appended to the vector.
         if (std::is_integral<DataType>::value) {
@@ -78,7 +78,7 @@ PreprocessorsContainerAbstract *
 CreatePreprocessorsContainer(std::shared_ptr<VecSimAllocator> allocator,
                              PreprocessorsContainerParams params) {
 
-    if (params.metric == VecSimMetric_Cosine) {
+    if (VecSimMetric_IsCosineFamily(params.metric)) {
         auto multiPPContainer = new (allocator) MultiPreprocessorsContainer<DataType, 1>(
             allocator, params.query_alignment, params.storage_alignment);
         auto cosine_preprocessor = new (allocator)
@@ -118,13 +118,13 @@ template <typename DataType>
 size_t EstimatePreprocessorsContainerMemory(VecSimMetric metric, bool is_normalized = false) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     VecSimMetric pp_metric;
-    if (is_normalized && metric == VecSimMetric_Cosine) {
+    if (is_normalized && VecSimMetric_IsCosineFamily(metric)) {
         pp_metric = VecSimMetric_IP;
     } else {
         pp_metric = metric;
     }
 
-    if (pp_metric == VecSimMetric_Cosine) {
+    if (VecSimMetric_IsCosineFamily(pp_metric)) {
         constexpr size_t n_preprocessors = 1;
         // One entry in preprocessors array
         size_t est =

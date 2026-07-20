@@ -242,8 +242,9 @@ class QuantPreprocessor : public PreprocessorInterface {
     using sq8 = vecsim_types::sq8;
 
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
-                      Metric == VecSimMetric_Cosine,
-                  "QuantPreprocessor only supports L2, IP and Cosine metrics");
+                      Metric == VecSimMetric_Cosine ||
+                      Metric == VecSimMetric_CosineSimilarity,
+                  "QuantPreprocessor only supports L2, IP and cosine-based metrics");
 
     // Helper function to perform quantization. This function is used by the storage preprocessing
     // methods.

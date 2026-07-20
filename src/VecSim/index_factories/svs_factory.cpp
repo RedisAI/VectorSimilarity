@@ -48,7 +48,7 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
         abstractInitParams.allocator, svsParams.metric, svsParams.dim, is_normalized, 0);
     IndexComponents<svs_details::vecsim_dt<DataType>, float> components = {
         nullptr, preprocessors}; // calculator is not in use in svs.
-    bool forcePreprocessing = !is_normalized && svsParams.metric == VecSimMetric_Cosine;
+    bool forcePreprocessing = !is_normalized && VecSimMetric_IsCosineFamily(svsParams.metric);
     if (svsParams.multi) {
         return new (abstractInitParams.allocator)
             SVSIndex<MetricType, DataType, true, QuantBits, ResidualBits, IsLeanVec>(
@@ -113,6 +113,7 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
         return NewIndexImpl<svs::distance::DistanceL2>(params, is_normalized);
     case VecSimMetric_IP:
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
         return NewIndexImpl<svs::distance::DistanceIP>(params, is_normalized);
     default:
         // If we got here something is wrong.

@@ -492,49 +492,49 @@ TEST_F(SpacesTest, SQ8_FP16_l2sqr_odd_dim_unaligned_metadata_test) {
 
 TEST_F(SpacesTest, GetDistFuncInvalidMetricFP32) {
     EXPECT_THROW(
-        (spaces::GetDistFunc<float, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        (spaces::GetDistFunc<float, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10, nullptr)),
         std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricFP64) {
     EXPECT_THROW(
-        (spaces::GetDistFunc<double, double>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        (spaces::GetDistFunc<double, double>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10, nullptr)),
         std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricBF16) {
-    EXPECT_THROW((spaces::GetDistFunc<bfloat16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10,
+    EXPECT_THROW((spaces::GetDistFunc<bfloat16, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10,
                                                        nullptr)),
                  std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricFP16) {
     EXPECT_THROW(
-        (spaces::GetDistFunc<float16, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        (spaces::GetDistFunc<float16, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10, nullptr)),
         std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricINT8) {
     EXPECT_THROW(
-        (spaces::GetDistFunc<int8_t, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        (spaces::GetDistFunc<int8_t, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10, nullptr)),
         std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricUINT8) {
     EXPECT_THROW(
-        (spaces::GetDistFunc<uint8_t, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        (spaces::GetDistFunc<uint8_t, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10, nullptr)),
         std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8) {
     // SQ8 to SQ8 (symmetric)
     EXPECT_THROW(
-        (spaces::GetDistFunc<sq8, float>((VecSimMetric)(VecSimMetric_Cosine + 1), 10, nullptr)),
+        (spaces::GetDistFunc<sq8, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1), 10, nullptr)),
         std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFloat) {
     // SQ8 to float (asymmetric)
-    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float>((VecSimMetric)(VecSimMetric_Cosine + 1),
+    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1),
                                                          10, nullptr)),
                  std::invalid_argument);
 }
 TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFP16) {
     // SQ8 storage with FP16 query (asymmetric)
-    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float16>((VecSimMetric)(VecSimMetric_Cosine + 1),
+    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float16>((VecSimMetric)(VecSimMetric_CosineSimilarity + 1),
                                                            10, nullptr)),
                  std::invalid_argument);
 }
@@ -546,9 +546,11 @@ TEST_F(SpacesTest, GetDistFuncSQ8Symmetric) {
     auto l2_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_L2, dim, nullptr);
     auto ip_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_IP, dim, nullptr);
     auto cosine_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_Cosine, dim, nullptr);
+    auto cosine_similarity_func = spaces::GetDistFunc<sq8, float>(VecSimMetric_CosineSimilarity, dim, nullptr);
     ASSERT_EQ(l2_func, L2_SQ8_SQ8_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_SQ8_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_SQ8_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_similarity_func, Cosine_SQ8_SQ8_GetDistFunc(dim, nullptr));
 }
 
 TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
@@ -557,9 +559,11 @@ TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
     auto l2_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_L2, dim, nullptr);
     auto ip_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_IP, dim, nullptr);
     auto cosine_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_Cosine, dim, nullptr);
+    auto cosine_similarity_func = spaces::GetDistFunc<sq8, float, float>(VecSimMetric_CosineSimilarity, dim, nullptr);
     ASSERT_EQ(l2_func, L2_SQ8_FP32_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_FP32_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP32_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_similarity_func, Cosine_SQ8_FP32_GetDistFunc(dim, nullptr));
 }
 
 TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
@@ -569,9 +573,12 @@ TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
     auto l2_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_L2, dim, nullptr);
     auto ip_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_IP, dim, nullptr);
     auto cosine_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_Cosine, dim, nullptr);
+    auto cosine_similarity_func =
+        spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_CosineSimilarity, dim, nullptr);
     ASSERT_EQ(l2_func, L2_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(ip_func, IP_SQ8_FP16_GetDistFunc(dim, nullptr));
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_similarity_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
 
     // dim < 16 takes the scalar early-return in every SQ8_FP16 dispatcher (no SIMD tier).
     size_t small_dim = 8;
