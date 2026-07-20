@@ -738,11 +738,16 @@ private:
             this->invalidJobsLookupGuard.unlock();
             return;
         }
-        auto storage_blob = this->frontendIndex->preprocessForStorage(this->frontendIndex->getDataByInternalId(job->id));
+
+        // Copy the vector blob out of the flat buffer while holding flatIndexGuard, so we
+        // can release the flat lock before indexing into the SVS backend
+        size_t data_size = this->frontendIndex->getStoredDataSize();
+        auto blob_copy = this->getAllocator()->allocate_unique(data_size);
+        memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
         this->flatIndexGuard.unlock_shared();
 
         svs_index->setNumThreads(1);
-        svs_index->addVector(storage_blob.get(), job->label);
+        svs_index->addVector(blob_copy.get(), job->label);
 
         // Remove the vector and the insert job from the flat buffer.
         this->flatIndexGuard.lock();
@@ -812,7 +817,7 @@ private:
                 svs_index->setNumThreads(1);
                 assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
                 auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
-                                                labels_to_move.size());
+                                                  labels_to_move.size());
                 svs_index->setImpl(std::move(impl));
             }
 
@@ -1315,3 +1320,4 @@ public:
         this->flatIndexGuard.unlock_shared();
     }
 };
+                                                                                                                                                               
