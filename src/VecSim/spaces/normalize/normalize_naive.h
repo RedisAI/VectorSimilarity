@@ -12,6 +12,7 @@
 #include "VecSim/types/float16.h"
 #include "compute_norm.h"
 #include <cmath>
+#include <cstring>
 #include <vector>
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -82,8 +83,8 @@ static inline void integer_normalizeVector(void *vec, const size_t dim) {
 
     float norm = IntegralType_ComputeNorm<DataType>(input_vector, dim);
 
-    // Store norm at the end of the vector.
-    *reinterpret_cast<float *>(input_vector + dim) = norm;
+    // The norm follows a one-byte element payload and may be unaligned for odd dimensions.
+    std::memcpy(input_vector + dim, &norm, sizeof(norm));
 }
 
 } // namespace spaces

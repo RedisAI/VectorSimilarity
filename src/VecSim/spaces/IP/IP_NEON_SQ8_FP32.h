@@ -113,9 +113,9 @@ float SQ8_FP32_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVec
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);
-    const float *params1 = reinterpret_cast<const float *>(pVect1Base + dimension);
-    const float min_val = params1[sq8::MIN_VAL];
-    const float delta = params1[sq8::DELTA];
+    const auto *params1 = pVect1Base + dimension;
+    const float min_val = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
     const float y_sum = static_cast<const float *>(pVect2v)[dimension + sq8::SUM_QUERY];

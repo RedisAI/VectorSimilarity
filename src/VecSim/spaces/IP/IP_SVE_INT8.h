@@ -98,9 +98,7 @@ float INT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
 template <bool partial_chunk, unsigned char additional_steps>
 float INT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = INT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
-    float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);
-    float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
+    const float norm_v1 = load_unaligned<float>(static_cast<const int8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const int8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
 }

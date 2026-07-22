@@ -111,9 +111,7 @@ float UINT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVe
 template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
-    float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
-    float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
 }

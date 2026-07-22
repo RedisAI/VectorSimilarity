@@ -28,7 +28,7 @@ using sq8 = vecsim_types::sq8;
 static inline void InnerProductStepSQ8_FP32(const uint8_t *&pVect1, const float *&pVect2,
                                             __m128 &sum) {
     // Load 4 uint8 elements and convert to float
-    __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(*reinterpret_cast<const int32_t *>(pVect1)));
+    __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(load_unaligned<int32_t>(pVect1)));
     pVect1 += 4;
 
     __m128 v1_f = _mm_cvtepi32_ps(v1_i);
@@ -111,9 +111,9 @@ float SQ8_FP32_InnerProductSIMD16_SSE4_IMP(const void *pVect1v, const void *pVec
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);
-    const float *params1 = reinterpret_cast<const float *>(pVect1Base + dimension);
-    const float min_val = params1[sq8::MIN_VAL];
-    const float delta = params1[sq8::DELTA];
+    const auto *params1 = pVect1Base + dimension;
+    const float min_val = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
     const float *pVect2Base = static_cast<const float *>(pVect2v);
