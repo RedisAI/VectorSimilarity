@@ -1,7 +1,8 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
- * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+ * <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -343,8 +344,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         void *meta_dst = quantized + this->dim;
         MetadataType buf[5] = {min_val, delta, sum};
         size_t n = 3;
-        if constexpr (Metric == VecSimMetric_L2) buf[n++] = sum_squares;
-        if constexpr (WithNorm) buf[n++] = x_mean_ip;
+        if constexpr (Metric == VecSimMetric_L2)
+            buf[n++] = sum_squares;
+        if constexpr (WithNorm)
+            buf[n++] = x_mean_ip;
         memcpy(meta_dst, buf, n * sizeof(MetadataType));
     }
 
@@ -417,14 +420,17 @@ class QuantPreprocessor : public PreprocessorInterface {
         // when DataType is float16 and dim is odd.
         MetadataType buf[3] = {sum};
         size_t n = 1;
-        if constexpr (Metric == VecSimMetric_L2) buf[n++] = sum_squares;
-        if constexpr (WithNorm) buf[n++] = y_mean_ip;
+        if constexpr (Metric == VecSimMetric_L2)
+            buf[n++] = sum_squares;
+        if constexpr (WithNorm)
+            buf[n++] = y_mean_ip;
         memcpy(output_metadata, buf, n * sizeof(MetadataType));
     }
 
 public:
     // Standard constructor (WithNorm == false): no mean vector.
-    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim) requires(!WithNorm)
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        requires(!WithNorm)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
                               sq8::storage_metadata_count<Metric>() * sizeof(MetadataType)),
@@ -433,7 +439,8 @@ public:
 
     // WithNorm constructor: accepts a pre-computed mean vector (FP32, length == dim).
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim,
-                      const vecsim_stl::vector<float> &mean_vec) requires(WithNorm)
+                      const vecsim_stl::vector<float> &mean_vec)
+        requires(WithNorm)
         : PreprocessorInterface(allocator), mean(mean_vec), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
                               sq8::storage_metadata_count<Metric, WithNorm>() *
