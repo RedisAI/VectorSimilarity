@@ -129,7 +129,7 @@ HNSWIndex_Single<DataType, DistType>::getDistanceFromInternal(labelType label,
     }
     idType id = it->second;
 
-    return this->calcDistance(vector_data, this->getDataByInternalId(id));
+    return this->calcDistanceForQuery(this->getDataByInternalId(id), vector_data);
 }
 
 template <typename DataType, typename DistType>

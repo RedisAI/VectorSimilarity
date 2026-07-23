@@ -138,8 +138,8 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
                 this->visitNode(candidate_id);
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
-                DistType candidate_dist =
-                    this->index->calcDistance(this->getQueryBlob(), (const void *)candidate_data);
+                DistType candidate_dist = this->index->calcDistanceForQuery(
+                    (const void *)candidate_data, this->getQueryBlob());
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -150,8 +150,8 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
                 this->visitNode(candidate_id);
 
                 const char *candidate_data = this->index->getDataByInternalId(candidate_id);
-                DistType candidate_dist =
-                    this->index->calcDistance(this->getQueryBlob(), (const void *)candidate_data);
+                DistType candidate_dist = this->index->calcDistanceForQuery(
+                    (const void *)candidate_data, this->getQueryBlob());
 
                 candidates.emplace(candidate_dist, candidate_id);
             }
@@ -175,8 +175,8 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     if (this->getResultsCount() == 0 && this->top_candidates_extras.empty() &&
         this->candidates.empty()) {
         if (!index->isMarkedDeleted(this->entry_point)) {
-            this->lower_bound = this->index->calcDistance(
-                this->getQueryBlob(), this->index->getDataByInternalId(this->entry_point));
+            this->lower_bound = this->index->calcDistanceForQuery(
+                this->index->getDataByInternalId(this->entry_point), this->getQueryBlob());
         } else {
             this->lower_bound = std::numeric_limits<DistType>::max();
         }

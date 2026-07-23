@@ -86,8 +86,9 @@ protected:
     RawDataContainer *vectors;      // The raw vectors data container.
 private:
     IndexCalculatorInterface<DistType> *indexCalculator; // Distance calculator.
-    spaces::dist_func_t<DistType> cachedDistFunc;        // Cached dist func, used on the hot path.
-    PreprocessorsContainerAbstract *preprocessors;       // Storage and query preprocessors.
+    DistanceDispatch<DistType> storedDistanceDispatch;
+    DistanceDispatch<DistType> queryDistanceDispatch;
+    PreprocessorsContainerAbstract *preprocessors; // Storage and query preprocessors.
 
     size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
                           // sizeof(vecType) when vectors have been externally preprocessed (e.g.,
@@ -126,13 +127,21 @@ public:
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
           isMulti(params.multi), isDisk(params.isDisk), logCallbackCtx(params.logCtx),
           indexCalculator(components.indexCalculator),
-          cachedDistFunc(components.indexCalculator ? components.indexCalculator->getDistFunc()
-                                                    : nullptr),
+          storedDistanceDispatch(
+              components.indexCalculator
+                  ? components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToStored)
+                  : DistanceDispatch<DistType>{}),
+          queryDistanceDispatch(
+              components.indexCalculator
+                  ? components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery)
+                  : DistanceDispatch<DistType>{}),
           preprocessors(components.preprocessors), inputBlobSize(params.inputBlobSize),
           storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
         assert(storedDataSize);
         assert(inputBlobSize);
+        assert(indexCalculator == nullptr || storedDistanceDispatch.isValid());
+        assert(indexCalculator == nullptr || queryDistanceDispatch.isValid());
         // DataBlocksContainer holds the persistent storage vectors, so it must honor the storage
         // alignment hint (not the query alignment). Note: this only aligns the base address of
         // each block; vectors inside a block are packed back-to-back at stride `storedDataSize`,
@@ -156,16 +165,28 @@ public:
     /**
      * @brief Calculate the distance between two vectors based on index parameters.
      *
-     * Uses the cached dist func to avoid the indexCalculator vtable on the hot path.
+     * Uses the cached dispatch to avoid the indexCalculator vtable on the hot path.
      *
-     * @note Precondition: @c cachedDistFunc must be non-null. Subclasses that construct
-     *       this index with a null @c indexCalculator (e.g. SVS, which uses its own
-     *       internal distance kernels) must not call this method.
+     * @note Subclasses that construct this index with a null @c indexCalculator (e.g. SVS, which
+     * uses its own internal distance kernels) must not call this method.
      *
      * @return the distance between the vectors.
      */
     DistType calcDistance(const void *vector_data1, const void *vector_data2) const {
-        return cachedDistFunc(vector_data1, vector_data2, this->dim);
+        return storedDistanceDispatch(vector_data1, vector_data2, this->dim);
+    }
+
+    /**
+     * @brief Calculate the distance between a stored candidate vector and a query vector.
+     * Allows asymmetric distance computation (e.g., for quantized stored vectors).
+     *
+     * @note Subclasses that construct this index with a null @c indexCalculator (e.g. SVS, which
+     * uses its own internal distance kernels) must not call this method.
+     *
+     * @return the distance between the candidate and the query.
+     */
+    DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector) const {
+        return queryDistanceDispatch(candidate_vector, query_vector, this->dim);
     }
 
     /**

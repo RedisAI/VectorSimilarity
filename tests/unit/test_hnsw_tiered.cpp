@@ -4382,7 +4382,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
                 expected_score = frontend_index->calcDistance(normalized_query, normalized_vec);
             }
             if (label == 1) { // the result in the hnsw index
-                expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+                expected_score =
+                    hnsw_index->calcDistanceForQuery(norm_double_vec, norm_double_query);
             }
             ASSERT_EQ(score, expected_score) << "label: " << label;
         };
@@ -4408,7 +4409,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
         // Both vector were processed by the hnsw preprocessor, as well as the query.
         // The score should be the distance from the doubled query to the doubled vector.
         auto verify_res = [&](size_t label, double score, size_t result_rank) {
-            double expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+            double expected_score =
+                hnsw_index->calcDistanceForQuery(norm_double_vec, norm_double_query);
             ASSERT_EQ(score, expected_score) << "label: " << label;
         };
 
