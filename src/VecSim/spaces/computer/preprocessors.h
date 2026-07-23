@@ -17,12 +17,14 @@
 #include <cstring>
 #include <memory>
 #include <type_traits>
+#include <variant>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/memory/memory_utils.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/utils/vecsim_stl.h"
 
 class PreprocessorInterface : public VecsimBaseObject {
 public:
@@ -235,7 +237,7 @@ static inline float to_fp32(T x) {
     }
 }
 
-template <QuantInput DataType, VecSimMetric Metric>
+template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
 class QuantPreprocessor : public PreprocessorInterface {
     using OUTPUT_TYPE = uint8_t;
     using MetadataType = float; // SQ8 metadata is always FP32 (see class doc).
@@ -244,13 +246,35 @@ class QuantPreprocessor : public PreprocessorInterface {
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
                   "QuantPreprocessor only supports L2, IP and Cosine metrics");
+    static_assert(!WithNorm || Metric != VecSimMetric_Cosine,
+                  "WithNorm does not support Cosine metric.");
 
     // Helper function to perform quantization. This function is used by the storage preprocessing
     // methods.
     void quantize(const DataType *input, OUTPUT_TYPE *quantized) const {
         assert(input && quantized);
-        // Find min and max values (computed in MetadataType regardless of DataType).
-        auto [min_val, max_val] = find_min_max(input);
+
+        if constexpr (std::is_same_v<DataType, float> && !WithNorm) {
+            quantize_impl(input, quantized);
+        } else {
+            float x_mean_ip = 0.0f; // only used for WithNorm
+
+            // Get transformed values (convert to float, mean-subtracted for WithNorm)
+            vecsim_stl::vector<float> values(this->dim, this->allocator);
+            for (size_t i = 0; i < this->dim; ++i) {
+                values[i] = to_fp32<DataType>(input[i]);
+                if constexpr (WithNorm) {
+                    x_mean_ip += values[i] * mean[i];
+                    values[i] -= mean[i];
+                }
+            }
+            quantize_impl(values.data(), quantized, x_mean_ip);
+        }
+    }
+
+    void quantize_impl(const float *values, OUTPUT_TYPE *quantized, float x_mean_ip = 0.0f) const {
+        // Find min and max values.
+        auto [min_val, max_val] = find_min_max(values);
 
         // Calculate scaling factor (typed as MetadataType because they end up as metadata).
         const MetadataType diff = (max_val - min_val);
@@ -272,10 +296,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         // Quantize the values
         for (; i < dim_round_down; i += 4) {
             // Load once (widened to FP32 if DataType is FP16).
-            const float x0 = to_fp32<DataType>(input[i + 0]);
-            const float x1 = to_fp32<DataType>(input[i + 1]);
-            const float x2 = to_fp32<DataType>(input[i + 2]);
-            const float x3 = to_fp32<DataType>(input[i + 3]);
+            const float x0 = values[i + 0];
+            const float x1 = values[i + 1];
+            const float x2 = values[i + 2];
+            const float x3 = values[i + 3];
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
@@ -305,7 +329,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         MetadataType sum_squares = (q0 + q1) + (q2 + q3);
 
         for (; i < this->dim; ++i) {
-            const float x = to_fp32<DataType>(input[i]);
+            const float x = values[i];
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x - min_val) * inv_delta));
             sum += x;
             if constexpr (Metric == VecSimMetric_L2) {
@@ -316,26 +340,31 @@ class QuantPreprocessor : public PreprocessorInterface {
         // Metadata uses MetadataType. Use memcpy because the metadata offset
         // (dim * sizeof(uint8_t)) is not guaranteed to be sizeof(MetadataType)-aligned.
         void *meta_dst = quantized + this->dim;
-        if constexpr (Metric == VecSimMetric_L2) {
-            const MetadataType buf[4] = {min_val, delta, sum, sum_squares};
-            memcpy(meta_dst, buf, sizeof(buf));
-        } else {
-            const MetadataType buf[3] = {min_val, delta, sum};
-            memcpy(meta_dst, buf, sizeof(buf));
-        }
+        MetadataType buf[5] = {min_val, delta, sum};
+        size_t n = 3;
+        if constexpr (Metric == VecSimMetric_L2)
+            buf[n++] = sum_squares;
+        if constexpr (WithNorm)
+            buf[n++] = x_mean_ip;
+        memcpy(meta_dst, buf, n * sizeof(MetadataType));
     }
 
     // Computes and writes query metadata (FP32) in a single pass over the input vector.
-    // For IP/Cosine: writes y_sum = Σy_i
-    // For L2: writes y_sum = Σy_i and y_sum_squares = Σy_i²
+    // Without norm:
+    //   For IP/Cosine: writes y_sum = Σy_i
+    //   For L2: writes y_sum = Σy_i and y_sum_squares = Σy_i²
+    // With norm: additionally appends y_mean_ip = Σ(mean_i * y_i).
     // The output pointer addresses the metadata region after the query body and may not be
     // 4-byte aligned (e.g. FP16 query body with odd dim), so writes go through memcpy.
     void assign_query_metadata(const DataType *input, void *output_metadata) const {
+
         // Accumulators are FP32 to preserve precision for FP16 inputs.
         // 4 independent accumulators for sum
         float s0{}, s1{}, s2{}, s3{};
         // 4 independent accumulators for sum of squares (only used for L2)
         float q0{}, q1{}, q2{}, q3{};
+        // 4 independent accumulators for y_mean_ip (only used for WithNorm)
+        float m0{}, m1{}, m2{}, m3{};
 
         size_t i = 0;
         // round dim down to the nearest multiple of 4
@@ -358,11 +387,19 @@ class QuantPreprocessor : public PreprocessorInterface {
                 q2 += y2 * y2;
                 q3 += y3 * y3;
             }
+
+            if constexpr (WithNorm) {
+                m0 += mean[i + 0] * y0;
+                m1 += mean[i + 1] * y1;
+                m2 += mean[i + 2] * y2;
+                m3 += mean[i + 3] * y3;
+            }
         }
 
-        // Sum/sum_squares become metadata, so they are MetadataType.
+        // Sum/sum_squares/y_mean_ip become metadata, so they are MetadataType.
         MetadataType sum = (s0 + s1) + (s2 + s3);
         MetadataType sum_squares = (q0 + q1) + (q2 + q3);
+        MetadataType y_mean_ip = (m0 + m1) + (m2 + m3);
 
         // Tail: handle remaining elements
         for (; i < this->dim; ++i) {
@@ -371,29 +408,45 @@ class QuantPreprocessor : public PreprocessorInterface {
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += y * y;
             }
+            if constexpr (WithNorm) {
+                y_mean_ip += mean[i] * y;
+            }
         }
 
         // Metadata uses MetadataType. Use memcpy because the metadata offset (after the query
         // body of dim * sizeof(DataType)) is not guaranteed to be sizeof(MetadataType)-aligned
         // when DataType is float16 and dim is odd.
-        if constexpr (Metric == VecSimMetric_L2) {
-            const MetadataType buf[2] = {sum, sum_squares};
-            memcpy(output_metadata, buf, sizeof(buf));
-        } else {
-            const MetadataType buf[1] = {sum};
-            memcpy(output_metadata, buf, sizeof(buf));
-        }
+        MetadataType buf[3] = {sum};
+        size_t n = 1;
+        if constexpr (Metric == VecSimMetric_L2)
+            buf[n++] = sum_squares;
+        if constexpr (WithNorm)
+            buf[n++] = y_mean_ip;
+        memcpy(output_metadata, buf, n * sizeof(MetadataType));
     }
 
 public:
+    // Standard constructor (WithNorm == false): no mean vector.
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+        requires(!WithNorm)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              (vecsim_types::sq8::storage_metadata_count<Metric>()) *
+                              sq8::storage_metadata_count<Metric>() * sizeof(MetadataType)),
+          query_bytes_count(dim * sizeof(DataType) +
+                            sq8::query_metadata_count<Metric>() * sizeof(MetadataType)) {}
+
+    // WithNorm constructor: accepts a pre-computed mean vector (FP32, length == dim).
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim,
+                      const vecsim_stl::vector<float> &mean_vec)
+        requires(WithNorm)
+        : PreprocessorInterface(allocator), mean(mean_vec), dim(dim),
+          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
+                              sq8::storage_metadata_count<Metric, WithNorm>() *
                                   sizeof(MetadataType)),
           query_bytes_count(dim * sizeof(DataType) +
-                            (vecsim_types::sq8::query_metadata_count<Metric>()) *
-                                sizeof(MetadataType)) {}
+                            sq8::query_metadata_count<Metric, WithNorm>() * sizeof(MetadataType)) {
+        assert(this->mean.size() == dim && "mean vector size must equal dim");
+    }
 
     /**
      * Preprocesses the original blob into separate storage and query blobs.
@@ -495,14 +548,14 @@ public:
     }
 
 private:
-    // Returns (min, max) of the input vector evaluated in MetadataType. Both float and float16
-    // expose a usable operator< (float16's overload delegates to FP32 semantics), so a single
-    // std::minmax_element call covers both DataTypes. The returned values are written verbatim
-    // into the metadata region.
-    std::pair<MetadataType, MetadataType> find_min_max(const DataType *input) const {
+    std::pair<float, float> find_min_max(const float *input) const {
         auto [min_it, max_it] = std::minmax_element(input, input + dim);
-        return {to_fp32<DataType>(*min_it), to_fp32<DataType>(*max_it)};
+        return {*min_it, *max_it};
     }
+
+    // Mean vector for WithNorm=true; zero-size placeholder otherwise (no runtime overhead).
+    [[no_unique_address]] std::conditional_t<WithNorm, vecsim_stl::vector<float>, std::monostate>
+        mean;
 
     const size_t dim;
     const size_t storage_bytes_count;
