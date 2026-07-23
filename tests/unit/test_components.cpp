@@ -25,6 +25,25 @@ using dummy_dist_func_t = DummyType (*)(int, int);
 int dummyDistFunc(int v1, int v2) { return v1 + v2; }
 int dummyQueryDistFunc(int candidate, int query) { return candidate - query; }
 
+float commonDistFunc(const void *v1, const void *v2, size_t dim) {
+    return *static_cast<const float *>(v1) + *static_cast<const float *>(v2) +
+           static_cast<float>(dim);
+}
+
+float commonQueryDistFunc(const void *candidate, const void *query, size_t dim) {
+    return *static_cast<const float *>(candidate) - *static_cast<const float *>(query) +
+           static_cast<float>(dim);
+}
+
+struct StatefulDistanceContext {
+    float offset;
+};
+
+float statefulDistFunc(const void *context, const void *v1, const void *v2, size_t dim) {
+    const auto *state = static_cast<const StatefulDistanceContext *>(context);
+    return commonDistFunc(v1, v2, dim) + state->offset;
+}
+
 template <typename DistType>
 class DistanceCalculatorDummy : public DistanceCalculatorInterface<DistType, dummy_dist_func_t> {
 public:
@@ -46,9 +65,8 @@ public:
         return this->query_dist_func(candidate_int, query_int);
     }
 
-    // Dummy uses a non-standard dist func signature, so the standard slot is unavailable.
-    spaces::dist_func_t<DistType> getDistFunc() const override { return nullptr; }
-    spaces::dist_func_t<DistType> getDistFuncForQuery() const override { return nullptr; }
+    // Dummy uses a non-standard dist func signature and is not installed in an index.
+    DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const override { return {}; }
 };
 
 } // namespace dummyCalcultor
@@ -72,6 +90,41 @@ TEST(IndexCalculatorTest, TestIndexCalculator) {
     ASSERT_EQ(asymmetric_distance_calculator.calcDistance(&v2, &v1, 0), 30);
     ASSERT_EQ(asymmetric_distance_calculator.calcDistanceForQuery(&v1, &v2, 0), 10);
     ASSERT_EQ(asymmetric_distance_calculator.calcDistanceForQuery(&v2, &v1, 0), -10);
+}
+
+TEST(IndexCalculatorTest, CommonCalculatorExportsStatelessDispatches) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    float candidate = 20.0f;
+    float query = 10.0f;
+    constexpr size_t dim = 3;
+
+    DistanceCalculatorCommon<float> symmetric_calculator(allocator, dummyCalcultor::commonDistFunc);
+    auto stored_dispatch = symmetric_calculator.getDistanceDispatch(DistanceMode::StoredToStored);
+    auto query_dispatch = symmetric_calculator.getDistanceDispatch(DistanceMode::StoredToQuery);
+    ASSERT_TRUE(stored_dispatch.isValid());
+    ASSERT_EQ(stored_dispatch.stateless_func, dummyCalcultor::commonDistFunc);
+    ASSERT_EQ(query_dispatch.stateless_func, dummyCalcultor::commonDistFunc);
+    ASSERT_EQ(query_dispatch(&candidate, &query, dim), 33.0f);
+
+    DistanceCalculatorCommon<float> asymmetric_calculator(allocator, dummyCalcultor::commonDistFunc,
+                                                          dummyCalcultor::commonQueryDistFunc);
+    stored_dispatch = asymmetric_calculator.getDistanceDispatch(DistanceMode::StoredToStored);
+    query_dispatch = asymmetric_calculator.getDistanceDispatch(DistanceMode::StoredToQuery);
+    ASSERT_EQ(stored_dispatch.stateless_func, dummyCalcultor::commonDistFunc);
+    ASSERT_EQ(query_dispatch.stateless_func, dummyCalcultor::commonQueryDistFunc);
+    ASSERT_EQ(query_dispatch(&candidate, &query, dim), 13.0f);
+}
+
+TEST(IndexCalculatorTest, StatefulDispatchUsesCachedContext) {
+    dummyCalcultor::StatefulDistanceContext context{.offset = 7.0f};
+    auto dispatch = DistanceDispatch<float>::stateful(&context, dummyCalcultor::statefulDistFunc);
+    float v1 = 20.0f;
+    float v2 = 10.0f;
+
+    ASSERT_TRUE(dispatch.isValid());
+    ASSERT_EQ(dispatch.stateless_func, nullptr);
+    ASSERT_EQ(dispatch.context, &context);
+    ASSERT_EQ(dispatch(&v1, &v2, 3), 40.0f);
 }
 
 class PreprocessorsTest : public ::testing::Test {};

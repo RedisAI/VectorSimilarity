@@ -12,6 +12,46 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 
+enum class DistanceMode {
+    StoredToStored,
+    StoredToQuery,
+};
+
+/**
+ * A distance callback selected once when an index is constructed.
+ *
+ * Stateless calculators populate `stateless_func`, preserving the existing hot path of one
+ * indirect call to the selected distance kernel. Stateful calculators populate `stateful_func`
+ * and `context`; this avoids a vtable lookup in the hot path without forcing stateless
+ * calculators through an adapter.
+ */
+template <typename DistType>
+struct DistanceDispatch {
+    using stateful_dist_func_t = DistType (*)(const void *context, const void *lhs, const void *rhs,
+                                              size_t dim);
+
+    spaces::dist_func_t<DistType> stateless_func = nullptr;
+    stateful_dist_func_t stateful_func = nullptr;
+    const void *context = nullptr;
+
+    static DistanceDispatch stateless(spaces::dist_func_t<DistType> func) {
+        return {.stateless_func = func};
+    }
+
+    static DistanceDispatch stateful(const void *context, stateful_dist_func_t func) {
+        return {.stateful_func = func, .context = context};
+    }
+
+    bool isValid() const { return (stateless_func != nullptr) != (stateful_func != nullptr); }
+
+    DistType operator()(const void *lhs, const void *rhs, size_t dim) const {
+        if (stateless_func) {
+            return stateless_func(lhs, rhs, dim);
+        }
+        return stateful_func(context, lhs, rhs, dim);
+    }
+};
+
 // We need this "wrapper" class to hold the DistanceCalculatorInterface in the index, that is not
 // templated according to the distance function signature.
 template <typename DistType>
@@ -27,10 +67,9 @@ public:
     virtual DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector,
                                           size_t dim) const = 0;
 
-    // Raw distance function; cached by the index to skip the vtable on the hot path.
-    virtual spaces::dist_func_t<DistType> getDistFunc() const = 0;
-
-    virtual spaces::dist_func_t<DistType> getDistFuncForQuery() const = 0;
+    // Called once per mode when constructing the index. The returned dispatch is cached so
+    // distance calculations in the hot path do not perform virtual calls.
+    virtual DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const = 0;
 };
 
 /**
@@ -76,9 +115,8 @@ public:
         return this->query_dist_func(candidate_vector, query_vector, dim);
     }
 
-    spaces::dist_func_t<DistType> getDistFunc() const override { return this->dist_func; }
-
-    spaces::dist_func_t<DistType> getDistFuncForQuery() const override {
-        return this->query_dist_func;
+    DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const override {
+        auto func = mode == DistanceMode::StoredToStored ? this->dist_func : this->query_dist_func;
+        return DistanceDispatch<DistType>::stateless(func);
     }
 };
