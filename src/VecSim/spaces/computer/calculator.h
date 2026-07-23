@@ -150,8 +150,7 @@ public:
  * DistType is float
  */
 template <typename DataType, typename DistType, VecSimMetric Metric>
-class DistanceCalculatorWithNorm
-    : public DistanceCalculatorInterface<DistType, spaces::dist_func_t<DistType>> {
+class DistanceCalculatorWithNorm : public IndexCalculatorInterface<DistType> {
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP,
                   "DistanceCalculatorWithNorm only supports L2 and IP metrics");
 
@@ -212,13 +211,8 @@ public:
     DistanceCalculatorWithNorm(std::shared_ptr<VecSimAllocator> allocator,
                                spaces::dist_func_t<DistType> asym_func,
                                spaces::dist_func_t<DistType> sym_func, float mean_sum_squares)
-        : DistanceCalculatorInterface<DistType, spaces::dist_func_t<DistType>>(allocator, sym_func,
-                                                                               asym_func),
-          context_{
-              .stored_func = sym_func,
-              .query_func = asym_func,
-              .mean_sum_squares = mean_sum_squares,
-          } {}
+        : IndexCalculatorInterface<DistType>(allocator),
+          context_{sym_func, asym_func, mean_sum_squares} {}
 
     // Symmetric: both v1 and v2 are stored SQ8-of-x' blobs.
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
@@ -236,7 +230,7 @@ public:
         if (mode == DistanceMode::StoredToStored) {
             if constexpr (Metric == VecSimMetric_L2) {
                 // The mean terms cancel for stored-to-stored L2, so retain the stateless fast path.
-                return DistanceDispatch<DistType>::stateless(this->dist_func);
+                return DistanceDispatch<DistType>::stateless(context_.stored_func);
             }
             return DistanceDispatch<DistType>::stateful(&context_, calcStoredWithContext);
         }

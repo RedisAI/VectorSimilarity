@@ -1900,9 +1900,14 @@ TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_IP_FP32) {
 
     float got = calc->calcDistanceForQuery(storage_blob, query_blob, dim);
     float expected = bruteForceIPDist(x, y, dim);
+    auto dispatch = calc->getDistanceDispatch(DistanceMode::StoredToQuery);
 
     // Allow quantization error
     EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric IP distance mismatch";
+    ASSERT_TRUE(dispatch.isValid());
+    EXPECT_EQ(dispatch.stateless_func, nullptr);
+    EXPECT_NE(dispatch.stateful_func, nullptr);
+    EXPECT_NEAR(dispatch(storage_blob, query_blob, dim), expected, 0.05f);
 
     allocator->free_allocation(storage_blob);
     allocator->free_allocation(query_blob);
@@ -1930,8 +1935,13 @@ TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_L2_FP32) {
 
     float got = calc->calcDistanceForQuery(storage_blob, query_blob, dim);
     float expected = bruteForceL2Dist(x, y, dim);
+    auto dispatch = calc->getDistanceDispatch(DistanceMode::StoredToQuery);
 
     EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric L2 distance mismatch";
+    ASSERT_TRUE(dispatch.isValid());
+    EXPECT_EQ(dispatch.stateless_func, nullptr);
+    EXPECT_NE(dispatch.stateful_func, nullptr);
+    EXPECT_NEAR(dispatch(storage_blob, query_blob, dim), expected, 0.05f);
 
     allocator->free_allocation(storage_blob);
     allocator->free_allocation(query_blob);
@@ -1959,8 +1969,13 @@ TEST(DistanceCalculatorWithNormTest, CalcDistance_IP_Symmetric) {
 
     float got = calc->calcDistance(x_blob, y_blob, dim);
     float expected = bruteForceIPDist(x, y, dim);
+    auto dispatch = calc->getDistanceDispatch(DistanceMode::StoredToStored);
 
     EXPECT_NEAR(got, expected, 0.05f) << "Symmetric IP distance mismatch";
+    ASSERT_TRUE(dispatch.isValid());
+    EXPECT_EQ(dispatch.stateless_func, nullptr);
+    EXPECT_NE(dispatch.stateful_func, nullptr);
+    EXPECT_NEAR(dispatch(x_blob, y_blob, dim), expected, 0.05f);
 
     allocator->free_allocation(x_blob);
     allocator->free_allocation(y_blob);
@@ -1988,8 +2003,13 @@ TEST(DistanceCalculatorWithNormTest, CalcDistance_L2_Symmetric) {
 
     float got = calc->calcDistance(x_blob, y_blob, dim);
     float expected = bruteForceL2Dist(x, y, dim);
+    auto dispatch = calc->getDistanceDispatch(DistanceMode::StoredToStored);
 
     EXPECT_NEAR(got, expected, 0.05f) << "Symmetric L2 distance mismatch";
+    ASSERT_TRUE(dispatch.isValid());
+    EXPECT_EQ(dispatch.stateless_func, sym_func);
+    EXPECT_EQ(dispatch.stateful_func, nullptr);
+    EXPECT_NEAR(dispatch(x_blob, y_blob, dim), expected, 0.05f);
 
     allocator->free_allocation(x_blob);
     allocator->free_allocation(y_blob);
