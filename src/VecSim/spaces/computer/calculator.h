@@ -211,8 +211,11 @@ public:
     DistanceCalculatorWithNorm(std::shared_ptr<VecSimAllocator> allocator,
                                spaces::dist_func_t<DistType> asym_func,
                                spaces::dist_func_t<DistType> sym_func, float mean_sum_squares)
-        : IndexCalculatorInterface<DistType>(allocator),
-          context_{sym_func, asym_func, mean_sum_squares} {}
+        : IndexCalculatorInterface<DistType>(allocator), context_(WithNormDistanceContext{
+                                                             .stored_func = sym_func,
+                                                             .query_func = asym_func,
+                                                             .mean_sum_squares = mean_sum_squares,
+                                                         }) {}
 
     // Symmetric: both v1 and v2 are stored SQ8-of-x' blobs.
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
