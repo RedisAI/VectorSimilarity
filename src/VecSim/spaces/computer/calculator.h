@@ -12,6 +12,7 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/utils/alignment.h"
 
 enum class DistanceMode {
     StoredToStored,
@@ -173,12 +174,12 @@ private:
             // base = 1 - IP(x', y'). We want 1 - IP(x, y).
             // IP(x, y) = IP(x', y') + x_mean_ip + y_mean_ip - mean_sum_squares
             // => 1 - IP(x, y) = base - x_mean_ip - y_mean_ip + mean_sum_squares
-            const float *meta1 =
-                reinterpret_cast<const float *>(static_cast<const uint8_t *>(v1) + dim);
-            const float *meta2 =
-                reinterpret_cast<const float *>(static_cast<const uint8_t *>(v2) + dim);
-            float x_mean_ip = meta1[sq8::template mean_ip_index<Metric>()];
-            float y_mean_ip = meta2[sq8::template mean_ip_index<Metric>()];
+            float x_mean_ip =
+                load_unaligned<float>(static_cast<const uint8_t *>(v1) + dim +
+                                      sq8::template mean_ip_index<Metric>() * sizeof(float));
+            float y_mean_ip =
+                load_unaligned<float>(static_cast<const uint8_t *>(v2) + dim +
+                                      sq8::template mean_ip_index<Metric>() * sizeof(float));
             return base - x_mean_ip - y_mean_ip + context->mean_sum_squares;
         } else { // L2: ||x - y||² = ||x' - y'||² (mean terms cancel exactly)
             return base;
@@ -189,21 +190,20 @@ private:
                                          const void *query, size_t dim) {
         const auto *context = static_cast<const WithNormDistanceContext *>(opaque_context);
         DistType base = context->query_func(candidate, query, dim);
-        const float *query_meta =
-            reinterpret_cast<const float *>(static_cast<const DataType *>(query) + dim);
+        float y_mean_ip =
+            load_unaligned<float>(static_cast<const uint8_t *>(query) + dim * sizeof(DataType) +
+                                  sq8::template query_mean_ip_index<Metric>() * sizeof(float));
         if constexpr (Metric == VecSimMetric_IP) {
             // base = 1 - IP(x', y). We want 1 - IP(x, y).
             // IP(x, y) = IP(x', y) + y_mean_ip
             // => 1 - IP(x, y) = base - y_mean_ip
-            float y_mean_ip = query_meta[sq8::template query_mean_ip_index<Metric>()];
             return base - y_mean_ip;
         } else { // L2
             // base = ||x' - y||². We want ||x - y||².
             // ||x - y||² = ||x' - y||² + 2*(x_mean_ip - y_mean_ip) - mean_sum_squares
-            const float *storage_meta =
-                reinterpret_cast<const float *>(static_cast<const uint8_t *>(candidate) + dim);
-            float x_mean_ip = storage_meta[sq8::template mean_ip_index<Metric>()];
-            float y_mean_ip = query_meta[sq8::template query_mean_ip_index<Metric>()];
+            float x_mean_ip =
+                load_unaligned<float>(static_cast<const uint8_t *>(candidate) + dim +
+                                      sq8::template mean_ip_index<Metric>() * sizeof(float));
             return base + 2.0f * (x_mean_ip - y_mean_ip) - context->mean_sum_squares;
         }
     }
