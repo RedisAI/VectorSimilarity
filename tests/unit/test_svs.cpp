@@ -1676,8 +1676,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
           .constructionWindowSize = 100,
           .maxCandidatePoolSize = 500,
           .pruneTo = 55,
-          .useSearchHistory = false, // VecSimOption_DISABLE
-          .numThreads = 4,
+          .useSearchHistory = false,                    // VecSimOption_DISABLE
+          .numThreads = SVS_VAMANA_DEFAULT_NUM_THREADS, // Deprecated, expect default to be used
           .numberOfMarkedDeletedNodes = 0,
           .searchWindowSize = 20,
           .searchBufferCapacity = 40,
@@ -3298,6 +3298,183 @@ TEST(SVSTest, compute_distance) {
     munmap(raw_b, 2 * page_size);
 }
 #endif // defined(__linux__) && defined(__x86_64__)
+
+// ---------------------------------------------------------------------------
+// SVSParams::num_threads is deprecated and ignored — pool size comes from
+// the shared singleton. Setting it should log a warning but not affect the pool.
+// ---------------------------------------------------------------------------
+TEST(SVSTest, NumThreadsParamIgnored) {
+    // Mark the pool as attached so resize() applies eagerly (this test resizes
+    // before constructing the SVS index, so the lazy code path would otherwise
+    // just record the size without spawning threads).
+    VecSimSVSThreadPoolImpl::instance()->onIndexAttached();
+    // Resize the shared singleton pool to a known size.
+    VecSimSVSThreadPool::resize(2);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
+
+    // Capture warning logs emitted by VecSim.
+    std::string captured_log;
+    VecSimIndexInterface::logCallback = [](void *ctx, const char *level, const char *msg) {
+        auto *out = static_cast<std::string *>(ctx);
+        *out += std::string(level) + ": " + msg + "\n";
+    };
+
+    // Create an SVS index with an explicit (deprecated) num_threads value.
+    SVSParams svs_params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 4,
+        .metric = VecSimMetric_L2,
+        .num_threads = 16, // should be ignored
+    };
+    VecSimParams params{.algo = VecSimAlgo_SVS,
+                        .algoParams = {.svsParams = svs_params},
+                        .logCtx = static_cast<void *>(&captured_log)};
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_NE(index, nullptr);
+
+    // The shared pool size must remain at 2 — num_threads was ignored.
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 2);
+
+    // The index reports the shared pool size, not the deprecated param value.
+    VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(index);
+    ASSERT_EQ(info.svsInfo.numThreads, 2);
+
+    // A deprecation warning should have been logged.
+    EXPECT_NE(captured_log.find("deprecated"), std::string::npos)
+        << "Expected deprecation warning in log, got: " << captured_log;
+
+    VecSimIndex_Free(index);
+
+    // Verify: creating an index without setting num_threads produces no warning.
+    captured_log.clear();
+    SVSParams svs_params_default = {
+        .type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2,
+        // num_threads left as 0 (default / unset)
+    };
+    VecSimParams params_default{.algo = VecSimAlgo_SVS,
+                                .algoParams = {.svsParams = svs_params_default},
+                                .logCtx = static_cast<void *>(&captured_log)};
+    VecSimIndex *index2 = VecSimIndex_New(&params_default);
+    ASSERT_NE(index2, nullptr);
+    EXPECT_EQ(captured_log.find("deprecated"), std::string::npos)
+        << "No deprecation warning expected when num_threads is not set, got: " << captured_log;
+
+    VecSimIndex_Free(index2);
+
+    // Restore singleton to baseline (clears has_attached_index_ and slots) and
+    // clear log callback so subsequent tests see a clean state.
+    VecSimSVSThreadPoolImpl::instance()->resetForTest();
+    VecSimIndexInterface::logCallback = nullptr;
+}
+
+// The SHARED_MEMORY field is a top-level field appended by
+// VecSimIndex_DebugInfoIterator (mirrors VecSim_GetSharedMemory()); it is
+// present on every algorithm. Verify it appears exactly once in an SVS
+// response and reports the same bytes as the public API.
+TYPED_TEST(SVSTest, debugInfoSharedMemoryMatchesApi) {
+    // Request a non-trivial pool size; with lazy init the actual allocation only
+    // happens on first SVS index creation below.
+    VecSim_UpdateThreadPoolSize(2);
+
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+    ASSERT_GT(VecSim_GetSharedMemory(), 0u);
+
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(index);
+
+    bool seen_shared_memory = false;
+    uint64_t shared_memory_value = 0;
+    while (VecSimDebugInfoIterator_HasNextField(infoIterator)) {
+        VecSim_InfoField *f = VecSimDebugInfoIterator_NextField(infoIterator);
+        if (!strcmp(f->fieldName, VecSimCommonStrings::SHARED_MEMORY_STRING)) {
+            ASSERT_FALSE(seen_shared_memory) << "SHARED_MEMORY appears more than once";
+            ASSERT_EQ(f->fieldType, INFOFIELD_UINT64);
+            shared_memory_value = f->fieldValue.uintegerValue;
+            seen_shared_memory = true;
+        }
+    }
+    EXPECT_TRUE(seen_shared_memory) << "SHARED_MEMORY field missing from SVS debug info";
+    EXPECT_EQ(shared_memory_value, VecSim_GetSharedMemory());
+
+    VecSimDebugInfoIterator_Free(infoIterator);
+    VecSimIndex_Free(index);
+
+    // Reset the shared singleton pool to size 1 so the next test is not affected.
+    // Use VecSimSVSThreadPool::resize(1) directly (matching other thread-pool tests)
+    // to avoid the write-mode side effect that VecSim_UpdateThreadPoolSize(0) carries.
+    VecSimSVSThreadPool::resize(1);
+}
+
+// VecSim shared memory must actually track the SVS thread-pool allocation:
+// it grows when the pool grows and shrinks when the pool shrinks. Without this,
+// SHARED_MEMORY could be a constant and debugInfoSharedMemoryMatchesApi would
+// still pass (both readouts share the same getSharedAllocationSize() source).
+TYPED_TEST(SVSTest, sharedMemoryTracksThreadPoolResize) {
+    // With lazy init, resize() only records the requested size until an SVS index
+    // has attached. Mark the pool attached up front so the resizes below apply
+    // eagerly and their allocation effect is observable (idempotent, matches the
+    // pattern used by NumThreadsParamIgnored and the SVSThreadPoolTest fixture).
+    VecSimSVSThreadPoolImpl::instance()->onIndexAttached();
+
+    // Use the C API to ensure it is covered. VecSim_UpdateThreadPoolSize(0)
+    // sets WriteInPlace and pool size 1.
+    VecSim_UpdateThreadPoolSize(0);
+    size_t mem_baseline = VecSim_GetSharedMemory();
+
+    // Grow the pool (sets WriteAsync).
+    VecSim_UpdateThreadPoolSize(8);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 8u);
+    size_t mem_8 = VecSim_GetSharedMemory();
+    EXPECT_GT(mem_8, mem_baseline) << "shared memory must grow when the pool grows";
+
+    // Shrink back to size 1 (still WriteAsync).
+    VecSim_UpdateThreadPoolSize(1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1u);
+    size_t mem_after = VecSim_GetSharedMemory();
+    EXPECT_LT(mem_after, mem_8) << "shared memory must shrink when the pool shrinks";
+
+    // Restore to default baseline.
+    VecSim_UpdateThreadPoolSize(0);
+}
+
+// ---------------------------------------------------------------------------
+// Lazy thread-pool init: VecSim_UpdateThreadPoolSize must not allocate worker
+// threads until the first SVS index attaches.
+// ---------------------------------------------------------------------------
+TEST(SVSTest, ThreadPoolLazyInit) {
+    // Reset the shared singleton to a clean state — earlier tests may have
+    // attached indexes and resized the pool. resetForTest() clears
+    // has_attached_index_, so VecSim_GetSharedMemory() reports 0 even though the
+    // singleton object (and its self-accounting allocator) still exist: shared
+    // memory is only attributed once an SVS index attaches.
+    VecSimSVSThreadPoolImpl::instance()->resetForTest();
+    const size_t baseline_mem = VecSim_GetSharedMemory();
+    EXPECT_EQ(baseline_mem, 0u) << "shared memory must be 0 before any SVS index attaches";
+
+    // Recording a non-trivial requested size before any SVS index exists must
+    // not allocate any worker slots.
+    VecSim_UpdateThreadPoolSize(8);
+    EXPECT_EQ(VecSim_GetSharedMemory(), baseline_mem)
+        << "VecSim_UpdateThreadPoolSize must not allocate threads before any SVS index exists";
+    EXPECT_EQ(VecSimSVSThreadPool::poolSize(), 1u)
+        << "Pool size must stay at 1 (no worker slots) until first index attaches";
+
+    // First SVS index creation triggers onIndexAttached(), which applies the
+    // recorded size and spawns 7 worker threads.
+    SVSParams params = {.type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2};
+    VecSimParams vp{.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = params}};
+    VecSimIndex *index = VecSimIndex_New(&vp);
+    ASSERT_NE(index, nullptr);
+    ASSERT_GT(VecSim_GetSharedMemory(), baseline_mem)
+        << "First SVS index creation must trigger lazy thread spawn";
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 8u)
+        << "Pool size must reflect the most recent requested size after first attach";
+
+    VecSimIndex_Free(index);
+    VecSimSVSThreadPoolImpl::instance()->resetForTest();
+}
 
 #else // HAVE_SVS
 

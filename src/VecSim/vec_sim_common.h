@@ -189,7 +189,9 @@ typedef struct {
     size_t prune_to;                 // Amount that candidates will be pruned.
     VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
-    size_t num_threads;                  // Maximum number of threads in threadpool.
+    size_t num_threads;                  // DEPRECATED: ignored. Thread pool size is controlled
+                                         // globally via VecSim_UpdateThreadPoolSize(). Setting
+                                         // this field has no effect and will emit a warning log.
     size_t search_window_size;           // Search window size to use during search.
     size_t search_buffer_capacity;       // Search buffer capacity to use during search.
     size_t leanvec_dim;                  // Leanvec dimension to use when LeanVec is enabled.
@@ -320,7 +322,10 @@ typedef struct {
  * production without worrying about performance
  */
 typedef struct {
-    size_t memory;
+    size_t memory;                // Memory tracked by the index's own allocator. Does NOT include
+                                  // process-wide allocations such as the shared SVS thread pool;
+                                  // those are reported via VecSim_GetSharedMemory() so callers
+                                  // that aggregate across indexes don't double-count them.
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
 } VecSimIndexStatsInfo;

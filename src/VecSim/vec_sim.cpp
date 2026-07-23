@@ -14,6 +14,7 @@
 #include "VecSim/index_factories/index_factory.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/algorithms/svs/svs_utils.h"
 #include <cassert>
 #include "memory.h"
 
@@ -26,6 +27,18 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
 }
 
 extern "C" void VecSim_SetWriteMode(VecSimWriteMode mode) { VecSimIndex::setWriteMode(mode); }
+
+extern "C" void VecSim_UpdateThreadPoolSize(size_t new_size) {
+    if (new_size == 0) {
+        VecSimIndex::setWriteMode(VecSim_WriteInPlace);
+    } else {
+        VecSimIndex::setWriteMode(VecSim_WriteAsync);
+    }
+    // Resize the shared SVS pool. Clamped to a minimum of 1. OS threads are spawned
+    // lazily on first SVS index creation; once an index exists this resizes the
+    // shared pool immediately (cooperating with the deferred-shrink protocol).
+    VecSimSVSThreadPool::resize(new_size);
+}
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams,
@@ -326,7 +339,20 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
-    return index->debugInfoIterator();
+    VecSimDebugInfoIterator *infoIterator = index->debugInfoIterator();
+    // Append the process-wide shared memory total. This field is not emitted by
+    // any algorithm's own debugInfoIterator(); it is injected here at the C API
+    // boundary so that every caller (regardless of algorithm) can account for
+    // memory not tied to any single index without special-casing SVS internals.
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetSharedMemory()}}});
+    return infoIterator;
+}
+
+extern "C" size_t VecSim_GetSharedMemory(void) {
+    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {
