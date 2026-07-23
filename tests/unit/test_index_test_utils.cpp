@@ -116,8 +116,8 @@ protected:
                 // compute expected norm using the original vector
                 float expected_norm =
                     test_utils::integral_compute_norm(vectors[i * vec_per_label + j].data(), dim);
-                const float *stored_norm = reinterpret_cast<const float *>(stored_vec + dim);
-                ASSERT_EQ(*stored_norm, expected_norm) << "wrong vector norm for vector id:" << j;
+                const float stored_norm = load_unaligned<float>(stored_vec + dim);
+                ASSERT_EQ(stored_norm, expected_norm) << "wrong vector norm for vector id:" << j;
             }
         }
     }

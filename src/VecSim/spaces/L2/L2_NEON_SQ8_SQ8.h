@@ -37,9 +37,9 @@ float SQ8_SQ8_L2SqrSIMD64_NEON(const void *pVec1v, const void *pVec2v, size_t di
     // Get precomputed sum of squares from both vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
     const float sum_sq_1 =
-        *reinterpret_cast<const float *>(pVec1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVec1 + dimension + sq8::SUM_SQUARES * sizeof(float));
     const float sum_sq_2 =
-        *reinterpret_cast<const float *>(pVec2 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVec2 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return sum_sq_1 + sum_sq_2 - 2.0f * ip;
