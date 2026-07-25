@@ -57,6 +57,34 @@ TYPED_TEST(HNSWTest, hnsw_vector_add_test) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(HNSWTest, hnsw_relabel_vector_test) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    TEST_DATA_T vec[dim];
+    GenerateVector<TEST_DATA_T>(vec, dim, 1.7);
+    VecSimIndex_AddVector(index, vec, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    // Relabel an existing label in place: size is unchanged, the vector answers to the new label,
+    // and the old label is gone.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 2, vec), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, vec)));
+
+    // Relabeling a missing label is a no-op.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 3), 0);
+
+    // Relabeling onto an already-existing label is refused (caller falls back to delete + add).
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 5, 5.0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 2, 5), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 2, vec), 0); // unchanged after the refusal
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     size_t dim = 4;
     size_t bs = 1;

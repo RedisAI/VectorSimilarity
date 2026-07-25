@@ -56,6 +56,31 @@ TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(BruteForceTest, brute_force_relabel_vector_test) {
+    size_t dim = 4;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    TEST_DATA_T vec[dim];
+    GenerateVector<TEST_DATA_T>(vec, dim, 1.7);
+    VecSimIndex_AddVector(index, vec, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    // Relabel in place: size unchanged, vector answers to the new label, old label gone.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 2, vec), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, vec)));
+
+    // No-op for a missing label; refused onto an existing label.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 3), 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 5, 5.0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 2, 5), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 2, vec), 0);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     size_t dim = 4;
     size_t n = 1;

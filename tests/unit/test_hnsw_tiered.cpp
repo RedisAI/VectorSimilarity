@@ -19,6 +19,7 @@
 #include "mock_thread_pool.h"
 
 #include <thread>
+#include <cmath>
 
 // Runs the test for all combination of data type(float/double) - label type (single/multi)
 
@@ -132,6 +133,75 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, vector), 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTest, RelabelVectorInBackend) {
+    // Relabel a vector that has already been ingested into the HNSW backend. The relabel must move
+    // the label to the new value without touching the graph (internal id is stable).
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    size_t dim = tiered_index->backendIndex->getDim();
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 0.5f);
+
+    // Add under label 1, then ingest into HNSW via the background job.
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+
+    // Relabel 1 -> 2.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2), 1);
+
+    // Size is unchanged, the vector now answers to label 2, and label 1 is gone.
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(2, vector), 0);
+    ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(1, vector)));
+
+    // Relabeling a non-existent label is a no-op (returns 0).
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTest, RelabelVectorPendingInFlat) {
+    // Relabel a vector that is still in the flat buffer with a pending ingest job: the buffered
+    // vector AND the pending insert job must be re-keyed, so the later ingestion lands under the
+    // new label in HNSW.
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    size_t dim = tiered_index->backendIndex->getDim();
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 0.25f);
+
+    // Add under label 1 (lands in the flat buffer with a pending insert job); do NOT ingest yet.
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(1), 1);
+
+    // Relabel 1 -> 2 while the job is pending.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(1), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(2), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(2, vector), 0);
+
+    // Now ingest: the pending job must insert the vector into HNSW under the NEW label 2.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(2, vector), 0);
+    ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(1, vector)));
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testIndexesAttributes) {

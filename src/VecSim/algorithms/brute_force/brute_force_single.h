@@ -29,6 +29,24 @@ public:
     int deleteVectorById(labelType label, idType id) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
 
+    // Relabel a stored vector without moving its data. The brute-force index has no internal lock;
+    // callers (the tiered index under flatIndexGuard, or a standalone FLAT index under the search
+    // module's spec lock) provide mutual exclusion, matching addVector/deleteVector here.
+    int relabelVector(labelType old_label, labelType new_label) override {
+        auto it = labelToIdLookup.find(old_label);
+        if (it == labelToIdLookup.end()) {
+            return 0; // old_label not found
+        }
+        if (labelToIdLookup.find(new_label) != labelToIdLookup.end()) {
+            return 0; // new_label already exists; caller should fall back to delete + add
+        }
+        idType id = it->second;
+        labelToIdLookup.erase(it);
+        labelToIdLookup.emplace(new_label, id);
+        this->idToLabelMapping[id] = new_label;
+        return 1;
+    }
+
     std::unique_ptr<vecsim_stl::abstract_results_container>
     getNewResultsContainer(size_t cap) const override {
         return std::unique_ptr<vecsim_stl::abstract_results_container>(

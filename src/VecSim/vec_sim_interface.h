@@ -54,6 +54,26 @@ public:
     virtual int deleteVector(labelType label) = 0;
 
     /**
+     * @brief Change the external label of an already-stored vector from @c old_label to
+     * @c new_label, WITHOUT re-inserting the vector or touching the graph topology. This is a
+     * cheap O(1) (per stored vector) relabel: only the label<->internal-id mapping is updated;
+     * the internal id and all neighbor edges (which reference internal ids) are left untouched.
+     *
+     * Intended for callers that re-key an unchanged vector (e.g. a search module that assigns a
+     * new document id on update but whose vector value did not change), so the expensive
+     * delete+re-insert cycle (and the resulting graph churn) can be avoided.
+     *
+     * @param old_label the current label of the stored vector.
+     * @param new_label the label to assign. Must not already exist in the index.
+     * @return 1 if the vector was relabeled, 0 if @c old_label was not found, and
+     *         VECSIM_RELABEL_NOT_SUPPORTED (-1) if this index type does not implement relabeling
+     *         (in which case the caller should fall back to delete + add).
+     */
+    virtual int relabelVector(labelType old_label, labelType new_label) {
+        return VECSIM_RELABEL_NOT_SUPPORTED;
+    }
+
+    /**
      * @brief Calculate the distance of a vector from an index to a vector.
      * @param index the index from which the first vector is located, and that defines the distance
      * metric.
