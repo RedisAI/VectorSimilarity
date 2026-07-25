@@ -252,6 +252,20 @@ public:
         return res;
     }
 
+    VecSimDebugCommandCode getHNSWElementIncomingEdges(size_t label, int **incomingEdgesCounts) {
+        this->mainIndexGuard.lock_shared();
+        auto res = this->getHNSWIndex()->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        this->mainIndexGuard.unlock_shared();
+        return res;
+    }
+
+    size_t shrinkAllIncomingEdges() {
+        this->mainIndexGuard.lock_shared();
+        auto res = this->getHNSWIndex()->shrinkAllIncomingEdges();
+        this->mainIndexGuard.unlock_shared();
+        return res;
+    }
+
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
     size_t indexMetaDataCapacity() const override {

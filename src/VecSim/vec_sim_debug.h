@@ -43,6 +43,37 @@ int VecSimDebug_GetElementNeighborsInHNSWGraph(VecSimIndex *index, size_t label,
  */
 void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsData);
 
+/**
+ * @brief: Get the count of incoming unidirectional edges for an element in HNSW index.
+ * Returns an array with <topLevel+2> entries, where each entry is the count of incoming
+ * unidirectional edges for that level. The last entry is -1 (indicates end of array).
+ * These are edges where another node points to this node, but this node doesn't point back.
+ * Note: currently only HNSW indexes of type single are supported (multi not yet) - tiered included.
+ * For cleanup, VecSimDebug_ReleaseElementIncomingEdgesInHNSWGraph need to be called.
+ * @param index - the index in which the element resides.
+ * @param label - the label to dump its incoming edges count in every level.
+ * @param incomingEdgesCounts - a pointer to an array of integers which will hold the count
+ *                              of incoming edges per level.
+ */
+int VecSimDebug_GetElementIncomingEdgesInHNSWGraph(VecSimIndex *index, size_t label,
+                                                   int **incomingEdgesCounts);
+
+/**
+ * @brief: Release the incoming edges data allocated by
+ * VecSimDebug_GetElementIncomingEdgesInHNSWGraph.
+ * @param incomingEdgesCounts - the array returned in the placeholder to be de-allocated.
+ */
+void VecSimDebug_ReleaseElementIncomingEdgesInHNSWGraph(int *incomingEdgesCounts);
+
+/**
+ * @brief: Shrink all incoming unidirectional edges vectors in HNSW index to fit their size.
+ * This reclaims unused capacity that accumulates during deletion repairs.
+ * @param index - the HNSW index to shrink.
+ * @param memorySaved - output parameter for the total memory saved in bytes.
+ * @return VecSimDebugCommandCode indicating success or failure.
+ */
+int VecSimDebug_ShrinkIncomingEdgesInHNSWGraph(VecSimIndex *index, size_t *memorySaved);
+
 #ifdef __cplusplus
 }
 #endif

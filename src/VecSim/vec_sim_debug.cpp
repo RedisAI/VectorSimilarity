@@ -80,3 +80,121 @@ extern "C" void VecSimDebug_ReleaseElementNeighborsInHNSWGraph(int **neighborsDa
     }
     delete[] neighborsData;
 }
+
+extern "C" int VecSimDebug_GetElementIncomingEdgesInHNSWGraph(VecSimIndex *index, size_t label,
+                                                              int **incomingEdgesCounts) {
+    // Set as if we return an error, and upon success we will set the pointers appropriately.
+    *incomingEdgesCounts = nullptr;
+    VecSimIndexBasicInfo info = index->basicInfo();
+    if (info.algo != VecSimAlgo_HNSWLIB) {
+        return VecSimDebugCommandCode_BadIndex;
+    }
+    if (!info.isTiered) {
+        if (info.type == VecSimType_FLOAT32) {
+            return dynamic_cast<HNSWIndex<float, float> *>(index)->getHNSWElementIncomingEdges(
+                label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_FLOAT64) {
+            return dynamic_cast<HNSWIndex<double, double> *>(index)->getHNSWElementIncomingEdges(
+                label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_BFLOAT16) {
+            return dynamic_cast<HNSWIndex<vecsim_types::bfloat16, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_FLOAT16) {
+            return dynamic_cast<HNSWIndex<vecsim_types::float16, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_INT8) {
+            return dynamic_cast<HNSWIndex<int8_t, float> *>(index)->getHNSWElementIncomingEdges(
+                label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_UINT8) {
+            return dynamic_cast<HNSWIndex<uint8_t, float> *>(index)->getHNSWElementIncomingEdges(
+                label, incomingEdgesCounts);
+        } else {
+            assert(false && "Invalid data type");
+        }
+    } else {
+        if (info.type == VecSimType_FLOAT32) {
+            return dynamic_cast<TieredHNSWIndex<float, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_FLOAT64) {
+            return dynamic_cast<TieredHNSWIndex<double, double> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_BFLOAT16) {
+            return dynamic_cast<TieredHNSWIndex<vecsim_types::bfloat16, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_FLOAT16) {
+            return dynamic_cast<TieredHNSWIndex<vecsim_types::float16, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_INT8) {
+            return dynamic_cast<TieredHNSWIndex<int8_t, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else if (info.type == VecSimType_UINT8) {
+            return dynamic_cast<TieredHNSWIndex<uint8_t, float> *>(index)
+                ->getHNSWElementIncomingEdges(label, incomingEdgesCounts);
+        } else {
+            assert(false && "Invalid data type");
+        }
+    }
+    return VecSimDebugCommandCode_BadIndex;
+}
+
+extern "C" void VecSimDebug_ReleaseElementIncomingEdgesInHNSWGraph(int *incomingEdgesCounts) {
+    if (incomingEdgesCounts == nullptr) {
+        return;
+    }
+    delete[] incomingEdgesCounts;
+}
+
+extern "C" int VecSimDebug_ShrinkIncomingEdgesInHNSWGraph(VecSimIndex *index, size_t *memorySaved) {
+    *memorySaved = 0;
+    VecSimIndexBasicInfo info = index->basicInfo();
+    if (info.algo != VecSimAlgo_HNSWLIB) {
+        return VecSimDebugCommandCode_BadIndex;
+    }
+    if (!info.isTiered) {
+        if (info.type == VecSimType_FLOAT32) {
+            *memorySaved = dynamic_cast<HNSWIndex<float, float> *>(index)->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_FLOAT64) {
+            *memorySaved =
+                dynamic_cast<HNSWIndex<double, double> *>(index)->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_BFLOAT16) {
+            *memorySaved = dynamic_cast<HNSWIndex<vecsim_types::bfloat16, float> *>(index)
+                               ->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_FLOAT16) {
+            *memorySaved = dynamic_cast<HNSWIndex<vecsim_types::float16, float> *>(index)
+                               ->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_INT8) {
+            *memorySaved =
+                dynamic_cast<HNSWIndex<int8_t, float> *>(index)->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_UINT8) {
+            *memorySaved =
+                dynamic_cast<HNSWIndex<uint8_t, float> *>(index)->shrinkAllIncomingEdges();
+        } else {
+            assert(false && "Invalid data type");
+            return VecSimDebugCommandCode_BadIndex;
+        }
+    } else {
+        if (info.type == VecSimType_FLOAT32) {
+            *memorySaved =
+                dynamic_cast<TieredHNSWIndex<float, float> *>(index)->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_FLOAT64) {
+            *memorySaved =
+                dynamic_cast<TieredHNSWIndex<double, double> *>(index)->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_BFLOAT16) {
+            *memorySaved = dynamic_cast<TieredHNSWIndex<vecsim_types::bfloat16, float> *>(index)
+                               ->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_FLOAT16) {
+            *memorySaved = dynamic_cast<TieredHNSWIndex<vecsim_types::float16, float> *>(index)
+                               ->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_INT8) {
+            *memorySaved =
+                dynamic_cast<TieredHNSWIndex<int8_t, float> *>(index)->shrinkAllIncomingEdges();
+        } else if (info.type == VecSimType_UINT8) {
+            *memorySaved =
+                dynamic_cast<TieredHNSWIndex<uint8_t, float> *>(index)->shrinkAllIncomingEdges();
+        } else {
+            assert(false && "Invalid data type");
+            return VecSimDebugCommandCode_BadIndex;
+        }
+    }
+    return VecSimDebugCommandCode_OK;
+}
