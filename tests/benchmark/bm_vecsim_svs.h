@@ -58,6 +58,11 @@ public:
     // registration.
     void TopK_SVS(benchmark::State &st);
 
+    // Runs a number of parallel TopK searches while a background update job (moving vectors from
+    // the flat buffer into the SVS backend index) is in progress. Measures the time to complete
+    // all searches concurrently with the update.
+    void TopKSearchDuringUpdate(benchmark::State &st);
+
 private:
     static const char *svs_index_tar_file;
     static std::string base_path;
@@ -490,6 +495,68 @@ void BM_VecSimSVS<index_type_t>::TopK_SVS(benchmark::State &st) {
     }
 
     VecSimIndex_Free(index);
+}
+
+template <typename index_type_t>
+void BM_VecSimSVS<index_type_t>::TopKSearchDuringUpdate(benchmark::State &st) {
+    // ensure mode is async
+    ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
+
+    const size_t window_size = 200;
+    const size_t k = 100;
+    size_t update_threshold = st.range(0);
+    size_t n_parallel_searches = st.range(1);
+    int unsigned num_threads = st.range(2);
+
+    if (num_threads > std::thread::hardware_concurrency()) {
+        GTEST_SKIP() << "Not enough threads available, skipping test...";
+    }
+
+    // Ensure we have enough vectors to fill the flat buffer and to run the searches.
+    ASSERT_GE(N_QUERIES, update_threshold);
+
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
+    auto *tiered_index = CreateTieredSVSIndexFromFile(mock_thread_pool, update_threshold);
+
+    // Fill the flat buffer up to just below the update threshold, so a single AddVector will
+    // trigger the background update job.
+    for (size_t i = 0; i < update_threshold - 1; ++i) {
+        int ret = VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i + N_VECTORS);
+        ASSERT_EQ(ret, 1);
+    }
+
+    mock_thread_pool.init_threads();
+
+    for (auto _ : st) {
+        // Trigger the background update job by reaching the update threshold. It runs on the
+        // index's own thread pool.
+        int ret = VecSimIndex_AddVector(tiered_index, test_vectors[update_threshold - 1].data(),
+                                        update_threshold - 1 + N_VECTORS);
+        ASSERT_EQ(ret, 1);
+
+        // Run the TopK searches on independent threads, asynchronously to the index thread pool,
+        // so they execute concurrently with the ongoing background update.
+        std::vector<std::thread> search_threads;
+        search_threads.reserve(n_parallel_searches);
+        for (size_t i = 0; i < n_parallel_searches; ++i) {
+            search_threads.emplace_back([tiered_index, i, window_size, k]() {
+                SVSRuntimeParams svs_params = {.windowSize = window_size};
+                VecSimQueryParams query_params = {.svsRuntimeParams = svs_params};
+                auto results = VecSimIndex_TopKQuery(
+                    tiered_index, test_vectors[i % N_QUERIES].data(), k, &query_params, BY_SCORE);
+                VecSimQueryReply_Free(results);
+            });
+        }
+        for (auto &t : search_threads) {
+            t.join();
+        }
+
+        // Wait for the background update to complete.
+        mock_thread_pool.thread_pool_wait();
+    }
+
+    mock_thread_pool.thread_pool_join();
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)

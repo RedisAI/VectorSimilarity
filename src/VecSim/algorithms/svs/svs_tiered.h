@@ -711,13 +711,14 @@ private:
                 std::lock_guard lock(this->mainIndexGuard);
                 svs_index->setImpl(std::move(impl));
             } else {
+                svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 // Backend index is initialized - just add the vectors.
+                auto changes = svs_index->makeAddVectorsChanges(
+                    vectors_to_move.data(), labels_to_move.data(), labels_to_move.size());
+                // Upgrade to unique lock to add vectors
                 main_shared_lock.unlock();
                 std::lock_guard lock(this->mainIndexGuard);
-                // Upgrade to unique lock to add vectors
-                svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
-                svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
-                                      labels_to_move.size());
+                svs_index->applyAddVectorsChanges(std::move(changes));
             }
         }
         executeTracingCallback("UpdateJob::after_add_to_svs");
