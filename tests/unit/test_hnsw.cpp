@@ -11,6 +11,8 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_debug.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/index_factories/factory_utils.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "unit_test_utils.h"
 #include "VecSim/utils/serializer.h"
@@ -42,6 +44,50 @@ protected:
 // DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(HNSWTest, DataTypeSet);
+
+namespace {
+
+float storedDispatchTestFunc(const void *, const void *, size_t) { return 11.0f; }
+
+float queryDispatchTestFunc(const void *, const void *, size_t) { return 22.0f; }
+
+} // namespace
+
+TEST(HNSWDistanceDispatchTest, UsesStoredToQueryDispatch) {
+    constexpr size_t dim = 4;
+    HNSWParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = false,
+    };
+    auto abstract_params = VecSimFactory::NewAbstractInitParams(&params, nullptr, false);
+    auto components = CreateIndexComponents<float, float>(abstract_params.allocator, params.metric,
+                                                          params.dim, false);
+    delete components.indexCalculator;
+    components.indexCalculator = new (abstract_params.allocator) DistanceCalculatorCommon<float>(
+        abstract_params.allocator, storedDispatchTestFunc, queryDispatchTestFunc);
+
+    auto *index = new (abstract_params.allocator)
+        HNSWIndex_Single<float, float>(&params, abstract_params, components);
+    float vector[dim] = {1.0f, 2.0f, 3.0f, 4.0f};
+    float query[dim] = {4.0f, 3.0f, 2.0f, 1.0f};
+    VecSimIndex_AddVector(index, vector, 7);
+
+    ASSERT_FLOAT_EQ(index->calcDistance(vector, query), 11.0f);
+    auto verify_query_score = [](size_t id, double score, size_t) {
+        ASSERT_EQ(id, 7);
+        ASSERT_FLOAT_EQ(score, 22.0f);
+    };
+
+    runTopKSearchTest(index, query, 1, verify_query_score);
+    runRangeQueryTest(index, query, 23.0, verify_query_score, 1, BY_SCORE);
+    VecSimBatchIterator *batch_iterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batch_iterator, 1, verify_query_score);
+    VecSimBatchIterator_Free(batch_iterator);
+
+    VecSimIndex_Free(index);
+}
 
 TYPED_TEST(HNSWTest, hnsw_vector_add_test) {
     size_t dim = 4;
