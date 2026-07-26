@@ -254,27 +254,8 @@ class QuantPreprocessor : public PreprocessorInterface {
     void quantize(const DataType *input, OUTPUT_TYPE *quantized) const {
         assert(input && quantized);
 
-        if constexpr (std::is_same_v<DataType, float> && !WithNorm) {
-            quantize_impl(input, quantized);
-        } else {
-            float x_mean_ip = 0.0f; // only used for WithNorm
-
-            // Get transformed values (convert to float, mean-subtracted for WithNorm)
-            vecsim_stl::vector<float> values(this->dim, this->allocator);
-            for (size_t i = 0; i < this->dim; ++i) {
-                values[i] = to_fp32<DataType>(input[i]);
-                if constexpr (WithNorm) {
-                    x_mean_ip += values[i] * mean[i];
-                    values[i] -= mean[i];
-                }
-            }
-            quantize_impl(values.data(), quantized, x_mean_ip);
-        }
-    }
-
-    void quantize_impl(const float *values, OUTPUT_TYPE *quantized, float x_mean_ip = 0.0f) const {
-        // Find min and max values.
-        auto [min_val, max_val] = find_min_max(values);
+        float x_mean_ip = 0.0f; // only used for WithNorm
+        auto [min_val, max_val] = find_min_max(input, x_mean_ip);
 
         // Calculate scaling factor (typed as MetadataType because they end up as metadata).
         const MetadataType diff = (max_val - min_val);
@@ -296,10 +277,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         // Quantize the values
         for (; i < dim_round_down; i += 4) {
             // Load once (widened to FP32 if DataType is FP16).
-            const float x0 = values[i + 0];
-            const float x1 = values[i + 1];
-            const float x2 = values[i + 2];
-            const float x3 = values[i + 3];
+            const float x0 = transformed_value(input, i + 0);
+            const float x1 = transformed_value(input, i + 1);
+            const float x2 = transformed_value(input, i + 2);
+            const float x3 = transformed_value(input, i + 3);
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
@@ -329,7 +310,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         MetadataType sum_squares = (q0 + q1) + (q2 + q3);
 
         for (; i < this->dim; ++i) {
-            const float x = values[i];
+            const float x = transformed_value(input, i);
             quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x - min_val) * inv_delta));
             sum += x;
             if constexpr (Metric == VecSimMetric_L2) {
@@ -548,9 +529,34 @@ public:
     }
 
 private:
-    std::pair<float, float> find_min_max(const float *input) const {
-        auto [min_it, max_it] = std::minmax_element(input, input + dim);
-        return {*min_it, *max_it};
+    inline float transformed_value(const DataType *input, size_t i) const {
+        float value = to_fp32<DataType>(input[i]);
+        if constexpr (WithNorm) {
+            value -= mean[i];
+        }
+        return value;
+    }
+
+    std::pair<float, float> find_min_max(const DataType *input, float &x_mean_ip) const {
+        if constexpr (!WithNorm) {
+            auto [min_it, max_it] = std::minmax_element(input, input + dim);
+            return {to_fp32<DataType>(*min_it), to_fp32<DataType>(*max_it)};
+        } else {
+            const float first_input_value = to_fp32<DataType>(input[0]);
+            float value = first_input_value - mean[0];
+            float min_val = value;
+            float max_val = value;
+            x_mean_ip = first_input_value * mean[0];
+
+            for (size_t i = 1; i < dim; ++i) {
+                const float input_value = to_fp32<DataType>(input[i]);
+                value = input_value - mean[i];
+                min_val = std::min(min_val, value);
+                max_val = std::max(max_val, value);
+                x_mean_ip += input_value * mean[i];
+            }
+            return {min_val, max_val};
+        }
     }
 
     // Mean vector for WithNorm=true; zero-size placeholder otherwise (no runtime overhead).
