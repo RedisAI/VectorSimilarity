@@ -31,15 +31,27 @@ struct sq8 {
         SUM_SQUARES_QUERY = 1 // Only for L2
     };
 
-    // Template on metric — compile-time constant when metric is known
-    template <VecSimMetric Metric>
+    // Template on Metric and WithNorm — compile-time constants
+    // WithNorm: one extra metadata slot for x_mean_ip / y_mean_ip
+    template <VecSimMetric Metric, bool WithNorm = false>
     static constexpr size_t storage_metadata_count() {
-        return (Metric == VecSimMetric_L2) ? 4 : 3;
+        return ((Metric == VecSimMetric_L2) ? 4 : 3) + (WithNorm ? 1 : 0);
+    }
+
+    template <VecSimMetric Metric, bool WithNorm = false>
+    static constexpr size_t query_metadata_count() {
+        return ((Metric == VecSimMetric_L2) ? 2 : 1) + (WithNorm ? 1 : 0);
+    }
+
+    // Index of x_mean_ip / y_mean_ip in the last slot in metadata array
+    template <VecSimMetric Metric>
+    static constexpr size_t mean_ip_index() {
+        return storage_metadata_count<Metric, true>() - 1;
     }
 
     template <VecSimMetric Metric>
-    static constexpr size_t query_metadata_count() {
-        return (Metric == VecSimMetric_L2) ? 2 : 1;
+    static constexpr size_t query_mean_ip_index() {
+        return query_metadata_count<Metric, true>() - 1;
     }
 };
 
