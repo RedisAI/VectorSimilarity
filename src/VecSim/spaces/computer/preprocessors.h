@@ -167,8 +167,9 @@ private:
  *
  * Query processing:
  * The query vector is not quantized. It remains in DataType width (FP32 stays FP32, FP16 stays
- * FP16), but we precompute and store metric-specific FP32 values to accelerate asymmetric
- * distance computation:
+ * FP16). Normalized L2 stores y' = y - mean; all other modes store y unchanged. We precompute and
+ * store metric-specific FP32 values from the query body to accelerate asymmetric distance
+ * computation:
  * - For IP/Cosine: y_sum = Σy_i (sum of query values)
  * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query values)
  *
@@ -199,6 +200,8 @@ private:
  *     - x_sum_squares = Σx_i² is precomputed and stored in the storage blob
  *     - IP(x, y) is computed using the formula above
  *     - y_sum_squares = Σy_i² is precomputed and stored in the query blob
+ *   For normalized L2, x and y in this formula are the centered values x' and y'; their distance
+ *   is identical to the distance between the original vectors.
  *
  * === Symmetric distance (both x and y are quantized) ===
  *
@@ -213,13 +216,13 @@ private:
  *            = min_x * sum_y + min_y * sum_x - dim * min_x * min_y
  *              + delta_x * delta_y * Σ(qx_i * qy_i)
  *   where:
- *     - sum_x, sum_y are precomputed sums of original values
+ *     - sum_x, sum_y are precomputed sums of the values represented by each blob
  *     - Σqx_i = (sum_x - dim * min_x) / delta_x  (sum of quantized values, derived from stored sum)
  *     - Σqy_i = (sum_y - dim * min_y) / delta_y
  *
  * For L2:
  *   ||x - y||² = sum_sq_x + sum_sq_y - 2 * IP(x, y)
- *   where sum_sq_x, sum_sq_y are precomputed sums of squared original values.
+ *   where sum_sq_x, sum_sq_y are precomputed sums of the squared represented values.
  */
 // Input types accepted by QuantPreprocessor. Opt-in via std::same_as so unrelated types
 // (e.g. integers, double, bfloat16) are rejected at the template head with a named constraint.
@@ -232,6 +235,15 @@ template <QuantInput T>
 static inline float to_fp32(T x) {
     if constexpr (std::is_same_v<T, vecsim_types::float16>) {
         return vecsim_types::FP16_to_FP32(x);
+    } else {
+        return x;
+    }
+}
+
+template <QuantInput T>
+static inline T from_fp32(float x) {
+    if constexpr (std::is_same_v<T, vecsim_types::float16>) {
+        return vecsim_types::FP32_to_FP16(x);
     } else {
         return x;
     }
@@ -330,14 +342,16 @@ class QuantPreprocessor : public PreprocessorInterface {
         memcpy(meta_dst, buf, n * sizeof(MetadataType));
     }
 
-    // Computes and writes query metadata (FP32) in a single pass over the input vector.
+    // Computes and writes query metadata (FP32) in a single pass over the query values.
     // Without norm:
     //   For IP/Cosine: writes y_sum = Σy_i
     //   For L2: writes y_sum = Σy_i and y_sum_squares = Σy_i²
-    // With norm: additionally appends y_mean_ip = Σ(mean_i * y_i).
+    // With norm: additionally appends y_mean_ip = Σ(mean_i * original_y_i).
+    // For normalized L2, values contains y - mean while original_input contains y.
     // The output pointer addresses the metadata region after the query body and may not be
     // 4-byte aligned (e.g. FP16 query body with odd dim), so writes go through memcpy.
-    void assign_query_metadata(const DataType *input, void *output_metadata) const {
+    void assign_query_metadata(const DataType *values, const DataType *original_input,
+                               void *output_metadata) const {
 
         // Accumulators are FP32 to preserve precision for FP16 inputs.
         // 4 independent accumulators for sum
@@ -352,10 +366,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         size_t dim_round_down = this->dim & ~size_t(3);
 
         for (; i < dim_round_down; i += 4) {
-            const float y0 = to_fp32<DataType>(input[i + 0]);
-            const float y1 = to_fp32<DataType>(input[i + 1]);
-            const float y2 = to_fp32<DataType>(input[i + 2]);
-            const float y3 = to_fp32<DataType>(input[i + 3]);
+            const float y0 = to_fp32<DataType>(values[i + 0]);
+            const float y1 = to_fp32<DataType>(values[i + 1]);
+            const float y2 = to_fp32<DataType>(values[i + 2]);
+            const float y3 = to_fp32<DataType>(values[i + 3]);
 
             s0 += y0;
             s1 += y1;
@@ -370,10 +384,10 @@ class QuantPreprocessor : public PreprocessorInterface {
             }
 
             if constexpr (WithNorm) {
-                m0 += mean[i + 0] * y0;
-                m1 += mean[i + 1] * y1;
-                m2 += mean[i + 2] * y2;
-                m3 += mean[i + 3] * y3;
+                m0 += mean[i + 0] * to_fp32<DataType>(original_input[i + 0]);
+                m1 += mean[i + 1] * to_fp32<DataType>(original_input[i + 1]);
+                m2 += mean[i + 2] * to_fp32<DataType>(original_input[i + 2]);
+                m3 += mean[i + 3] * to_fp32<DataType>(original_input[i + 3]);
             }
         }
 
@@ -384,13 +398,13 @@ class QuantPreprocessor : public PreprocessorInterface {
 
         // Tail: handle remaining elements
         for (; i < this->dim; ++i) {
-            const float y = to_fp32<DataType>(input[i]);
+            const float y = to_fp32<DataType>(values[i]);
             sum += y;
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += y * y;
             }
             if constexpr (WithNorm) {
-                y_mean_ip += mean[i] * y;
+                y_mean_ip += mean[i] * to_fp32<DataType>(original_input[i]);
             }
         }
 
@@ -488,7 +502,11 @@ public:
     /**
      * Preprocesses the query vector for asymmetric distance computation.
      *
-     * The query blob contains the original DataType values followed by FP32 precomputed values:
+     * The query blob contains DataType values followed by FP32 precomputed values. Normalized L2
+     * stores centered query values (y - mean), so its distance kernel directly computes
+     * ||(x - mean) - (y - mean)||² without cancellation-prone correction terms. Other modes keep
+     * the original query values.
+     *
      * - For IP/Cosine: y_sum = Σy_i (sum of query values)
      * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query
      *                                                                      values)
@@ -508,13 +526,20 @@ public:
         // Allocate aligned memory for the query blob
         blob = this->allocator->allocate_aligned(this->query_bytes_count, alignment);
         const size_t body_bytes = this->dim * sizeof(DataType);
-        memcpy(blob, original_blob, body_bytes);
         const DataType *input = static_cast<const DataType *>(original_blob);
+        DataType *query_values = static_cast<DataType *>(blob);
+        if constexpr (WithNorm && Metric == VecSimMetric_L2) {
+            for (size_t i = 0; i < this->dim; ++i) {
+                query_values[i] = from_fp32<DataType>(to_fp32<DataType>(input[i]) - this->mean[i]);
+            }
+        } else {
+            memcpy(query_values, original_blob, body_bytes);
+        }
 
         // Compute and write FP32 query metadata after the query body. The metadata offset is
         // body_bytes, which is not guaranteed to be 4-byte aligned for FP16 query bodies.
         void *metadata_dst = static_cast<uint8_t *>(blob) + body_bytes;
-        assign_query_metadata(input, metadata_dst);
+        assign_query_metadata(query_values, input, metadata_dst);
 
         query_blob_size = this->query_bytes_count;
     }

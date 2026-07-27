@@ -1668,15 +1668,22 @@ protected:
         const size_t storage_meta_offset = dim * sizeof(uint8_t);
         const size_t query_meta_offset = dim * sizeof(DataType);
         float centered[dim];
+        DataType expected_query_body[dim];
         float expected_x_mean_ip = 0.0f;
         float expected_y_sum = 0.0f;
         float expected_y_sum_squares = 0.0f;
         float expected_y_mean_ip = 0.0f;
         for (size_t i = 0; i < dim; ++i) {
             centered[i] = widened_blob[i] - mean_vec[i];
+            if constexpr (Metric == VecSimMetric_L2) {
+                expected_query_body[i] = from_fp32<DataType>(centered[i]);
+            } else {
+                expected_query_body[i] = original_blob[i];
+            }
+            const float query_value = to_fp32<DataType>(expected_query_body[i]);
             expected_x_mean_ip += widened_blob[i] * mean_vec[i];
-            expected_y_sum += widened_blob[i];
-            expected_y_sum_squares += widened_blob[i] * widened_blob[i];
+            expected_y_sum += query_value;
+            expected_y_sum_squares += query_value * query_value;
             expected_y_mean_ip += widened_blob[i] * mean_vec[i];
         }
 
@@ -1715,7 +1722,7 @@ protected:
                           storage_meta_offset + sq8::mean_ip_index<Metric>() * sizeof(float)),
                 expected_x_mean_ip);
             EXPECT_NO_FATAL_FAILURE(CompareVectors<DataType>(
-                static_cast<const DataType *>(query_blob), original_blob, dim));
+                static_cast<const DataType *>(query_blob), expected_query_body, dim));
             ASSERT_FLOAT_EQ(
                 load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
                 expected_y_sum);
@@ -1747,8 +1754,8 @@ protected:
             quant_preprocessor->preprocessQuery(original_blob, blob, blob_size, alignment);
             ASSERT_NE(blob, nullptr);
             ASSERT_EQ(blob_size, expected_query_size);
-            EXPECT_NO_FATAL_FAILURE(
-                CompareVectors<DataType>(static_cast<const DataType *>(blob), original_blob, dim));
+            EXPECT_NO_FATAL_FAILURE(CompareVectors<DataType>(static_cast<const DataType *>(blob),
+                                                             expected_query_body, dim));
             ASSERT_FLOAT_EQ(load_meta(blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
                             expected_y_sum);
             if constexpr (Metric == VecSimMetric_L2) {
@@ -1939,9 +1946,47 @@ TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_L2_FP32) {
 
     EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric L2 distance mismatch";
     ASSERT_TRUE(dispatch.isValid());
-    EXPECT_EQ(dispatch.stateless_func, nullptr);
-    EXPECT_NE(dispatch.stateful_func, nullptr);
+    EXPECT_EQ(dispatch.stateless_func, asym_func);
+    EXPECT_EQ(dispatch.stateful_func, nullptr);
     EXPECT_NEAR(dispatch(storage_blob, query_blob, dim), expected, 0.05f);
+
+    allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, L2LargeOffsetSmallDistance) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 128;
+    float x[dim];
+    float y[dim];
+    float mean[dim];
+    for (size_t i = 0; i < dim; ++i) {
+        mean[i] = 1000.0f;
+        x[i] = 1001.0f;
+        y[i] = 1001.1f;
+    }
+
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    buildStorageBlob(allocator, x, mean, dim, VecSimMetric_L2, storage_blob);
+    buildQueryBlob(allocator, y, mean, dim, VecSimMetric_L2, query_blob);
+
+    auto asym_func = spaces::L2_SQ8_FP32_GetDistFunc(dim);
+    auto sym_func = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>(
+        allocator, asym_func, sym_func, computeMeanSumSquares(mean, dim));
+
+    const float expected = bruteForceL2Dist(x, y, dim);
+    const float direct = calc->calcDistanceForQuery(storage_blob, query_blob, dim);
+    const auto dispatch = calc->getDistanceDispatch(DistanceMode::StoredToQuery);
+
+    ASSERT_TRUE(dispatch.isValid());
+    EXPECT_EQ(dispatch.stateless_func, asym_func);
+    EXPECT_EQ(dispatch.stateful_func, nullptr);
+    EXPECT_NEAR(direct, expected, 0.001f);
+    EXPECT_NEAR(dispatch(storage_blob, query_blob, dim), expected, 0.001f);
+    EXPECT_GE(direct, 0.0f);
 
     allocator->free_allocation(storage_blob);
     allocator->free_allocation(query_blob);
@@ -2061,6 +2106,54 @@ TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_FP16) {
     float expected = bruteForceIPDist(x_fp32, y_fp32, dim);
 
     EXPECT_NEAR(got, expected, 0.05f) << "Asymmetric IP FP16 distance mismatch";
+
+    allocator->free_allocation(storage_blob);
+    allocator->free_allocation(query_blob);
+    delete calc;
+}
+
+TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_L2_FP16) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 8;
+    const float x_fp32[dim] = {1.0f, 2.0f, 3.0f, 4.0f, 1.0f, 2.0f, 3.0f, 4.0f};
+    const float y_fp32[dim] = {0.5f, 1.5f, 2.5f, 3.5f, 0.5f, 1.5f, 2.5f, 3.5f};
+    const float mean[dim] = {0.5f, 1.0f, 1.5f, 2.0f, 0.5f, 1.0f, 1.5f, 2.0f};
+    using DataType = vecsim_types::float16;
+
+    DataType x[dim], y[dim];
+    vecsim_stl::vector<float> mean_vec(allocator);
+    for (size_t i = 0; i < dim; ++i) {
+        x[i] = vecsim_types::FP32_to_FP16(x_fp32[i]);
+        y[i] = vecsim_types::FP32_to_FP16(y_fp32[i]);
+        mean_vec.push_back(mean[i]);
+    }
+
+    void *storage_blob = nullptr;
+    size_t storage_size = dim * sizeof(DataType);
+    auto *storage_preprocessor = new (allocator)
+        QuantPreprocessor<DataType, VecSimMetric_L2, true>(allocator, dim, mean_vec);
+    storage_preprocessor->preprocessForStorage(x, storage_blob, storage_size, 0);
+    delete storage_preprocessor;
+
+    void *query_blob = nullptr;
+    size_t query_size = dim * sizeof(DataType);
+    auto *query_preprocessor = new (allocator)
+        QuantPreprocessor<DataType, VecSimMetric_L2, true>(allocator, dim, mean_vec);
+    query_preprocessor->preprocessQuery(y, query_blob, query_size, 0);
+    delete query_preprocessor;
+
+    auto asym_func = spaces::L2_SQ8_FP16_GetDistFunc(dim);
+    auto sym_func = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
+    auto *calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, VecSimMetric_L2>(
+        allocator, asym_func, sym_func, computeMeanSumSquares(mean, dim));
+    const float expected = bruteForceL2Dist(x_fp32, y_fp32, dim);
+    const auto dispatch = calc->getDistanceDispatch(DistanceMode::StoredToQuery);
+
+    EXPECT_NEAR(calc->calcDistanceForQuery(storage_blob, query_blob, dim), expected, 0.05f);
+    ASSERT_TRUE(dispatch.isValid());
+    EXPECT_EQ(dispatch.stateless_func, asym_func);
+    EXPECT_EQ(dispatch.stateful_func, nullptr);
+    EXPECT_NEAR(dispatch(storage_blob, query_blob, dim), expected, 0.05f);
 
     allocator->free_allocation(storage_blob);
     allocator->free_allocation(query_blob);

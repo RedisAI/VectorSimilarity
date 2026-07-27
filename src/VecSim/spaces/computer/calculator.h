@@ -126,17 +126,17 @@ public:
 /**
  * Distance calculator for mean-normalized SQ8 indices.
  *
- * Stored vectors are SQ8-quantized from x' = x - mean. This calculator applies analytical
- * correction terms derived from the per-vector x_mean_ip / y_mean_ip metadata stored in
- * the blobs by QuantPreprocessor WithNorm=True to recover correct distances between the
- * original (un-shifted) vectors x and y.
+ * Stored vectors are SQ8-quantized from x' = x - mean. IP queries remain unshifted and use
+ * analytical correction terms derived from the per-vector x_mean_ip / y_mean_ip metadata.
+ * L2 queries are centered once during preprocessing, allowing the base kernel to compute the
+ * original distance directly without cancellation-prone correction terms.
  *
  * Correction formulas (expressed in terms of distance semantics):
  *
- * Asymmetric (query y as FP32/FP16, stored vector x as SQ8 of x'):
+ * Asymmetric (stored vector x as SQ8 of x'):
  *   IP distance:  dist(x,y) = asym_func(x_blob, y_blob) - y_mean_ip
- *   L2 distance:  dist(x,y) = asym_func(x_blob, y_blob) + 2*(x_mean_ip - y_mean_ip)
- *                              - mean_sum_squares
+ *   L2 distance:  dist(x,y) = asym_func(x_blob, centered_y_blob)
+ *                              where centered_y = y - mean
  *
  * Symmetric (both x and y as SQ8 blobs):
  *   IP distance:  dist(x,y) = sym_func(x_blob, y_blob) - x_mean_ip - y_mean_ip
@@ -189,22 +189,17 @@ private:
                                          const void *query, size_t dim) {
         const auto *context = static_cast<const WithNormDistanceContext *>(opaque_context);
         DistType base = context->query_func(candidate, query, dim);
-        float y_mean_ip =
-            load_unaligned<float>(static_cast<const uint8_t *>(query) + dim * sizeof(DataType) +
-                                  sq8::template query_mean_ip_index<Metric>() * sizeof(float));
         if constexpr (Metric == VecSimMetric_IP) {
+            float y_mean_ip =
+                load_unaligned<float>(static_cast<const uint8_t *>(query) + dim * sizeof(DataType) +
+                                      sq8::template query_mean_ip_index<Metric>() * sizeof(float));
             // base = 1 - IP(x', y). We want 1 - IP(x, y).
             // IP(x, y) = IP(x', y) + y_mean_ip
             // => 1 - IP(x, y) = base - y_mean_ip
             return base - y_mean_ip;
-        } else { // L2
-            // base = ||x' - y||². We want ||x - y||².
-            // ||x - y||² = ||x' - y||² + 2*(x_mean_ip - y_mean_ip) - mean_sum_squares
-            float x_mean_ip =
-                load_unaligned<float>(static_cast<const uint8_t *>(candidate) + dim +
-                                      sq8::template mean_ip_index<Metric>() * sizeof(float));
-            return base + 2.0f * (x_mean_ip - y_mean_ip) - context->mean_sum_squares;
         }
+        // L2 query preprocessing centers y, so base = ||(x - mean) - (y - mean)||².
+        return base;
     }
 
 public:
@@ -222,7 +217,8 @@ public:
         return calcStoredWithContext(&context_, v1, v2, dim);
     }
 
-    // Asymmetric: query is raw FP32/FP16 blob, candidate is stored SQ8-of-x' blob.
+    // Asymmetric: IP queries are raw; L2 queries are centered during preprocessing. The candidate
+    // is a stored SQ8-of-x' blob.
     // Note: query_dist_func expects (storage, query) argument order.
     DistType calcDistanceForQuery(const void *candidate, const void *query,
                                   size_t dim) const override {
@@ -230,11 +226,12 @@ public:
     }
 
     DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const override {
+        if constexpr (Metric == VecSimMetric_L2) {
+            auto func =
+                mode == DistanceMode::StoredToStored ? context_.stored_func : context_.query_func;
+            return DistanceDispatch<DistType>::stateless(func);
+        }
         if (mode == DistanceMode::StoredToStored) {
-            if constexpr (Metric == VecSimMetric_L2) {
-                // The mean terms cancel for stored-to-stored L2, so retain the stateless fast path.
-                return DistanceDispatch<DistType>::stateless(context_.stored_func);
-            }
             return DistanceDispatch<DistType>::stateful(&context_, calcStoredWithContext);
         }
         return DistanceDispatch<DistType>::stateful(&context_, calcQueryWithContext);
