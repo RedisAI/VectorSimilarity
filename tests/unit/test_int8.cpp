@@ -422,7 +422,7 @@ void INT8Test::metrics_test(params_t index_params) {
         if (metric == VecSimMetric_Cosine) {
             // compare with the norm stored in the index vector
             const int8_t *index_vector = static_cast<const int8_t *>(this->GetDataByInternalId(i));
-            float index_vector_norm = *(reinterpret_cast<const float *>(index_vector + dim));
+            float index_vector_norm = load_unaligned<float>(index_vector + dim);
             float vector_norm = spaces::IntegralType_ComputeNorm<int8_t>(vector, dim);
             ASSERT_EQ(index_vector_norm, vector_norm) << "wrong vector norm for vector id:" << i;
         } else if (metric == VecSimMetric_IP) {
@@ -1050,7 +1050,7 @@ TEST_F(INT8TieredTest, CosineBlobCorrectness) {
     float vector_norm = spaces::IntegralType_ComputeNorm<int8_t>(vector, dim);
 
     auto verify_norm = [&](const int8_t *input_vector, float expected_norm) {
-        float vectors_stored_norm = *(reinterpret_cast<const float *>(input_vector + dim));
+        float vectors_stored_norm = load_unaligned<float>(input_vector + dim);
         ASSERT_EQ(vectors_stored_norm, expected_norm) << "wrong vector norm";
     };
 

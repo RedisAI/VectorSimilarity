@@ -48,15 +48,15 @@ float SQ8_SQ8_InnerProductSIMD64_NEON_DOTPROD_IMP(const void *pVec1v, const void
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
-    const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
-    const float min1 = params1[sq8::MIN_VAL];
-    const float delta1 = params1[sq8::DELTA];
-    const float sum1 = params1[sq8::SUM]; // Precomputed sum of original float elements
+    const auto *params1 = pVec1 + dimension;
+    const float min1 = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta1 = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
+    const float sum1 = load_unaligned<float>(params1 + sq8::SUM * sizeof(float));
 
-    const float *params2 = reinterpret_cast<const float *>(pVec2 + dimension);
-    const float min2 = params2[sq8::MIN_VAL];
-    const float delta2 = params2[sq8::DELTA];
-    const float sum2 = params2[sq8::SUM]; // Precomputed sum of original float elements
+    const auto *params2 = pVec2 + dimension;
+    const float min2 = load_unaligned<float>(params2 + sq8::MIN_VAL * sizeof(float));
+    const float delta2 = load_unaligned<float>(params2 + sq8::DELTA * sizeof(float));
+    const float sum2 = load_unaligned<float>(params2 + sq8::SUM * sizeof(float));
 
     // Apply algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1*q2) - dim*min1*min2

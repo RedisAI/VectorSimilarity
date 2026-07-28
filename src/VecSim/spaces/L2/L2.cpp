@@ -31,10 +31,10 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
     // Get the raw inner product using the common implementation
     const float ip = SQ8_FP32_InnerProduct_Impl(pVect1v, pVect2v, dimension);
 
-    // Get precomputed sum of squares from storage blob (pVect1 is SQ8)
+    // Storage metadata follows a byte payload and is not necessarily float-aligned.
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float x_sum_sq = params[sq8::SUM_SQUARES];
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Get precomputed sum of squares from query blob (pVect2 is FP32)
     const auto *pVect2 = static_cast<const float *>(pVect2v);
@@ -189,9 +189,9 @@ float SQ8_SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) 
     // Get precomputed sum of squares from both vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
     const float sum_sq_1 =
-        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
     const float sum_sq_2 =
-        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVect2 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Use the common inner product implementation
     const float ip = SQ8_SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);

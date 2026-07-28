@@ -422,7 +422,7 @@ void UINT8Test::metrics_test(params_t index_params) {
         if (metric == VecSimMetric_Cosine) {
             // compare with the norm stored in the index vector
             auto *index_vector = static_cast<const uint8_t *>(this->GetDataByInternalId(i));
-            float index_vector_norm = *(reinterpret_cast<const float *>(index_vector + dim));
+            float index_vector_norm = load_unaligned<float>(index_vector + dim);
             float vector_norm = spaces::IntegralType_ComputeNorm<uint8_t>(vector, dim);
             ASSERT_FLOAT_EQ(index_vector_norm, vector_norm) << "wrong norm for vector id:" << i;
         } else if (metric == VecSimMetric_IP) {

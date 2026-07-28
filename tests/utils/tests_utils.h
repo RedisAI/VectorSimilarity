@@ -86,8 +86,8 @@ static float SQ8_FP32_NotOptimized_InnerProduct(const void *pVect1v, const void 
     const auto *pVect2 = static_cast<const float *>(pVect2v);   // FP32 query
 
     // Get quantization parameters from pVect1 (SQ8 storage)
-    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float min_val = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
     // Compute inner product with dequantization
     float res = 0.0f;
     for (size_t i = 0; i < dimension; i++) {
@@ -119,12 +119,12 @@ static float SQ8_SQ8_NotOptimized_InnerProduct(const void *pVect1v, const void *
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     // Get quantization parameters from pVect1
-    const float min_val1 = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float min_val1 = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta1 = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
 
     // Get quantization parameters from pVect2
-    const float min_val2 = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    const float min_val2 = load_unaligned<float>(pVect2 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta2 = load_unaligned<float>(pVect2 + dimension + sq8::DELTA * sizeof(float));
 
     // Compute inner product with dequantization
     float res = 0.0f;
@@ -152,10 +152,10 @@ static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v
 
     // Extract metadata from the end of vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
-    const float min1 = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta1 = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
-    const float min2 = *reinterpret_cast<const float *>(pVect2 + dimension);
-    const float delta2 = *reinterpret_cast<const float *>(pVect2 + dimension + sizeof(float));
+    const float min1 = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta1 = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
+    const float min2 = load_unaligned<float>(pVect2 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta2 = load_unaligned<float>(pVect2 + dimension + sq8::DELTA * sizeof(float));
 
     // Compute L2 distance with dequantization
     float res = 0.0f;
@@ -201,11 +201,11 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
     }
 
     // Store parameters: [min, delta, sum, square_sum]
-    float *params = reinterpret_cast<float *>(qv + dim);
-    params[sq8::MIN_VAL] = min_val;
-    params[sq8::DELTA] = delta;
-    params[sq8::SUM] = sum;
-    params[sq8::SUM_SQUARES] = square_sum;
+    auto *params = qv + dim;
+    std::memcpy(params + sq8::MIN_VAL * sizeof(float), &min_val, sizeof(float));
+    std::memcpy(params + sq8::DELTA * sizeof(float), &delta, sizeof(float));
+    std::memcpy(params + sq8::SUM * sizeof(float), &sum, sizeof(float));
+    std::memcpy(params + sq8::SUM_SQUARES * sizeof(float), &square_sum, sizeof(float));
 }
 
 // Preprocess fp32 query for SQ8 IP/Cosine/L2 space.
@@ -246,8 +246,8 @@ static float SQ8_FP32_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2
     const auto *pVect2 = static_cast<const float *>(pVect2v);   // FP32 query
 
     // Get quantization parameters from pVect1 (SQ8 storage)
-    const float min_val = *reinterpret_cast<const float *>(pVect1 + dimension);
-    const float delta = *reinterpret_cast<const float *>(pVect1 + dimension + sizeof(float));
+    const float min_val = load_unaligned<float>(pVect1 + dimension + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(pVect1 + dimension + sq8::DELTA * sizeof(float));
 
     // Compute L2 squared with dequantization
     float res = 0.0f;

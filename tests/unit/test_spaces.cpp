@@ -292,8 +292,10 @@ TEST_F(SpacesTest, int8_Cosine_no_optimization_func_test) {
     test_utils::populate_int8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     float dist = INT8_Cosine((const void *)v1, (const void *)v2, dim);
     ASSERT_NEAR(dist, 0.0, 0.000001);
@@ -309,8 +311,10 @@ TEST_F(SpacesTest, uint8_Cosine_no_optimization_func_test) {
     test_utils::populate_uint8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     float dist = UINT8_Cosine((const void *)v1, (const void *)v2, dim);
     ASSERT_NEAR(dist, 0.0, 0.000001);
@@ -365,6 +369,42 @@ TEST_F(SpacesTest, SQ8_FP32_l2sqr_no_optimization_func_test) {
         SQ8_FP32_L2Sqr((const void *)v2_compressed.data(), (const void *)v1_orig.data(), dim);
 
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP32_L2Sqr failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP32_odd_dim_unaligned_metadata_test) {
+    for (const size_t dim : {1UL, 5UL, 7UL, 15UL}) {
+        const size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+        std::vector<float> query(query_size);
+        test_utils::populate_sq8_fp32_query(query.data(), dim, false, 1234);
+
+        const size_t storage_size =
+            dim + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+        std::vector<uint8_t> allocation(storage_size + alignof(float));
+        auto *storage = allocation.data();
+        while (reinterpret_cast<std::uintptr_t>(storage) % alignof(float) != 0) {
+            ++storage;
+        }
+        test_utils::populate_float_vec_to_sq8_with_metadata(storage, dim, false, 5678);
+
+        const auto *metadata = storage + dim;
+        ASSERT_NE(reinterpret_cast<std::uintptr_t>(metadata) % alignof(float), 0u);
+
+        const float expected_ip =
+            test_utils::SQ8_FP32_NotOptimized_InnerProduct(storage, query.data(), dim);
+        const float expected_l2 =
+            test_utils::SQ8_FP32_NotOptimized_L2Sqr(storage, query.data(), dim);
+
+        EXPECT_NEAR(SQ8_FP32_InnerProduct(storage, query.data(), dim), expected_ip, 0.01)
+            << "scalar IP with dim " << dim;
+        EXPECT_NEAR(SQ8_FP32_L2Sqr(storage, query.data(), dim), expected_l2, 0.01)
+            << "scalar L2 with dim " << dim;
+        EXPECT_NEAR(IP_SQ8_FP32_GetDistFunc(dim, nullptr)(storage, query.data(), dim), expected_ip,
+                    0.01)
+            << "dispatched IP with dim " << dim;
+        EXPECT_NEAR(L2_SQ8_FP32_GetDistFunc(dim, nullptr)(storage, query.data(), dim), expected_l2,
+                    0.01)
+            << "dispatched L2 with dim " << dim;
+    }
 }
 
 /* ======================== Tests SQ8-FP16 ========================= */
@@ -1730,8 +1770,10 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
     test_utils::populate_int8_vec(v2, dim, 1234);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     dist_func_t<float> arch_opt_func;
     float baseline = INT8_Cosine(v1, v2, dim);
@@ -1985,8 +2027,10 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
     test_utils::populate_uint8_vec(v2, dim, 1234);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     dist_func_t<float> arch_opt_func;
     float baseline = UINT8_Cosine(v1, v2, dim);
@@ -2079,8 +2123,10 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
     }
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     float baseline_l2 = UINT8_L2Sqr(v1, v2, dim);
     float baseline_ip = UINT8_InnerProduct(v1, v2, dim);

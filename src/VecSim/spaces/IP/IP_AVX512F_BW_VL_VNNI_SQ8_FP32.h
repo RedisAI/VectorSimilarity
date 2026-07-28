@@ -97,9 +97,9 @@ float SQ8_FP32_InnerProductImp_AVX512(const void *pVec1v, const void *pVec2v, si
     // Get quantization parameters from stored vector (after quantized data)
     // Use the original base pointer since pVec1 has been advanced
     const uint8_t *pVec1Base = static_cast<const uint8_t *>(pVec1v);
-    const float *params1 = reinterpret_cast<const float *>(pVec1Base + dimension);
-    const float min_val = params1[sq8::MIN_VAL];
-    const float delta = params1[sq8::DELTA];
+    const auto *params1 = pVec1Base + dimension;
+    const float min_val = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
     // Use the original base pointer since pVec2 has been advanced

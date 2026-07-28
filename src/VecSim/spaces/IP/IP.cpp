@@ -56,10 +56,10 @@ float SQ8_FP32_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_
     // Combine accumulators
     float quantized_dot = (sum0 + sum1) + (sum2 + sum3);
 
-    // Get quantization parameters from stored vector (pVect1 is SQ8)
-    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float min_val = params[sq8::MIN_VAL];
-    const float delta = params[sq8::DELTA];
+    // Storage metadata follows a byte payload and is not necessarily float-aligned.
+    const auto *params = pVect1 + dimension;
+    const float min_val = load_unaligned<float>(params + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params + sq8::DELTA * sizeof(float));
 
     // Get precomputed y_sum from query blob (pVect2 is FP32, stored after the dim floats)
     const float y_sum = pVect2[dimension + sq8::SUM_QUERY];
@@ -152,17 +152,17 @@ float SQ8_SQ8_InnerProduct_Impl(const void *pVect1v, const void *pVect2v, size_t
         product += pVect1[i] * pVect2[i];
     }
 
-    // Get quantization parameters from pVect1
-    const float *params1 = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float min_val1 = params1[sq8::MIN_VAL];
-    const float delta1 = params1[sq8::DELTA];
-    const float sum1 = params1[sq8::SUM];
+    // Metadata follows byte payloads and is not necessarily float-aligned.
+    const auto *params1 = pVect1 + dimension;
+    const float min_val1 = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta1 = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
+    const float sum1 = load_unaligned<float>(params1 + sq8::SUM * sizeof(float));
 
     // Get quantization parameters from pVect2
-    const float *params2 = reinterpret_cast<const float *>(pVect2 + dimension);
-    const float min_val2 = params2[sq8::MIN_VAL];
-    const float delta2 = params2[sq8::DELTA];
-    const float sum2 = params2[sq8::SUM];
+    const auto *params2 = pVect2 + dimension;
+    const float min_val2 = load_unaligned<float>(params2 + sq8::MIN_VAL * sizeof(float));
+    const float delta2 = load_unaligned<float>(params2 + sq8::DELTA * sizeof(float));
+    const float sum2 = load_unaligned<float>(params2 + sq8::SUM * sizeof(float));
 
     // Apply the algebraic formula using precomputed sums:
     // IP = min1*sum2 + min2*sum1 + delta1*delta2*Σ(q1[i]*q2[i]) - dim*min1*min2
@@ -265,8 +265,8 @@ float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const int8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const int8_t *>(pVect2v);
     // We expect the vectors' norm to be stored at the end of the vector.
-    float norm_v1 = *reinterpret_cast<const float *>(pVect1 + dimension);
-    float norm_v2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float norm_v1 = load_unaligned<float>(pVect1 + dimension);
+    const float norm_v2 = load_unaligned<float>(pVect2 + dimension);
     return 1.0f - float(INTEGER_InnerProductImp(pVect1, pVect2, dimension)) / (norm_v1 * norm_v2);
 }
 
@@ -280,7 +280,7 @@ float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
     // We expect the vectors' norm to be stored at the end of the vector.
-    float norm_v1 = *reinterpret_cast<const float *>(pVect1 + dimension);
-    float norm_v2 = *reinterpret_cast<const float *>(pVect2 + dimension);
+    const float norm_v1 = load_unaligned<float>(pVect1 + dimension);
+    const float norm_v2 = load_unaligned<float>(pVect2 + dimension);
     return 1.0f - float(INTEGER_InnerProductImp(pVect1, pVect2, dimension)) / (norm_v1 * norm_v2);
 }
