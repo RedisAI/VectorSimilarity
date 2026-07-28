@@ -41,6 +41,7 @@ struct SVSIndexBase
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVector(labelType label) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual void consolidate(const std::vector<labelType>& labels) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
     virtual size_t getNumThreads() const = 0;
@@ -299,19 +300,34 @@ protected:
             }
         }
 
+        this->pimplGuard_.lock_shared();
         if (!ready()) {
+            this->pimplGuard_.unlock_shared();
             // SVS index instance cannot be empty, so we have to construct it at first rows
             std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
-            impl_ = initImpl(points, ids);
-            assert(this->impl_ != nullptr);
-            setReady();
+            if (!ready()) {
+                impl_ = initImpl(points, ids);
+                assert(this->impl_ != nullptr);
+                setReady();
+            } else {
+                impl_->add_points(points, ids);
+            }
         } else {
             // Add new points to existing SVS index
-            std::shared_lock lock(this->pimplGuard_);
             impl_->add_points(points, ids);
+            this->pimplGuard_.unlock_shared();
         }
 
         return n - deleted_num;
+    }
+
+    void consolidate(const std::vector<labelType>& labels) {
+        std::shared_lock lock(this->pimplGuard_);
+        if (!ready())
+            return;
+
+        size_t n_consolidated = impl_->consolidate(labels);
+        num_marked_deleted.fetch_sub(n_consolidated, std::memory_order_relaxed);
     }
 
     int deleteVectorImpl(const labelType label) {
@@ -354,12 +370,14 @@ protected:
         // SVS index instance should not be empty
         if (indexLabelCount() == 0) {
             std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
-            {
-                setUnready();
-                this->impl_.reset();
+            if (indexLabelCountUnsafe() == 0) {
+                {
+                    setUnready();
+                    this->impl_.reset();
+                }
+                num_marked_deleted.store(0, std::memory_order_relaxed);
+                return;
             }
-            num_marked_deleted.store(0, std::memory_order_relaxed);
-            return;
         }
 
         num_marked_deleted.fetch_add(n, std::memory_order_relaxed);
@@ -404,8 +422,8 @@ public:
     size_t indexSize() const override { return indexStorageSize(); }
 
     size_t indexStorageSize() const override {
+        std::shared_lock lock(this->pimplGuard_);
         if (ready()) {
-            std::shared_lock lock(this->pimplGuard_);
             return impl_->view_data().size();
         } else {
             return 0;
@@ -413,11 +431,27 @@ public:
     }
 
     size_t indexCapacity() const override {
+        std::shared_lock lock(this->pimplGuard_);
         if (ready()) {
-            std::shared_lock lock(this->pimplGuard_);
             return storage_traits_t::storage_capacity(impl_->view_data());
         } else {
             return 0;
+        }
+    }
+
+    size_t indexLabelCountUnsafe() const {
+        if constexpr (isMulti) {
+            if (ready()) {
+                return impl_->labelcount();
+            } else {
+                return 0;
+            }
+        } else {
+            if (ready()) {
+                return impl_->size();
+            } else {
+                return 0;
+            }
         }
     }
 
@@ -641,7 +675,6 @@ public:
             return rep;
         }
         {
-            std::shared_lock lock(this->pimplGuard_);
             // limit result size to index size
             k = std::min(k, this->indexLabelCount());
 
@@ -651,6 +684,7 @@ public:
             auto query = svs::data::ConstSimpleDataView<DataType>{
                 static_cast<const DataType *>(processed_query), 1, this->dim};
             auto result = svs::QueryResult<size_t>{query.size(), k};
+            std::shared_lock lock(this->pimplGuard_);
             auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
                                                     is_two_level_lvq);
 
@@ -803,7 +837,7 @@ public:
             std::shared_lock lock(this->pimplGuard_);
             // There is documentation for consolidate():
             // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
-            impl_->consolidate();
+            // impl_->consolidate();
             // There is documentation for compact():
             // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
             impl_->compact();

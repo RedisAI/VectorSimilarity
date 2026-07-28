@@ -26,12 +26,23 @@ struct SVSInsertJob : public AsyncJob {
 };
 
 /**
+ * Definition of a job that launches partial consolidation on SVS Index.
+ */
+struct SVSConsolidateJob : public AsyncJob {
+    std::vector<labelType> labels;
+
+    SVSConsolidateJob(std::shared_ptr<VecSimAllocator> allocator, const std::vector<labelType>& labels_,
+                  JobCallback insertCb, VecSimIndex *index_)
+        : AsyncJob(allocator, SVS_CONSOLIDATE_JOB, insertCb, index_), labels(labels_) {}
+};
+
+/**
  * Definition of a job that launches GC on SVS Index.
  */
 struct SVSGCJob : public AsyncJob {
     SVSGCJob(std::shared_ptr<VecSimAllocator> allocator,
                   JobCallback insertCb, VecSimIndex *index_)
-        : AsyncJob(allocator, SVS_GC2_JOB, insertCb, index_) {}
+        : AsyncJob(allocator, SVS_GC_JOB, insertCb, index_)  {}
 };
 
 
@@ -248,6 +259,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
+    size_t consolidateTriggerThreshold;
     size_t updateJobWaitTime;
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
@@ -263,6 +275,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     std::atomic<bool> backendInitSubmited{false};
     std::unordered_set<idType> ids_to_init_;
+    std::vector<labelType> labels_to_consolidate_;
 
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSInsertJob *>> labelToInsertJobs;
     // A mapping to hold invalid jobs, so we can dispose them upon index deletion.
@@ -610,23 +623,18 @@ private:
      * @note no need to implement extra non-static method, as GC logic is simple enough to be done
      * here.
      */
-    // static void SVSIndexGCWrapper(VecSimIndex *idx) {
     static void SVSIndexGCWrapper(AsyncJob *job) {
-        // assert(availableThreads > 0);
-        // auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
-        // assert(index);
-
         auto gc_job = static_cast<SVSGCJob *>(job);
         auto index = static_cast<TieredSVSIndex<DataType> *>(gc_job->index);
 
-        // // Release the scheduled flag to allow scheduling again
-        // index->indexGCScheduled.clear();
-
+        std::shared_lock<std::shared_mutex> lock(index->updateJobMutex);
         // Do SVS index GC
         index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
                                  "running asynchronous GC for tiered SVS index");
         auto svs_index = index->GetSVSIndex();
         if (index->backendIndex->indexSize() == 0) {
+            index->indexGCScheduled.clear();
+            delete job;
             // No need to run GC on an empty index.
             return;
         }
@@ -637,6 +645,18 @@ private:
 
         // Release the scheduled flag to allow scheduling again
         index->indexGCScheduled.clear();
+        delete job;
+    }
+
+    static void SVSIndexConsolidateWrapper(AsyncJob *job) {
+        auto consolidate_job = static_cast<SVSConsolidateJob *>(job);
+        auto index = static_cast<TieredSVSIndex<DataType> *>(consolidate_job->index);
+
+        std::shared_lock<std::shared_mutex> lock(index->updateJobMutex);
+        auto svs_index = index->GetSVSIndex();
+        svs_index->setNumThreads(1);
+        svs_index->consolidate(consolidate_job->labels);
+        delete job;
     }
 
 #ifdef BUILD_TESTS
@@ -681,6 +701,19 @@ public:
 
         // Insert job to the queue.
         this->submitSingleJob(new_GC_job);
+    }
+
+    void scheduleSVSIndexConsolidate(labelType label) {
+        labels_to_consolidate_.push_back(label);
+
+        if (labels_to_consolidate_.size() >= consolidateTriggerThreshold) {
+            AsyncJob *new_consolidate_job = new (this->allocator)
+                SVSConsolidateJob(this->allocator, labels_to_consolidate_, SVSIndexConsolidateWrapper, this);
+
+            // Insert job to the queue.
+            this->submitSingleJob(new_consolidate_job);
+            labels_to_consolidate_.clear();
+        }
     }
 
 private:
@@ -746,7 +779,7 @@ private:
         memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
         this->flatIndexGuard.unlock_shared();
 
-        svs_index->setNumThreads(1);
+        // svs_index->setNumThreads(1);
         svs_index->addVector(blob_copy.get(), job->label);
 
         // Remove the vector and the insert job from the flat buffer.
@@ -792,6 +825,7 @@ private:
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
 
+        executeTracingCallback("UpdateJob::before_add_to_svs");
         { // lock frontendIndex from modifications
             // The whole initialization is done under flatIndexGuard
             std::lock_guard flat_lock{this->flatIndexGuard};
@@ -811,13 +845,13 @@ private:
             }
             ids_to_init_.clear();
 
-            executeTracingCallback("UpdateJob::before_add_to_svs");
             {
                 auto svs_index = GetSVSIndex();
-                svs_index->setNumThreads(1);
+                svs_index->setNumThreads(std::min(availableThreads, labels_to_move.size()));
                 assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
                 auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
                                                   labels_to_move.size());
+                svs_index->setNumThreads(1);
                 svs_index->setImpl(std::move(impl));
             }
 
@@ -844,6 +878,7 @@ private:
                                                   [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
         } // release frontend index
+        executeTracingCallback("UpdateJob::after_add_to_svs");
     }
 
 public:
@@ -872,6 +907,8 @@ public:
                                                       ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
                                                       : this->updateTriggerThreshold;
 
+        this->consolidateTriggerThreshold = SVS_VAMANA_DEFAULT_CONSOLIDATE_THRESHOLD;
+
         this->trainingTriggerThreshold =
             tiered_svs_params.trainingTriggerThreshold == 0
                 ? default_training_threshold
@@ -897,7 +934,7 @@ public:
             // so make the minimal needed lock here.
             // Backend index initialization data have to be buffered for proper
             // compression/training.
-            if (this->backendIndex->indexSize() == 0) {
+            if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
                 // If backend index size is 0, first collect vectors in frontend index
                 // lock in scope to ensure that these will be released before
                 // initSVSIndexWrapper() is called.
@@ -929,16 +966,22 @@ public:
                 // TODO: Replace this setNumThreads(1) call with an assertion once we establish
                 // a contract that write-in-place mode guarantees numThreads == 1.
                 svs_index->setNumThreads(1);
-                return this->backendIndex->addVector(storage_blob.get(), label);
+                int deleted = 0;
+                if (!this->backendIndex->isMultiValue()) {
+                    deleted = svs_index->deleteVector(label);
+                    if (deleted > 0)
+                        svs_index->consolidate({label});
+                }
+                return this->backendIndex->addVector(storage_blob.get(), label) - deleted;
             }
         }
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - add vector to the frontend index and schedule an update job if needed.
-        if (!this->backendInitSubmited.load(std::memory_order_acquire)) {
+        if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
             // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
-            if (this->frontendIndex->isLabelExists(label)) {
+            if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
                 deleteAndUpdateInitIds(label);
             }
             ids_to_init_.insert(this->frontendIndex->indexSize());
@@ -956,7 +999,12 @@ public:
         if (svs_index->ready() && (this->frontendIndex->indexSize() >= flat_buffer_bound)) {
             this->flatIndexGuard.unlock_shared();
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-            svs_index->setNumThreads(1);
+
+            if (!this->backendIndex->isMultiValue()) {
+                auto deleted = svs_index->deleteVector(label);
+                if (deleted > 0)
+                    scheduleSVSIndexConsolidate(label);
+            }
 
             return ret = svs_index->addVector(storage_blob.get(), label);
         } else {
@@ -989,7 +1037,7 @@ public:
                 // increase index capacity.
             }
             // If this label already exists, this will do overwrite.
-            this->frontendIndex->addVector(blob, label);
+            ret += this->frontendIndex->addVector(blob, label);
 
             AsyncJob *new_insert_job = new (this->allocator)
                 SVSInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
@@ -1014,7 +1062,10 @@ public:
                 if (svs_index->ready()) {
                     // If we removed the previous vector from both svs and flat in the overwrite process,
                     // we still return 0 (not -1).
-                    ret = std::max(ret - svs_index->deleteVector(label), 0);
+                    auto deleted = svs_index->deleteVector(label);
+                    if (deleted > 0)
+                        scheduleSVSIndexConsolidate(label);
+                    ret = std::max(ret - deleted, 0);
                 }
             }
 
@@ -1091,13 +1142,21 @@ public:
                 }
 
                 deleteAndUpdateInitIds(label);
-                return deleting_ids.size();
+                ret += deleting_ids.size();
             }
         } else {
             this->flatIndexGuard.unlock_shared();
         }
 
-        ret += this->backendIndex->deleteVector(label);
+        auto deleted = this->backendIndex->deleteVector(label);
+        if (deleted > 0) {
+            if (this->getWriteMode() == VecSim_WriteInPlace) {
+                GetSVSIndex()->consolidate({label});
+            } else {
+                scheduleSVSIndexConsolidate(label);
+            }
+        }
+        ret += deleted;
         return ret;
     }
 
@@ -1159,10 +1218,11 @@ public:
             }
         }
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
+        // Background indexing is in progress whenever the flat buffer is non-empty: every vector
+        // buffered there has either a pending per-vector insert job or a batch-init job that will
+        // drain it into the backend.
         info.tieredInfo.backgroundIndexing =
-            svsTieredInfo.indexUpdateScheduled && info.tieredInfo.frontendCommonInfo.indexSize > 0
-                ? VecSimBool_TRUE
-                : VecSimBool_FALSE;
+            info.tieredInfo.frontendCommonInfo.indexSize > 0 ? VecSimBool_TRUE : VecSimBool_FALSE;
         return info;
     }
 
@@ -1320,4 +1380,3 @@ public:
         this->flatIndexGuard.unlock_shared();
     }
 };
-                                                                                                                                                               
