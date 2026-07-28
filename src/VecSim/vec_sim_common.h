@@ -50,6 +50,7 @@ extern "C" {
 #define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
 // Default batch update threshold for SVS index.
 #define SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD   (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
+#define SVS_VAMANA_DEFAULT_CONSOLIDATE_THRESHOLD (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
 #define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
 // NOTE: No need to have SVS_VAMANA_DEFAULT_SEARCH_BUFFER_CAPACITY
 // as the default is determined by the search_window_size
@@ -275,7 +276,7 @@ typedef enum {
     SVS_BATCH_UPDATE_JOB,
     SVS_INSERT_VECTOR_JOB,
     SVS_GC_JOB,
-    SVS_GC2_JOB,
+    SVS_CONSOLIDATE_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 
