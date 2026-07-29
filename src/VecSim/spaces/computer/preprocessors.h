@@ -289,14 +289,14 @@ class QuantPreprocessor : public PreprocessorInterface {
         // Quantize the values
         for (; i < dim_round_down; i += 4) {
             // Load once (widened to FP32 if DataType is FP16).
-            const float x0 = transformed_value(input, i + 0);
+            const float x0 = transformed_value(input, i);
             const float x1 = transformed_value(input, i + 1);
             const float x2 = transformed_value(input, i + 2);
             const float x3 = transformed_value(input, i + 3);
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
-            quantized[i + 0] = static_cast<OUTPUT_TYPE>(std::round((x0 - min_val) * inv_delta));
+            quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x0 - min_val) * inv_delta));
             quantized[i + 1] = static_cast<OUTPUT_TYPE>(std::round((x1 - min_val) * inv_delta));
             quantized[i + 2] = static_cast<OUTPUT_TYPE>(std::round((x2 - min_val) * inv_delta));
             quantized[i + 3] = static_cast<OUTPUT_TYPE>(std::round((x3 - min_val) * inv_delta));
@@ -367,7 +367,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         size_t dim_round_down = this->dim & ~size_t(3);
 
         for (; i < dim_round_down; i += 4) {
-            const float y0 = to_fp32<DataType>(values[i + 0]);
+            const float y0 = to_fp32<DataType>(values[i]);
             const float y1 = to_fp32<DataType>(values[i + 1]);
             const float y2 = to_fp32<DataType>(values[i + 2]);
             const float y3 = to_fp32<DataType>(values[i + 3]);
@@ -385,7 +385,7 @@ class QuantPreprocessor : public PreprocessorInterface {
             }
 
             if constexpr (WithNorm && Metric == VecSimMetric_IP) {
-                m0 += mean[i + 0] * to_fp32<DataType>(original_input[i + 0]);
+                m0 += mean[i] * to_fp32<DataType>(original_input[i]);
                 m1 += mean[i + 1] * to_fp32<DataType>(original_input[i + 1]);
                 m2 += mean[i + 2] * to_fp32<DataType>(original_input[i + 2]);
                 m3 += mean[i + 3] * to_fp32<DataType>(original_input[i + 3]);
