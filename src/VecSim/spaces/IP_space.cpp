@@ -9,6 +9,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/IP_dispatch_tables.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/AVX512F.h"
@@ -426,57 +427,16 @@ dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = FP32_InnerProduct;
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_AARCH64
-
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_FP32_IP_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, IP_FP32_DispatchTable);
+    if (idx == IP_FP32_DispatchTable.size()) {
+        return FP32_InnerProduct;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_FP32_IP_implementation_SVE(dim);
+    const auto &tier = IP_FP32_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(float);
     }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd) {
-        return Choose_FP32_IP_implementation_NEON(dim);
-    }
-#endif
-
-#endif
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 8 floats (see the residual handling in the kernels).
-    // Below that, the scalar implementation is at least as fast anyway.
-    if (dim < 8) {
-        return ret_dist_func;
-    }
-#ifdef OPT_AVX512F
-    if (features.avx512f) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float); // handles 16 floats
-        return Choose_FP32_IP_implementation_AVX512F(dim);
-    }
-#endif
-#ifdef OPT_AVX
-    if (features.avx) {
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 8 * sizeof(float); // handles 8 floats
-        return Choose_FP32_IP_implementation_AVX(dim);
-    }
-#endif
-#ifdef OPT_SSE
-    if (features.sse) {
-        if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 4 * sizeof(float); // handles 4 floats
-        return Choose_FP32_IP_implementation_SSE(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<double> IP_FP64_GetDistFunc(size_t dim, unsigned char *alignment,

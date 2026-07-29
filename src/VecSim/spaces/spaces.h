@@ -52,13 +52,16 @@ static int inline is_little_endian() {
     return *(char *)&x;
 }
 
-static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
-
 #if defined(CPU_FEATURES_ARCH_AARCH64)
-    using FeaturesType = cpu_features::Aarch64Features;
+using FeaturesType = cpu_features::Aarch64Features;
+#else
+using FeaturesType = cpu_features::X86Features; // Fallback
+#endif
+
+static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
+#if defined(CPU_FEATURES_ARCH_AARCH64)
     constexpr auto getFeatures = cpu_features::GetAarch64Info;
 #else
-    using FeaturesType = cpu_features::X86Features; // Fallback
     constexpr auto getFeatures = cpu_features::GetX86Info;
 #endif
     return arch_opt ? *static_cast<const FeaturesType *>(arch_opt) : getFeatures().features;
