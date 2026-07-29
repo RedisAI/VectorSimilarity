@@ -337,7 +337,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         size_t n = 3;
         if constexpr (Metric == VecSimMetric_L2)
             buf[n++] = sum_squares;
-        if constexpr (WithNorm)
+        if constexpr (WithNorm && Metric == VecSimMetric_IP)
             buf[n++] = x_mean_ip;
         memcpy(meta_dst, buf, n * sizeof(MetadataType));
     }
@@ -346,7 +346,8 @@ class QuantPreprocessor : public PreprocessorInterface {
     // Without norm:
     //   For IP/Cosine: writes y_sum = Σy_i
     //   For L2: writes y_sum = Σy_i and y_sum_squares = Σy_i²
-    // With norm: additionally appends y_mean_ip = Σ(mean_i * original_y_i).
+    // With norm and Metric == IP: additionally appends y_mean_ip = Σ(mean_i * original_y_i).
+    // Normalized L2 needs no extra metadata; the mean terms cancel exactly during centering.
     // For normalized L2, values contains y - mean while original_input contains y.
     // The output pointer addresses the metadata region after the query body and may not be
     // 4-byte aligned (e.g. FP16 query body with odd dim), so writes go through memcpy.
@@ -383,7 +384,7 @@ class QuantPreprocessor : public PreprocessorInterface {
                 q3 += y3 * y3;
             }
 
-            if constexpr (WithNorm) {
+            if constexpr (WithNorm && Metric == VecSimMetric_IP) {
                 m0 += mean[i + 0] * to_fp32<DataType>(original_input[i + 0]);
                 m1 += mean[i + 1] * to_fp32<DataType>(original_input[i + 1]);
                 m2 += mean[i + 2] * to_fp32<DataType>(original_input[i + 2]);
@@ -403,7 +404,7 @@ class QuantPreprocessor : public PreprocessorInterface {
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += y * y;
             }
-            if constexpr (WithNorm) {
+            if constexpr (WithNorm && Metric == VecSimMetric_IP) {
                 y_mean_ip += mean[i] * to_fp32<DataType>(original_input[i]);
             }
         }
@@ -415,7 +416,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         size_t n = 1;
         if constexpr (Metric == VecSimMetric_L2)
             buf[n++] = sum_squares;
-        if constexpr (WithNorm)
+        if constexpr (WithNorm && Metric == VecSimMetric_IP)
             buf[n++] = y_mean_ip;
         memcpy(output_metadata, buf, n * sizeof(MetadataType));
     }
@@ -571,14 +572,18 @@ private:
             float value = first_input_value - mean[0];
             float min_val = value;
             float max_val = value;
-            x_mean_ip = first_input_value * mean[0];
+            // x_mean_ip only feeds the IP correction term (see DistanceCalculatorWithNorm); the
+            // normalized L2 correction cancels the mean terms exactly, so skip the extra work.
+            if constexpr (Metric == VecSimMetric_IP)
+                x_mean_ip = first_input_value * mean[0];
 
             for (size_t i = 1; i < dim; ++i) {
                 const float input_value = to_fp32<DataType>(input[i]);
                 value = input_value - mean[i];
                 min_val = std::min(min_val, value);
                 max_val = std::max(max_val, value);
-                x_mean_ip += input_value * mean[i];
+                if constexpr (Metric == VecSimMetric_IP)
+                    x_mean_ip += input_value * mean[i];
             }
             return {min_val, max_val};
         }

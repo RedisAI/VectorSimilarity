@@ -32,15 +32,19 @@ struct sq8 {
     };
 
     // Template on Metric and WithNorm — compile-time constants
-    // WithNorm: one extra metadata slot for x_mean_ip / y_mean_ip
+    // WithNorm: one extra metadata slot for x_mean_ip / y_mean_ip. Only needed for IP: the
+    // normalized L2 correction cancels the mean terms exactly during centering and never reads
+    // mean_ip (see DistanceCalculatorWithNorm), so no extra slot is allocated for L2.
     template <VecSimMetric Metric, bool WithNorm = false>
     static constexpr size_t storage_metadata_count() {
-        return ((Metric == VecSimMetric_L2) ? 4 : 3) + (WithNorm ? 1 : 0);
+        return ((Metric == VecSimMetric_L2) ? 4 : 3) +
+               ((WithNorm && Metric == VecSimMetric_IP) ? 1 : 0);
     }
 
     template <VecSimMetric Metric, bool WithNorm = false>
     static constexpr size_t query_metadata_count() {
-        return ((Metric == VecSimMetric_L2) ? 2 : 1) + (WithNorm ? 1 : 0);
+        return ((Metric == VecSimMetric_L2) ? 2 : 1) +
+               ((WithNorm && Metric == VecSimMetric_IP) ? 1 : 0);
     }
 
     // Index of x_mean_ip / y_mean_ip in the last slot in metadata array
