@@ -988,6 +988,77 @@ TEST(SpacesDispatchTierTest, FP32IPTableZeroMinDimAcceptsSmallestDims) {
 }
 #endif // CPU_FEATURES_ARCH_AARCH64
 
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+// Cosine's AVX-512 tier deliberately never sets an alignment hint (documented special case - the
+// extra norm float shifts effective alignment in a way the original cascade skips computing).
+// There is no L2 mirror: L2_INT8/L2_UINT8 set alignment normally. This asymmetry must survive.
+TEST(SpacesDispatchTierTest, CosineInt8Avx512SkipsAlignmentButL2DoesNot) {
+    spaces::FeaturesType avx512{};
+    avx512.avx512f = 1;
+    avx512.avx512bw = 1;
+    avx512.avx512vl = 1;
+    avx512.avx512vnni = 1;
+
+    size_t cosine_idx = spaces::select_tier_index(avx512, 1000, spaces::Cosine_INT8_DispatchTable);
+    ASSERT_NE(cosine_idx, spaces::Cosine_INT8_DispatchTable.size());
+    EXPECT_EQ(spaces::Cosine_INT8_DispatchTable[cosine_idx].alignment_chunk_elems, 0u)
+        << "Cosine_INT8's AVX512 tier must not carry an alignment hint (documented skip case)";
+
+    size_t l2_idx = spaces::select_tier_index(avx512, 1000, spaces::L2_INT8_DispatchTable);
+    ASSERT_NE(l2_idx, spaces::L2_INT8_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_INT8_DispatchTable[l2_idx].alignment_chunk_elems, 32u)
+        << "L2_INT8's AVX512 tier sets alignment normally - no skip case here, unlike Cosine";
+}
+
+TEST(SpacesDispatchTierTest, CosineUint8Avx512SkipsAlignmentButL2DoesNot) {
+    spaces::FeaturesType avx512{};
+    avx512.avx512f = 1;
+    avx512.avx512bw = 1;
+    avx512.avx512vl = 1;
+    avx512.avx512vnni = 1;
+
+    size_t cosine_idx = spaces::select_tier_index(avx512, 1000, spaces::Cosine_UINT8_DispatchTable);
+    ASSERT_NE(cosine_idx, spaces::Cosine_UINT8_DispatchTable.size());
+    EXPECT_EQ(spaces::Cosine_UINT8_DispatchTable[cosine_idx].alignment_chunk_elems, 0u);
+
+    size_t l2_idx = spaces::select_tier_index(avx512, 1000, spaces::L2_UINT8_DispatchTable);
+    ASSERT_NE(l2_idx, spaces::L2_UINT8_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_UINT8_DispatchTable[l2_idx].alignment_chunk_elems, 32u);
+}
+#endif // OPT_AVX512_F_BW_VL_VNNI
+
+#ifdef OPT_AVX2
+// IP_BF16 has an AVX512BF16_VL tier that L2_BF16 never had in the original cascade (confirmed by
+// re-reading L2_space.cpp - only AVX512BW_VBMI2 exists there). With avx512_bf16 set but no other
+// AVX-512 flags, IP must pick the dedicated AVX512BF16_VL tier while L2 must skip straight past
+// it to AVX2 (since L2 has no row whose predicate can match avx512_bf16 alone).
+TEST(SpacesDispatchTierTest, IPBf16HasAvx512Bf16VlTierThatL2Lacks) {
+    spaces::FeaturesType avx512_bf16_and_avx2{};
+    avx512_bf16_and_avx2.avx512_bf16 = 1;
+    avx512_bf16_and_avx2.avx512vl = 1;
+    avx512_bf16_and_avx2.avx2 = 1;
+
+    size_t ip_idx =
+        spaces::select_tier_index(avx512_bf16_and_avx2, 1000, spaces::IP_BF16_DispatchTable);
+    ASSERT_NE(ip_idx, spaces::IP_BF16_DispatchTable.size());
+#ifdef OPT_AVX512_BF16_VL
+    EXPECT_EQ(spaces::IP_BF16_DispatchTable[ip_idx].chooser,
+              spaces::Choose_BF16_IP_implementation_AVX512BF16_VL);
+#endif
+
+    size_t l2_idx =
+        spaces::select_tier_index(avx512_bf16_and_avx2, 1000, spaces::L2_BF16_DispatchTable);
+    ASSERT_NE(l2_idx, spaces::L2_BF16_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_BF16_DispatchTable[l2_idx].chooser,
+              spaces::Choose_BF16_L2_implementation_AVX2)
+        << "L2_BF16 has no AVX512BF16_VL row, so avx512_bf16-only features must fall through to "
+           "AVX2 (avx512bw/avx512vbmi2 are unset here, so its AVX512BW_VBMI2 row can't match "
+           "either)";
+}
+#endif // OPT_AVX2
+#endif // CPU_FEATURES_ARCH_X86_64
+
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(FP64SpacesOptimizationTest, FP64L2SqrTest) {
