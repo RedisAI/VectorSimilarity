@@ -1717,10 +1717,12 @@ protected:
                                             : dim * sizeof(uint8_t) + 3 * sizeof(float);
             EXPECT_NO_FATAL_FAILURE(CompareVectors<uint8_t>(
                 static_cast<const uint8_t *>(storage_blob), baseline_storage, compare_size));
-            ASSERT_FLOAT_EQ(
-                load_meta(storage_blob,
-                          storage_meta_offset + sq8::mean_ip_index<Metric>() * sizeof(float)),
-                expected_x_mean_ip);
+            if constexpr (Metric == VecSimMetric_IP) {
+                ASSERT_FLOAT_EQ(
+                    load_meta(storage_blob,
+                              storage_meta_offset + sq8::mean_ip_index<Metric>() * sizeof(float)),
+                    expected_x_mean_ip);
+            }
             EXPECT_NO_FATAL_FAILURE(CompareVectors<DataType>(
                 static_cast<const DataType *>(query_blob), expected_query_body, dim));
             ASSERT_FLOAT_EQ(
@@ -1731,10 +1733,12 @@ protected:
                                                           sq8::SUM_SQUARES_QUERY * sizeof(float)),
                                 expected_y_sum_squares);
             }
-            ASSERT_FLOAT_EQ(
-                load_meta(query_blob,
-                          query_meta_offset + sq8::query_mean_ip_index<Metric>() * sizeof(float)),
-                expected_y_mean_ip);
+            if constexpr (Metric == VecSimMetric_IP) {
+                ASSERT_FLOAT_EQ(
+                    load_meta(query_blob, query_meta_offset +
+                                              sq8::query_mean_ip_index<Metric>() * sizeof(float)),
+                    expected_y_mean_ip);
+            }
             allocator->free_allocation(storage_blob);
             allocator->free_allocation(query_blob);
         }
@@ -1763,9 +1767,12 @@ protected:
                     load_meta(blob, query_meta_offset + sq8::SUM_SQUARES_QUERY * sizeof(float)),
                     expected_y_sum_squares);
             }
-            ASSERT_FLOAT_EQ(load_meta(blob, query_meta_offset +
-                                                sq8::query_mean_ip_index<Metric>() * sizeof(float)),
-                            expected_y_mean_ip);
+            if constexpr (Metric == VecSimMetric_IP) {
+                ASSERT_FLOAT_EQ(
+                    load_meta(blob, query_meta_offset +
+                                        sq8::query_mean_ip_index<Metric>() * sizeof(float)),
+                    expected_y_mean_ip);
+            }
             allocator->free_allocation(blob);
         }
 
