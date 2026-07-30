@@ -9,6 +9,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/spaces/L2/L2.h"
+#include "VecSim/spaces/L2_dispatch_tables.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/F16C.h"
@@ -46,64 +47,16 @@ dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = SQ8_FP32_L2Sqr;
-
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_SQ8_FP32_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_SQ8_FP32_DispatchTable);
+    if (idx == L2_SQ8_FP32_DispatchTable.size()) {
+        return SQ8_FP32_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_SQ8_FP32_L2_implementation_SVE(dim);
+    const auto &tier = L2_SQ8_FP32_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(uint8_t);
     }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd) {
-        return Choose_SQ8_FP32_L2_implementation_NEON(dim);
-    }
-#endif
-#endif
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 8 elements (see the residual handling in the kernels).
-    // Below that, the scalar implementation is at least as fast anyway.
-    if (dim < 8) {
-        return ret_dist_func;
-    }
-    // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
-        if (dim % 16 == 0) // SQ8 chunk = 16 bytes; no point in aligning if there's a residual
-            *alignment = 16 * sizeof(uint8_t);
-        return Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-    }
-#endif
-#ifdef OPT_AVX2_FMA
-    if (features.avx2 && features.fma3) {
-        if (dim % 8 == 0) // SQ8 chunk = 8 bytes
-            *alignment = 8 * sizeof(uint8_t);
-        return Choose_SQ8_FP32_L2_implementation_AVX2_FMA(dim);
-    }
-#endif
-#ifdef OPT_AVX2
-    if (features.avx2) {
-        if (dim % 8 == 0) // SQ8 chunk = 8 bytes
-            *alignment = 8 * sizeof(uint8_t);
-        return Choose_SQ8_FP32_L2_implementation_AVX2(dim);
-    }
-#endif
-#ifdef OPT_SSE4
-    if (features.sse4_1) {
-        if (dim % 4 == 0) // SQ8 chunk = 4 bytes
-            *alignment = 4 * sizeof(uint8_t);
-        return Choose_SQ8_FP32_L2_implementation_SSE4(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 // SQ8-FP16: asymmetric L2 distance between SQ8 storage and FP16 query.
@@ -114,72 +67,16 @@ dist_func_t<float> L2_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = SQ8_FP16_L2Sqr;
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-    if (dim < 16) {
-        return ret_dist_func;
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_SQ8_FP16_DispatchTable);
+    if (idx == L2_SQ8_FP16_DispatchTable.size()) {
+        return SQ8_FP16_L2Sqr;
     }
-    // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
-    // AVX-512 tier only needs AVX-512F (cvtph_ps is part of AVX-512F, no VNNI/BW/VL required).
-#ifdef OPT_AVX512F
-    if (features.avx512f) {
-        if (dim % 16 == 0)
-            *alignment = 16 * sizeof(uint8_t);
-        return Choose_SQ8_FP16_L2_implementation_AVX512F(dim);
+    const auto &tier = L2_SQ8_FP16_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(uint8_t);
     }
-#endif
-    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
-    // around all three.
-#ifdef OPT_F16C
-#ifdef OPT_AVX2_FMA
-    if (features.avx2 && features.fma3 && features.f16c) {
-        if (dim % 8 == 0)
-            *alignment = 8 * sizeof(uint8_t);
-        return Choose_SQ8_FP16_L2_implementation_AVX2_FMA(dim);
-    }
-#endif
-#ifdef OPT_AVX2
-    if (features.avx2 && features.f16c) {
-        if (dim % 8 == 0)
-            *alignment = 8 * sizeof(uint8_t);
-        return Choose_SQ8_FP16_L2_implementation_AVX2(dim);
-    }
-#endif
-#ifdef OPT_SSE4
-    if (features.sse4_1 && features.f16c && features.avx) {
-        if (dim % 4 == 0)
-            *alignment = 4 * sizeof(uint8_t);
-        return Choose_SQ8_FP16_L2_implementation_SSE4(dim);
-    }
-#endif
-#endif // OPT_F16C
-#endif // x86_64
-#ifdef CPU_FEATURES_ARCH_AARCH64
-    if (dim < 16) {
-        return ret_dist_func;
-    }
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_SQ8_FP16_L2_implementation_SVE2(dim);
-    }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_SQ8_FP16_L2_implementation_SVE(dim);
-    }
-#endif
-#ifdef OPT_NEON_HP
-    if (features.asimdfhm) {
-        return Choose_SQ8_FP16_L2_implementation_NEON_FHM(dim);
-    }
-    if (features.asimdhp) {
-        return Choose_SQ8_FP16_L2_implementation_NEON_HP(dim);
-    }
-#endif
-#endif // CPU_FEATURES_ARCH_AARCH64
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
@@ -188,56 +85,16 @@ dist_func_t<float> L2_FP32_GetDistFunc(size_t dim, unsigned char *alignment, con
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = FP32_L2Sqr;
-
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_FP32_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_FP32_DispatchTable);
+    if (idx == L2_FP32_DispatchTable.size()) {
+        return FP32_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_FP32_L2_implementation_SVE(dim);
+    const auto &tier = L2_FP32_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(float);
     }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd) {
-        return Choose_FP32_L2_implementation_NEON(dim);
-    }
-#endif
-#endif
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 8 floats (see the residual handling in the kernels).
-    // Below that, the scalar implementation is at least as fast anyway.
-    if (dim < 8) {
-        return ret_dist_func;
-    }
-#ifdef OPT_AVX512F
-    if (features.avx512f) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float); // handles 16 floats
-        return Choose_FP32_L2_implementation_AVX512F(dim);
-    }
-#endif
-#ifdef OPT_AVX
-    if (features.avx) {
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 8 * sizeof(float); // handles 8 floats
-        return Choose_FP32_L2_implementation_AVX(dim);
-    }
-#endif
-#ifdef OPT_SSE
-    if (features.sse) {
-        if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 4 * sizeof(float); // handles 4 floats
-        return Choose_FP32_L2_implementation_SSE(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
@@ -247,56 +104,16 @@ dist_func_t<double> L2_FP64_GetDistFunc(size_t dim, unsigned char *alignment,
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<double> ret_dist_func = FP64_L2Sqr;
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_FP64_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_FP64_DispatchTable);
+    if (idx == L2_FP64_DispatchTable.size()) {
+        return FP64_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_FP64_L2_implementation_SVE(dim);
+    const auto &tier = L2_FP64_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(double);
     }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd) {
-        return Choose_FP64_L2_implementation_NEON(dim);
-    }
-#endif
-#endif
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-    // Optimizations assume at least 4 doubles (see the residual handling in the kernels).
-    // Below that, the scalar implementation is at least as fast anyway.
-    if (dim < 4) {
-        return ret_dist_func;
-    }
-#ifdef OPT_AVX512F
-    if (features.avx512f) {
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 8 * sizeof(double); // handles 8 doubles
-        return Choose_FP64_L2_implementation_AVX512F(dim);
-    }
-#endif
-#ifdef OPT_AVX
-    if (features.avx) {
-        if (dim % 4 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 4 * sizeof(double); // handles 4 doubles
-        return Choose_FP64_L2_implementation_AVX(dim);
-    }
-#endif
-#ifdef OPT_SSE
-    if (features.sse) {
-        if (dim % 2 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 2 * sizeof(double); // handles 2 doubles
-        return Choose_FP64_L2_implementation_SSE(dim);
-    }
-#endif
-#endif // __x86_64__ */
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
@@ -305,53 +122,21 @@ dist_func_t<float> L2_BF16_GetDistFunc(size_t dim, unsigned char *alignment, con
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = BF16_L2Sqr_LittleEndian;
+    // Big/little-endian is not a tier-selection concern - handled before the table is consulted.
     if (!is_little_endian()) {
         return BF16_L2Sqr_BigEndian;
     }
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
-#if defined(CPU_FEATURES_ARCH_AARCH64)
-#ifdef OPT_SVE_BF16
-    if (features.svebf16) {
-        return Choose_BF16_L2_implementation_SVE_BF16(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_BF16_DispatchTable);
+    if (idx == L2_BF16_DispatchTable.size()) {
+        return BF16_L2Sqr_LittleEndian;
     }
-#endif
-#ifdef OPT_NEON_BF16
-    if (features.bf16 && dim >= 8) { // Optimization assumes at least 8 BF16s (full chunk)
-        return Choose_BF16_L2_implementation_NEON_BF16(dim);
+    const auto &tier = L2_BF16_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(bfloat16);
     }
-#endif
-#endif // AARCH64
-
-#if defined(CPU_FEATURES_ARCH_X86_64)
-    // Optimizations assume at least 32 bfloats. If we have less, we use the naive implementation.
-    if (dim < 32) {
-        return ret_dist_func;
-    }
-#ifdef OPT_AVX512_BW_VBMI2
-    if (features.avx512bw && features.avx512vbmi2) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(bfloat16); // align to 512 bits.
-        return Choose_BF16_L2_implementation_AVX512BW_VBMI2(dim);
-    }
-#endif
-#ifdef OPT_AVX2
-    if (features.avx2) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(bfloat16); // align to 256 bits.
-        return Choose_BF16_L2_implementation_AVX2(dim);
-    }
-#endif
-#ifdef OPT_SSE3
-    if (features.sse3) {
-        if (dim % 8 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 8 * sizeof(bfloat16); // align to 128 bits.
-        return Choose_BF16_L2_implementation_SSE3(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
@@ -359,57 +144,17 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
     if (alignment == nullptr) {
         alignment = &dummy_alignment;
     }
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
-    dist_func_t<float> ret_dist_func = FP16_L2Sqr;
-
-#if defined(CPU_FEATURES_ARCH_AARCH64)
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_FP16_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_FP16_DispatchTable);
+    if (idx == L2_FP16_DispatchTable.size()) {
+        return FP16_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_FP16_L2_implementation_SVE(dim);
+    const auto &tier = L2_FP16_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(float16);
     }
-#endif
-#ifdef OPT_NEON_HP
-    if (features.asimdhp && dim >= 8) { // Optimization assumes at least 8 16FPs (full chunk)
-        return Choose_FP16_L2_implementation_NEON_HP(dim);
-    }
-#endif
-#endif // CPU_FEATURES_ARCH_AARCH64
-
-#if defined(CPU_FEATURES_ARCH_X86_64)
-    // Each tier has a minimal dimension implied by its residual handling: the AVX512FP16_VL
-    // kernel loads full 512-bit blocks (32 elements), the AVX512F kernel loads full 256-bit
-    // blocks (16 elements), and the F16C kernel loads full 128-bit blocks (8 elements).
-#ifdef OPT_AVX512_FP16_VL
-    // More details about the dimension limitation can be found in this PR's description:
-    // https://github.com/RedisAI/VectorSimilarity/pull/477
-    if (dim >= 32 && features.avx512_fp16 && features.avx512vl) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(float16); // handles 32 floats
-        return Choose_FP16_L2_implementation_AVX512FP16_VL(dim);
-    }
-#endif
-#ifdef OPT_AVX512F
-    if (dim >= 16 && features.avx512f) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(float16); // handles 32 floats
-        return Choose_FP16_L2_implementation_AVX512F(dim);
-    }
-#endif
-#ifdef OPT_F16C
-    if (dim >= 8 && features.f16c && features.fma3 && features.avx) {
-        if (dim % 16 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 16 * sizeof(float16); // handles 16 floats
-        return Choose_FP16_L2_implementation_F16C(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
@@ -418,45 +163,16 @@ dist_func_t<float> L2_INT8_GetDistFunc(size_t dim, unsigned char *alignment, con
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = INT8_L2Sqr;
-
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_INT8_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_INT8_DispatchTable);
+    if (idx == L2_INT8_DispatchTable.size()) {
+        return INT8_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_INT8_L2_implementation_SVE(dim);
+    const auto &tier = L2_INT8_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(int8_t);
     }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    if (features.asimddp && dim >= 16) {
-        return Choose_INT8_L2_implementation_NEON_DOTPROD(dim);
-    }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd && dim >= 16) {
-        return Choose_INT8_L2_implementation_NEON(dim);
-    }
-#endif
-#endif
-#ifdef CPU_FEATURES_ARCH_X86_64
-    if (dim < 32) {
-        return ret_dist_func;
-    }
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(int8_t); // align to 256 bits.
-        return Choose_INT8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
@@ -466,45 +182,16 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = UINT8_L2Sqr;
-    // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_UINT8_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_UINT8_DispatchTable);
+    if (idx == L2_UINT8_DispatchTable.size()) {
+        return UINT8_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_UINT8_L2_implementation_SVE(dim);
+    const auto &tier = L2_UINT8_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(uint8_t);
     }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    if (features.asimddp && dim >= 16) {
-        return Choose_UINT8_L2_implementation_NEON_DOTPROD(dim);
-    }
-#endif
-#ifdef OPT_NEON
-    if (features.asimd && dim >= 16) {
-        return Choose_UINT8_L2_implementation_NEON(dim);
-    }
-#endif
-#endif // __aarch64__
-#ifdef CPU_FEATURES_ARCH_X86_64
-    if (dim < 32) {
-        return ret_dist_func;
-    }
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(int8_t); // align to 256 bits.
-        return Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 // SQ8-to-SQ8 L2 squared distance function (both vectors are uint8 quantized)
@@ -515,44 +202,16 @@ dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
         alignment = &dummy_alignment;
     }
 
-    dist_func_t<float> ret_dist_func = SQ8_SQ8_L2Sqr;
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-
-#ifdef CPU_FEATURES_ARCH_AARCH64
-#ifdef OPT_SVE2
-    if (features.sve2) {
-        return Choose_SQ8_SQ8_L2_implementation_SVE2(dim);
+    auto features = getCpuOptimizationFeatures(arch_opt);
+    size_t idx = select_tier_index(features, dim, L2_SQ8_SQ8_DispatchTable);
+    if (idx == L2_SQ8_SQ8_DispatchTable.size()) {
+        return SQ8_SQ8_L2Sqr;
     }
-#endif
-#ifdef OPT_SVE
-    if (features.sve) {
-        return Choose_SQ8_SQ8_L2_implementation_SVE(dim);
+    const auto &tier = L2_SQ8_SQ8_DispatchTable[idx];
+    if (tier.alignment_chunk_elems != 0 && dim % tier.alignment_chunk_elems == 0) {
+        *alignment = tier.alignment_chunk_elems * sizeof(uint8_t);
     }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    // DOTPROD uses integer arithmetic - much faster than float-based NEON
-    if (dim >= 16 && features.asimddp) {
-        return Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(dim);
-    }
-#endif
-#ifdef OPT_NEON
-    if (dim >= 16 && features.asimd) {
-        return Choose_SQ8_SQ8_L2_implementation_NEON(dim);
-    }
-#endif
-#endif // AARCH64
-
-#ifdef CPU_FEATURES_ARCH_X86_64
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    // AVX512 VNNI SQ8_SQ8 uses 64-element chunks; residual handling is in 32-byte sub-chunks.
-    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
-        if (dim % 32 == 0) // align to 256 bits when there is no offsetting residual
-            *alignment = 32 * sizeof(uint8_t);
-        return Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
-    }
-#endif
-#endif // __x86_64__
-    return ret_dist_func;
+    return tier.chooser(dim);
 }
 
 } // namespace spaces

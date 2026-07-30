@@ -22,6 +22,8 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/IP_dispatch_tables.h"
+#include "VecSim/spaces/L2_dispatch_tables.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/spaces/functions/AVX512F.h"
@@ -876,6 +878,186 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 
 INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
                          testing::Range(8UL, 32 * 2UL + 1));
+
+// select_tier_index is pure comparison logic with no dependency on any arch-specific translation
+// unit (it never calls a row's `chooser`), so - unlike the Choose_*/GetDistFunc tests above, which
+// must only ever use real, host-detected features - these tests are free to fabricate any
+// FeaturesType bit pattern, including combinations the host running this test doesn't actually
+// have. They exercise the *real* production IP_FP32_DispatchTable/L2_FP32_DispatchTable (not a
+// hand-duplicated copy), so a change to the real table's row order/predicates/min_dim is caught
+// here even though it can never crash: no chooser is ever invoked.
+TEST(SpacesDispatchTierTest, FP32IPTableNoFeaturesFallsBackToScalar) {
+    spaces::FeaturesType none{};
+    EXPECT_EQ(spaces::select_tier_index(none, 1000, spaces::IP_FP32_DispatchTable),
+              spaces::IP_FP32_DispatchTable.size());
+}
+
+TEST(SpacesDispatchTierTest, FP32L2TableNoFeaturesFallsBackToScalar) {
+    spaces::FeaturesType none{};
+    EXPECT_EQ(spaces::select_tier_index(none, 1000, spaces::L2_FP32_DispatchTable),
+              spaces::L2_FP32_DispatchTable.size());
+}
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST(SpacesDispatchTierTest, FP32IPTableOverlappingFeaturePriority) {
+    spaces::FeaturesType all{};
+    all.avx512f = 1;
+    all.avx = 1;
+    all.sse = 1;
+    // Best tier first: avx512f must win over avx and sse even though all three predicates match.
+    size_t idx = spaces::select_tier_index(all, 1000, spaces::IP_FP32_DispatchTable);
+    ASSERT_NE(idx, spaces::IP_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx].chooser,
+              spaces::Choose_FP32_IP_implementation_AVX512F);
+}
+
+TEST(SpacesDispatchTierTest, FP32IPTableMissingTopFeatureFallsThrough) {
+    spaces::FeaturesType avx_and_sse{};
+    avx_and_sse.avx = 1;
+    avx_and_sse.sse = 1;
+    size_t idx = spaces::select_tier_index(avx_and_sse, 1000, spaces::IP_FP32_DispatchTable);
+    ASSERT_NE(idx, spaces::IP_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx].chooser,
+              spaces::Choose_FP32_IP_implementation_AVX);
+}
+
+TEST(SpacesDispatchTierTest, FP32IPTableOnlyWeakestFeature) {
+    spaces::FeaturesType sse_only{};
+    sse_only.sse = 1;
+    size_t idx = spaces::select_tier_index(sse_only, 1000, spaces::IP_FP32_DispatchTable);
+    ASSERT_NE(idx, spaces::IP_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx].chooser,
+              spaces::Choose_FP32_IP_implementation_SSE);
+}
+
+// Every x86 row in this table shares min_dim=8 (the old shared "if (dim < 8) return scalar;"
+// gate, absorbed per-row - see IP_dispatch_tables.h). min_dim-1/min_dim/min_dim+1 boundary.
+TEST(SpacesDispatchTierTest, FP32IPTableMinDimBoundary) {
+    spaces::FeaturesType avx512{};
+    avx512.avx512f = 1;
+    EXPECT_EQ(spaces::select_tier_index(avx512, 7, spaces::IP_FP32_DispatchTable),
+              spaces::IP_FP32_DispatchTable.size())
+        << "dim=7 is below min_dim=8, must fall back to scalar even with avx512f set";
+    size_t idx8 = spaces::select_tier_index(avx512, 8, spaces::IP_FP32_DispatchTable);
+    ASSERT_NE(idx8, spaces::IP_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx8].chooser,
+              spaces::Choose_FP32_IP_implementation_AVX512F);
+    size_t idx9 = spaces::select_tier_index(avx512, 9, spaces::IP_FP32_DispatchTable);
+    ASSERT_NE(idx9, spaces::IP_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx9].chooser,
+              spaces::Choose_FP32_IP_implementation_AVX512F);
+}
+
+TEST(SpacesDispatchTierTest, FP32L2TableOverlappingFeaturePriority) {
+    spaces::FeaturesType all{};
+    all.avx512f = 1;
+    all.avx = 1;
+    all.sse = 1;
+    size_t idx = spaces::select_tier_index(all, 1000, spaces::L2_FP32_DispatchTable);
+    ASSERT_NE(idx, spaces::L2_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_FP32_DispatchTable[idx].chooser,
+              spaces::Choose_FP32_L2_implementation_AVX512F);
+}
+#endif // CPU_FEATURES_ARCH_X86_64
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+TEST(SpacesDispatchTierTest, FP32IPTableOverlappingFeaturePriority) {
+    spaces::FeaturesType all{};
+    all.sve2 = 1;
+    all.sve = 1;
+    all.asimd = 1;
+    // Best tier first: sve2 must win over sve and neon even though all three predicates match.
+    size_t idx = spaces::select_tier_index(all, 1000, spaces::IP_FP32_DispatchTable);
+    ASSERT_NE(idx, spaces::IP_FP32_DispatchTable.size());
+    EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx].chooser,
+              spaces::Choose_FP32_IP_implementation_SVE2);
+}
+
+// Every ARM row in this table has min_dim=0 (no shared dimension gate on this path in the
+// original cascade), so there is no min_dim-1 underflow case to test - dims 0 and 1 instead.
+TEST(SpacesDispatchTierTest, FP32IPTableZeroMinDimAcceptsSmallestDims) {
+    spaces::FeaturesType neon_only{};
+    neon_only.asimd = 1;
+    for (size_t dim : {size_t{0}, size_t{1}}) {
+        size_t idx = spaces::select_tier_index(neon_only, dim, spaces::IP_FP32_DispatchTable);
+        ASSERT_NE(idx, spaces::IP_FP32_DispatchTable.size()) << "dim=" << dim;
+        EXPECT_EQ(spaces::IP_FP32_DispatchTable[idx].chooser,
+                  spaces::Choose_FP32_IP_implementation_NEON)
+            << "dim=" << dim;
+    }
+}
+#endif // CPU_FEATURES_ARCH_AARCH64
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+// Cosine's AVX-512 tier deliberately never sets an alignment hint (documented special case - the
+// extra norm float shifts effective alignment in a way the original cascade skips computing).
+// There is no L2 mirror: L2_INT8/L2_UINT8 set alignment normally. This asymmetry must survive.
+TEST(SpacesDispatchTierTest, CosineInt8Avx512SkipsAlignmentButL2DoesNot) {
+    spaces::FeaturesType avx512{};
+    avx512.avx512f = 1;
+    avx512.avx512bw = 1;
+    avx512.avx512vl = 1;
+    avx512.avx512vnni = 1;
+
+    size_t cosine_idx = spaces::select_tier_index(avx512, 1000, spaces::Cosine_INT8_DispatchTable);
+    ASSERT_NE(cosine_idx, spaces::Cosine_INT8_DispatchTable.size());
+    EXPECT_EQ(spaces::Cosine_INT8_DispatchTable[cosine_idx].alignment_chunk_elems, 0u)
+        << "Cosine_INT8's AVX512 tier must not carry an alignment hint (documented skip case)";
+
+    size_t l2_idx = spaces::select_tier_index(avx512, 1000, spaces::L2_INT8_DispatchTable);
+    ASSERT_NE(l2_idx, spaces::L2_INT8_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_INT8_DispatchTable[l2_idx].alignment_chunk_elems, 32u)
+        << "L2_INT8's AVX512 tier sets alignment normally - no skip case here, unlike Cosine";
+}
+
+TEST(SpacesDispatchTierTest, CosineUint8Avx512SkipsAlignmentButL2DoesNot) {
+    spaces::FeaturesType avx512{};
+    avx512.avx512f = 1;
+    avx512.avx512bw = 1;
+    avx512.avx512vl = 1;
+    avx512.avx512vnni = 1;
+
+    size_t cosine_idx = spaces::select_tier_index(avx512, 1000, spaces::Cosine_UINT8_DispatchTable);
+    ASSERT_NE(cosine_idx, spaces::Cosine_UINT8_DispatchTable.size());
+    EXPECT_EQ(spaces::Cosine_UINT8_DispatchTable[cosine_idx].alignment_chunk_elems, 0u);
+
+    size_t l2_idx = spaces::select_tier_index(avx512, 1000, spaces::L2_UINT8_DispatchTable);
+    ASSERT_NE(l2_idx, spaces::L2_UINT8_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_UINT8_DispatchTable[l2_idx].alignment_chunk_elems, 32u);
+}
+#endif // OPT_AVX512_F_BW_VL_VNNI
+
+#ifdef OPT_AVX2
+// IP_BF16 has an AVX512BF16_VL tier that L2_BF16 never had in the original cascade (confirmed by
+// re-reading L2_space.cpp - only AVX512BW_VBMI2 exists there). With avx512_bf16 set but no other
+// AVX-512 flags, IP must pick the dedicated AVX512BF16_VL tier while L2 must skip straight past
+// it to AVX2 (since L2 has no row whose predicate can match avx512_bf16 alone).
+TEST(SpacesDispatchTierTest, IPBf16HasAvx512Bf16VlTierThatL2Lacks) {
+    spaces::FeaturesType avx512_bf16_and_avx2{};
+    avx512_bf16_and_avx2.avx512_bf16 = 1;
+    avx512_bf16_and_avx2.avx512vl = 1;
+    avx512_bf16_and_avx2.avx2 = 1;
+
+    size_t ip_idx =
+        spaces::select_tier_index(avx512_bf16_and_avx2, 1000, spaces::IP_BF16_DispatchTable);
+    ASSERT_NE(ip_idx, spaces::IP_BF16_DispatchTable.size());
+#ifdef OPT_AVX512_BF16_VL
+    EXPECT_EQ(spaces::IP_BF16_DispatchTable[ip_idx].chooser,
+              spaces::Choose_BF16_IP_implementation_AVX512BF16_VL);
+#endif
+
+    size_t l2_idx =
+        spaces::select_tier_index(avx512_bf16_and_avx2, 1000, spaces::L2_BF16_DispatchTable);
+    ASSERT_NE(l2_idx, spaces::L2_BF16_DispatchTable.size());
+    EXPECT_EQ(spaces::L2_BF16_DispatchTable[l2_idx].chooser,
+              spaces::Choose_BF16_L2_implementation_AVX2)
+        << "L2_BF16 has no AVX512BF16_VL row, so avx512_bf16-only features must fall through to "
+           "AVX2 (avx512bw/avx512vbmi2 are unset here, so its AVX512BW_VBMI2 row can't match "
+           "either)";
+}
+#endif // OPT_AVX2
+#endif // CPU_FEATURES_ARCH_X86_64
 
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
