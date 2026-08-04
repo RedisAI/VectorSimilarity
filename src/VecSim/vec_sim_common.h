@@ -68,6 +68,12 @@ typedef enum {
     VecSimType_INT64
 } VecSimType;
 
+// Quantization type for HNSW indices.
+typedef enum {
+    VecSimQuant_NONE = 0, // No quantization (default).
+    VecSimQuant_SQ8 = 1,  // 8-bit scalar quantization with mean normalization.
+} VecSimQuantType;
+
 // Algorithm type/library.
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
 
@@ -156,6 +162,8 @@ typedef struct {
     size_t efConstruction;
     size_t efRuntime;
     double epsilon;
+    VecSimQuantType quantType; // Quantization type. Default: VecSimQuant_NONE.
+    void *quantParams; // For VecSimQuant_SQ8: pointer to float mean[dim], or NULL for zero mean.
 } HNSWParams;
 
 typedef struct {
