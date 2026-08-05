@@ -19,7 +19,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       HNSWSerializer(version), epsilon(params->epsilon), graphDataBlocks(this->allocator),
       elementLocks(this->allocator), idToMetaData(this->allocator),
-      visitedNodesHandlerPool(0, this->allocator) {
+      visitedNodesHandlerPool(0, this->allocator), idFlagSetPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -34,6 +34,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
     this->elementLocks.resize(maxElements);
     this->idToMetaData.resize(maxElements);
     this->visitedNodesHandlerPool.resize(maxElements);
+    this->idFlagSetPool.resize(maxElements);
 
     size_t initial_vector_size = maxElements / this->blockSize;
     graphDataBlocks.reserve(initial_vector_size);

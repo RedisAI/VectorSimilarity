@@ -10,6 +10,7 @@
 
 #include "graph_data.h"
 #include "visited_nodes_handler.h"
+#include "id_flag_set.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/utils/vec_utils.h"
@@ -122,6 +123,8 @@ protected:
     // Used for marking the visited nodes in graph scans (the pool supports parallel graph scans).
     // This is mutable since the object changes upon search operations as well (which are const).
     mutable VisitedNodesHandlerPool visitedNodesHandlerPool;
+    // Reusable id sets for the delete and repair paths, see id_flag_set.h.
+    mutable IdFlagSetPool idFlagSetPool;
     mutable std::shared_mutex indexDataGuard;
 
 #ifdef BUILD_TESTS
@@ -182,7 +185,8 @@ protected:
     void repairConnectionsForDeletion(idType element_internal_id, idType neighbour_id,
                                       ElementLevelData &node_level,
                                       ElementLevelData &neighbor_level, size_t level,
-                                      vecsim_stl::vector<bool> &neighbours_bitmap);
+                                      IdFlagSet &neighbours_set,
+                                      IdFlagSet &orig_neighbours_scratch);
     void replaceEntryPoint();
 
     void SwapLastIdWithDeletedId(idType element_internal_id, ElementGraphData *last_element,
@@ -946,7 +950,8 @@ idType HNSWIndex<DataType, DistType>::mutuallyConnectNewElement(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     idType element_internal_id, idType neighbour_id, ElementLevelData &node_level,
-    ElementLevelData &neighbor_level, size_t level, vecsim_stl::vector<bool> &neighbours_bitmap) {
+    ElementLevelData &neighbor_level, size_t level, IdFlagSet &neighbours_set,
+    IdFlagSet &orig_neighbours_scratch) {
 
     if (isMarkedDeleted(neighbour_id)) {
         // Just remove the deleted element from the neighbor's neighbors list. No need to repair as
@@ -958,13 +963,15 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     // Add the deleted element's neighbour's original neighbors in the candidates.
     vecsim_stl::vector<idType> candidate_ids(this->allocator);
     candidate_ids.reserve(node_level.getNumLinks() + neighbor_level.getNumLinks());
-    vecsim_stl::vector<bool> neighbour_orig_neighbours_set(curElementCount, false, this->allocator);
+    // Reused across the calls this delete makes, so it starts from whatever the last call left.
+    IdFlagSet &neighbour_orig_neighbours_set = orig_neighbours_scratch;
+    neighbour_orig_neighbours_set.clear();
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
         idType cand = neighbor_level.getLinkAtPos(j);
-        neighbour_orig_neighbours_set[cand] = true;
+        neighbour_orig_neighbours_set.insert(cand);
         // Don't add the removed element to the candidates, nor nodes that are neighbors of the
         // original deleted element and will also be added to the candidates set.
-        if (cand != element_internal_id && !neighbours_bitmap[cand]) {
+        if (cand != element_internal_id && !neighbours_set.contains(cand)) {
             candidate_ids.push_back(cand);
         }
     }
@@ -974,7 +981,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
         // were not neighbors before.
         idType cand = node_level.getLinkAtPos(j);
         if (cand != neighbour_id &&
-            (!isMarkedDeleted(cand) || neighbour_orig_neighbours_set[cand])) {
+            (!isMarkedDeleted(cand) || neighbour_orig_neighbours_set.contains(cand))) {
             candidate_ids.push_back(cand);
         }
     }
@@ -999,7 +1006,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
 
         // Update unidirectional incoming edges w.r.t. the edges that were removed.
         for (auto node_id : not_chosen_candidates) {
-            if (neighbour_orig_neighbours_set[node_id]) {
+            if (neighbour_orig_neighbours_set.contains(node_id)) {
                 // if the node id (the neighbour's neighbour to be removed)
                 // wasn't pointing to the neighbour (edge was one directional),
                 // we should remove it from the node's incoming edges.
@@ -1019,7 +1026,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     // Updates for the new edges created
     for (size_t i = 0; i < neighbor_level.getNumLinks(); i++) {
         idType node_id = neighbor_level.getLinkAtPos(i);
-        if (!neighbour_orig_neighbours_set[node_id]) {
+        if (!neighbour_orig_neighbours_set.contains(node_id)) {
             ElementLevelData &node_level = getElementLevelData(node_id, level);
             // If the node has an edge to the neighbour as well, remove it from the incoming nodes
             // of the neighbour. Otherwise, we need to update the edge as unidirectional incoming.
@@ -1289,6 +1296,7 @@ void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
               idToMetaData.capacity(), new_max_elements);
     resizeLabelLookup(new_max_elements);
     visitedNodesHandlerPool.resize(new_max_elements);
+    idFlagSetPool.resize(new_max_elements);
     elementLocks.resize(new_max_elements);
     elementLocks.shrink_to_fit();
     assert(idToMetaData.capacity() == idToMetaData.size());
@@ -1426,14 +1434,17 @@ template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t level) {
 
     vecsim_stl::vector<idType> neighbors_candidate_ids(this->allocator);
-    // Use bitmaps for fast accesses:
+    // Use id sets for fast accesses. They are taken from the pool rather than built here, since
+    // each holds at most a handful of ids while a freshly built one costs a zero fill over the
+    // whole index capacity, on every repair job.
     // node_orig_neighbours_set is used to differentiate between the neighbors that will *not* be
     // selected by the heuristics - only the ones that were originally neighbors should be removed.
-    vecsim_stl::vector<bool> node_orig_neighbours_set(maxElements, false, this->allocator);
+    PooledIdFlagSets scratch(idFlagSetPool);
+    IdFlagSet &node_orig_neighbours_set = scratch.first();
     // neighbors_candidates_set is used to store the nodes that were already collected as
     // candidates, so we will not collect them again as candidates if we run into them from another
     // path.
-    vecsim_stl::vector<bool> neighbors_candidates_set(maxElements, false, this->allocator);
+    IdFlagSet &neighbors_candidates_set = scratch.second();
     vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
@@ -1442,13 +1453,13 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     lockNodeLinks(node_id);
     ElementLevelData &node_level_data = getElementLevelData(element, level);
     for (size_t j = 0; j < node_level_data.getNumLinks(); j++) {
-        node_orig_neighbours_set[node_level_data.getLinkAtPos(j)] = true;
+        node_orig_neighbours_set.insert(node_level_data.getLinkAtPos(j));
         // Don't add the removed element to the candidates.
         if (isMarkedDeleted(node_level_data.getLinkAtPos(j))) {
             deleted_neighbors.push_back(node_level_data.getLinkAtPos(j));
             continue;
         }
-        neighbors_candidates_set[node_level_data.getLinkAtPos(j)] = true;
+        neighbors_candidates_set.insert(node_level_data.getLinkAtPos(j));
         neighbors_candidate_ids.push_back(node_level_data.getLinkAtPos(j));
     }
     unlockNodeLinks(node_id);
@@ -1477,11 +1488,11 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
             // Don't add removed elements to the candidates, nor nodes that are already in the
             // candidates set, nor the original node to repair itself.
             if (isMarkedDeleted(neighbor_level_data.getLinkAtPos(j)) ||
-                neighbors_candidates_set[neighbor_level_data.getLinkAtPos(j)] ||
+                neighbors_candidates_set.contains(neighbor_level_data.getLinkAtPos(j)) ||
                 neighbor_level_data.getLinkAtPos(j) == node_id) {
                 continue;
             }
-            neighbors_candidates_set[neighbor_level_data.getLinkAtPos(j)] = true;
+            neighbors_candidates_set.insert(neighbor_level_data.getLinkAtPos(j));
             neighbors_candidate_ids.push_back(neighbor_level_data.getLinkAtPos(j));
         }
         unlockNodeLinks(deleted_neighbor_id);
@@ -1503,7 +1514,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         getNeighborsByHeuristic2(neighbors_candidates, max_M_cur, not_chosen_neighbors);
 
         for (idType not_chosen_neighbor : not_chosen_neighbors) {
-            if (node_orig_neighbours_set[not_chosen_neighbor]) {
+            if (node_orig_neighbours_set.contains(not_chosen_neighbor)) {
                 nodes_to_update.push_back(not_chosen_neighbor);
             }
         }
@@ -1604,7 +1615,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
       elementLocks(this->allocator), idToMetaData(this->allocator),
-      visitedNodesHandlerPool(0, this->allocator) {
+      visitedNodesHandlerPool(0, this->allocator), idFlagSetPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
@@ -1701,52 +1712,58 @@ void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType inter
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_internal_id) {
 
-    vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
-
-    // Go over the element's nodes at every level and repair the effected connections.
+    // Scoped, so that the id set is back in the pool before removeAndSwap() below may shrink the
+    // index, and with it the pool.
     auto element = getGraphDataByInternalId(element_internal_id);
-    for (size_t level = 0; level <= element->toplevel; level++) {
-        ElementLevelData &cur_level = getElementLevelData(element, level);
-        // Reset the neighbours' bitmap for the current level.
-        neighbours_bitmap.assign(curElementCount, false);
-        // Store the deleted element's neighbours set in a bitmap for fast access.
-        for (size_t j = 0; j < cur_level.getNumLinks(); j++) {
-            neighbours_bitmap[cur_level.getLinkAtPos(j)] = true;
-        }
-        // Go over the neighbours that also points back to the removed point and make a local
-        // repair.
-        for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
-            idType neighbour_id = cur_level.getLinkAtPos(i);
-            ElementLevelData &neighbor_level = getElementLevelData(neighbour_id, level);
+    {
+        PooledIdFlagSets scratch(idFlagSetPool);
+        IdFlagSet &neighbours_set = scratch.first();
 
-            bool bidirectional_edge = false;
-            for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
-                // If the edge is bidirectional, do repair for this neighbor.
-                if (neighbor_level.getLinkAtPos(j) == element_internal_id) {
-                    bidirectional_edge = true;
-                    repairConnectionsForDeletion(element_internal_id, neighbour_id, cur_level,
-                                                 neighbor_level, level, neighbours_bitmap);
-                    break;
+        // Go over the element's nodes at every level and repair the effected connections.
+        for (size_t level = 0; level <= element->toplevel; level++) {
+            ElementLevelData &cur_level = getElementLevelData(element, level);
+            // Reset the neighbours' bitmap for the current level.
+            neighbours_set.clear();
+            // Store the deleted element's neighbours set in a bitmap for fast access.
+            for (size_t j = 0; j < cur_level.getNumLinks(); j++) {
+                neighbours_set.insert(cur_level.getLinkAtPos(j));
+            }
+            // Go over the neighbours that also points back to the removed point and make a local
+            // repair.
+            for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
+                idType neighbour_id = cur_level.getLinkAtPos(i);
+                ElementLevelData &neighbor_level = getElementLevelData(neighbour_id, level);
+
+                bool bidirectional_edge = false;
+                for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
+                    // If the edge is bidirectional, do repair for this neighbor.
+                    if (neighbor_level.getLinkAtPos(j) == element_internal_id) {
+                        bidirectional_edge = true;
+                        repairConnectionsForDeletion(element_internal_id, neighbour_id, cur_level,
+                                                     neighbor_level, level, neighbours_set,
+                                                     scratch.second());
+                        break;
+                    }
+                }
+
+                // If this edge is uni-directional, we should remove the element from the neighbor's
+                // incoming edges.
+                if (!bidirectional_edge) {
+                    // This should always return true (remove should succeed).
+                    bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(
+                        element_internal_id);
+                    (void)res;
+                    assert(res && "The edge should be in the incoming unidirectional edges");
                 }
             }
 
-            // If this edge is uni-directional, we should remove the element from the neighbor's
-            // incoming edges.
-            if (!bidirectional_edge) {
-                // This should always return true (remove should succeed).
-                bool res =
-                    neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
-                (void)res;
-                assert(res && "The edge should be in the incoming unidirectional edges");
+            // Next, go over the rest of incoming edges (the ones that are not bidirectional) and
+            // make repairs.
+            for (auto incoming_edge : cur_level.getIncomingEdges()) {
+                repairConnectionsForDeletion(element_internal_id, incoming_edge, cur_level,
+                                             getElementLevelData(incoming_edge, level), level,
+                                             neighbours_set, scratch.second());
             }
-        }
-
-        // Next, go over the rest of incoming edges (the ones that are not bidirectional) and make
-        // repairs.
-        for (auto incoming_edge : cur_level.getIncomingEdges()) {
-            repairConnectionsForDeletion(element_internal_id, incoming_edge, cur_level,
-                                         getElementLevelData(incoming_edge, level), level,
-                                         neighbours_bitmap);
         }
     }
     if (entrypointNode == element_internal_id) {
