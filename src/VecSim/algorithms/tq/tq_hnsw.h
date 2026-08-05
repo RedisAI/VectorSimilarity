@@ -34,6 +34,13 @@ public:
         info.isTiered = false;
         return info;
     }
+
+#ifdef BUILD_TESTS
+    void saveIndex(const std::string &location) override {
+        UNUSED(location);
+        throw std::runtime_error("TQ-HNSW serialization is not supported yet");
+    }
+#endif
 };
 
 template <typename DataType, typename DistType>
@@ -42,8 +49,8 @@ public:
     TQHNSWIndex_Multi(const HNSWParams *params, const AbstractIndexInitParams &abstractInitParams,
                       const IndexComponents<DataType, DistType> &components,
                       size_t random_seed = 100)
-        : HNSWIndex_Multi<DataType, DistType>(params, abstractInitParams, components,
-                                              random_seed) {}
+        : HNSWIndex_Multi<DataType, DistType>(params, abstractInitParams, components, random_seed) {
+    }
 
     VecSimIndexDebugInfo debugInfo() const override {
         VecSimIndexDebugInfo info = HNSWIndex_Multi<DataType, DistType>::debugInfo();
@@ -57,6 +64,13 @@ public:
         info.isTiered = false;
         return info;
     }
+
+#ifdef BUILD_TESTS
+    void saveIndex(const std::string &location) override {
+        UNUSED(location);
+        throw std::runtime_error("TQ-HNSW serialization is not supported yet");
+    }
+#endif
 };
 
 } // namespace TQHNSWDetails

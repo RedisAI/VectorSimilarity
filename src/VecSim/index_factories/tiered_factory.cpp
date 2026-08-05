@@ -264,8 +264,8 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);
     }
     if (params->primaryIndexParams->algo == VecSimAlgo_TQ_HNSW) {
-        est = HNSWFactory::EstimateElementSize(
-            &params->primaryIndexParams->algoParams.tqHnswParams);
+        est =
+            HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.tqHnswParams);
     }
     if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {
         est = SVSFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.svsParams);

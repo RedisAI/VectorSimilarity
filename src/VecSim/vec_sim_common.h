@@ -194,10 +194,10 @@ typedef struct {
     bool multi;             // Determines if the index should multi-index or not.
     size_t initialCapacity; // Deprecated.
     size_t blockSize;
-    size_t bits;            // Total bit budget per value. PolarQuant uses bits-1.
-    size_t projections;     // Number of QJL residual projections.
-    size_t seed;            // Seed for deterministic rotation and QJL projections.
-    bool useRotation;       // Apply deterministic random rotation before quantization.
+    size_t bits;        // Total bit budget per value. PolarQuant uses bits-1.
+    size_t projections; // Number of QJL residual projections.
+    size_t seed;        // Seed for deterministic rotation and QJL projections.
+    bool useRotation;   // Apply deterministic random rotation before quantization.
     size_t M;
     size_t efConstruction;
     size_t efRuntime;

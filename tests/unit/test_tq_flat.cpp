@@ -9,6 +9,7 @@
 
 #include "gtest/gtest.h"
 
+#include "VecSim/algorithms/hnsw/hnsw_serializer.h"
 #include "VecSim/algorithms/tq/tq_flat.h"
 #include "VecSim/vec_sim.h"
 #include "tq_golden_fixture.h"
@@ -35,6 +36,29 @@ VecSimParams CreateTQParams(size_t dim, VecSimMetric metric, size_t seed = 7,
                               .seed = seed,
                               .useRotation = use_rotation};
     return VecSimParams{.algo = VecSimAlgo_TQ, .algoParams = {.tqFlatParams = tq_params}};
+}
+
+VecSimParams CreateTQHNSWParams(size_t dim, VecSimMetric metric, size_t seed = 7,
+                                bool use_rotation = true, size_t bits = 8, size_t projections = 0,
+                                size_t m = 16, size_t ef_construction = 200,
+                                size_t ef_runtime = 50) {
+    TQHNSWParams tq_params = {
+        .type = VecSimType_FLOAT32,
+        .dim = dim,
+        .metric = metric,
+        .multi = false,
+        .initialCapacity = 0,
+        .blockSize = 4,
+        .bits = bits,
+        .projections = projections ? projections : std::max<size_t>(1, dim / 2),
+        .seed = seed,
+        .useRotation = use_rotation,
+        .M = m,
+        .efConstruction = ef_construction,
+        .efRuntime = ef_runtime,
+        .epsilon = 0.01,
+    };
+    return VecSimParams{.algo = VecSimAlgo_TQ_HNSW, .algoParams = {.tqHnswParams = tq_params}};
 }
 
 std::vector<std::pair<size_t, double>> TopK(VecSimIndex *index, const float *query, size_t k) {
@@ -188,6 +212,45 @@ TEST(TQFlatTest, cosine_scores_use_standard_one_minus_cosine_scale) {
     VecSimIndex_Free(index);
 }
 
+TEST(TQFlatTest, tq_hnsw_cosine_search_prefers_exact_match) {
+    VecSimParams params = CreateTQHNSWParams(16, VecSimMetric_Cosine, 7, true, 8, 64);
+    VecSimIndex *index = VecSimIndex_New(&params);
+    ASSERT_NE(index, nullptr);
+
+    const float e1[16] = {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const float e2[16] = {0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    const float mix[16] = {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+    ASSERT_EQ(VecSimIndex_AddVector(index, e1, 1), 1);
+    ASSERT_EQ(VecSimIndex_AddVector(index, e2, 2), 1);
+    ASSERT_EQ(VecSimIndex_AddVector(index, mix, 3), 1);
+
+    auto results = TopK(index, e1, 3);
+    ASSERT_EQ(results.size(), 3);
+    EXPECT_EQ(results[0].first, 1U);
+
+    auto info = VecSimIndex_BasicInfo(index);
+    EXPECT_EQ(info.algo, VecSimAlgo_TQ_HNSW);
+    EXPECT_EQ(info.type, VecSimType_FLOAT32);
+    EXPECT_EQ(info.dim, 16U);
+    EXPECT_FALSE(info.isTiered);
+
+    VecSimIndex_Free(index);
+}
+
+TEST(TQFlatTest, tq_hnsw_rejects_unsupported_l2_and_serialization) {
+    VecSimParams l2_params = CreateTQHNSWParams(16, VecSimMetric_L2, 7, true, 8, 64);
+    EXPECT_EQ(VecSimIndex_New(&l2_params), nullptr);
+
+    VecSimParams cosine_params = CreateTQHNSWParams(16, VecSimMetric_Cosine, 7, true, 8, 64);
+    VecSimIndex *index = VecSimIndex_New(&cosine_params);
+    ASSERT_NE(index, nullptr);
+    auto *serializer = dynamic_cast<HNSWSerializer *>(index);
+    ASSERT_NE(serializer, nullptr);
+    EXPECT_THROW(serializer->saveIndex("unused-tq-hnsw-index"), std::runtime_error);
+    VecSimIndex_Free(index);
+}
+
 TEST(TQFlatTest, low_bit_angle_codes_are_nibble_packed) {
     constexpr size_t dim = 18;
     constexpr size_t projections = 13;
@@ -295,6 +358,45 @@ TEST(TQFlatTest, l2_distance_uses_full_storage_norm_field) {
 
     allocator->free_allocation(storage_blob);
     allocator->free_allocation(query_blob);
+}
+
+TEST(TQFlatTest, l2_symmetric_distance_uses_full_storage_norm_fields) {
+    constexpr size_t dim = 16;
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto state = std::make_shared<TQFlatDetails::TQModelState>(dim, 8, 16, 19, true);
+    TQFlatDetails::TQPreprocessor<VecSimMetric_L2> preprocessor(allocator, state);
+    TQFlatDetails::TQSymmetricDistanceCalculator<VecSimMetric_L2> calculator(allocator, state);
+
+    const auto lhs_vector = MakeSignal(dim, 0.11f);
+    const auto rhs_vector = MakeSignal(dim, -0.37f);
+
+    void *lhs_blob = nullptr;
+    size_t lhs_blob_size = dim * sizeof(float);
+    preprocessor.preprocessForStorage(lhs_vector.data(), lhs_blob, lhs_blob_size, 0);
+
+    void *rhs_blob = nullptr;
+    size_t rhs_blob_size = dim * sizeof(float);
+    preprocessor.preprocessForStorage(rhs_vector.data(), rhs_blob, rhs_blob_size, 0);
+
+    const auto lhs_view = state->storageView(lhs_blob);
+    const auto rhs_view = state->storageView(rhs_blob);
+    const float estimate = state->estimateInnerProductSymmetric(lhs_view, rhs_view);
+    const float lhs_full_norm = lhs_view.full_vector_norm_sq + 7.0f;
+    const float rhs_full_norm = rhs_view.full_vector_norm_sq + 9.0f;
+    const float lhs_code_norm = lhs_view.code_norm_sq * 0.1f + 0.25f;
+    const float rhs_code_norm = rhs_view.code_norm_sq * 0.2f + 0.5f;
+    SetStoredNorms(state, lhs_blob, lhs_full_norm, lhs_code_norm);
+    SetStoredNorms(state, rhs_blob, rhs_full_norm, rhs_code_norm);
+
+    const float actual = calculator.calcDistance(lhs_blob, rhs_blob, dim);
+    const float expected = std::max(lhs_full_norm + rhs_full_norm - 2.0f * estimate, 0.0f);
+    const float wrong = std::max(lhs_code_norm + rhs_code_norm - 2.0f * estimate, 0.0f);
+
+    ASSERT_GT(std::abs(expected - wrong), 1e-3f);
+    EXPECT_NEAR(actual, expected, AllowedError(expected, 1e-5f, 1e-6f));
+
+    allocator->free_allocation(lhs_blob);
+    allocator->free_allocation(rhs_blob);
 }
 
 TEST(TQFlatTest, range_query_returns_close_match) {

@@ -307,21 +307,20 @@ public:
         for (size_t i = 0; i < pairs; ++i) {
             const uint16_t lhs_angle = angleCodeAt(lhs, i);
             const uint16_t rhs_angle = angleCodeAt(rhs, i);
-            polar_estimate += lhs.radii[i] * rhs.radii[i] *
-                              (cos_lut[lhs_angle] * cos_lut[rhs_angle] +
-                               sin_lut[lhs_angle] * sin_lut[rhs_angle]);
+            polar_estimate +=
+                lhs.radii[i] * rhs.radii[i] *
+                (cos_lut[lhs_angle] * cos_lut[rhs_angle] + sin_lut[lhs_angle] * sin_lut[rhs_angle]);
         }
 
         int sign_dot = 0;
         for (size_t byte_idx = 0; byte_idx < packedQjlBytes(); ++byte_idx) {
             const size_t base_projection = byte_idx * 8;
             const size_t valid_bits = std::min<size_t>(8, projections - base_projection);
-            const uint8_t valid_mask =
-                valid_bits == 8 ? static_cast<uint8_t>(0xFFu)
-                                : static_cast<uint8_t>((uint16_t{1} << valid_bits) - 1u);
-            const uint8_t diff_bits =
-                static_cast<uint8_t>((lhs.residual_signs[byte_idx] ^ rhs.residual_signs[byte_idx]) &
-                                     valid_mask);
+            const uint8_t valid_mask = valid_bits == 8
+                                           ? static_cast<uint8_t>(0xFFu)
+                                           : static_cast<uint8_t>((uint16_t{1} << valid_bits) - 1u);
+            const uint8_t diff_bits = static_cast<uint8_t>(
+                (lhs.residual_signs[byte_idx] ^ rhs.residual_signs[byte_idx]) & valid_mask);
             const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
             sign_dot += static_cast<int>(valid_bits) - (2 * diff_count);
         }
@@ -465,22 +464,40 @@ private:
 
 template <VecSimMetric Metric>
 class TQSymmetricDistanceCalculator : public IndexCalculatorInterface<float> {
+private:
+    static float calcWithContext(const void *opaque_state, const void *lhs_blob,
+                                 const void *rhs_blob, size_t dim) {
+        UNUSED(dim);
+        const auto *state = static_cast<const TQModelState *>(opaque_state);
+        const auto lhs = state->storageView(lhs_blob);
+        const auto rhs = state->storageView(rhs_blob);
+        const float estimate = state->estimateInnerProductSymmetric(lhs, rhs);
+
+        if constexpr (Metric == VecSimMetric_L2) {
+            return std::max(lhs.full_vector_norm_sq + rhs.full_vector_norm_sq - 2.0f * estimate,
+                            0.0f);
+        }
+
+        return 1.0f - estimate;
+    }
+
 public:
     TQSymmetricDistanceCalculator(std::shared_ptr<VecSimAllocator> allocator,
                                   std::shared_ptr<TQModelState> state)
         : IndexCalculatorInterface<float>(allocator), state(std::move(state)) {}
 
     float calcDistance(const void *v1, const void *v2, size_t dim) const override {
-        UNUSED(dim);
-        const auto lhs = state->storageView(v1);
-        const auto rhs = state->storageView(v2);
-        const float estimate = state->estimateInnerProductSymmetric(lhs, rhs);
+        return calcWithContext(state.get(), v1, v2, dim);
+    }
 
-        if constexpr (Metric == VecSimMetric_L2) {
-            return std::max(lhs.code_norm_sq + rhs.code_norm_sq - 2.0f * estimate, 0.0f);
-        }
+    float calcDistanceForQuery(const void *candidate_vector, const void *query_vector,
+                               size_t dim) const override {
+        return calcWithContext(state.get(), candidate_vector, query_vector, dim);
+    }
 
-        return 1.0f - estimate;
+    DistanceDispatch<float> getDistanceDispatch(DistanceMode mode) const override {
+        UNUSED(mode);
+        return DistanceDispatch<float>::stateful(state.get(), calcWithContext);
     }
 
 private:
@@ -620,31 +637,23 @@ public:
         : PreprocessorInterface(allocator), delegate(allocator, std::move(state)) {}
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
-        size_t storage_blob_size = input_blob_size;
-        size_t query_blob_size = input_blob_size;
-        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, query_blob_size,
-                   alignment);
-        input_blob_size = storage_blob_size;
-    }
-
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
-        UNUSED(alignment);
-        delegate.preprocessForStorage(original_blob, storage_blob, storage_blob_size);
-        delegate.preprocessForStorage(original_blob, query_blob, query_blob_size);
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
+        delegate.preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                      storage_alignment);
+        delegate.preprocessForStorage(original_blob, query_blob, query_blob_size, query_alignment);
     }
 
     void preprocessForStorage(const void *original_blob, void *&storage_blob,
-                              size_t &input_blob_size) const override {
-        delegate.preprocessForStorage(original_blob, storage_blob, input_blob_size);
+                              size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
+        delegate.preprocessForStorage(original_blob, storage_blob, input_blob_size,
+                                      storage_alignment);
     }
 
     void preprocessQuery(const void *original_blob, void *&query_blob, size_t &input_blob_size,
-                         unsigned char alignment) const override {
-        UNUSED(alignment);
-        delegate.preprocessForStorage(original_blob, query_blob, input_blob_size);
+                         unsigned char query_alignment) const override {
+        delegate.preprocessForStorage(original_blob, query_blob, input_blob_size, query_alignment);
     }
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {

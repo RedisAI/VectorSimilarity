@@ -221,8 +221,11 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
+    // TQ-HNSW and its raw FLAT buffer can assign different scores to the same vector while an
+    // insertion is moving between tiers. Use explicit label deduplication for that overlap window.
+    if (this->backendIndex->isMultiValue() ||
+        this->backendIndex->basicInfo().algo == VecSimAlgo_TQ_HNSW) {
+        return this->topKQueryImp<true>(queryBlob, k, queryParams);
     } else {
         // Calling with withSet=false for optimized performance, assuming that shared IDs across
         // lists also have identical scores — in which case duplicates are implicitly avoided by the
@@ -236,9 +239,9 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->rangeQueryImp<true>(queryBlob, radius, queryParams,
-                                         order); // Multi-value index
+    if (this->backendIndex->isMultiValue() ||
+        this->backendIndex->basicInfo().algo == VecSimAlgo_TQ_HNSW) {
+        return this->rangeQueryImp<true>(queryBlob, radius, queryParams, order);
     } else {
         // Calling with withSet=false for optimized performance, assuming that shared IDs across
         // lists also have identical scores — in which case duplicates are implicitly avoided by the

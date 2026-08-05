@@ -66,8 +66,19 @@ inline HNSWParams AsHNSWParams(const TQHNSWParams &params) {
     };
 }
 
-inline const TQFlatParams *AsTQFlatParamsPrefix(const TQHNSWParams *params) {
-    return reinterpret_cast<const TQFlatParams *>(params);
+inline TQFlatParams AsTQFlatParams(const TQHNSWParams &params) {
+    return {
+        .type = params.type,
+        .dim = params.dim,
+        .metric = params.metric,
+        .multi = params.multi,
+        .initialCapacity = params.initialCapacity,
+        .blockSize = params.blockSize,
+        .bits = params.bits,
+        .projections = params.projections,
+        .seed = params.seed,
+        .useRotation = params.useRotation,
+    };
 }
 
 inline AbstractIndexInitParams NewTQAbstractInitParams(const TQHNSWParams *params, void *logCtx,
@@ -89,9 +100,9 @@ template <VecSimMetric Metric>
 VecSimIndex *NewTQIndexImpl(const VecSimParams *params) {
     const auto &tq_params = params->algoParams.tqHnswParams;
     auto allocator = VecSimAllocator::newVecsimAllocator();
-    const auto *tq_core_params = AsTQFlatParamsPrefix(&tq_params);
-    auto components = TQFlatDetails::CreateTQHNSWComponents<Metric>(allocator, tq_core_params);
-    auto stored_data_size = TQFlatDetails::GetStorageDataSize<Metric>(tq_core_params);
+    const auto tq_core_params = AsTQFlatParams(tq_params);
+    auto components = TQFlatDetails::CreateTQHNSWComponents<Metric>(allocator, &tq_core_params);
+    auto stored_data_size = TQFlatDetails::GetStorageDataSize<Metric>(&tq_core_params);
     auto abstract_init_params =
         NewTQAbstractInitParams(&tq_params, params->logCtx, allocator, stored_data_size);
     HNSWParams hnsw_params = AsHNSWParams(tq_params);
@@ -106,8 +117,8 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
             throw std::invalid_argument("TQ-HNSW currently supports FLOAT32 input only");
         }
         if (tq_params.metric == VecSimMetric_L2) {
-            throw std::invalid_argument(
-                "TQ-HNSW currently rejects L2 until the TQ storage layout has a persisted migration");
+            throw std::invalid_argument("TQ-HNSW currently rejects L2 until the TQ storage layout "
+                                        "has a persisted migration");
         }
         switch (tq_params.metric) {
         case VecSimMetric_IP:
@@ -235,20 +246,22 @@ size_t EstimateElementSize(const HNSWParams *params) {
 
 template <VecSimMetric Metric>
 size_t EstimateTQInitialSizeImpl(const TQHNSWParams *params) {
-    HNSWParams hnsw_params = AsHNSWParams(*params);
+    TQFlatDetails::PolarBits(params->bits);
+    TQFlatDetails::QjlScale(params->projections);
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
-    est += sizeof(TQHNSWDetails::TQHNSWIndex_Single<float, float>);
-    est += allocations_overhead + sizeof(TQFlatDetails::TQDistanceCalculator<Metric>);
+    est += params->multi ? sizeof(TQHNSWDetails::TQHNSWIndex_Multi<float, float>)
+                         : sizeof(TQHNSWDetails::TQHNSWIndex_Single<float, float>);
+    est += allocations_overhead + sizeof(TQFlatDetails::TQSymmetricDistanceCalculator<Metric>);
     est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
-    est += allocations_overhead + sizeof(TQFlatDetails::TQPreprocessor<Metric>);
+    est += allocations_overhead + sizeof(TQFlatDetails::TQSymmetricPreprocessor<Metric>);
     est += params->dim * params->dim * sizeof(float);
     est += params->projections * params->dim * sizeof(float);
-    est += (size_t{1} << (params->bits - 1)) * 2 * sizeof(float);
+    est += (size_t{1} << TQFlatDetails::PolarBits(params->bits)) * 2 * sizeof(float);
     est += sizeof(DataBlocksContainer) + allocations_overhead;
     est += sizeof(tag_t) * RoundUpInitialCapacity(params->initialCapacity, params->blockSize);
-    est += EstimateElementSize(&hnsw_params) * RoundUpInitialCapacity(params->initialCapacity,
-                                                                      params->blockSize);
+    est += EstimateElementSize(params) *
+           RoundUpInitialCapacity(params->initialCapacity, params->blockSize);
     return est;
 }
 
@@ -266,13 +279,15 @@ size_t EstimateInitialSize(const TQHNSWParams *params) {
 
 size_t EstimateElementSize(const TQHNSWParams *params) {
     HNSWParams hnsw_params = AsHNSWParams(*params);
+    const auto tq_core_params = AsTQFlatParams(*params);
     size_t M = (hnsw_params.M) ? hnsw_params.M : HNSW_DEFAULT_M;
     size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
     size_t size_total_data_per_element =
         elementGraphDataSize +
-        TQFlatDetails::GetStorageDataSize<VecSimMetric_Cosine>(AsTQFlatParamsPrefix(params));
+        TQFlatDetails::GetStorageDataSize<VecSimMetric_Cosine>(&tq_core_params);
     size_t size_label_lookup_entry = sizeof(void *);
-    size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) + size_label_lookup_entry;
+    size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) +
+                            sizeof(vecsim_stl::one_byte_mutex) + size_label_lookup_entry;
     return size_meta_data + size_total_data_per_element;
 }
 

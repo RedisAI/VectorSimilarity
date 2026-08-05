@@ -152,10 +152,9 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
     if (query_type != QUERY_TYPE_RANGE) {
         return VecSimParamResolverErr_InvalidPolicy_NRange;
     }
-    auto &epsilon_ref =
-        (index_type == VecSimAlgo_HNSWLIB || index_type == VecSimAlgo_TQ_HNSW)
-            ? qparams->hnswRuntimeParams.epsilon
-            : qparams->svsRuntimeParams.epsilon;
+    auto &epsilon_ref = (index_type == VecSimAlgo_HNSWLIB || index_type == VecSimAlgo_TQ_HNSW)
+                            ? qparams->hnswRuntimeParams.epsilon
+                            : qparams->svsRuntimeParams.epsilon;
     if (epsilon_ref != 0) {
         return VecSimParamResolverErr_AlreadySet;
     }

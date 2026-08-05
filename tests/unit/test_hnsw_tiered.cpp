@@ -73,6 +73,57 @@ template <typename index_type_t>
 class HNSWTieredIndexTestBasic : public HNSWTieredIndexTest<index_type_t> {};
 TYPED_TEST_SUITE(HNSWTieredIndexTestBasic, DataTypeSet);
 
+TEST(TQHNSWTieredIndexTest, background_insert_moves_raw_vector_into_quantized_backend) {
+    TQHNSWParams tq_params = {
+        .type = VecSimType_FLOAT32,
+        .dim = 16,
+        .metric = VecSimMetric_Cosine,
+        .multi = false,
+        .initialCapacity = 0,
+        .blockSize = 4,
+        .bits = 8,
+        .projections = 64,
+        .seed = 7,
+        .useRotation = true,
+        .M = 16,
+        .efConstruction = 200,
+        .efRuntime = 50,
+        .epsilon = 0.01,
+    };
+    VecSimParams primary_params = {
+        .algo = VecSimAlgo_TQ_HNSW,
+        .algoParams = {.tqHnswParams = tq_params},
+    };
+    auto mock_thread_pool = tieredIndexMock();
+    TieredIndexParams tiered_params = {
+        .jobQueue = &mock_thread_pool.jobQ,
+        .jobQueueCtx = mock_thread_pool.ctx,
+        .submitCb = tieredIndexMock::submit_callback,
+        .flatBufferLimit = SIZE_MAX,
+        .primaryIndexParams = &primary_params,
+        .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}},
+    };
+
+    auto *tiered_index =
+        reinterpret_cast<TieredHNSWIndex<float, float> *>(TieredFactory::NewIndex(&tiered_params));
+    ASSERT_NE(tiered_index, nullptr);
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+    const float vector[16] = {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 1), 1);
+    ASSERT_EQ(tiered_index->getFlatBufferIndex()->indexSize(), 1U);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1U);
+
+    mock_thread_pool.thread_iteration();
+
+    EXPECT_EQ(tiered_index->getFlatBufferIndex()->indexSize(), 0U);
+    EXPECT_EQ(tiered_index->indexSize(), 1U);
+    auto results = tiered_index->topKQuery(vector, 1, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(results), 1U);
+    EXPECT_EQ(VecSimQueryResult_GetId(&results->results[0]), 1U);
+    VecSimQueryReply_Free(results);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams params = {.type = TypeParam::get_index_type(),
