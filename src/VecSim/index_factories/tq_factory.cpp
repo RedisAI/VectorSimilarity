@@ -47,6 +47,8 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params) {
 
 template <VecSimMetric Metric>
 size_t EstimateInitialSizeImpl(const TQFlatParams *params) {
+    const size_t polar_bits = TQFlatDetails::PolarBits(params->bits);
+    TQFlatDetails::QjlScale(params->projections);
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
     est += sizeof(TQFlatDetails::TQFlatIndex);
@@ -56,7 +58,7 @@ size_t EstimateInitialSizeImpl(const TQFlatParams *params) {
     est += allocations_overhead + sizeof(TQFlatDetails::TQPreprocessor<Metric>);
     est += params->dim * params->dim * sizeof(float);
     est += params->projections * params->dim * sizeof(float);
-    est += (size_t{1} << (params->bits - 1)) * 2 * sizeof(float);
+    est += (size_t{1} << polar_bits) * 2 * sizeof(float);
     return est;
 }
 

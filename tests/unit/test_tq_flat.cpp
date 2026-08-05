@@ -328,11 +328,13 @@ TEST(TQFlatTest, rejects_invalid_bit_budgets_and_projection_count) {
         SCOPED_TRACE(testing::Message() << "bits=" << bits);
         VecSimParams params = CreateTQParams(16, VecSimMetric_Cosine, 7, true, bits, 4);
         EXPECT_EQ(VecSimIndex_New(&params), nullptr);
+        EXPECT_THROW(VecSimIndex_EstimateInitialSize(&params), std::invalid_argument);
     }
 
     VecSimParams params = CreateTQParams(16, VecSimMetric_Cosine, 7, true, 8, 0);
     params.algoParams.tqFlatParams.projections = 0;
     EXPECT_EQ(VecSimIndex_New(&params), nullptr);
+    EXPECT_THROW(VecSimIndex_EstimateInitialSize(&params), std::invalid_argument);
 }
 
 TEST(TQFlatTest, oracle_parity_matches_rust_scores_within_tolerance) {
