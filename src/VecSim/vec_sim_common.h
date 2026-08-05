@@ -71,7 +71,8 @@ typedef enum {
 // Quantization type for HNSW indices.
 typedef enum {
     VecSimQuant_NONE = 0, // No quantization (default).
-    VecSimQuant_SQ8 = 1,  // 8-bit scalar quantization with mean normalization.
+    // 8-bit scalar quantization. Mean normalization is optional, selected by quantParams below.
+    VecSimQuant_SQ8 = 1,
 } VecSimQuantType;
 
 // Algorithm type/library.
@@ -163,7 +164,9 @@ typedef struct {
     size_t efRuntime;
     double epsilon;
     VecSimQuantType quantType; // Quantization type. Default: VecSimQuant_NONE.
-    void *quantParams; // For VecSimQuant_SQ8: pointer to float mean[dim], or NULL for zero mean.
+    // For VecSimQuant_SQ8: pointer to float mean[dim], or NULL for zero mean. Read only, never
+    // retained: the index copies the mean vector during construction.
+    const void *quantParams;
 } HNSWParams;
 
 typedef struct {

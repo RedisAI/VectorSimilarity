@@ -476,8 +476,7 @@ public:
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         requires(!WithNorm)
         : PreprocessorInterface(allocator), dim(dim),
-          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              sq8::storage_metadata_count<Metric>() * sizeof(MetadataType)),
+          storage_bytes_count(sq8::storage_bytes_count<Metric>(dim)),
           query_bytes_count(dim * sizeof(DataType) +
                             sq8::query_metadata_count<Metric>() * sizeof(MetadataType)) {}
 
@@ -486,9 +485,7 @@ public:
                       const vecsim_stl::vector<float> &mean_vec)
         requires(WithNorm)
         : PreprocessorInterface(allocator), mean(mean_vec), dim(dim),
-          storage_bytes_count(dim * sizeof(OUTPUT_TYPE) +
-                              sq8::storage_metadata_count<Metric, WithNorm>() *
-                                  sizeof(MetadataType)),
+          storage_bytes_count(sq8::storage_bytes_count<Metric, WithNorm>(dim)),
           query_bytes_count(dim * sizeof(DataType) +
                             sq8::query_metadata_count<Metric, WithNorm>() * sizeof(MetadataType)) {
         assert(this->mean.size() == dim && "mean vector size must equal dim");

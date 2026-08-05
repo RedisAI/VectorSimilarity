@@ -36,13 +36,24 @@ NewIndex_ChooseMultiOrSingle(const HNSWParams *params,
 }
 
 template <VecSimMetric Metric>
-size_t GetSQ8StoredDataSize(size_t dim, bool with_norm) {
+[[nodiscard]] constexpr size_t GetSQ8StoredDataSize(size_t dim, bool with_norm) {
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP);
 
-    const auto metadata_count = with_norm ? sq8::storage_metadata_count<Metric, true>()
-                                          : sq8::storage_metadata_count<Metric, false>();
+    // WithNorm is a template parameter, so dispatch the runtime flag to the two instantiations.
+    return with_norm ? sq8::storage_bytes_count<Metric, true>(dim)
+                     : sq8::storage_bytes_count<Metric, false>(dim);
+}
 
-    return dim + metadata_count * sizeof(float);
+// Alignment required by a query blob of type DataType. Per the asymmetric-types contract in
+// spaces.h, the hint returned alongside an asymmetric distance function describes its first
+// (storage) operand, so the query side must be obtained from the symmetric dispatcher for the
+// query's own type. Only that hint is wanted here, never the function it returns, so the call is
+// contained in this adapter instead of leaving a discarded value at the call site.
+template <typename DataType>
+[[nodiscard]] unsigned char GetQueryAlignment(VecSimMetric metric, size_t dim) {
+    unsigned char alignment = 0;
+    spaces::GetDistFunc<DataType, float>(metric, dim, &alignment);
+    return alignment;
 }
 
 // Helper to build an SQ8-quantized HNSW index given compile-time DataType and Metric.
@@ -50,9 +61,9 @@ template <typename DataType, VecSimMetric Metric>
 VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams abstractInitParams,
                           const float *mean_ptr) {
     auto &allocator = abstractInitParams.allocator;
-    size_t dim = abstractInitParams.dim;
-    unsigned char storage_alignment = 0, asym_storage_alignment = 0, query_alignment = 0;
-    bool with_norm = mean_ptr != nullptr;
+    const size_t dim = abstractInitParams.dim;
+    const bool with_norm = mean_ptr != nullptr;
+    unsigned char storage_alignment = 0, asym_storage_alignment = 0;
 
     // Override blob size for the SQ8 storage layout.
     abstractInitParams.storedDataSize = GetSQ8StoredDataSize<Metric>(dim, with_norm);
@@ -62,43 +73,38 @@ VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams 
     // Asymmetric: stored vector is SQ8 blob, query is DataType.
     auto asym_func =
         spaces::GetDistFunc<sq8, float, DataType>(Metric, dim, &asym_storage_alignment);
+    // Both hints describe the same stored blob, so they must be combined rather than overwritten.
     storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
-    spaces::GetDistFunc<DataType, float>(Metric, dim, &query_alignment);
+    // Queries stay in DataType and are compared against stored blobs by asym_func.
+    const unsigned char query_alignment = GetQueryAlignment<DataType>(Metric, dim);
 
-    if (!with_norm) {
-        // plain SQ8 quantization without mean centering.
-        auto *pp = new (allocator) QuantPreprocessor<DataType, Metric>(allocator, dim);
-        auto *container = new (allocator)
-            MultiPreprocessorsContainer<DataType, 1>(allocator, query_alignment, storage_alignment);
-        [[maybe_unused]] int ret = container->addPreprocessor(pp);
-        assert(ret == 0 && "SQ8 preprocessor was not added correctly");
+    PreprocessorInterface *pp = nullptr;
+    IndexCalculatorInterface<float> *calc = nullptr;
 
+    if (with_norm) {
+        // Mean-centered SQ8 quantization with norm correction.
+        vecsim_stl::vector<float> mean_vec(allocator);
+        mean_vec.assign(mean_ptr, mean_ptr + dim);
+
+        float mean_sum_squares = 0.0f;
+        for (float v : mean_vec) {
+            mean_sum_squares += v * v;
+        }
+
+        pp = new (allocator) QuantPreprocessor<DataType, Metric, true>(allocator, dim, mean_vec);
+        calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, Metric>(
+            allocator, asym_func, sym_func, mean_sum_squares);
+    } else {
+        // Plain SQ8 quantization without mean centering.
+        pp = new (allocator) QuantPreprocessor<DataType, Metric>(allocator, dim);
         // sym_func for storage-storage; asym_func for query-storage.
-        auto *calc =
-            new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func);
-
-        IndexComponents<DataType, float> components{calc, container};
-        return NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams,
-                                                             components);
+        calc = new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func);
     }
 
-    // With norm: mean-centered SQ8 quantization with norm correction.
-    vecsim_stl::vector<float> mean_vec(dim, 0.0f, allocator);
-    memcpy(mean_vec.data(), mean_ptr, dim * sizeof(float));
-
-    float mean_sum_squares = 0.0f;
-    for (float v : mean_vec) {
-        mean_sum_squares += v * v;
-    }
-
-    auto *pp = new (allocator) QuantPreprocessor<DataType, Metric, true>(allocator, dim, mean_vec);
     auto *container = new (allocator)
         MultiPreprocessorsContainer<DataType, 1>(allocator, query_alignment, storage_alignment);
-    [[maybe_unused]] int ret = container->addPreprocessor(pp);
-    assert(ret == 0 && "SQ8 preprocessor was not added correctly");
-
-    auto *calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, Metric>(
-        allocator, asym_func, sym_func, mean_sum_squares);
+    [[maybe_unused]] const int ret = container->addPreprocessor(pp);
+    assert(ret != -1 && "SQ8 preprocessor was not added correctly");
 
     IndexComponents<DataType, float> components{calc, container};
     return NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams,
@@ -144,6 +150,10 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
                                                               mean_ptr);
             }
         }
+
+        // Unreachable today: the checks above leave only FP32/FP16 x L2/IP. Kept so that adding a
+        // type or metric cannot silently fall through and build an unquantized index instead.
+        return NULL;
     }
 
     if (hnswParams->type == VecSimType_FLOAT32) {
