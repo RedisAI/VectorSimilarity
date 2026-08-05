@@ -180,10 +180,10 @@ typedef struct {
     bool multi;             // Multi-value indexing is not currently supported.
     size_t initialCapacity; // Deprecated.
     size_t blockSize;
-    size_t bits;            // Total bit budget per value. PolarQuant uses bits-1.
-    size_t projections;     // Number of QJL residual projections.
-    size_t seed;            // Seed for deterministic rotation and QJL projections.
-    bool useRotation;       // Apply deterministic random rotation before quantization.
+    size_t bits;        // Total bit budget per value. PolarQuant uses bits-1.
+    size_t projections; // Number of QJL residual projections.
+    size_t seed;        // Seed for deterministic rotation and QJL projections.
+    bool useRotation;   // Apply deterministic random rotation before quantization.
 } TQFlatParams;
 
 typedef enum {

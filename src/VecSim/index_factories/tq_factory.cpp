@@ -42,8 +42,7 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params) {
                           .multi = false,
                           .initialCapacity = tq_params.initialCapacity,
                           .blockSize = tq_params.blockSize};
-    return new (allocator)
-        TQFlatDetails::TQFlatIndex(&bf_params, abstract_init_params, components);
+    return new (allocator) TQFlatDetails::TQFlatIndex(&bf_params, abstract_init_params, components);
 }
 
 template <VecSimMetric Metric>
@@ -63,8 +62,7 @@ size_t EstimateInitialSizeImpl(const TQFlatParams *params) {
 
 template <VecSimMetric Metric>
 size_t EstimateElementSizeImpl(const TQFlatParams *params) {
-    return TQFlatDetails::GetStorageDataSize<Metric>(params) + sizeof(labelType) +
-           sizeof(void *);
+    return TQFlatDetails::GetStorageDataSize<Metric>(params) + sizeof(labelType) + sizeof(void *);
 }
 
 } // namespace
