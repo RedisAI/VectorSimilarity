@@ -149,7 +149,8 @@ std::vector<float> MakeSignal(size_t dim, float phase) {
     return values;
 }
 
-template <VecSimMetric Metric> std::vector<float> NormalizeForMetric(std::vector<float> values) {
+template <VecSimMetric Metric>
+std::vector<float> NormalizeForMetric(std::vector<float> values) {
     if constexpr (Metric == VecSimMetric_Cosine) {
         float norm_sq = 0.0f;
         for (float value : values) {
@@ -188,9 +189,8 @@ float ScalarEstimateInnerProduct(const TQFlatDetails::TQModelState &state,
     for (size_t i = 0; i < state.pairs; ++i) {
         const uint16_t angle_code = state.angleCodeAt(storage, i);
         const float theta = AngleFromCode(state, angle_code);
-        polar_estimate += storage.radii[i] *
-                          (rotated_query[2 * i] * std::cos(theta) +
-                           rotated_query[2 * i + 1] * std::sin(theta));
+        polar_estimate += storage.radii[i] * (rotated_query[2 * i] * std::cos(theta) +
+                                              rotated_query[2 * i + 1] * std::sin(theta));
     }
 
     float qjl_estimate = 0.0f;
@@ -210,10 +210,10 @@ float ScalarEstimateInnerProductSymmetric(const TQFlatDetails::TQModelState &sta
     for (size_t i = 0; i < state.pairs; ++i) {
         const uint16_t lhs_angle = state.angleCodeAt(lhs, i);
         const uint16_t rhs_angle = state.angleCodeAt(rhs, i);
-        const size_t delta =
-            (static_cast<size_t>(lhs_angle) - static_cast<size_t>(rhs_angle)) & state.angle_delta_mask;
-        const float delta_theta =
-            (static_cast<float>(delta) / static_cast<float>(state.levels)) * (2.0f * TQFlatDetails::kPi);
+        const size_t delta = (static_cast<size_t>(lhs_angle) - static_cast<size_t>(rhs_angle)) &
+                             state.angle_delta_mask;
+        const float delta_theta = (static_cast<float>(delta) / static_cast<float>(state.levels)) *
+                                  (2.0f * TQFlatDetails::kPi);
         polar_estimate += lhs.radii[i] * rhs.radii[i] * std::cos(delta_theta);
     }
 
@@ -252,8 +252,8 @@ std::vector<uint8_t> DecodeAngleCodes(const TQFlatDetails::TQModelState &state,
 std::vector<float> BuildDeltaCosLut(size_t levels) {
     std::vector<float> delta_cos_lut(levels);
     for (size_t idx = 0; idx < levels; ++idx) {
-        delta_cos_lut[idx] =
-            std::cos((static_cast<float>(idx) / static_cast<float>(levels)) * (2.0f * TQFlatDetails::kPi));
+        delta_cos_lut[idx] = std::cos((static_cast<float>(idx) / static_cast<float>(levels)) *
+                                      (2.0f * TQFlatDetails::kPi));
     }
     return delta_cos_lut;
 }
@@ -263,8 +263,8 @@ int RoutedPackedResidualSignDot(const TQFlatDetails::TQModelState &state,
                                 const TQFlatDetails::StorageView &lhs,
                                 const TQFlatDetails::StorageView &rhs,
                                 const Features &optimization) {
-    if (auto impl =
-            spaces::Choose_TQ_PackedResidualSignDot_implementation(state.projections, &optimization)) {
+    if (auto impl = spaces::Choose_TQ_PackedResidualSignDot_implementation(state.projections,
+                                                                           &optimization)) {
         return impl(lhs.residual_signs, rhs.residual_signs, state.projections);
     }
     return spaces::TQ_PackedSignDot(lhs.residual_signs, rhs.residual_signs, state.projections);
@@ -276,7 +276,8 @@ float RoutedSymmetricPolarEstimate(const TQFlatDetails::TQModelState &state,
                                    const TQFlatDetails::StorageView &rhs,
                                    const Features &optimization) {
     if (state.compactAngles()) {
-        if (auto impl = spaces::Choose_TQ_SymmetricPolar_implementation(state.pairs, &optimization)) {
+        if (auto impl =
+                spaces::Choose_TQ_SymmetricPolar_implementation(state.pairs, &optimization)) {
             const auto lhs_angles = DecodeAngleCodes(state, lhs);
             const auto rhs_angles = DecodeAngleCodes(state, rhs);
             const auto delta_cos_lut = BuildDeltaCosLut(state.levels);
@@ -309,7 +310,8 @@ float RoutedEstimateInnerProductSymmetric(const TQFlatDetails::TQModelState &sta
     return polar_estimate + state.qjl_scale * static_cast<float>(sign_dot);
 }
 
-template <typename Features> bool HasOptimizedTQFP32Path(const Features &optimization) {
+template <typename Features>
+bool HasOptimizedTQFP32Path(const Features &optimization) {
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         return true;
@@ -343,7 +345,8 @@ template <typename Features> bool HasOptimizedTQFP32Path(const Features &optimiz
     return false;
 }
 
-template <typename Features> size_t PackedResidualSelectorThreshold(const Features &optimization) {
+template <typename Features>
+size_t PackedResidualSelectorThreshold(const Features &optimization) {
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
         return 64 * 8;
@@ -367,7 +370,8 @@ template <typename Features> size_t PackedResidualSelectorThreshold(const Featur
     return 0;
 }
 
-template <typename Features> size_t SymmetricPolarSelectorThreshold(const Features &optimization) {
+template <typename Features>
+size_t SymmetricPolarSelectorThreshold(const Features &optimization) {
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
         return 16;
@@ -699,15 +703,14 @@ TEST(TQFlatTest, fp32_helper_selector_thresholds_match_current_cpu_features) {
 TEST(TQFlatTest, compact_helper_selector_thresholds_match_current_cpu_features) {
     auto optimization = spaces::getCpuOptimizationFeatures();
 
-    EXPECT_EQ(spaces::Choose_TQ_PackedResidualSignDot_implementation(127, &optimization),
-              nullptr);
+    EXPECT_EQ(spaces::Choose_TQ_PackedResidualSignDot_implementation(127, &optimization), nullptr);
     EXPECT_EQ(spaces::Choose_TQ_SymmetricPolar_implementation(3, &optimization), nullptr);
 
     const size_t packed_threshold = PackedResidualSelectorThreshold(optimization);
     if (packed_threshold != 0) {
-        EXPECT_NE(spaces::Choose_TQ_PackedResidualSignDot_implementation(packed_threshold,
-                                                                         &optimization),
-                  nullptr);
+        EXPECT_NE(
+            spaces::Choose_TQ_PackedResidualSignDot_implementation(packed_threshold, &optimization),
+            nullptr);
     } else {
         EXPECT_EQ(spaces::Choose_TQ_PackedResidualSignDot_implementation(128, &optimization),
                   nullptr);
@@ -746,25 +749,31 @@ TEST(TQFlatTest, state_fp32_helpers_route_through_current_selectors) {
 
         const auto dot_selector =
             spaces::Choose_FP32_InnerProduct_implementation_TQ(test_case.dim, &optimization);
-        const float expected_dot = dot_selector
-                                       ? dot_selector(lhs.data(), rhs.data(), test_case.dim)
-                                       : ScalarDotProduct(lhs.data(), rhs.data(), test_case.dim);
+        const float expected_dot = ScalarDotProduct(lhs.data(), rhs.data(), test_case.dim);
+        if (dot_selector) {
+            EXPECT_NEAR(dot_selector(lhs.data(), rhs.data(), test_case.dim), expected_dot,
+                        AllowedError(expected_dot, 1e-5f, 1e-6f));
+        }
         EXPECT_NEAR(state->dotProduct(lhs.data(), rhs.data(), test_case.dim), expected_dot,
                     AllowedError(expected_dot, 1e-5f, 1e-6f));
 
         const auto full_sum_selector =
             spaces::Choose_FP32_SumSquares_implementation_TQ(test_case.dim, &optimization);
-        const float expected_full_sum =
-            full_sum_selector ? full_sum_selector(lhs.data(), test_case.dim)
-                              : ScalarSumSquares(lhs.data(), test_case.dim);
+        const float expected_full_sum = ScalarSumSquares(lhs.data(), test_case.dim);
+        if (full_sum_selector) {
+            EXPECT_NEAR(full_sum_selector(lhs.data(), test_case.dim), expected_full_sum,
+                        AllowedError(expected_full_sum, 1e-5f, 1e-6f));
+        }
         EXPECT_NEAR(state->sumSquares(lhs.data(), test_case.dim), expected_full_sum,
                     AllowedError(expected_full_sum, 1e-5f, 1e-6f));
 
         const auto pair_sum_selector =
             spaces::Choose_FP32_SumSquares_implementation_TQ(state->pairs, &optimization);
-        const float expected_pair_sum =
-            pair_sum_selector ? pair_sum_selector(lhs.data(), state->pairs)
-                              : ScalarSumSquares(lhs.data(), state->pairs);
+        const float expected_pair_sum = ScalarSumSquares(lhs.data(), state->pairs);
+        if (pair_sum_selector) {
+            EXPECT_NEAR(pair_sum_selector(lhs.data(), state->pairs), expected_pair_sum,
+                        AllowedError(expected_pair_sum, 1e-5f, 1e-6f));
+        }
         EXPECT_NEAR(state->sumSquares(lhs.data(), state->pairs), expected_pair_sum,
                     AllowedError(expected_pair_sum, 1e-5f, 1e-6f));
     }
@@ -812,6 +821,7 @@ TEST(TQFlatTest, asymmetric_estimate_matches_scalar_reference_for_compact_and_fa
     };
 
     const std::vector<EstimateCase> cases = {
+        {.bits = 2, .expect_compact_angles = true, .expect_polar_lookup = true},
         {.bits = 4, .expect_compact_angles = true, .expect_polar_lookup = true},
         {.bits = 7, .expect_compact_angles = true, .expect_polar_lookup = true},
         {.bits = 9, .expect_compact_angles = true, .expect_polar_lookup = true},
@@ -859,7 +869,7 @@ TEST(TQFlatTest, symmetric_estimate_matches_scalar_reference_for_compact_and_fal
     const auto rhs_vector = MakeSignal(dim, -0.47f);
 
     for (size_t projections : {size_t{13}, size_t{257}}) {
-        for (size_t bits : {size_t{4}, size_t{5}, size_t{7}, size_t{9}, size_t{10}}) {
+        for (size_t bits : {size_t{2}, size_t{4}, size_t{5}, size_t{7}, size_t{9}, size_t{10}}) {
             SCOPED_TRACE(testing::Message() << "bits=" << bits << " projections=" << projections);
 
             auto allocator = VecSimAllocator::newVecsimAllocator();
@@ -918,15 +928,15 @@ TEST(TQFlatTest, symmetric_state_routing_matches_current_helper_selection) {
 
     for (const auto &test_case : cases) {
         const size_t dim = test_case.pairs * 2;
-        SCOPED_TRACE(testing::Message()
-                     << "bits=" << test_case.bits << " pairs=" << test_case.pairs
-                     << " projections=" << test_case.projections);
+        SCOPED_TRACE(testing::Message() << "bits=" << test_case.bits << " pairs=" << test_case.pairs
+                                        << " projections=" << test_case.projections);
 
         auto allocator = VecSimAllocator::newVecsimAllocator();
         auto state = std::make_shared<TQFlatDetails::TQModelState>(dim, test_case.bits,
                                                                    test_case.projections, 43, true);
         TQFlatDetails::TQPreprocessor<VecSimMetric_Cosine> preprocessor(allocator, state);
-        TQFlatDetails::TQSymmetricDistanceCalculator<VecSimMetric_Cosine> calculator(allocator, state);
+        TQFlatDetails::TQSymmetricDistanceCalculator<VecSimMetric_Cosine> calculator(allocator,
+                                                                                     state);
 
         const auto lhs_vector = MakeSignal(dim, 0.11f + static_cast<float>(test_case.bits));
         const auto rhs_vector = MakeSignal(dim, -0.47f - static_cast<float>(test_case.bits));

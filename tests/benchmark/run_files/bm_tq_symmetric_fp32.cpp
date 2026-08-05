@@ -47,8 +47,7 @@ public:
     void SetUp(const benchmark::State &state) override {
         const size_t bits = static_cast<size_t>(state.range(0));
         allocator = VecSimAllocator::newVecsimAllocator();
-        tq_state =
-            std::make_shared<TQState>(kDim, bits, kProjections, kSeed, true);
+        tq_state = std::make_shared<TQState>(kDim, bits, kProjections, kSeed, true);
         storage_blobs.clear();
         storage_blobs.reserve(kVectorPairs * 2);
         TQPreprocessor preprocessor(allocator, tq_state);

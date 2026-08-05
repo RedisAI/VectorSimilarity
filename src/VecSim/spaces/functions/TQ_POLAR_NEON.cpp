@@ -18,19 +18,17 @@ inline int FinishPackedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs, s
                                        size_t processed_bytes, uint32_t diff_count_total) {
     const size_t full_bytes = projections / 8;
     const size_t tail_bits = projections % 8;
-    int sign_dot =
-        static_cast<int>(processed_bytes * 8) - 2 * static_cast<int>(diff_count_total);
+    int sign_dot = static_cast<int>(processed_bytes * 8) - 2 * static_cast<int>(diff_count_total);
 
     for (size_t idx = processed_bytes; idx < full_bytes; ++idx) {
-        const int diff_count =
-            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
+        const int diff_count = __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
         sign_dot += 8 - (2 * diff_count);
     }
 
     if (tail_bits != 0) {
         const uint8_t valid_mask = static_cast<uint8_t>((uint16_t{1} << tail_bits) - 1u);
-        const uint8_t diff_bits = static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) &
-                                                       valid_mask);
+        const uint8_t diff_bits =
+            static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) & valid_mask);
         const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
         sign_dot += static_cast<int>(tail_bits) - (2 * diff_count);
     }
@@ -146,10 +144,9 @@ float TQ_SymmetricPolarEstimate_NEON(const float *lhs_radii, const void *lhs_ang
 
     float polar_estimate = vaddvq_f32(acc0) + vaddvq_f32(acc1);
     if (idx < pairs) {
-        polar_estimate += TQ_SymmetricPolarEstimate(lhs_radii + idx, lhs_angle_bytes + idx,
-                                                    rhs_radii + idx, rhs_angle_bytes + idx,
-                                                    pairs - idx, angle_delta_mask, delta_cos_lut,
-                                                    false, true);
+        polar_estimate += TQ_SymmetricPolarEstimate(
+            lhs_radii + idx, lhs_angle_bytes + idx, rhs_radii + idx, rhs_angle_bytes + idx,
+            pairs - idx, angle_delta_mask, delta_cos_lut, false, true);
     }
 
     return polar_estimate;
@@ -188,7 +185,6 @@ tq_symmetric_polar_estimate_func_t Choose_TQ_SymmetricPolarEstimate_implementati
 tq_packed_sign_dot_func_t Choose_TQ_PackedSignDot_implementation_NEON(void) {
     return TQ_PackedSignDot_NEON;
 }
-
 
 #include "implementation_chooser.h"
 

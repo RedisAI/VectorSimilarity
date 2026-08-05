@@ -15,7 +15,6 @@ namespace spaces {
 tq_packed_residual_sign_dot_func_t
 Choose_TQ_PackedResidualSignDot_implementation_AVX512F_BW_VL_VNNI(size_t projections);
 
-tq_symmetric_polar_func_t
-Choose_TQ_SymmetricPolar_implementation_AVX512F_BW_VL_VNNI(size_t pairs);
+tq_symmetric_polar_func_t Choose_TQ_SymmetricPolar_implementation_AVX512F_BW_VL_VNNI(size_t pairs);
 
 } // namespace spaces

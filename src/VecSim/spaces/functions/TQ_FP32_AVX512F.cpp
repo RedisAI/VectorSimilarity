@@ -26,13 +26,13 @@ float FP32_SumSquaresSIMD16_TQ_AVX512F(const void *values, size_t dim) {
 
 tq_inner_product_func_t Choose_FP32_InnerProduct_implementation_TQ_AVX512F(size_t dim) {
     tq_inner_product_func_t ret_func;
-    CHOOSE_IMPLEMENTATION(ret_func, dim, 16, FP32_InnerProductSIMD16_TQ_AVX512F);
+    CHOOSE_IMPLEMENTATION(ret_func, dim, 32, FP32_InnerProductSIMD16_TQ_AVX512F);
     return ret_func;
 }
 
 tq_sum_squares_func_t Choose_FP32_SumSquares_implementation_TQ_AVX512F(size_t dim) {
     tq_sum_squares_func_t ret_func;
-    CHOOSE_IMPLEMENTATION(ret_func, dim, 16, FP32_SumSquaresSIMD16_TQ_AVX512F);
+    CHOOSE_IMPLEMENTATION(ret_func, dim, 32, FP32_SumSquaresSIMD16_TQ_AVX512F);
     return ret_func;
 }
 

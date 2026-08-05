@@ -16,6 +16,9 @@
 #include "VecSim/utils/vec_utils.h"
 
 #include <algorithm>
+#if defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -69,15 +72,14 @@ inline int PackedResidualSignDotFallback(const uint8_t *lhs, const uint8_t *rhs,
     int sign_dot = 0;
 
     for (size_t idx = 0; idx < full_bytes; ++idx) {
-        const int diff_count =
-            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
+        const int diff_count = __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
         sign_dot += 8 - (2 * diff_count);
     }
 
     if (tail_bits != 0) {
         const uint8_t valid_mask = static_cast<uint8_t>((uint16_t{1} << tail_bits) - 1u);
-        const uint8_t diff_bits = static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) &
-                                                       valid_mask);
+        const uint8_t diff_bits =
+            static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) & valid_mask);
         const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
         sign_dot += static_cast<int>(tail_bits) - (2 * diff_count);
     }
@@ -105,14 +107,13 @@ public:
     TQModelState(size_t dim, size_t total_bits, size_t projections, size_t seed, bool use_rotation)
         : dim(dim), pairs(PairCount(dim)), total_bits(total_bits),
           polar_bits(PolarBits(total_bits)), projections(projections), seed(seed),
-          use_rotation(use_rotation), levels(size_t{1} << polar_bits),
-          angle_delta_mask(levels - 1), packed_qjl_bytes((projections + 7) / 8),
-          nibble_angle_codes(levels <= 16), compact_angle_codes(levels <= 256),
-          use_polar_lookup(levels <= 256), qjl_scale(QjlScale(projections)),
-          rotation_columns(dim * dim, 0.0f), rotation_rows(dim * dim, 0.0f),
-          qjl_projection_rows(projections * dim, 0.0f), cos_lut(levels), sin_lut(levels),
-          delta_cos_lut(levels), dot_product_func(nullptr), sum_squares_func(nullptr),
-          pair_sum_squares_func(nullptr), packed_sign_dot_func(nullptr),
+          use_rotation(use_rotation), levels(size_t{1} << polar_bits), angle_delta_mask(levels - 1),
+          packed_qjl_bytes((projections + 7) / 8), nibble_angle_codes(levels <= 16),
+          compact_angle_codes(levels <= 256), use_polar_lookup(levels <= 256),
+          qjl_scale(QjlScale(projections)), rotation_columns(dim * dim, 0.0f),
+          rotation_rows(dim * dim, 0.0f), qjl_projection_rows(projections * dim, 0.0f),
+          cos_lut(levels), sin_lut(levels), delta_cos_lut(levels), dot_product_func(nullptr),
+          sum_squares_func(nullptr), pair_sum_squares_func(nullptr), packed_sign_dot_func(nullptr),
           symmetric_polar_func(nullptr) {
         if (!IsEven(dim)) {
             throw std::invalid_argument("TQ-FLAT requires even dimensions");
@@ -124,8 +125,7 @@ public:
         dot_product_func = spaces::Choose_FP32_InnerProduct_implementation_TQ(dim);
         sum_squares_func = spaces::Choose_FP32_SumSquares_implementation_TQ(dim);
         pair_sum_squares_func = spaces::Choose_FP32_SumSquares_implementation_TQ(pairs);
-        packed_sign_dot_func =
-            spaces::Choose_TQ_PackedResidualSignDot_implementation(projections);
+        packed_sign_dot_func = spaces::Choose_TQ_PackedResidualSignDot_implementation(projections);
         if (compactAngles()) {
             symmetric_polar_func = spaces::Choose_TQ_SymmetricPolar_implementation(pairs);
         }
@@ -415,9 +415,9 @@ public:
             for (size_t i = 0; i < pairs; ++i) {
                 const uint16_t lhs_angle = angleCodeAt(lhs, i);
                 const uint16_t rhs_angle = angleCodeAt(rhs, i);
-                const size_t delta = (static_cast<size_t>(lhs_angle) -
-                                     static_cast<size_t>(rhs_angle)) &
-                                     angle_delta_mask;
+                const size_t delta =
+                    (static_cast<size_t>(lhs_angle) - static_cast<size_t>(rhs_angle)) &
+                    angle_delta_mask;
                 polar_estimate += lhs.radii[i] * rhs.radii[i] * delta_cos_lut[delta];
             }
         }

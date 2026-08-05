@@ -39,8 +39,8 @@ tq_packed_sign_dot_func_t Choose_TQ_PackedSignDot_implementation(const void *arc
 tq_packed_residual_sign_dot_func_t
 Choose_TQ_PackedResidualSignDot_implementation(size_t projections, const void *arch_opt = nullptr);
 
-tq_symmetric_polar_func_t
-Choose_TQ_SymmetricPolar_implementation(size_t pairs, const void *arch_opt = nullptr);
+tq_symmetric_polar_func_t Choose_TQ_SymmetricPolar_implementation(size_t pairs,
+                                                                  const void *arch_opt = nullptr);
 
 float TQ_SymmetricPolarEstimate(const float *lhs_radii, const void *lhs_angles,
                                 const float *rhs_radii, const void *rhs_angles, size_t pairs,

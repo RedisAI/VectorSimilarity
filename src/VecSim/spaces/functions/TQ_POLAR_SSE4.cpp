@@ -19,19 +19,17 @@ inline int FinishPackedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs, s
                                        size_t processed_bytes, uint64_t diff_count_total) {
     const size_t full_bytes = projections / 8;
     const size_t tail_bits = projections % 8;
-    int sign_dot =
-        static_cast<int>(processed_bytes * 8) - 2 * static_cast<int>(diff_count_total);
+    int sign_dot = static_cast<int>(processed_bytes * 8) - 2 * static_cast<int>(diff_count_total);
 
     for (size_t idx = processed_bytes; idx < full_bytes; ++idx) {
-        const int diff_count =
-            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
+        const int diff_count = __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
         sign_dot += 8 - (2 * diff_count);
     }
 
     if (tail_bits != 0) {
         const uint8_t valid_mask = static_cast<uint8_t>((uint16_t{1} << tail_bits) - 1u);
-        const uint8_t diff_bits = static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) &
-                                                       valid_mask);
+        const uint8_t diff_bits =
+            static_cast<uint8_t>((lhs[full_bytes] ^ rhs[full_bytes]) & valid_mask);
         const int diff_count = __builtin_popcount(static_cast<unsigned int>(diff_bits));
         sign_dot += static_cast<int>(tail_bits) - (2 * diff_count);
     }
@@ -41,8 +39,7 @@ inline int FinishPackedResidualSignDot(const uint8_t *lhs, const uint8_t *rhs, s
 
 inline __m128i PopcountBytes(__m128i bytes) {
     const __m128i low_mask = _mm_set1_epi8(0x0F);
-    const __m128i lookup =
-        _mm_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+    const __m128i lookup = _mm_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
     const __m128i low = _mm_and_si128(bytes, low_mask);
     const __m128i high = _mm_and_si128(_mm_srli_epi16(bytes, 4), low_mask);
     return _mm_add_epi8(_mm_shuffle_epi8(lookup, low), _mm_shuffle_epi8(lookup, high));

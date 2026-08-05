@@ -109,8 +109,7 @@ tq_inner_product_func_t Choose_FP32_InnerProduct_implementation_TQ(size_t dim,
     return nullptr;
 }
 
-tq_sum_squares_func_t Choose_FP32_SumSquares_implementation_TQ(size_t dim,
-                                                               const void *arch_opt) {
+tq_sum_squares_func_t Choose_FP32_SumSquares_implementation_TQ(size_t dim, const void *arch_opt) {
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64
@@ -271,8 +270,7 @@ int TQ_PackedSignDot(const uint8_t *lhs, const uint8_t *rhs, size_t projections)
     int sign_dot = 0;
 
     for (size_t idx = 0; idx < full_bytes; ++idx) {
-        const int diff_count =
-            __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
+        const int diff_count = __builtin_popcount(static_cast<unsigned int>(lhs[idx] ^ rhs[idx]));
         sign_dot += 8 - (2 * diff_count);
     }
 

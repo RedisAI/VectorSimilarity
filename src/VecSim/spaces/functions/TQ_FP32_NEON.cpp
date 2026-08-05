@@ -38,7 +38,6 @@ tq_sum_squares_func_t Choose_FP32_SumSquares_implementation_TQ_NEON(size_t dim) 
     return ret_func;
 }
 
-
 #include "implementation_chooser_cleanup.h"
 
 } // namespace spaces
