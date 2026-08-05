@@ -95,6 +95,14 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
+    // Quantization is not wired into the tiered index yet (MOD-14957). Reject it here rather than
+    // let it through: the primary index would be built from these params and quantize its storage,
+    // while NewBFParams does not carry quantType, so the frontend would stay unquantized and the
+    // two would disagree on the stored blob layout.
+    if (params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE) {
+        return nullptr;
+    }
+
     // Tiered index that contains HNSW index as primary index
     VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
     if (type == VecSimType_FLOAT32) {

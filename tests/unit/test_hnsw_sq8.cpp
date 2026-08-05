@@ -378,3 +378,21 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
 }
 
 TYPED_TEST(HNSWSQ8Test, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
+
+// SQ8 is not wired into the tiered index yet (MOD-14957), so the tiered factory must reject it
+// instead of building a quantized primary index against an unquantized frontend. Without the
+// guard this aborts on a debug build and silently mismatches the two blob layouts on a release
+// one. MOD-14957 should replace this expectation rather than delete it.
+TEST(HNSWSQ8TieredTest, RejectsQuantizedTieredIndex) {
+    HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
+                              .dim = 4,
+                              .metric = VecSimMetric_L2,
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams primary_params = CreateParams(hnsw_params);
+    // No job queue or thread pool is needed: the factory rejects these params before it reaches
+    // anything that would use them.
+    TieredIndexParams tiered_params = {.primaryIndexParams = &primary_params};
+    VecSimParams params = CreateParams(tiered_params);
+
+    EXPECT_EQ(VecSimIndex_New(&params), nullptr);
+}
