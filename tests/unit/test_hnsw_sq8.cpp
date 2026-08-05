@@ -379,6 +379,21 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
 
 TYPED_TEST(HNSWSQ8Test, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
 
+// SQ8 quantizes to uint8 with FP32 metadata and only has kernels for FP32 and FP16 sources, so
+// every other data type must be rejected outright rather than produce an index. Note that
+// EstimateElementSize deliberately does not re-check this: like VecSimParams_GetStoredDataSize on
+// the unquantized path, it answers for whatever params it is handed, so index creation is the
+// boundary that enforces the supported set.
+TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
+    for (auto type : {VecSimType_FLOAT64, VecSimType_BFLOAT16, VecSimType_INT8, VecSimType_UINT8}) {
+        HNSWParams hnsw_params = {
+            .type = type, .dim = 4, .metric = VecSimMetric_L2, .quantType = VecSimQuant_SQ8};
+        VecSimParams params = CreateParams(hnsw_params);
+
+        EXPECT_EQ(VecSimIndex_New(&params), nullptr) << "data type " << type;
+    }
+}
+
 // SQ8 is not wired into the tiered index yet (MOD-14957), so the tiered factory must reject it
 // instead of building a quantized primary index against an unquantized frontend. Without the
 // guard this aborts on a debug build and silently mismatches the two blob layouts on a release
