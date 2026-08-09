@@ -88,6 +88,13 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
+        // The public API documents vector_data as a raw dim-by-type vector, but a quantized index's
+        // kernels read query metadata appended past that, so honouring the documented contract here
+        // would read out of bounds. There is no public API for producing a quantized query blob;
+        // MOD-14958 owns that decision. Report "no answer" rather than read past the caller's blob.
+        if (this->isQuantized) {
+            return INVALID_SCORE;
+        }
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }

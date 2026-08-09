@@ -118,6 +118,11 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
+        // See the note in hnsw_single.h: a quantized index cannot answer a raw-blob distance query
+        // without reading past the caller's vector.
+        if (this->isQuantized) {
+            return INVALID_SCORE;
+        }
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }

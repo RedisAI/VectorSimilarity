@@ -26,11 +26,13 @@ struct HNSWSQ8IndexType : IndexType<type, DataType, float> {
     static constexpr bool with_quant_params = WithQuantParams;
 };
 
+// FLOAT16 with a mean vector is absent on purpose: the functional tests below all use L2, and
+// mean-centred FP16 L2 is rejected at construction (see HNSWFactory::NewIndex). That combination is
+// covered explicitly by HNSWSQ8ParamsTest.RejectsMeanCenteredFP16L2 instead.
 using HNSWSQ8DataTypeSet =
     ::testing::Types<HNSWSQ8IndexType<VecSimType_FLOAT32, float, false>,
                      HNSWSQ8IndexType<VecSimType_FLOAT32, float, true>,
-                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, false>,
-                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, true>>;
+                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, false>>;
 
 template <typename index_type_t>
 class HNSWSQ8Test : public ::testing::Test {
@@ -333,11 +335,20 @@ void HNSWSQ8Test<index_type_t>::test_get_distance(VecSimMetric metric) {
     ASSERT_EQ(GenerateAndAddVector(0, 0.25f, 0.25f), 1);
     data_t query[4];
     GenerateVector(query, 0.5f, 0.25f);
-    auto processed_query = CastToHNSW()->preprocessQuery(query);
+
+    // Values were chosen so the expected distances can be calculated exactly. Comparing against a
+    // stored SQ8 blob needs a preprocessed query, which only the index itself can produce.
+    auto *hnsw_index = CastToHNSW();
+    auto processed_query = hnsw_index->preprocessQuery(query);
     const double expected = metric == VecSimMetric_L2 ? 0.25 : -1.5;
-    // Values were chosen so the expected distances can be calculated exactly.
-    EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(index, 0, processed_query.get()), expected,
-                1e-5);
+    EXPECT_NEAR(
+        hnsw_index->calcDistanceForQuery(hnsw_index->getDataByInternalId(0), processed_query.get()),
+        expected, 1e-5);
+
+    // The public API documents blob as a raw dim-by-type vector, which is not a usable query blob
+    // for a quantized index: the kernels read query metadata appended past it. It must report no
+    // answer rather than read past the caller's buffer.
+    EXPECT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 0, query)));
 }
 
 TYPED_TEST(HNSWSQ8Test, GetDistanceL2) { this->test_get_distance(VecSimMetric_L2); }
@@ -392,6 +403,32 @@ TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
 
         EXPECT_EQ(VecSimIndex_New(&params), nullptr) << "data type " << type;
     }
+}
+
+// Mean-centred FP16 with L2 must be rejected: QuantPreprocessor narrows the centred query back into
+// the FP16 query body while storage keeps its centred min/delta in FP32, so identical vector and
+// query pairs diverge and a large mean overflows FP16 to infinity. The same combination with IP is
+// supported, because that path does not centre the query.
+TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
+    std::vector<float> mean(4, 1.0f);
+
+    HNSWParams l2 = {.type = VecSimType_FLOAT16,
+                     .dim = 4,
+                     .metric = VecSimMetric_L2,
+                     .quantType = VecSimQuant_SQ8,
+                     .quantParams = mean.data()};
+    VecSimParams l2_params = CreateParams(l2);
+    EXPECT_EQ(VecSimIndex_New(&l2_params), nullptr);
+
+    HNSWParams ip = {.type = VecSimType_FLOAT16,
+                     .dim = 4,
+                     .metric = VecSimMetric_IP,
+                     .quantType = VecSimQuant_SQ8,
+                     .quantParams = mean.data()};
+    VecSimParams ip_params = CreateParams(ip);
+    VecSimIndex *ip_index = VecSimIndex_New(&ip_params);
+    ASSERT_NE(ip_index, nullptr);
+    VecSimIndex_Free(ip_index);
 }
 
 // SQ8 is not wired into the tiered index yet (MOD-14957), so the tiered factory must reject it

@@ -67,6 +67,7 @@ VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams 
 
     // Override blob size for the SQ8 storage layout.
     abstractInitParams.storedDataSize = GetSQ8StoredDataSize<Metric>(dim, with_norm);
+    abstractInitParams.isQuantized = true;
 
     // Symmetric: both stored vectors are SQ8 blobs.
     auto sym_func = spaces::GetDistFunc<sq8, float>(Metric, dim, &storage_alignment);
@@ -132,6 +133,17 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
         }
 
         const float *mean_ptr = static_cast<const float *>(hnswParams->quantParams);
+
+        // Mean-centred FP16 L2 is not supported: QuantPreprocessor centres the query and narrows
+        // the result back into the FP16 query body, while storage keeps its centred min/delta in
+        // FP32. The two then disagree, so an identical vector and query pair yields a non-zero
+        // distance (mean 10000 gives a per-component error of 1.0), and a large enough mean
+        // overflows FP16 to infinity. Enabling this needs an asymmetric kernel that takes an FP32
+        // centred query.
+        if (hnswParams->type == VecSimType_FLOAT16 && mean_ptr != nullptr &&
+            metric == VecSimMetric_L2) {
+            return NULL;
+        }
 
         if (hnswParams->type == VecSimType_FLOAT32) {
             if (metric == VecSimMetric_L2) {
