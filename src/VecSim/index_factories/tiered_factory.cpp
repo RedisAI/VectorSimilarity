@@ -66,6 +66,13 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
+    // NewIndex below rejects quantization until MOD-14957 wires it, so refuse to size it too. The
+    // primary index on its own would accept these params, so without this check the estimate
+    // reports a number for an index that cannot be created.
+    if (hnsw_params.quantType != VecSimQuant_NONE) {
+        throw std::invalid_argument("Quantization is not supported for tiered HNSW indexes");
+    }
+
     // Add size estimation of VecSimTieredIndex sub indexes.
     // Normalization is done by the frontend index.
     size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true);
@@ -241,6 +248,8 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 size_t EstimateElementSize(const TieredIndexParams *params) {
+    // Deliberately not validated here, unlike EstimateInitialSize above: see the note in
+    // HNSWFactory::EstimateElementSize on why this function has no error channel.
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);

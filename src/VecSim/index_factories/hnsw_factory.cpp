@@ -56,6 +56,38 @@ template <typename DataType>
     return alignment;
 }
 
+// The metric the SQ8 components are actually built for. A Cosine index whose blobs are already
+// normalized by someone else (the frontend of a tiered index) is built as IP.
+[[nodiscard]] constexpr VecSimMetric ResolveSQ8Metric(VecSimMetric metric, bool is_normalized) {
+    return (is_normalized && metric == VecSimMetric_Cosine) ? VecSimMetric_IP : metric;
+}
+
+// Single definition of the SQ8 parameter combinations this factory can build, taking the metric
+// already resolved by ResolveSQ8Metric. NewIndex fails closed when this returns false, and
+// EstimateInitialSize rejects the same set, so it cannot report a size for parameters that cannot
+// produce an index.
+[[nodiscard]] constexpr bool SQ8ParamsSupported(VecSimType type, VecSimMetric resolved_metric,
+                                                bool with_mean) {
+    // Kernels exist for FP32 and FP16 sources only.
+    if (type != VecSimType_FLOAT32 && type != VecSimType_FLOAT16) {
+        return false;
+    }
+    // Cosine needs a normalization step the SQ8 preprocessor does not perform.
+    if (resolved_metric == VecSimMetric_Cosine) {
+        return false;
+    }
+    // Mean-centred FP16 L2 loses correctness: QuantPreprocessor centres the query and narrows the
+    // result back into the FP16 query body, while storage keeps its centred min/delta in FP32. The
+    // two then disagree, so an identical vector and query pair yields a non-zero distance (mean
+    // 10000 gives a per-component error of 1.0), and a large enough mean overflows FP16 to
+    // infinity. Enabling this needs an asymmetric kernel that takes an FP32 centred query. Only the
+    // WithNorm && L2 branch centres the query, so FP16 with a mean and IP is unaffected.
+    if (type == VecSimType_FLOAT16 && with_mean && resolved_metric == VecSimMetric_L2) {
+        return false;
+    }
+    return true;
+}
+
 // Helper to build an SQ8-quantized HNSW index given compile-time DataType and Metric.
 template <typename DataType, VecSimMetric Metric>
 VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams abstractInitParams,
@@ -117,30 +149,20 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
 
-    if (hnswParams->quantType == VecSimQuant_SQ8) {
-        if (hnswParams->type != VecSimType_FLOAT32 && hnswParams->type != VecSimType_FLOAT16) {
-            return NULL; // SQ8 supports FP32 and FP16 only.
+    if (hnswParams->quantType != VecSimQuant_NONE) {
+        // Any quantization type this factory does not implement must fail closed. Falling through
+        // to the plain path below would silently build a full-precision index for a caller that
+        // asked for a quantized one. Unreachable while VecSimQuantType holds only NONE and SQ8, and
+        // not covered by a test because forming an out-of-range enumerator is undefined behaviour;
+        // the guard is what keeps adding SQ4 to the enum from becoming a silent fallthrough.
+        if (hnswParams->quantType != VecSimQuant_SQ8) {
+            return NULL;
         }
 
-        VecSimMetric metric = hnswParams->metric;
-        if (is_normalized && metric == VecSimMetric_Cosine) {
-            metric = VecSimMetric_IP;
-        }
-
-        if (metric == VecSimMetric_Cosine) {
-            return NULL; // SQ8 does not support cosine metric.
-        }
-
+        const VecSimMetric metric = ResolveSQ8Metric(hnswParams->metric, is_normalized);
         const float *mean_ptr = static_cast<const float *>(hnswParams->quantParams);
 
-        // Mean-centred FP16 L2 is not supported: QuantPreprocessor centres the query and narrows
-        // the result back into the FP16 query body, while storage keeps its centred min/delta in
-        // FP32. The two then disagree, so an identical vector and query pair yields a non-zero
-        // distance (mean 10000 gives a per-component error of 1.0), and a large enough mean
-        // overflows FP16 to infinity. Enabling this needs an asymmetric kernel that takes an FP32
-        // centred query.
-        if (hnswParams->type == VecSimType_FLOAT16 && mean_ptr != nullptr &&
-            metric == VecSimMetric_L2) {
+        if (!SQ8ParamsSupported(hnswParams->type, metric, mean_ptr != nullptr)) {
             return NULL;
         }
 
@@ -226,9 +248,13 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
-    if (params->quantType == VecSimQuant_SQ8) {
-        if (params->type != VecSimType_FLOAT32 && params->type != VecSimType_FLOAT16) {
-            throw std::invalid_argument("Invalid params->type for VecSimQuant_SQ8");
+    if (params->quantType != VecSimQuant_NONE) {
+        // Reject exactly what NewIndex rejects. Reporting a size for a combination that cannot be
+        // built lets a caller size its capacity from an index it will then fail to create.
+        if (params->quantType != VecSimQuant_SQ8 ||
+            !SQ8ParamsSupported(params->type, ResolveSQ8Metric(params->metric, is_normalized),
+                                params->quantParams != nullptr)) {
+            throw std::invalid_argument("Unsupported quantization params for HNSW index");
         }
         // Calculator + preprocessor container + preprocessor.
         // Use representative types; sizeof is independent of the template parameters.
@@ -277,6 +303,11 @@ size_t EstimateElementSize(const HNSWParams *params) {
     size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
     size_t stored_data_size;
+    // Unlike EstimateInitialSize, this does not reject unsupported combinations: the return type is
+    // size_t with no sentinel, and VecSimIndex_EstimateElementSize is extern "C", so throwing here
+    // would carry an exception into the C host. It therefore answers for whatever params it is
+    // handed, exactly as VecSimParams_GetStoredDataSize does on the unquantized path. Index
+    // creation is the boundary that enforces the supported set (see SQ8ParamsSupported).
     if (params->quantType == VecSimQuant_SQ8) {
         bool with_norm = params->quantParams != nullptr;
         if (params->metric == VecSimMetric_L2) {

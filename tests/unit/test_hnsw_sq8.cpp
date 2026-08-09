@@ -149,6 +149,10 @@ TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {
     VecSimParams vecsim_params = CreateParams(params);
     this->index = VecSimIndex_New(&vecsim_params);
     EXPECT_EQ(this->index, nullptr);
+
+    // The size estimate must reject what creation rejects, so a caller cannot size its capacity
+    // from a configuration it will then fail to build.
+    EXPECT_THROW(EstimateInitialSize(params), std::invalid_argument);
 }
 
 /* ---------------------------- Size Estimation tests ---------------------------- */
@@ -391,10 +395,9 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
 TYPED_TEST(HNSWSQ8Test, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
 
 // SQ8 quantizes to uint8 with FP32 metadata and only has kernels for FP32 and FP16 sources, so
-// every other data type must be rejected outright rather than produce an index. Note that
-// EstimateElementSize deliberately does not re-check this: like VecSimParams_GetStoredDataSize on
-// the unquantized path, it answers for whatever params it is handed, so index creation is the
-// boundary that enforces the supported set.
+// every other data type must be rejected outright rather than produce an index. EstimateInitialSize
+// rejects the same set; EstimateElementSize deliberately does not, because it has no error channel
+// (see the note at its definition).
 TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
     for (auto type : {VecSimType_FLOAT64, VecSimType_BFLOAT16, VecSimType_INT8, VecSimType_UINT8}) {
         HNSWParams hnsw_params = {
@@ -402,6 +405,8 @@ TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
         VecSimParams params = CreateParams(hnsw_params);
 
         EXPECT_EQ(VecSimIndex_New(&params), nullptr) << "data type " << type;
+        EXPECT_THROW(EstimateInitialSize(hnsw_params), std::invalid_argument)
+            << "data type " << type;
     }
 }
 
@@ -419,6 +424,7 @@ TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
                      .quantParams = mean.data()};
     VecSimParams l2_params = CreateParams(l2);
     EXPECT_EQ(VecSimIndex_New(&l2_params), nullptr);
+    EXPECT_THROW(EstimateInitialSize(l2), std::invalid_argument);
 
     HNSWParams ip = {.type = VecSimType_FLOAT16,
                      .dim = 4,
@@ -429,6 +435,7 @@ TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
     VecSimIndex *ip_index = VecSimIndex_New(&ip_params);
     ASSERT_NE(ip_index, nullptr);
     VecSimIndex_Free(ip_index);
+    EXPECT_NO_THROW(EstimateInitialSize(ip));
 }
 
 // Serialization does not record quantType or the mean vector, and the loading path always builds
@@ -490,4 +497,7 @@ TEST(HNSWSQ8TieredTest, RejectsQuantizedTieredIndex) {
     VecSimParams params = CreateParams(tiered_params);
 
     EXPECT_EQ(VecSimIndex_New(&params), nullptr);
+    // The primary index alone would accept these params, so the tiered estimate needs its own check
+    // rather than inheriting one from HNSWFactory.
+    EXPECT_THROW(EstimateInitialSize(tiered_params), std::invalid_argument);
 }
