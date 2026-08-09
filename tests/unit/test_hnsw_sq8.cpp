@@ -431,6 +431,49 @@ TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
     VecSimIndex_Free(ip_index);
 }
 
+// Serialization does not record quantType or the mean vector, and the loading path always builds
+// unquantized components, so saving a quantized index would produce a file the loader misreads.
+// saveIndex must refuse rather than emit one.
+TYPED_TEST(HNSWSQ8Test, RejectsSerialization) {
+    HNSWParams params = {.dim = 4, .initialCapacity = 1};
+    this->SetUp(params);
+    ASSERT_EQ(this->GenerateAndAddVector(0, 0.25f, 0.25f), 1);
+
+    const auto file_name = std::string(getenv("ROOT")) + "/tests/unit/sq8_should_not_be_written";
+    EXPECT_THROW(this->CastToHNSW()->saveIndex(file_name), std::runtime_error);
+    std::remove(file_name.c_str());
+}
+
+// Every other functional test uses L2, so without this the symmetric SQ8-to-SQ8 IP kernel that
+// graph construction selects for an IP index would never run. Vectors vary per component as well as
+// per label, so quantization does not collapse into the degenerate min == max branch.
+TYPED_TEST(HNSWSQ8Test, GraphConstructionIP) {
+    constexpr size_t n = 100;
+    constexpr size_t dim = 16;
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_IP, .initialCapacity = n, .M = 16, .efRuntime = n};
+    this->SetUp(params);
+
+    // Each label i gets a vector whose components ramp from i upward, so no two vectors share a
+    // quantization range and every vector has a non-zero delta.
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_EQ(this->GenerateAndAddVector(i, static_cast<float>(i) * 0.5f, 0.25f), 1);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(this->index), n);
+
+    // This is plain inner product, not cosine: the distance is 1 - IP, so the closest vector is the
+    // one with the largest projection onto the query rather than the query's own twin. Every vector
+    // and the query are positive and magnitude grows with the label, so IP is strictly increasing
+    // in the label and results must come back from the highest label downward.
+    std::vector<typename TestFixture::data_t> query(dim);
+    this->GenerateVector(query.data(), 1.0f, 0.25f);
+
+    auto verify = [&](size_t id, double, size_t result_index) {
+        EXPECT_EQ(id, n - 1 - result_index);
+    };
+    runTopKSearchTest(this->index, query.data(), 10, verify);
+}
+
 // SQ8 is not wired into the tiered index yet (MOD-14957), so the tiered factory must reject it
 // instead of building a quantized primary index against an unquantized frontend. Without the
 // guard this aborts on a debug build and silently mismatches the two blob layouts on a release

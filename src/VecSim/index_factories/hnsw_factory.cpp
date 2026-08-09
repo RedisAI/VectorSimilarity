@@ -114,7 +114,6 @@ VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams 
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
-
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
 
@@ -163,8 +162,11 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
             }
         }
 
-        // Unreachable today: the checks above leave only FP32/FP16 x L2/IP. Kept so that adding a
-        // type or metric cannot silently fall through and build an unquantized index instead.
+        // Unreachable today: the checks above leave only FP32/FP16 x L2/IP. The assert makes a
+        // debug build shout if a new type or metric ever reaches here, and the return keeps a
+        // release build failing closed rather than falling through and silently building an
+        // unquantized index instead.
+        assert(false && "unhandled SQ8 data type and metric combination");
         return NULL;
     }
 
