@@ -277,7 +277,17 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
+    // `elementId` is optional:
+    // - INVALID_ID (the default): a new id is allocated by advancing `curElementCount`, and the
+    //   vector and the graph data are *appended* to their containers (growing the index by a block
+    //   first if it is full).
+    // - a valid id: the id is used as-is, `curElementCount` is left untouched and the index does
+    //   not grow. The vector and the graph data are written *in place* over that slot.
+    //   The caller must guarantee that the slot is a legal, already-freed one - that is,
+    //   `elementId < curElementCount` and the previous occupant's `ElementGraphData` has been
+    //   destroyed (see `ElementGraphData::destroy`), otherwise its link lists are leaked.
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
+                                       idType elementId = INVALID_ID);
     void removeAndSwapMarkDeletedElement(idType internalId);
     void removeFromGraph(idType internalId);
     // Whether `level_data` holds a link to `id`.
@@ -1903,10 +1913,17 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
 // scenario, the index data guard should be held by the caller (exclusive lock).
+// `elementId` is optional - see the declaration for its semantics.
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                                  const void *vector_data) {
-    if (isCapacityFull()) {
+                                                                  const void *vector_data,
+                                                                  idType elementId) {
+    // When an id is given we are reusing an existing (already freed) slot, so the index doesn't
+    // grow and no capacity check is needed - the slot is within the current capacity by definition.
+    const bool reuseSlot = (elementId != INVALID_ID);
+    assert((!reuseSlot || elementId < curElementCount) &&
+           "The given id must be an existing slot in the index");
+    if (!reuseSlot && isCapacityFull()) {
         growByBlock();
     }
     HNSWAddVectorState state{};
@@ -1915,36 +1932,46 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
     state.elementMaxLevel = getRandomLevel(mult);
 
     // Access and update the index global data structures with the new element meta-data.
-    state.newElementId = curElementCount++;
+    // Allocate a fresh id only if the caller didn't provide one.
+    state.newElementId = reuseSlot ? elementId : curElementCount++;
 
     // Create the new element's graph metadata.
     // We must assign manually enough memory on the stack and not just declare an `ElementGraphData`
     // variable, since it has a flexible array member.
-    auto tmpData = this->allocator->allocate_unique(this->elementGraphDataSize);
-    memset(tmpData.get(), 0, this->elementGraphDataSize);
-    ElementGraphData *cur_egd = (ElementGraphData *)(tmpData.get());
+    auto newData = this->allocator->allocate_unique(this->elementGraphDataSize);
+    memset(newData.get(), 0, this->elementGraphDataSize);
+    ElementGraphData *new_egd = static_cast<ElementGraphData *>(newData.get());
     // Allocate memory (inside `ElementGraphData` constructor) for the links in higher levels and
     // initialize this memory to zeros. The reason for doing it here is that we might mark this
     // vector as deleted BEFORE we finish its indexing. In that case, we will collect the incoming
     // edges to this element in every level, and try to access its link lists in higher levels.
     // Therefore, we allocate it here and initialize it with zeros, (otherwise we might crash...)
     try {
-        new (cur_egd) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
+        new (new_egd) ElementGraphData(state.elementMaxLevel, levelDataSize, this->allocator);
     } catch (std::runtime_error &e) {
         this->log(VecSimCommonStrings::LOG_WARNING_STRING,
                   "Error - allocating memory for new element failed due to low memory");
         throw e;
     }
 
-    // Insert the new element to the data block
-    this->vectors->addElement(vector_data, state.newElementId);
-    this->graphDataBlocks.back().addElement(cur_egd);
+    // Insert the new element to the data block. The containers only support *appending* at
+    // `curElementCount`, so when reusing an existing slot we have to overwrite it in place
+    // instead. The previous occupant's graph data must have already been destroyed by the
+    // caller, otherwise its link lists are leaked by the overwrite below.
+    if (reuseSlot) {
+        this->vectors->updateElement(state.newElementId, vector_data);
+        this->graphDataBlocks[state.newElementId / this->blockSize].updateElement(
+            state.newElementId % this->blockSize, new_egd);
+    } else {
+        this->vectors->addElement(vector_data, state.newElementId);
+        this->graphDataBlocks.back().addElement(new_egd);
+    }
     // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
     // set when checking if label .
     this->idToMetaData[state.newElementId] = ElementMetaData(label);
     setVectorId(label, state.newElementId);
 
-    state.currMaxLevel = (int)maxLevel;
+    state.currMaxLevel = static_cast<int>(maxLevel);
     state.currEntryPoint = entrypointNode;
     if (state.elementMaxLevel > state.currMaxLevel) {
         if (entrypointNode == INVALID_ID && maxLevel != HNSW_INVALID_LEVEL) {
