@@ -410,6 +410,21 @@ TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
     }
 }
 
+// An out-of-range metric must be rejected before dispatch. Reaching the unreachable-branch assert
+// in the SQ8 dispatcher would abort an assertions-enabled host, where the unquantized path throws
+// and VecSimIndex_New catches it. VecSimMetric has three enumerators, so 3 is the smallest value
+// outside the valid set that is still inside the enum's value range and therefore safe to form.
+TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
+    HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
+                              .dim = 4,
+                              .metric = static_cast<VecSimMetric>(3),
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams params = CreateParams(hnsw_params);
+
+    EXPECT_EQ(VecSimIndex_New(&params), nullptr);
+    EXPECT_THROW(EstimateInitialSize(hnsw_params), std::invalid_argument);
+}
+
 // Mean-centred FP16 with L2 must be rejected: QuantPreprocessor narrows the centred query back into
 // the FP16 query body while storage keeps its centred min/delta in FP32, so identical vector and
 // query pairs diverge and a large mean overflows FP16 to infinity. The same combination with IP is

@@ -72,8 +72,11 @@ template <typename DataType>
     if (type != VecSimType_FLOAT32 && type != VecSimType_FLOAT16) {
         return false;
     }
-    // Cosine needs a normalization step the SQ8 preprocessor does not perform.
-    if (resolved_metric == VecSimMetric_Cosine) {
+    // Only L2 and IP have SQ8 kernels. Cosine needs a normalization step the SQ8 preprocessor does
+    // not perform, and anything outside the enum has to be rejected here as well: the dispatch in
+    // NewIndex would otherwise fall through to its unreachable-branch assert and abort an
+    // assertions-enabled host, where the unquantized path throws and is caught by VecSimIndex_New.
+    if (resolved_metric != VecSimMetric_L2 && resolved_metric != VecSimMetric_IP) {
         return false;
     }
     // Mean-centred FP16 L2 loses correctness: QuantPreprocessor centres the query and narrows the
