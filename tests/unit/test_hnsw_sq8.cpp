@@ -496,10 +496,10 @@ TYPED_TEST(HNSWSQ8Test, GraphConstructionIP) {
     runTopKSearchTest(this->index, query.data(), 10, verify);
 }
 
-// SQ8 is not wired into the tiered index yet (MOD-14957), so the tiered factory must reject it
-// instead of building a quantized primary index against an unquantized frontend. Without the
-// guard this aborts on a debug build and silently mismatches the two blob layouts on a release
-// one. MOD-14957 should replace this expectation rather than delete it.
+// SQ8 is not wired into the tiered index yet, so the tiered factory must reject it instead of
+// building a quantized primary index against an unquantized frontend. Without the guard this aborts
+// on a debug build and silently mismatches the two blob layouts on a release one. Whoever wires
+// quantization through the tiered index should replace this expectation rather than delete it.
 TEST(HNSWSQ8TieredTest, RejectsQuantizedTieredIndex) {
     HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
                               .dim = 4,

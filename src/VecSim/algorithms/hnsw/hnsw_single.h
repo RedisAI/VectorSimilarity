@@ -90,8 +90,9 @@ public:
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
         // The public API documents vector_data as a raw dim-by-type vector, but a quantized index's
         // kernels read query metadata appended past that, so honouring the documented contract here
-        // would read out of bounds. There is no public API for producing a quantized query blob;
-        // MOD-14958 owns that decision. Report "no answer" rather than read past the caller's blob.
+        // would read out of bounds. There is no public API for producing a quantized query blob,
+        // and adding one is a separate decision. Report "no answer" rather than read past the
+        // caller's blob. See the note on VecSimIndex_GetDistanceFrom_Unsafe in vec_sim.h.
         if (this->isQuantized) {
             return INVALID_SCORE;
         }

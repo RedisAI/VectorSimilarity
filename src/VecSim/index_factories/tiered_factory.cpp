@@ -66,9 +66,9 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
-    // NewIndex below rejects quantization until MOD-14957 wires it, so refuse to size it too. The
-    // primary index on its own would accept these params, so without this check the estimate
-    // reports a number for an index that cannot be created.
+    // NewIndex below rejects quantization until the tiered index handles it, so refuse to size it
+    // too. The primary index on its own would accept these params, so without this check the
+    // estimate reports a number for an index that cannot be created.
     if (hnsw_params.quantType != VecSimQuant_NONE) {
         throw std::invalid_argument("Quantization is not supported for tiered HNSW indexes");
     }
@@ -102,10 +102,10 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
-    // Quantization is not wired into the tiered index yet (MOD-14957). Reject it here rather than
-    // let it through: the primary index would be built from these params and quantize its storage,
-    // while NewBFParams does not carry quantType, so the frontend would stay unquantized and the
-    // two would disagree on the stored blob layout.
+    // Quantization is not wired into the tiered index yet. Reject it here rather than let it
+    // through: the primary index would be built from these params and quantize its storage, while
+    // NewBFParams does not carry quantType, so the frontend would stay unquantized and the two
+    // would disagree on the stored blob layout.
     if (params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE) {
         return nullptr;
     }

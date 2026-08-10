@@ -45,9 +45,9 @@ void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     // the loading path always builds unquantized components. A saved quantized index would
     // therefore reload with the wrong stride and consume graph bytes as vector data. Refuse instead
     // of emitting a file that cannot be decoded. Note the caller has already written the encoding
-    // version by this point, so a rejected save leaves a stub file behind; that still fails closed
-    // on load, unlike a full file with a layout the loader misreads. MOD-14957 adds SQ8
-    // serialization.
+    // version by this point, so a rejected save leaves a stub file behind, and worse, it has
+    // already truncated whatever was at that path. Both are tracked separately; whoever adds
+    // quantized serialization should move this check ahead of the file being opened.
     if (this->isQuantized) {
         throw std::runtime_error(
             "Cannot save index: serialization of quantized indexes is not supported");
