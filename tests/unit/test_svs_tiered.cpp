@@ -1088,8 +1088,9 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
-    // Move the vector to SVS by executing the insert job.
-    mock_thread_pool.thread_iteration();
+    // Move the vector to SVS by executing the pending jobs.
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // Scalar quantization accuracy is insufficient for this check.
@@ -1218,6 +1219,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+
+    mock_thread_pool.thread_iteration();
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
@@ -2662,7 +2665,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Ingest the updated vector to SVS.
-    mock_thread_pool.thread_iteration();
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
@@ -3146,12 +3150,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
     // Expected that a single GC job was added to the queue.
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
     // Run GC twice.
     VecSimTieredIndex_GC(tiered_index);
-    // Expected that no new GC job was added to the queue (indexGCScheduled is still set until the
-    // pending job runs).
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + 1);
+    // Expected that no new GC jobs were added to the queue (indexGCScheduled is still set until the
+    // pending jobs run).
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
     // Wait for any pending jobs to complete. As far as SVS GC is done via a job.
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();

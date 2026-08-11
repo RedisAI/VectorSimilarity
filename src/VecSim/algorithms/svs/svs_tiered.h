@@ -259,7 +259,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
-    size_t consolidateTriggerThreshold;
     size_t updateJobWaitTime;
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
@@ -275,7 +274,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     std::atomic<bool> backendInitSubmited{false};
     std::unordered_set<idType> ids_to_init_;
-    std::vector<labelType> labels_to_consolidate_;
 
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSInsertJob *>> labelToInsertJobs;
     // A mapping to hold invalid jobs, so we can dispose them upon index deletion.
@@ -661,6 +659,7 @@ private:
         auto svs_index = index->GetSVSIndex();
         if (index->backendIndex->indexSize() == 0) {
             // No need to run GC on an empty index.
+            index->indexGCScheduled.clear();
             return;
         }
         std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
@@ -736,16 +735,11 @@ public:
     }
 
     void scheduleSVSIndexConsolidate(labelType label) {
-        labels_to_consolidate_.push_back(label);
+        AsyncJob *new_consolidate_job = new (this->allocator)
+            SVSConsolidateJob(this->allocator, {label}, SVSIndexConsolidateWrapper, this);
 
-        if (labels_to_consolidate_.size() >= consolidateTriggerThreshold) {
-            AsyncJob *new_consolidate_job = new (this->allocator)
-                SVSConsolidateJob(this->allocator, labels_to_consolidate_, SVSIndexConsolidateWrapper, this);
-
-            // Insert job to the queue.
-            this->submitSingleJob(new_consolidate_job);
-            labels_to_consolidate_.clear();
-        }
+        // Insert job to the queue.
+        this->submitSingleJob(new_consolidate_job);
     }
 
 private:
@@ -942,8 +936,6 @@ public:
                                                       ? SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD
                                                       : this->updateTriggerThreshold;
 
-        this->consolidateTriggerThreshold = SVS_VAMANA_DEFAULT_CONSOLIDATE_THRESHOLD;
-
         this->trainingTriggerThreshold =
             tiered_svs_params.trainingTriggerThreshold == 0
                 ? default_training_threshold
@@ -1016,18 +1008,20 @@ public:
         if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
             // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
-            if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
-                deleteAndUpdateInitIds(label);
-            }
-            ids_to_init_.insert(this->frontendIndex->indexSize());
-            const auto ft_ret = this->frontendIndex->addVector(blob, label);
-            ret = std::max(ret + ft_ret, 0);
+            if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
+                if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
+                    deleteAndUpdateInitIds(label);
+                }
+                ids_to_init_.insert(this->frontendIndex->indexSize());
+                const auto ft_ret = this->frontendIndex->addVector(blob, label);
+                ret = std::max(ret + ft_ret, 0);
 
-            if (this->frontendIndex->indexSize() >= this->trainingTriggerThreshold) {
-                this->backendInitSubmited.store(true, std::memory_order_release);
-                scheduleSVSIndexInit();
+                if (this->frontendIndex->indexSize() >= this->trainingTriggerThreshold) {
+                    this->backendInitSubmited.store(true, std::memory_order_release);
+                    scheduleSVSIndexInit();
+                }
+                return ret;
             }
-            return ret;
         }
 
         this->flatIndexGuard.lock_shared();
