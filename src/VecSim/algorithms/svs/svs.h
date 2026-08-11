@@ -310,11 +310,11 @@ protected:
                 assert(this->impl_ != nullptr);
                 setReady();
             } else {
-                impl_->add_points(points, ids);
+                impl_->add_points(points, ids, /*reuse_empty*/ false);
             }
         } else {
             // Add new points to existing SVS index
-            impl_->add_points(points, ids);
+            impl_->add_points(points, ids, /*reuse_empty*/ false);
             this->pimplGuard_.unlock_shared();
         }
 
