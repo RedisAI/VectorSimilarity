@@ -205,7 +205,7 @@ protected:
                        idType id) const;
     void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
                        DistType dist, idType id) const;
-    void removeAndSwap(idType internalId);
+    void swapWithLast(idType removedId);
 
     size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
 
@@ -279,6 +279,7 @@ public:
     void unmarkInProcess(idType internalId);
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapMarkDeletedElement(idType internalId);
+    void removeFromGraph(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
     const ElementMetaData *getMetaDataAddress(idType internal_id) const {
@@ -1644,7 +1645,7 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
+void HNSWIndex<DataType, DistType>::removeFromGraph(idType internalId) {
     // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
     // upon marking it as deleted.
     assert(entrypointNode != internalId);
@@ -1673,16 +1674,19 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // We can say now that the element has removed completely from index.
     --curElementCount;
+}
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::swapWithLast(idType removedId) {
     // Get the last element's metadata and data.
-    // If we are deleting the last element, we already destroyed it's metadata.
+    // If we are deleting the last element, we already destroyed its metadata.
     auto *last_element_data = getDataByInternalId(curElementCount);
     DataBlock &last_gd_block = graphDataBlocks.back();
     auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
 
     // Swap the last id with the deleted one, and invalidate the last id data.
-    if (curElementCount != internalId) {
-        SwapLastIdWithDeletedId(internalId, last_element, last_element_data);
+    if (curElementCount != removedId) {
+        SwapLastIdWithDeletedId(removedId, last_element, last_element_data);
     }
 
     // If we need to free a complete block and there is at least one block between the
@@ -1693,7 +1697,8 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType internalId) {
-    removeAndSwap(internalId);
+    removeFromGraph(internalId);
+    swapWithLast(internalId);
     // element is permanently removed from the index, it is no longer counted as marked deleted.
     --numMarkedDeleted;
 }
@@ -1756,7 +1761,8 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
     }
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
-    removeAndSwap(element_internal_id);
+    removeFromGraph(element_internal_id);
+    swapWithLast(element_internal_id);
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded

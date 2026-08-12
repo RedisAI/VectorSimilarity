@@ -104,7 +104,8 @@ private:
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper. Main HNSW
     // lock is assumed to be held exclusive here.
-    void executeSwapJob(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
+    void fixJobsAfterSwap(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
+    void invalidateRepairJobs(idType deleted_id);
 
     // Execute the ready swap jobs, run no more than 'maxSwapsToRun' jobs (run all of them for -1).
     void executeReadySwapJobs(size_t maxSwapsToRun = -1);
@@ -283,23 +284,11 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::executeSwapJob(idType deleted_id,
-                                                         vecsim_stl::vector<idType> &idsToRemove) {
-    // Get the id that was last and was had been swapped with the job's deleted id.
+void TieredHNSWIndex<DataType, DistType>::fixJobsAfterSwap(
+    idType deleted_id, vecsim_stl::vector<idType> &idsToRemove) {
+    // Get the id that was last and had been swapped with the job's deleted id.
     idType prev_last_id = this->getHNSWIndex()->indexSize();
 
-    // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
-    if (idToRepairJobs.find(deleted_id) != idToRepairJobs.end()) {
-        for (auto &job_it : idToRepairJobs.at(deleted_id)) {
-            job_it->node_id = this->setAndSaveInvalidJob(job_it);
-            for (auto &swap_job_it : job_it->associatedSwapJobs) {
-                if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
-                    readySwapJobs++;
-                }
-            }
-        }
-        idToRepairJobs.erase(deleted_id);
-    }
     // Swap the ids in the pending jobs for the current last id (if exist).
     if (idToRepairJobs.find(prev_last_id) != idToRepairJobs.end()) {
         for (auto &job_it : idToRepairJobs.at(prev_last_id)) {
@@ -325,6 +314,24 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(idType deleted_id,
 }
 
 template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::invalidateRepairJobs(idType deleted_id) {
+    // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
+    if (idToRepairJobs.find(deleted_id) == idToRepairJobs.end()) {
+        return;
+    }
+
+    for (auto &job_it : idToRepairJobs.at(deleted_id)) {
+        job_it->node_id = this->setAndSaveInvalidJob(job_it);
+        for (auto &swap_job_it : job_it->associatedSwapJobs) {
+            if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
+                readySwapJobs++;
+            }
+        }
+    }
+    idToRepairJobs.erase(deleted_id);
+}
+
+template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
     return dynamic_cast<HNSWIndex<DataType, DistType> *>(this->backendIndex);
 }
@@ -342,10 +349,12 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
     idsToRemove.reserve(idToSwapJob.size());
     for (auto &it : idToSwapJob) {
         auto *swap_job = it.second;
+        // Swap job is ready for execution - execute and delete it.
         if (swap_job->pending_repair_jobs_counter.load() == 0) {
-            // Swap job is ready for execution - execute and delete it.
-            this->getHNSWIndex()->removeAndSwapMarkDeletedElement(swap_job->deleted_id);
-            this->executeSwapJob(swap_job->deleted_id, idsToRemove);
+            auto deleted_id = swap_job->deleted_id;
+            this->getHNSWIndex()->removeAndSwapMarkDeletedElement(deleted_id);
+            this->invalidateRepairJobs(deleted_id);
+            this->fixJobsAfterSwap(deleted_id, idsToRemove);
             delete swap_job;
         }
         if (maxJobsToRun > 0 && idsToRemove.size() >= maxJobsToRun) {
@@ -533,7 +542,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
         // Get the id in every iteration, since the ids can be swapped in every iteration.
         idType id = hnsw_index->getElementIds(label).at(id_ind);
         hnsw_index->removeVectorInPlace(id);
-        this->executeSwapJob(id, idsToRemove);
+        this->invalidateRepairJobs(id);
+        this->fixJobsAfterSwap(id, idsToRemove);
     }
     hnsw_index->removeLabel(label);
     for (idType id : idsToRemove) {
