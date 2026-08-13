@@ -672,8 +672,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     hnsw_index->repairNodeConnections(job->node_id, job->level);
 
     // Account for this job only now that its repair has actually been performed. Decreasing the
-    // counter before the repair would let a swap job be seen as ready - and an element be isolated -
-    // while an element still points to it from a repair that has not run yet.
+    // counter beforehand would let a swap job be seen as ready, and its element isolated, while
+    // an element still points to it from a repair that has not run yet.
     vecsim_stl::vector<idType> fully_repaired_ids(this->allocator);
     this->idToRepairJobsGuard.lock();
     for (auto &it : job->associatedSwapJobs) {
@@ -684,8 +684,8 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     }
     this->idToRepairJobsGuard.unlock();
 
-    // These deleted elements have no pending repair job left, so no element points to them anymore -
-    // take them out of the graph entirely, leaving no edge in or out for the swap job to deal with.
+    // These deleted elements have no pending repair job left, so nothing points to them anymore.
+    // Take them out of the graph entirely, leaving no edge in or out for the swap job to deal with.
     // Done outside the repair jobs guard, as isolating takes the per-element links locks.
     for (idType deleted_id : fully_repaired_ids) {
         this->isolateRepairedElement(deleted_id);

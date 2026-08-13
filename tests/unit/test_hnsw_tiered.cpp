@@ -1952,19 +1952,20 @@ TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
     }
 
     // Delete 0 - a repair job is created for every (node, level) pair that points to it. Note that
-    // the number of jobs depends on the levels the elements got, so the counters are compared to each
-    // other rather than to fixed values below.
+    // the number of jobs depends on the levels the elements got, so the counters are compared to
+    // each other rather than to fixed values below.
     EXPECT_EQ(tiered_index->deleteVector(0), 1);
     ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
     ASSERT_GT(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
 
-    // Delete 1 before those jobs run. 0 is deleted but still connected (its own repairs are pending),
-    // so a repair job for node 0 is created here and stays pending.
+    // Delete 1 before those jobs run. 0 is deleted but still connected (its own repairs are
+    // pending), so a repair job for node 0 is created here and stays pending.
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
     ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
 
     // Execute 0's repair jobs, so that it has no pending repair job left and is taken out of the
-    // graph, making its swap job ready. Its own pending repair job (for deleting 1) is still queued.
+    // graph, making its swap job ready. Its own pending repair job (for deleting 1) is still
+    // queued.
     while (tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load() > 0) {
         ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
         mock_thread_pool.thread_iteration();
@@ -1982,8 +1983,8 @@ TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
     EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(),
               pending_for_1 - 1);
 
-    // Drain the remaining jobs: the invalid one is disposed of without being executed, and the valid
-    // ones complete 1's repairs - so 1 is taken out of the graph as well.
+    // Drain the remaining jobs: the invalid one is disposed of without being executed, and the
+    // valid ones complete 1's repairs - so 1 is taken out of the graph as well.
     while (!mock_thread_pool.jobQ.empty()) {
         mock_thread_pool.thread_iteration();
     }

@@ -280,9 +280,9 @@ public:
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapMarkDeletedElement(idType internalId);
     void removeFromGraph(idType internalId);
-    // Remove `id` from `level_data`'s links if it is still there. Unlike `removeLink`, tolerates its
-    // absence - an element that was already isolated (see `isolateDeletedElement`) holds no links at
-    // all, and a repair job running in parallel may have dropped the edge too.
+    // Remove `id` from `level_data`'s links if it is still there. Unlike `removeLink`, tolerates
+    // its absence - an element that was already isolated (see `isolateDeletedElement`) holds no
+    // links at all, and a repair job running in parallel may have dropped the edge too.
     static void removeLinkIfExists(ElementLevelData &level_data, idType id) {
         for (size_t i = 0; i < level_data.getNumLinks(); i++) {
             if (level_data.getLinkAtPos(i) == id) {
@@ -1563,9 +1563,9 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
     // alone.
     if (!removed_node_level.removeIncomingUnidirectionalEdgeIfExists(node_id)) {
         // No record of this edge on the other side. Normally that means the edge was bidirectional,
-        // but it also happens when the removed node was already isolated upon completing its repairs
-        // (`isolateDeletedElement` clears its incoming edges set together with its links), so check
-        // whether it actually points back before recording the remaining direction.
+        // but it also happens when the removed node was already isolated: `isolateDeletedElement`
+        // clears its incoming edges set together with its links. Check whether it actually points
+        // back before recording the remaining direction.
         bool points_back = false;
         for (size_t i = 0; i < removed_node_level.getNumLinks(); i++) {
             if (removed_node_level.getLinkAtPos(i) == node_id) {
@@ -1689,7 +1689,7 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
         ElementLevelData &level_data = getElementLevelData(element, level);
         auto neighbours = level_data.copyLinks();
         std::vector<idType> incoming_edges(level_data.getIncomingEdges().begin(),
-                                          level_data.getIncomingEdges().end());
+                                           level_data.getIncomingEdges().end());
         level_data.setNumLinks(0);
         for (idType incoming_id : incoming_edges) {
             level_data.removeIncomingUnidirectionalEdgeIfExists(incoming_id);
@@ -1698,8 +1698,8 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
 
         // Drop the other side of the outgoing edges: the neighbour either recorded this element as
         // an incoming unidirectional edge (the expected case, as no element points to it anymore),
-        // or still points back at it - an incoming edge whose repair job never ran, which is dropped
-        // here as well.
+        // or still points back at it - an incoming edge whose repair job never ran, which is
+        // dropped here as well.
         for (idType neighbour_id : neighbours) {
             lockNodeLinks(neighbour_id);
             ElementLevelData &neighbour = getElementLevelData(neighbour_id, level);
