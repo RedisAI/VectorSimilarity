@@ -257,10 +257,8 @@ typedef struct {
     void *storage; // Opaque pointer to disk storage
     const char *indexName;
     size_t indexNameLen;
-    bool rerank; // Whether to enable reranking for disk-based HNSW
-    // Opaque, embedder-defined value forwarded unchanged to the storage layer,
-    // which is what gives it meaning. Not interpreted here.
-    uint64_t userData;
+    uint32_t userData; // Embedder-defined; forwarded to the storage layer, never read by VecSim.
+    bool rerank;       // Whether to enable reranking for disk-based HNSW
 } VecSimDiskContext;
 
 typedef struct {
