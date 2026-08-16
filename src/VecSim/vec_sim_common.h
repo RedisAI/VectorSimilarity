@@ -258,6 +258,9 @@ typedef struct {
     const char *indexName;
     size_t indexNameLen;
     bool rerank; // Whether to enable reranking for disk-based HNSW
+    // Opaque, embedder-defined value forwarded unchanged to the storage layer,
+    // which is what gives it meaning. Not interpreted here.
+    uint64_t userData;
 } VecSimDiskContext;
 
 typedef struct {
