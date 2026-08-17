@@ -24,9 +24,16 @@ dist_func_t<float> Choose_INT8_IP_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_IP_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_InnerProductSIMD16_NEON_DOTPROD);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64,
+                              UINT8_InnerProductSIMD16_NEON_DOTPROD_Chunked);
+    } else {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_InnerProductSIMD16_NEON_DOTPROD);
+    }
     return ret_dist_func;
 }
 
@@ -36,9 +43,15 @@ dist_func_t<float> Choose_INT8_Cosine_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_Cosine_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD_NEON_DOTPROD);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD_NEON_DOTPROD_Chunked);
+    } else {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD_NEON_DOTPROD);
+    }
     return ret_dist_func;
 }
 
@@ -48,9 +61,15 @@ dist_func_t<float> Choose_INT8_L2_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_L2_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD16_NEON_DOTPROD);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD16_NEON_DOTPROD_Chunked);
+    } else {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD16_NEON_DOTPROD);
+    }
     return ret_dist_func;
 }
 

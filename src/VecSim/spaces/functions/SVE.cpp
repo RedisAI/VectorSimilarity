@@ -86,21 +86,39 @@ dist_func_t<float> Choose_INT8_Cosine_implementation_SVE(size_t dim) {
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_L2_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_L2SqrSIMD_SVE, dim, svcntb);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_L2SqrSIMD_SVE_Chunked, dim, svcntb);
+    } else {
+        CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_L2SqrSIMD_SVE, dim, svcntb);
+    }
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_IP_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_InnerProductSIMD_SVE, dim, svcntb);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_InnerProductSIMD_SVE_Chunked, dim, svcntb);
+    } else {
+        CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_InnerProductSIMD_SVE, dim, svcntb);
+    }
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_Cosine_implementation_SVE(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_CosineSIMD_SVE, dim, svcntb);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_CosineSIMD_SVE_Chunked, dim, svcntb);
+    } else {
+        CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_CosineSIMD_SVE, dim, svcntb);
+    }
     return ret_dist_func;
 }
 

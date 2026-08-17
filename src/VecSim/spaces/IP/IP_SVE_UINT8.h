@@ -8,6 +8,7 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 #include <arm_sve.h>
 
 inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
@@ -23,8 +24,14 @@ inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, siz
     offset += chunk; // Move to the next set of uint8 elements
 }
 
+// Split so the chunked wrapper below can fold each chunk's total in 64 bits; summing the float
+// results per chunk would round each one. always_inline because the chunked wrapper calls this
+// twice, and GCC outlines a template once it has several callers, which also costs the plain
+// wrapper its inlining. static keeps each translation unit's copy to itself: SVE.cpp and SVE2.cpp
+// both include this header, and other headers define the same name with different bodies.
 template <bool partial_chunk, unsigned char additional_steps>
-uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+__attribute__((always_inline)) static inline uint32_t
+UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const uint8_t *pVect1 = reinterpret_cast<const uint8_t *>(pVect1v);
     const uint8_t *pVect2 = reinterpret_cast<const uint8_t *>(pVect2v);
 
@@ -83,8 +90,8 @@ uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t 
     sum2 = svadd_u32_x(svptrue_b32(), sum2, sum3);
 
     // svaddv_u32 reduces into a 64-bit scalar; the previous int32_t truncated it, which wrapped
-    // negative from dimension 33,027. Narrowed to uint32_t, which is exact through
-    // spaces::MAX_EXACT_UINT8_SIMD_DIM; above that the chooser selects the scalar kernel.
+    // negative from dimension 33,027. Narrowed to uint32_t, which is exact for up to
+    // spaces::UINT8_CHUNK_ELEMENTS elements, and that is what the caller guarantees.
     return static_cast<uint32_t>(svaddv_u32(svptrue_b32(), svadd_u32_x(svptrue_b32(), sum0, sum2)));
 }
 
@@ -98,6 +105,59 @@ template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = static_cast<float>(
         UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
+    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    return 1.0f - ip / (norm_v1 * norm_v2);
+}
+
+// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
+// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
+// non-negative, so no accumulator lane can exceed the chunk total either. That is the whole
+// correctness argument; no reasoning about how work spreads across lanes is needed.
+template <bool partial_chunk, unsigned char additional_steps>
+static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const void *pVect2v,
+                                                    size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    // The SVE vector length is a runtime value, so unlike the fixed-width kernels the split is
+    // computed here rather than at compile time. chunk_size matches the kernel's 4-accumulator main
+    // loop, and tail is the part the template parameters describe.
+    const size_t chunk_size = 4 * svcntb();
+    const size_t tail = dimension % chunk_size;
+    const size_t max_step = spaces::UINT8_CHUNK_ELEMENTS / chunk_size * chunk_size;
+    const size_t first = tail + (spaces::UINT8_CHUNK_ELEMENTS - tail) / chunk_size * chunk_size;
+
+    // first keeps this instantiation's own residual shape: it is congruent to dimension modulo
+    // chunk_size, so partial_chunk and additional_steps still describe its tail.
+    uint64_t total = UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1, pVect2, first);
+    pVect1 += first;
+    pVect2 += first;
+    size_t remaining = dimension - first;
+
+    // remaining is a whole multiple of chunk_size, and so is every step, which is the <false, 0>
+    // shape: no partial vector and no leftover single steps.
+    while (remaining) {
+        const size_t step = remaining < max_step ? remaining : max_step;
+        total += UINT8_InnerProductImp<false, 0>(pVect1, pVect2, step);
+        pVect1 += step;
+        pVect2 += step;
+        remaining -= step;
+    }
+    return total;
+}
+
+template <bool partial_chunk, unsigned char additional_steps>
+float UINT8_InnerProductSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    return 1.0f - static_cast<float>(UINT8_InnerProductChunkedImp<partial_chunk, additional_steps>(
+                      pVect1v, pVect2v, dimension));
+}
+
+template <bool partial_chunk, unsigned char additional_steps>
+float UINT8_CosineSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float ip = static_cast<float>(
+        UINT8_InnerProductChunkedImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);

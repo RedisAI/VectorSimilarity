@@ -42,21 +42,43 @@ dist_func_t<float> Choose_INT8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t d
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
+// index, so the plain kernel carries no branch and stays what it was.
 dist_func_t<float> Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked);
+    } else {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI);
+    }
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant, which folds each chunk's
+// exact 32-bit total into 64 bits. Chosen here, once per index, so the plain kernel below carries
+// no branch and stays what it was.
 dist_func_t<float> Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64,
+                              UINT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI_Chunked);
+    } else {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI);
+    }
     return ret_dist_func;
 }
 
+// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant, which folds each chunk's
+// exact 32-bit total into 64 bits. Chosen here, once per index, so the plain kernel below carries
+// no branch and stays what it was.
 dist_func_t<float> Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI);
+    if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64,
+                              UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI_Chunked);
+    } else {
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI);
+    }
     return ret_dist_func;
 }
 

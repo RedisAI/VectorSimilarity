@@ -468,12 +468,6 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = UINT8_L2Sqr;
 
-    // Above this dimension the 32-bit horizontal reduce in every uint8 SIMD kernel wraps, so fall
-    // back to the scalar kernel, which accumulates into a 64-bit ret_t and stays exact. See
-    // spaces::MAX_EXACT_UINT8_SIMD_DIM for why this is a fallback rather than a wider reduce.
-    if (dim > MAX_EXACT_UINT8_SIMD_DIM) {
-        return ret_dist_func;
-    }
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 

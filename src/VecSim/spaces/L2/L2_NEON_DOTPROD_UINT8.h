@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 #include <arm_neon.h>
 
 __attribute__((always_inline)) static inline void
@@ -50,8 +51,13 @@ L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1, uint32x4_t 
     pVect2 += 32;
 }
 
+// Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
+// the float results per chunk would round each one. always_inline because the chunked wrapper calls
+// this twice, and GCC outlines a template once it has several callers, which also costs the plain
+// wrapper its inlining.
 template <unsigned char residual> // 0..63
-float UINT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
+__attribute__((always_inline)) static inline uint32_t
+UINT8_L2SqrImp_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -121,9 +127,43 @@ float UINT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, s
     total_sum = vaddq_u32(total_sum, sum2);
     total_sum = vaddq_u32(total_sum, sum3);
 
-    // Horizontal sum of the 4 elements in the combined sum register
-    uint32_t result = vaddvq_u32(total_sum);
+    // Horizontal sum of the 4 elements in the combined sum register.
+    // Unsigned: the total is a sum of squared byte differences, reaching 255*255*dim. Exact for up
+    // to spaces::UINT8_CHUNK_ELEMENTS elements, which is what the caller guarantees.
+    return vaddvq_u32(total_sum);
+}
 
-    // Return the L2 squared distance as a float
-    return static_cast<float>(result);
+template <unsigned char residual> // 0..63
+float UINT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return static_cast<float>(UINT8_L2SqrImp_NEON_DOTPROD<residual>(pVect1v, pVect2v, dimension));
+}
+
+// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
+// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
+// non-negative, so no accumulator lane can exceed the chunk total either. That is the whole
+// correctness argument; no reasoning about how work spreads across lanes is needed.
+//
+// The first chunk absorbs the residual, so every later chunk is a whole multiple of 64 and matches
+// the residual-0 kernel's precondition.
+template <unsigned char residual> // 0..63
+float UINT8_L2SqrSIMD16_NEON_DOTPROD_Chunked(const void *pVect1v, const void *pVect2v,
+                                             size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
+    const size_t first = residual + (chunk - residual) / 64 * 64;
+    uint64_t total = UINT8_L2SqrImp_NEON_DOTPROD<residual>(pVect1, pVect2, first);
+    pVect1 += first;
+    pVect2 += first;
+    size_t remaining = dimension - first;
+
+    while (remaining) {
+        const size_t step = remaining < chunk ? remaining : chunk;
+        total += UINT8_L2SqrImp_NEON_DOTPROD<0>(pVect1, pVect2, step);
+        pVect1 += step;
+        pVect2 += step;
+        remaining -= step;
+    }
+    return static_cast<float>(total);
 }

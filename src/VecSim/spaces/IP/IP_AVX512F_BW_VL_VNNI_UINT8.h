@@ -8,6 +8,7 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 
 static inline void InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
@@ -30,9 +31,12 @@ static inline void InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i 
     // with the corresponding 32-bit integer in src, and store the packed 32-bit results in dst.
 }
 
+// always_inline, not merely inline: the chunked wrapper below calls this twice, and without the
+// attribute GCC outlines it once it has several callers, which also costs the plain wrapper its
+// inlining. Measured: the plain residual-0 wrapper went from 33 instructions to 9 plus a call.
 template <unsigned char residual> // 0..63
-static inline uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
-                                             size_t dimension) {
+__attribute__((always_inline)) static inline uint32_t
+UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -90,9 +94,8 @@ static inline uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pV
     // Unsigned reduce. The lanes are in range individually, but their total reaches 255*255*dim,
     // which passes INT_MAX from dimension 33,027, so reading the result as a signed int wrapped it.
     // The intrinsic's adds are vector operations, so the bit pattern is already correct modulo
-    // 2^32 and this cast simply reads it as unsigned. Exact through
-    // spaces::MAX_EXACT_UINT8_SIMD_DIM; above that the chooser selects the scalar kernel instead of
-    // this one.
+    // 2^32 and this cast simply reads it as unsigned. Exact for up to
+    // spaces::UINT8_CHUNK_ELEMENTS elements, which is what the caller guarantees.
     return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
 }
 
@@ -106,6 +109,53 @@ template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
     float ip = static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
+    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    return 1.0f - ip / (norm_v1 * norm_v2);
+}
+
+// Chunked variants, selected by the chooser for dimensions past spaces::UINT8_CHUNK_ELEMENTS. Each
+// chunk's 32-bit total is exact, and the chunks are folded in 64 bits, so these are exact at any
+// dimension. The plain wrappers above are left untouched so their inlining is unaffected, and the
+// choice is made once per index rather than per call.
+//
+// The first chunk absorbs the residual, which leaves the remaining length a whole multiple of 64,
+// so every later chunk satisfies the residual-0 kernel's precondition.
+template <unsigned char residual> // 0..63
+static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const void *pVect2v,
+                                                    size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
+    const size_t first = residual + (chunk - residual) / 64 * 64;
+    uint64_t total = UINT8_InnerProductImp<residual>(pVect1, pVect2, first);
+    pVect1 += first;
+    pVect2 += first;
+    size_t remaining = dimension - first;
+
+    while (remaining) {
+        const size_t step = remaining < chunk ? remaining : chunk;
+        total += UINT8_InnerProductImp<0>(pVect1, pVect2, step);
+        pVect1 += step;
+        pVect2 += step;
+        remaining -= step;
+    }
+    return total;
+}
+
+template <unsigned char residual> // 0..63
+float UINT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
+                                                          size_t dimension) {
+    return 1.0f -
+           static_cast<float>(UINT8_InnerProductChunkedImp<residual>(pVect1v, pVect2v, dimension));
+}
+
+template <unsigned char residual> // 0..63
+float UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
+                                                    size_t dimension) {
+    const float ip =
+        static_cast<float>(UINT8_InnerProductChunkedImp<residual>(pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);

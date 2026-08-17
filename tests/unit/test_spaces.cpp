@@ -2222,20 +2222,64 @@ TEST_F(SpacesTest, UINT8_L2Sqr_and_InnerProduct_are_exact_past_int32) {
     }
 }
 
-// Past spaces::MAX_EXACT_UINT8_SIMD_DIM the 32-bit horizontal reduce in every uint8 SIMD kernel
-// wraps, so the choosers must hand back the scalar kernel, which accumulates into a 64-bit ret_t.
-// Asserting the returned pointer is the point of this test: on a host with no uint8 SIMD support
-// the value comparisons below would pass either way, but the pointer identity would not.
-TEST_F(SpacesTest, UINT8_dispatchers_fall_back_to_scalar_past_the_exact_dim) {
-    constexpr size_t dim = spaces::MAX_EXACT_UINT8_SIMD_DIM + 1;
-    unsigned char alignment = 0;
+// Past spaces::UINT8_CHUNK_ELEMENTS the uint8 SIMD kernels accumulate in chunks: each chunk's total
+// still fits the 32-bit accumulators (65025 * 65536 <= UINT32_MAX), and the per-chunk totals are
+// folded in 64 bits. The dispatched kernel must therefore agree exactly with the scalar kernel,
+// which accumulates the whole vector into a 64-bit ret_t. Exact equality is the right assertion
+// because both paths convert the same integer total to float once, at the end.
+//
+// All-255 against all-0 is the worst case and puts the L2 total past UINT32_MAX from dimension
+// 66,052, so the multi-chunk dimensions below genuinely exercise the 64-bit fold. The existing
+// UINT8 suites stop at dim 128, which is why the wrap went unseen.
+TEST_F(SpacesTest, UINT8_dispatched_kernels_are_exact_across_the_chunk_boundary) {
+    // Below the boundary, on it, one past it (whose last chunk is a single 64-element block), an
+    // exact multiple of it, and dimensions spanning two and three chunks.
+    for (const size_t dim : {65535UL, 65536UL, 65537UL, 65600UL, 131072UL, 131109UL, 200000UL}) {
+        // The cosine kernels read a float norm from just past the payload, so size for both.
+        std::vector<uint8_t> ones(dim + sizeof(float), 255);
+        std::vector<uint8_t> zeros(dim + sizeof(float), 0);
+        std::vector<uint8_t> ramp(dim + sizeof(float));
+        for (size_t i = 0; i < dim; i++) {
+            ramp[i] = static_cast<uint8_t>(i % 256);
+        }
+        const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
+        memcpy(ones.data() + dim, &norm, sizeof(float));
+        memcpy(ramp.data() + dim, &norm, sizeof(float));
 
-    EXPECT_EQ(L2_UINT8_GetDistFunc(dim, &alignment, nullptr), UINT8_L2Sqr);
-    EXPECT_EQ(IP_UINT8_GetDistFunc(dim, &alignment, nullptr), UINT8_InnerProduct);
-    EXPECT_EQ(Cosine_UINT8_GetDistFunc(dim, &alignment, nullptr), UINT8_Cosine);
+        unsigned char alignment = 0;
+        auto l2 = L2_UINT8_GetDistFunc(dim, &alignment, nullptr);
+        auto ip = IP_UINT8_GetDistFunc(dim, &alignment, nullptr);
+        auto cosine = Cosine_UINT8_GetDistFunc(dim, &alignment, nullptr);
 
-    // And one dimension below the threshold the SIMD kernel is still eligible, so the guard is a
-    // boundary rather than a blanket disable. Only assert this where a uint8 SIMD tier exists.
+        // Worst case: the largest total the byte range allows.
+        EXPECT_EQ(UINT8_L2Sqr(ones.data(), zeros.data(), dim), l2(ones.data(), zeros.data(), dim))
+            << "L2 all-255 vs all-0, dim " << dim;
+        EXPECT_EQ(UINT8_InnerProduct(ones.data(), ones.data(), dim),
+                  ip(ones.data(), ones.data(), dim))
+            << "IP all-255, dim " << dim;
+        EXPECT_EQ(UINT8_Cosine(ones.data(), ones.data(), dim),
+                  cosine(ones.data(), ones.data(), dim))
+            << "Cosine all-255, dim " << dim;
+
+        // A varying pattern, so the residual and chunk seams have to line up element for element
+        // rather than merely produce the right sum of identical values.
+        EXPECT_EQ(UINT8_L2Sqr(ramp.data(), ones.data(), dim), l2(ramp.data(), ones.data(), dim))
+            << "L2 ramp vs all-255, dim " << dim;
+        EXPECT_EQ(UINT8_InnerProduct(ramp.data(), ones.data(), dim),
+                  ip(ramp.data(), ones.data(), dim))
+            << "IP ramp vs all-255, dim " << dim;
+        EXPECT_EQ(UINT8_Cosine(ramp.data(), ones.data(), dim),
+                  cosine(ramp.data(), ones.data(), dim))
+            << "Cosine ramp vs all-255, dim " << dim;
+    }
+}
+
+// The chooser picks the chunked kernel once per index rather than branching per call, so assert the
+// switch actually happens. Both dimensions are a multiple of 64, so they map to the same residual
+// instantiation: any difference in the returned pointer can only come from the chunked family being
+// chosen. Only meaningful where a uint8 SIMD tier exists, since otherwise both are the scalar
+// kernel.
+TEST_F(SpacesTest, UINT8_choosers_switch_to_the_chunked_kernel_past_the_chunk_size) {
     const auto features = getCpuOptimizationFeatures();
     const bool has_uint8_simd =
 #ifdef CPU_FEATURES_ARCH_X86_64
@@ -2243,19 +2287,26 @@ TEST_F(SpacesTest, UINT8_dispatchers_fall_back_to_scalar_past_the_exact_dim) {
 #else
         features.sve2 || features.sve || features.asimddp || features.asimd;
 #endif
-    if (has_uint8_simd) {
-        EXPECT_NE(L2_UINT8_GetDistFunc(spaces::MAX_EXACT_UINT8_SIMD_DIM, &alignment, nullptr),
-                  UINT8_L2Sqr);
+    if (!has_uint8_simd) {
+        GTEST_SKIP() << "no uint8 SIMD tier on this host";
     }
 
-    // The scalar path must actually be exact here, which is the reason the fallback is safe.
-    // All-255 against all-0 gives 255^2 * dim, past UINT32_MAX at this dimension.
-    std::vector<uint8_t> v1(dim + sizeof(float), 255);
-    std::vector<uint8_t> v2(dim + sizeof(float), 0);
-    const double expected_l2 = 255.0 * 255.0 * static_cast<double>(dim);
-    EXPECT_GT(expected_l2, 4294967295.0) << "test would not exercise the 32-bit wrap";
-    const double l2 = static_cast<double>(UINT8_L2Sqr(v1.data(), v2.data(), dim));
-    EXPECT_LT(std::abs(l2 - expected_l2) / expected_l2, 1e-6);
+    constexpr size_t plain = spaces::UINT8_CHUNK_ELEMENTS;       // on the boundary, not chunked
+    constexpr size_t chunked = spaces::UINT8_CHUNK_ELEMENTS * 2; // same residual, chunked
+    unsigned char alignment = 0;
+
+    EXPECT_NE(L2_UINT8_GetDistFunc(plain, &alignment, nullptr),
+              L2_UINT8_GetDistFunc(chunked, &alignment, nullptr));
+    EXPECT_NE(IP_UINT8_GetDistFunc(plain, &alignment, nullptr),
+              IP_UINT8_GetDistFunc(chunked, &alignment, nullptr));
+    EXPECT_NE(Cosine_UINT8_GetDistFunc(plain, &alignment, nullptr),
+              Cosine_UINT8_GetDistFunc(chunked, &alignment, nullptr));
+
+    // And the SIMD kernel is still what gets chosen past the boundary: the chunked variant replaces
+    // the plain one, it does not fall back to scalar.
+    EXPECT_NE(L2_UINT8_GetDistFunc(chunked, &alignment, nullptr), UINT8_L2Sqr);
+    EXPECT_NE(IP_UINT8_GetDistFunc(chunked, &alignment, nullptr), UINT8_InnerProduct);
+    EXPECT_NE(Cosine_UINT8_GetDistFunc(chunked, &alignment, nullptr), UINT8_Cosine);
 }
 
 class SQ8_FP32_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};

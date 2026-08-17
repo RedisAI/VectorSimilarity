@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 
 static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
@@ -31,9 +32,13 @@ static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     // with the corresponding 32-bit integer in src, and store the packed 32-bit results in dst.
 }
 
+// Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
+// the float results per chunk would round each one. always_inline, not merely inline: the chunked
+// wrapper calls this twice, and without the attribute GCC outlines it once it has several callers,
+// which costs the plain wrapper its inlining too.
 template <unsigned char residual> // 0..63
-float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
-                                           size_t dimension) {
+__attribute__((always_inline)) static inline uint32_t
+UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -92,11 +97,45 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVec
         } while (pVect1 < pEnd1);
     }
 
-    // The lanes hold sums of squared byte differences, so the horizontal total is unsigned and
-    // reaches 255*255*dim. Reading it as a signed int wrapped it negative from dimension 33,026.
-    // Still a 32-bit reduce, so this stays exact only to dimension 66,051 (65025 * 66052 exceeds
-    // UINT32_MAX). Unlike the inner product, which returns uint64, widening here would mean
-    // splitting the reduce; left as is because no dimension near that is realistic, but the bound
-    // is real and undocumented bounds are how the signed version survived this long.
-    return static_cast<float>(static_cast<uint32_t>(_mm512_reduce_add_epi32(sum)));
+    // Unsigned. The lanes hold sums of squared byte differences, so the total is unsigned and
+    // reaches 255*255*dim; reading it as a signed int wrapped it negative from dimension 33,026.
+    // Exact for up to spaces::UINT8_CHUNK_ELEMENTS elements, which is what the caller guarantees.
+    return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
+}
+
+template <unsigned char residual> // 0..63
+float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+                                           size_t dimension) {
+    return static_cast<float>(
+        UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1v, pVect2v, dimension));
+}
+
+// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
+// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
+// non-negative, so no individual lane can exceed the chunk total either. That is the whole
+// correctness argument; no lane-distribution reasoning is needed.
+//
+// The first chunk absorbs the residual, leaving the remaining length a whole multiple of 64, so
+// every later chunk satisfies the residual-0 kernel's precondition.
+template <unsigned char residual> // 0..63
+float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
+                                                   size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
+    const size_t first = residual + (chunk - residual) / 64 * 64;
+    uint64_t total = UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1, pVect2, first);
+    pVect1 += first;
+    pVect2 += first;
+    size_t remaining = dimension - first;
+
+    while (remaining) {
+        const size_t step = remaining < chunk ? remaining : chunk;
+        total += UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<0>(pVect1, pVect2, step);
+        pVect1 += step;
+        pVect2 += step;
+        remaining -= step;
+    }
+    return static_cast<float>(total);
 }

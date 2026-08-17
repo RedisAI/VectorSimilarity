@@ -8,6 +8,7 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 #include <arm_neon.h>
 
 __attribute__((always_inline)) static inline void InnerProductOp(uint8x16_t &v1, uint8x16_t &v2,
@@ -34,8 +35,20 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
     pVect2 += 16;
 }
 
+// Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
+// the float results per chunk would round each one.
+//
+// static: the NEON and NEON_DOTPROD headers define this same name with the same signature and
+// different bodies, and both are compiled into an ARM build. At -O2 both are fully inlined today,
+// so no symbol is emitted and nothing collides, but nothing guarantees that: outline either one and
+// both objects define one mangled name, and a NEON call site could reach the DOTPROD body, which
+// needs the dotprod feature. Internal linkage costs nothing and removes the possibility, which
+// matters more now that the chunked wrapper below adds call sites. always_inline for the same
+// reason from the other direction: GCC does outline this once it has several callers, and that also
+// costs the plain wrapper its inlining.
 template <unsigned char residual> // 0..63
-uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+__attribute__((always_inline)) static inline uint32_t
+UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -106,8 +119,8 @@ uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t 
     uint32x4_t total_sum = vaddq_u32(sum0, sum1);
 
     // ADDV, unsigned. The total reaches 255*255*dim, so the previous int32_t receiving this
-    // wrapped negative from dimension 33,027. Exact through spaces::MAX_EXACT_UINT8_SIMD_DIM;
-    // above that the chooser selects the scalar kernel instead of this one.
+    // wrapped negative from dimension 33,027. Exact for up to spaces::UINT8_CHUNK_ELEMENTS
+    // elements, which is what the caller guarantees.
     return vaddvq_u32(total_sum);
 }
 
@@ -119,6 +132,52 @@ float UINT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
 template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
+    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    return 1.0f - ip / (norm_v1 * norm_v2);
+}
+
+// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
+// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
+// non-negative, so no accumulator lane can exceed the chunk total either. That is the whole
+// correctness argument; no reasoning about how work spreads across lanes is needed.
+//
+// The first chunk absorbs the residual, so every later chunk is a whole multiple of 64 and matches
+// the residual-0 kernel's precondition.
+template <unsigned char residual> // 0..63
+static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const void *pVect2v,
+                                                    size_t dimension) {
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
+
+    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
+    const size_t first = residual + (chunk - residual) / 64 * 64;
+    uint64_t total = UINT8_InnerProductImp<residual>(pVect1, pVect2, first);
+    pVect1 += first;
+    pVect2 += first;
+    size_t remaining = dimension - first;
+
+    while (remaining) {
+        const size_t step = remaining < chunk ? remaining : chunk;
+        total += UINT8_InnerProductImp<0>(pVect1, pVect2, step);
+        pVect1 += step;
+        pVect2 += step;
+        remaining -= step;
+    }
+    return total;
+}
+
+template <unsigned char residual> // 0..63
+float UINT8_InnerProductSIMD16_NEON_Chunked(const void *pVect1v, const void *pVect2v,
+                                            size_t dimension) {
+    return 1.0f -
+           static_cast<float>(UINT8_InnerProductChunkedImp<residual>(pVect1v, pVect2v, dimension));
+}
+
+template <unsigned char residual> // 0..63
+float UINT8_CosineSIMD_NEON_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    float ip =
+        static_cast<float>(UINT8_InnerProductChunkedImp<residual>(pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
