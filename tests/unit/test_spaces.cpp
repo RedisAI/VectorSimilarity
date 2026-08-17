@@ -2274,6 +2274,119 @@ TEST_F(SpacesTest, UINT8_dispatched_kernels_are_exact_across_the_chunk_boundary)
     }
 }
 
+// The boundary test above samples dimensions; this sweeps every residual instantiation. 65,600 and
+// 196,608 are both multiples of 64, so base + r has residual r: one chunk past the boundary, then
+// three chunks past it, so the seam between the residual-bearing first chunk and the residual-0
+// chunks after it is exercised for all 64 shapes. A ramp against all-255 is position sensitive, so
+// a seam that double-counts or skips elements changes the total rather than cancelling out, and the
+// total still passes UINT32_MAX (about 32,500 * dim) so the 64-bit fold is under test throughout.
+TEST_F(SpacesTest, UINT8_dispatched_kernels_are_exact_at_every_residual_past_the_chunk_boundary) {
+    constexpr size_t max_dim = 196608 + 63;
+    std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
+    std::vector<uint8_t> ramp(max_dim + sizeof(float));
+    for (size_t i = 0; i < max_dim; i++) {
+        ramp[i] = static_cast<uint8_t>(i % 256);
+    }
+
+    for (const size_t base : {65600UL, 196608UL}) {
+        for (size_t r = 0; r < 64; r++) {
+            const size_t dim = base + r;
+            // The cosine kernels read a float norm from just past the payload, which moves with
+            // dim.
+            const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
+            memcpy(ones.data() + dim, &norm, sizeof(float));
+            memcpy(ramp.data() + dim, &norm, sizeof(float));
+
+            unsigned char alignment = 0;
+            const void *a = ramp.data();
+            const void *b = ones.data();
+
+            EXPECT_EQ(UINT8_L2Sqr(a, b, dim),
+                      L2_UINT8_GetDistFunc(dim, &alignment, nullptr)(a, b, dim))
+                << "L2 at dim " << dim << " (residual " << r << ")";
+            EXPECT_EQ(UINT8_InnerProduct(a, b, dim),
+                      IP_UINT8_GetDistFunc(dim, &alignment, nullptr)(a, b, dim))
+                << "IP at dim " << dim << " (residual " << r << ")";
+            EXPECT_EQ(UINT8_Cosine(a, b, dim),
+                      Cosine_UINT8_GetDistFunc(dim, &alignment, nullptr)(a, b, dim))
+                << "Cosine at dim " << dim << " (residual " << r << ")";
+        }
+    }
+}
+
+// The tests above go through the generic dispatcher, which only ever returns the best tier this
+// host supports, so on an ARM machine with SVE the NEON and NEON_DOTPROD chunked kernels are never
+// executed. Reach every compiled-in tier directly instead. Each tier is still gated on the CPU
+// actually supporting it, since calling an unsupported kernel faults.
+TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
+    // Boundary (plain family), one past it with residuals 0/1/63, two chunks, and a ragged
+    // multiple.
+    const std::vector<size_t> dims = {65536, 65600, 65601, 65663, 131072, 200000};
+    const auto opt = getCpuOptimizationFeatures();
+
+    constexpr size_t max_dim = 200000;
+    std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
+    std::vector<uint8_t> ramp(max_dim + sizeof(float));
+    for (size_t i = 0; i < max_dim; i++) {
+        ramp[i] = static_cast<uint8_t>(i % 256);
+    }
+
+    for (const size_t dim : dims) {
+        const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
+        memcpy(ones.data() + dim, &norm, sizeof(float));
+        memcpy(ramp.data() + dim, &norm, sizeof(float));
+        const void *a = ramp.data();
+        const void *b = ones.data();
+
+        const float want_l2 = UINT8_L2Sqr(a, b, dim);
+        const float want_ip = UINT8_InnerProduct(a, b, dim);
+        const float want_cos = UINT8_Cosine(a, b, dim);
+
+        auto check = [&](const char *tier, dist_func_t<float> l2, dist_func_t<float> ip,
+                         dist_func_t<float> cosine) {
+            EXPECT_EQ(want_l2, l2(a, b, dim)) << "L2 " << tier << " dim " << dim;
+            EXPECT_EQ(want_ip, ip(a, b, dim)) << "IP " << tier << " dim " << dim;
+            EXPECT_EQ(want_cos, cosine(a, b, dim)) << "Cosine " << tier << " dim " << dim;
+        };
+
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
+            check("AVX512F_BW_VL_VNNI", Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim),
+                  Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim),
+                  Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim));
+        }
+#endif
+#ifdef OPT_SVE2
+        if (opt.sve2) {
+            check("SVE2", Choose_UINT8_L2_implementation_SVE2(dim),
+                  Choose_UINT8_IP_implementation_SVE2(dim),
+                  Choose_UINT8_Cosine_implementation_SVE2(dim));
+        }
+#endif
+#ifdef OPT_SVE
+        if (opt.sve) {
+            check("SVE", Choose_UINT8_L2_implementation_SVE(dim),
+                  Choose_UINT8_IP_implementation_SVE(dim),
+                  Choose_UINT8_Cosine_implementation_SVE(dim));
+        }
+#endif
+#ifdef OPT_NEON_DOTPROD
+        if (opt.asimddp) {
+            check("NEON_DOTPROD", Choose_UINT8_L2_implementation_NEON_DOTPROD(dim),
+                  Choose_UINT8_IP_implementation_NEON_DOTPROD(dim),
+                  Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim));
+        }
+#endif
+#ifdef OPT_NEON
+        if (opt.asimd) {
+            check("NEON", Choose_UINT8_L2_implementation_NEON(dim),
+                  Choose_UINT8_IP_implementation_NEON(dim),
+                  Choose_UINT8_Cosine_implementation_NEON(dim));
+        }
+#endif
+    }
+}
+
 // The chooser picks the chunked kernel once per index rather than branching per call, so assert the
 // switch actually happens. Both dimensions are a multiple of 64, so they map to the same residual
 // instantiation: any difference in the returned pointer can only come from the chunked family being
