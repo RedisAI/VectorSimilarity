@@ -126,7 +126,10 @@ float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t di
     total_sum = vaddq_u32(total_sum, sum3);
 
     // Horizontal sum of the 4 elements in the combined sum register
-    int32_t result = vaddvq_u32(total_sum);
+    // Unsigned: the total is a sum of squared byte differences, reaching 255*255*dim. As a signed
+    // int32 this wrapped negative from dimension 33,026. Still 32-bit, so exact only to dimension
+    // 66,051; see the AVX512 variant for why that is left rather than widened.
+    uint32_t result = vaddvq_u32(total_sum);
 
     // Return the L2 squared distance as a float
     return static_cast<float>(result);

@@ -2186,6 +2186,78 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                          testing::Range(32UL, 64 * 2UL + 1));
 
+// The accumulated total is 255 * 255 * dim, which passes INT_MAX from dimension 33,026: the scalar
+// path was signed-overflow UB there, and the AVX512 and NEON L2 reduces read their unsigned total
+// back as a signed int and went negative. All-255 bytes are the worst case and make the expected
+// value an exact integer. The existing UINT8 suites stop at dim 128, which is why this went unseen.
+TEST_F(SpacesTest, UINT8_L2Sqr_and_InnerProduct_are_exact_past_int32) {
+    for (const size_t dim : {33026UL, 40000UL}) {
+        std::vector<uint8_t> v1(dim + sizeof(float), 255);
+        std::vector<uint8_t> v2(dim + sizeof(float), 0);
+
+        // L2 between all-255 and all-0 is 255^2 * dim.
+        const double expected_l2 = 255.0 * 255.0 * static_cast<double>(dim);
+        const float l2 = UINT8_L2Sqr(v1.data(), v2.data(), dim);
+        EXPECT_GT(l2, 0.0f) << "dim " << dim << ": squared distance went negative";
+        EXPECT_LT(std::abs(static_cast<double>(l2) - expected_l2) / expected_l2, 1e-6)
+            << "scalar L2, dim " << dim;
+
+        unsigned char alignment = 0;
+        auto dispatched_l2 = L2_UINT8_GetDistFunc(dim, &alignment, nullptr);
+        const float l2_simd = dispatched_l2(v1.data(), v2.data(), dim);
+        EXPECT_GT(l2_simd, 0.0f) << "dim " << dim << ": SIMD squared distance went negative";
+        EXPECT_LT(std::abs(static_cast<double>(l2_simd) - expected_l2) / expected_l2, 1e-6)
+            << "dispatched L2, dim " << dim;
+
+        // IP between two all-255 vectors is 255^2 * dim, and the kernel returns 1 - IP.
+        const double expected_ip = 1.0 - 255.0 * 255.0 * static_cast<double>(dim);
+        const double ip = static_cast<double>(UINT8_InnerProduct(v1.data(), v1.data(), dim));
+        EXPECT_LT(std::abs(ip - expected_ip) / std::abs(expected_ip), 1e-6)
+            << "scalar IP, dim " << dim;
+
+        auto dispatched_ip = IP_UINT8_GetDistFunc(dim, &alignment, nullptr);
+        const double ip_simd = static_cast<double>(dispatched_ip(v1.data(), v1.data(), dim));
+        EXPECT_LT(std::abs(ip_simd - expected_ip) / std::abs(expected_ip), 1e-6)
+            << "dispatched IP, dim " << dim;
+    }
+}
+
+// Past spaces::MAX_EXACT_UINT8_SIMD_DIM the 32-bit horizontal reduce in every uint8 SIMD kernel
+// wraps, so the choosers must hand back the scalar kernel, which accumulates into a 64-bit ret_t.
+// Asserting the returned pointer is the point of this test: on a host with no uint8 SIMD support
+// the value comparisons below would pass either way, but the pointer identity would not.
+TEST_F(SpacesTest, UINT8_dispatchers_fall_back_to_scalar_past_the_exact_dim) {
+    constexpr size_t dim = spaces::MAX_EXACT_UINT8_SIMD_DIM + 1;
+    unsigned char alignment = 0;
+
+    EXPECT_EQ(L2_UINT8_GetDistFunc(dim, &alignment, nullptr), UINT8_L2Sqr);
+    EXPECT_EQ(IP_UINT8_GetDistFunc(dim, &alignment, nullptr), UINT8_InnerProduct);
+    EXPECT_EQ(Cosine_UINT8_GetDistFunc(dim, &alignment, nullptr), UINT8_Cosine);
+
+    // And one dimension below the threshold the SIMD kernel is still eligible, so the guard is a
+    // boundary rather than a blanket disable. Only assert this where a uint8 SIMD tier exists.
+    const auto features = getCpuOptimizationFeatures();
+    const bool has_uint8_simd =
+#ifdef CPU_FEATURES_ARCH_X86_64
+        features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni;
+#else
+        features.sve2 || features.sve || features.asimddp || features.asimd;
+#endif
+    if (has_uint8_simd) {
+        EXPECT_NE(L2_UINT8_GetDistFunc(spaces::MAX_EXACT_UINT8_SIMD_DIM, &alignment, nullptr),
+                  UINT8_L2Sqr);
+    }
+
+    // The scalar path must actually be exact here, which is the reason the fallback is safe.
+    // All-255 against all-0 gives 255^2 * dim, past UINT32_MAX at this dimension.
+    std::vector<uint8_t> v1(dim + sizeof(float), 255);
+    std::vector<uint8_t> v2(dim + sizeof(float), 0);
+    const double expected_l2 = 255.0 * 255.0 * static_cast<double>(dim);
+    EXPECT_GT(expected_l2, 4294967295.0) << "test would not exercise the 32-bit wrap";
+    const double l2 = static_cast<double>(UINT8_L2Sqr(v1.data(), v2.data(), dim));
+    EXPECT_LT(std::abs(l2 - expected_l2) / expected_l2, 1e-6);
+}
+
 class SQ8_FP32_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_L2SqrTest) {

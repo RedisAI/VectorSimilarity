@@ -238,11 +238,15 @@ float FP16_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension
 }
 
 // Return type for the inner product functions.
-// The type should be able to hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`.
-// To support dimension up to 2^16, we need the difference between the type and int_elem_t to be at
-// least 2 bytes. We assert that in the implementation.
+// The type must hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`. For uint8 that is
+// 65025 * dimension, which overflows a 32-bit int from dimension 33,026 -- the alias was previously
+// `int` for any 1-byte element, so UINT8_InnerProduct executed signed-overflow UB there.
+//
+// Signedness follows the element type, which matters for the wrappers below: UINT8_InnerProduct
+// converts to float before subtracting from 1, so an unsigned accumulator is fine there, while
+// INT8_InnerProduct computes `1 - ip` in integer arithmetic and needs a signed one.
 template <typename int_elem_t>
-using ret_t = std::conditional_t<sizeof(int_elem_t) == 1, int, long long>;
+using ret_t = std::conditional_t<std::is_unsigned_v<int_elem_t>, uint64_t, int64_t>;
 
 template <typename int_elem_t>
 static inline ret_t<int_elem_t>
@@ -273,7 +277,7 @@ float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
 float UINT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-    return 1 - INTEGER_InnerProductImp(pVect1, pVect2, dimension);
+    return 1.0f - static_cast<float>(INTEGER_InnerProductImp(pVect1, pVect2, dimension));
 }
 
 float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {

@@ -24,7 +24,7 @@ inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, siz
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const uint8_t *pVect1 = reinterpret_cast<const uint8_t *>(pVect1v);
     const uint8_t *pVect2 = reinterpret_cast<const uint8_t *>(pVect2v);
 
@@ -82,21 +82,22 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
     sum0 = svadd_u32_x(svptrue_b32(), sum0, sum1);
     sum2 = svadd_u32_x(svptrue_b32(), sum2, sum3);
 
-    // Perform vector addition in parallel and Horizontal sum
-    int32_t sum_all = svaddv_u32(svptrue_b32(), svadd_u32_x(svptrue_b32(), sum0, sum2));
-
-    return sum_all;
+    // svaddv_u32 reduces into a 64-bit scalar; the previous int32_t truncated it, which wrapped
+    // negative from dimension 33,027. Narrowed to uint32_t, which is exact through
+    // spaces::MAX_EXACT_UINT8_SIMD_DIM; above that the chooser selects the scalar kernel.
+    return static_cast<uint32_t>(svaddv_u32(svptrue_b32(), svadd_u32_x(svptrue_b32(), sum0, sum2)));
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1.0f -
-           UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
+    return 1.0f - static_cast<float>(UINT8_InnerProductImp<partial_chunk, additional_steps>(
+                      pVect1v, pVect2v, dimension));
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float ip = UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
+    float ip = static_cast<float>(
+        UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);

@@ -92,5 +92,11 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVec
         } while (pVect1 < pEnd1);
     }
 
-    return _mm512_reduce_add_epi32(sum);
+    // The lanes hold sums of squared byte differences, so the horizontal total is unsigned and
+    // reaches 255*255*dim. Reading it as a signed int wrapped it negative from dimension 33,026.
+    // Still a 32-bit reduce, so this stays exact only to dimension 66,051 (65025 * 66052 exceeds
+    // UINT32_MAX). Unlike the inner product, which returns uint64, widening here would mean
+    // splitting the reduce; left as is because no dimension near that is realistic, but the bound
+    // is real and undocumented bounds are how the signed version survived this long.
+    return static_cast<float>(static_cast<uint32_t>(_mm512_reduce_add_epi32(sum)));
 }

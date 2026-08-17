@@ -31,8 +31,8 @@ static inline void InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i 
 }
 
 template <unsigned char residual> // 0..63
-static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
-                                        size_t dimension) {
+static inline uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v,
+                                             size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -87,19 +87,25 @@ static inline int UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v
         } while (pVect1 < pEnd1);
     }
 
-    return _mm512_reduce_add_epi32(sum);
+    // Unsigned reduce. The lanes are in range individually, but their total reaches 255*255*dim,
+    // which passes INT_MAX from dimension 33,027, so reading the result as a signed int wrapped it.
+    // The intrinsic's adds are vector operations, so the bit pattern is already correct modulo
+    // 2^32 and this cast simply reads it as unsigned. Exact through
+    // spaces::MAX_EXACT_UINT8_SIMD_DIM; above that the chooser selects the scalar kernel instead of
+    // this one.
+    return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
 }
 
 template <unsigned char residual> // 0..63
 float UINT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                                   size_t dimension) {
 
-    return 1 - UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    return 1.0f - static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
 }
 template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
-    float ip = UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    float ip = static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);

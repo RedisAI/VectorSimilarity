@@ -27,7 +27,7 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
 }
 
 template <unsigned char residual> // 0..63
-float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+uint32_t UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -97,20 +97,21 @@ float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dim
 
     uint32x4_t total_sum = vaddq_u32(sum0, sum1);
 
-    int32_t result = vaddvq_u32(total_sum);
-
-    return static_cast<float>(result);
+    // ADDV, unsigned. The total reaches 255*255*dim, so the previous int32_t receiving this
+    // wrapped negative from dimension 33,027. Exact through spaces::MAX_EXACT_UINT8_SIMD_DIM;
+    // above that the chooser selects the scalar kernel instead of this one.
+    return vaddvq_u32(total_sum);
 }
 
 template <unsigned char residual> // 0..63
 float UINT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
-    return 1.0f - UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    return 1.0f - static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
 }
 
 template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float ip = UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
+    float ip = static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
