@@ -13,6 +13,8 @@
 #include <utility>
 #include <random>
 #include <cmath>
+#include <string>
+#include <iostream>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -2342,8 +2344,13 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
         const float want_ip = UINT8_InnerProduct(a, b, dim);
         const float want_cos = UINT8_Cosine(a, b, dim);
 
+        // Track which tiers ran. A tier the CPU lacks is skipped silently, so without this the
+        // whole test would pass vacuously on a host with no uint8 SIMD at all, and the log would
+        // not say which kernels were actually covered.
+        std::vector<std::string> tiers_checked;
         auto check = [&](const char *tier, dist_func_t<float> l2, dist_func_t<float> ip,
                          dist_func_t<float> cosine) {
+            tiers_checked.emplace_back(tier);
             EXPECT_EQ(want_l2, l2(a, b, dim)) << "L2 " << tier << " dim " << dim;
             EXPECT_EQ(want_ip, ip(a, b, dim)) << "IP " << tier << " dim " << dim;
             EXPECT_EQ(want_cos, cosine(a, b, dim)) << "Cosine " << tier << " dim " << dim;
@@ -2384,6 +2391,15 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
                   Choose_UINT8_Cosine_implementation_NEON(dim));
         }
 #endif
+
+        std::string covered;
+        for (const auto &t : tiers_checked) {
+            covered += covered.empty() ? t : ", " + t;
+        }
+        RecordProperty("tiers_at_dim_" + std::to_string(dim), covered);
+        std::cout << "  dim " << dim << " covered tiers: "
+                  << (covered.empty() ? "<none: this host has no uint8 SIMD tier>" : covered)
+                  << std::endl;
     }
 }
 
