@@ -97,8 +97,11 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
 
 template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1 - static_cast<int64_t>(UINT8_InnerProductImp<partial_chunk, additional_steps>(
-                   pVect1v, pVect2v, dimension));
+    // Subtract in integer and convert once: one rounding rather than two, and a signed cast
+    // because the total is unsigned, so 1 - total would wrap. Same form as INT8_InnerProduct.
+    const auto ip = static_cast<int64_t>(
+        UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
+    return static_cast<float>(1 - ip);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
@@ -161,8 +164,9 @@ static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const v
 template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_InnerProductSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v,
                                          size_t dimension) {
-    return 1 - static_cast<int64_t>(UINT8_InnerProductChunkedImp<partial_chunk, additional_steps>(
-                   pVect1v, pVect2v, dimension));
+    const auto ip = static_cast<int64_t>(
+        UINT8_InnerProductChunkedImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
+    return static_cast<float>(1 - ip);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>

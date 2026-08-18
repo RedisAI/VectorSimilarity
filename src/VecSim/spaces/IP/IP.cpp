@@ -280,7 +280,8 @@ float UINT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimens
     // Integer subtract then a single conversion, matching INT8_InnerProduct above. The cast to a
     // signed type is required because ret_t is unsigned for uint8: 1 - an unsigned total would
     // wrap. The SIMD kernels do the same, so their results stay bit-identical to this one.
-    return 1 - static_cast<int64_t>(INTEGER_InnerProductImp(pVect1, pVect2, dimension));
+    const auto ip = static_cast<int64_t>(INTEGER_InnerProductImp(pVect1, pVect2, dimension));
+    return static_cast<float>(1 - ip);
 }
 
 float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {

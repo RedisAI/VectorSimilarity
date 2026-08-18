@@ -126,7 +126,11 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
 
 template <unsigned char residual> // 0..15
 float UINT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return 1 - static_cast<int64_t>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
+    // Subtract in integer and convert once: one rounding rather than two, and a signed cast
+    // because the total is unsigned, so 1 - total would wrap. Same form as INT8_InnerProduct.
+    const auto ip =
+        static_cast<int64_t>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
+    return static_cast<float>(1 - ip);
 }
 
 template <unsigned char residual> // 0..63
@@ -182,8 +186,9 @@ static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const v
 template <unsigned char residual> // 0..63
 float UINT8_InnerProductSIMD16_NEON_Chunked(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
-    return 1 - static_cast<int64_t>(
-                   UINT8_InnerProductChunkedImp<residual>(pVect1v, pVect2v, dimension));
+    const auto ip =
+        static_cast<int64_t>(UINT8_InnerProductChunkedImp<residual>(pVect1v, pVect2v, dimension));
+    return static_cast<float>(1 - ip);
 }
 
 template <unsigned char residual> // 0..63
