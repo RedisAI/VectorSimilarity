@@ -31,6 +31,7 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 
 #include <cassert>
+#include <type_traits>
 #include <cstddef>
 #include <cstdint>
 
@@ -43,6 +44,13 @@ static inline uint64_t uint8_chunked_total(const void *pVect1v, const void *pVec
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     constexpr size_t chunk = UINT8_CHUNK_ELEMENTS;
+    // Enforce the granule precondition at compile time when the adapter can express it, which is
+    // every fixed-width kernel. A plain assert would vanish under NDEBUG, so it is the fallback
+    // only for SVE, whose granule depends on the runtime vector length and cannot be constant.
+    if constexpr (requires { std::integral_constant<size_t, Kernel::granule()>{}; }) {
+        static_assert(Kernel::granule() > 0 && Kernel::granule() <= UINT8_CHUNK_ELEMENTS,
+                      "Kernel::granule() must be in (0, UINT8_CHUNK_ELEMENTS]");
+    }
     const size_t granule = Kernel::granule();
     assert(granule > 0 && granule <= chunk);
     const size_t tail = dimension % granule;

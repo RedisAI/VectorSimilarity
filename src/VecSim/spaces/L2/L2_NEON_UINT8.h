@@ -154,7 +154,7 @@ UINT8_L2SqrFullChunk_NEON(const uint8_t *pVect1, const uint8_t *pVect2, size_t d
 
 template <unsigned char residual> // 0..63
 struct UINT8_L2ChunkKernel_NEON {
-    static size_t granule() { return 64; }
+    static constexpr size_t granule() { return 64; }
     __attribute__((always_inline)) static inline uint32_t
     first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
         return UINT8_L2SqrImp_NEON<residual>(pVect1, pVect2, dimension);

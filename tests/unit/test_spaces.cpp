@@ -14,6 +14,8 @@
 #include <random>
 #include <cmath>
 #include <string>
+#include <set>
+#include <cstdlib>
 #include <iostream>
 
 #include "gtest/gtest.h"
@@ -2326,6 +2328,7 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
     // multiple.
     const std::vector<size_t> dims = {65536, 65600, 65601, 65663, 131072, 200000};
     const auto opt = getCpuOptimizationFeatures();
+    std::set<std::string> all_tiers;
 
     constexpr size_t max_dim = 200000;
     std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
@@ -2398,9 +2401,29 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
             covered += covered.empty() ? t : ", " + t;
         }
         RecordProperty("tiers_at_dim_" + std::to_string(dim), covered);
-        std::cout << "  dim " << dim << " covered tiers: "
-                  << (covered.empty() ? "<none: this host has no uint8 SIMD tier>" : covered)
+        std::cout << "  dim " << dim << " covered tiers: " << (covered.empty() ? "<none>" : covered)
                   << std::endl;
+        for (const auto &t : tiers_checked) {
+            all_tiers.insert(t);
+        }
+    }
+
+    // Order matters. A stated requirement must be able to FAIL, so it is checked before the skip:
+    // hardware-specific CI sets VECSIM_REQUIRE_UINT8_TIER to the tier that job exists to cover
+    // (AVX512F_BW_VL_VNNI, SVE2, SVE, NEON_DOTPROD or NEON), and a mislabeled or silently
+    // downgraded runner then fails instead of quietly skipping.
+    if (const char *required = std::getenv("VECSIM_REQUIRE_UINT8_TIER")) {
+        EXPECT_TRUE(all_tiers.count(required) > 0)
+            << "VECSIM_REQUIRE_UINT8_TIER=" << required << " but that tier was not exercised. "
+            << "This host reached " << all_tiers.size() << " tier(s), so the run proves nothing "
+            << "about " << required;
+        return;
+    }
+
+    // With no requirement stated, a run that exercised no tier proves nothing. Report it skipped
+    // rather than passed, because passing reads as coverage on a host that has none.
+    if (all_tiers.empty()) {
+        GTEST_SKIP() << "no uint8 SIMD tier on this host, no chunked kernel was executed";
     }
 }
 

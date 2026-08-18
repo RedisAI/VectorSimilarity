@@ -132,7 +132,7 @@ UINT8_InnerProductFullChunk_AVX512F_BW_VL_VNNI(const uint8_t *pVect1, const uint
 
 template <unsigned char residual> // 0..63
 struct UINT8_IPChunkKernel_AVX512F_BW_VL_VNNI {
-    static size_t granule() { return 64; }
+    static constexpr size_t granule() { return 64; }
     __attribute__((always_inline)) static inline uint32_t
     first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
         return UINT8_InnerProductImp<residual>(pVect1, pVect2, dimension);
