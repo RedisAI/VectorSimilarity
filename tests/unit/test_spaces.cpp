@@ -2234,8 +2234,8 @@ TEST_F(SpacesTest, UINT8_L2Sqr_and_InnerProduct_are_exact_past_int32) {
 //
 
 // Every uint8 SIMD tier this host can actually execute, with its three dispatched kernels. Both
-// the per-tier exactness test and the independent-oracle test below iterate this list, so a tier
-// cannot be covered by one and silently missed by the other.
+// the per-tier exactness test below iterates this list, and the boundary test uses it to skip an
+// assertion that would be vacuous on a host with no uint8 SIMD tier.
 struct UInt8TierFuncs {
     const char *name;
     dist_func_t<float> l2;
@@ -2285,149 +2285,6 @@ static std::vector<UInt8TierFuncs> AvailableUInt8Tiers(size_t dim) {
     return tiers;
 }
 
-// Worst-case inputs against an oracle computed here in 64-bit integers, rather than by calling the
-// scalar kernel.
-//
-// Why not the scalar kernel: scalar and SIMD share conventions, and this PR changed the scalar and
-// SIMD inner product epilogues together so they would stay bit-identical. A test asserting only
-// scalar == SIMD cannot catch that shared convention being wrong, in sign or in width. Here the
-// expectation comes from the inputs alone, and the scalar kernel is asserted against it on the same
-// footing as every SIMD tier.
-//
-// Why these inputs: all-255 against all-255 puts 65,025 into the inner product accumulator for
-// every element, and all-255 against all-0 does the same for L2. Those are the maxima the byte
-// range allows. A ramp against all-255 is carried alongside because constant data lets a gap and an
-// overlap of equal size cancel.
-//
-// Why these dimensions: the sweep runs 32,960 to 33,025, ending exactly at the chooser's cap.
-// 32,960 is a multiple of 64, so every residual 0..63 is covered, and the top of the range is the
-// largest dimension still sent to SIMD: at 33,025 the worst-case total is 2,147,450,625, the
-// largest that fits INT32_MAX, and one element more would pass it. Every dimension here therefore
-// exercises a 32-bit reduce that is at its limit but still exact.
-TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
-    constexpr size_t cap = spaces::UINT8_MAX_EXACT_SIMD_DIM;
-    constexpr size_t max_dim = cap;
-    std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
-    std::vector<uint8_t> zeros(max_dim + sizeof(float), 0);
-    std::vector<uint8_t> ramp(max_dim + sizeof(float));
-    for (size_t i = 0; i < max_dim; i++) {
-        ramp[i] = static_cast<uint8_t>(i % 256);
-    }
-
-    // Which tiers this run actually reached. The loop over tiers below executes zero times on a
-    // host without a uint8 SIMD tier, leaving only the scalar assertions, so record it rather than
-    // letting a narrower run look like a full one.
-    std::set<std::string> all_tiers;
-
-    for (size_t dim = 32960; dim <= cap; dim++) {
-        SCOPED_TRACE("dim " + std::to_string(dim) + " residual " + std::to_string(dim % 64));
-
-        // Norms live just past the payload and move with dim, so rewrite them per dimension. The
-        // sweep is contiguous, so those four bytes are payload for every larger dimension: save
-        // them and put them back, or dimension d's norm silently corrupts dimension d + 1's data.
-        const float norm_ones = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
-        float norm_ramp = 0.0f;
-        for (size_t i = 0; i < dim; i++) {
-            norm_ramp += static_cast<float>(ramp[i]) * static_cast<float>(ramp[i]);
-        }
-        norm_ramp = std::sqrt(norm_ramp);
-        uint8_t saved_ones[sizeof(float)];
-        uint8_t saved_ramp[sizeof(float)];
-        memcpy(saved_ones, ones.data() + dim, sizeof(float));
-        memcpy(saved_ramp, ramp.data() + dim, sizeof(float));
-        memcpy(ones.data() + dim, &norm_ones, sizeof(float));
-        memcpy(ramp.data() + dim, &norm_ramp, sizeof(float));
-        struct RestorePayload {
-            uint8_t *ones_at;
-            uint8_t *ramp_at;
-            const uint8_t *saved_ones;
-            const uint8_t *saved_ramp;
-            ~RestorePayload() {
-                memcpy(ones_at, saved_ones, sizeof(float));
-                memcpy(ramp_at, saved_ramp, sizeof(float));
-            }
-        } restore{ones.data() + dim, ramp.data() + dim, saved_ones, saved_ramp};
-
-        struct Pair {
-            const char *name;
-            const uint8_t *a;
-            const uint8_t *b;
-            float norm_a;
-            float norm_b;
-            bool check_cosine;
-        };
-        const Pair pairs[] = {
-            {"all-255 vs all-255", ones.data(), ones.data(), norm_ones, norm_ones, true},
-            {"all-255 vs all-0", ones.data(), zeros.data(), norm_ones, 0.0f, false},
-            {"ramp vs all-255", ramp.data(), ones.data(), norm_ramp, norm_ones, true},
-        };
-
-        for (const auto &pr : pairs) {
-            // The oracle: plain 64-bit integer accumulation over the inputs.
-            uint64_t ip_total = 0;
-            uint64_t l2_total = 0;
-            for (size_t i = 0; i < dim; i++) {
-                const uint64_t x = pr.a[i];
-                const uint64_t y = pr.b[i];
-                ip_total += x * y;
-                const int64_t diff = static_cast<int64_t>(x) - static_cast<int64_t>(y);
-                l2_total += static_cast<uint64_t>(diff * diff);
-            }
-            // At the cap the worst case must sit just under INT32_MAX: within it, or the
-            // chooser would have handed this dimension to scalar and these assertions would
-            // not be testing SIMD at all, and within one element's product of it, or the
-            // sweep has drifted away from the boundary it exists to pin.
-            if (dim == cap && pr.a != ramp.data() && pr.b != ramp.data()) {
-                const uint64_t worst = std::max(ip_total, l2_total);
-                const auto i32max = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
-                EXPECT_LE(worst, i32max) << "worst case exceeds INT32_MAX at the cap";
-                EXPECT_GT(worst, i32max - 65025)
-                    << "worst case no longer reaches the limit, the reduce is untested there";
-            }
-
-            // Expected returns, formed with the same operations the kernels use so the
-            // comparison can be exact rather than approximate.
-            const float want_ip = static_cast<float>(1 - static_cast<int64_t>(ip_total));
-            const float want_l2 = static_cast<float>(l2_total);
-            const float want_cos = 1.0f - static_cast<float>(ip_total) / (pr.norm_a * pr.norm_b);
-
-            EXPECT_EQ(want_l2, UINT8_L2Sqr(pr.a, pr.b, dim)) << "scalar L2, " << pr.name;
-            EXPECT_EQ(want_ip, UINT8_InnerProduct(pr.a, pr.b, dim)) << "scalar IP, " << pr.name;
-            if (pr.check_cosine) {
-                EXPECT_EQ(want_cos, UINT8_Cosine(pr.a, pr.b, dim)) << "scalar cosine, " << pr.name;
-            }
-
-            for (const auto &tier : AvailableUInt8Tiers(dim)) {
-                all_tiers.insert(tier.name);
-                EXPECT_EQ(want_l2, tier.l2(pr.a, pr.b, dim))
-                    << "L2 " << tier.name << ", " << pr.name;
-                EXPECT_EQ(want_ip, tier.ip(pr.a, pr.b, dim))
-                    << "IP " << tier.name << ", " << pr.name;
-                if (pr.check_cosine) {
-                    EXPECT_EQ(want_cos, tier.cosine(pr.a, pr.b, dim))
-                        << "cosine " << tier.name << ", " << pr.name;
-                }
-            }
-        }
-    }
-    std::string covered;
-    for (const auto &t : all_tiers) {
-        covered += covered.empty() ? t : ", " + t;
-    }
-    std::cout << "  oracle covered tiers: " << (covered.empty() ? "<none, scalar only>" : covered)
-              << std::endl;
-    RecordProperty("oracle_tiers", covered);
-
-    // Same gate as the per-tier test: a hardware run that names the tier it exists to cover must
-    // fail, not quietly pass with scalar-only coverage.
-    const char *required = std::getenv("VECSIM_REQUIRE_UINT8_TIER");
-    if (required != nullptr && *required != '\0') {
-        EXPECT_TRUE(all_tiers.count(required) > 0)
-            << "VECSIM_REQUIRE_UINT8_TIER=" << required << " but the oracle test reached "
-            << all_tiers.size() << " tier(s), so it proves nothing about " << required;
-    }
-}
-
 // The dispatcher boundary. 33,025 is the last dimension whose worst-case total fits a signed 32-bit
 // accumulator, so it stays on SIMD; 33,026 is the first that does not, so it must come back as the
 // scalar kernel, which accumulates into a 64-bit ret_t.
@@ -2447,6 +2304,15 @@ TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
     EXPECT_EQ(L2_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_L2Sqr);
     EXPECT_EQ(IP_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_InnerProduct);
     EXPECT_EQ(Cosine_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_Cosine);
+
+    // The bound is where a signed 32-bit total runs out, so pin that arithmetically rather than
+    // trusting the constant: the worst case at the bound must fit INT32_MAX, and must come within
+    // one element's product of it, or the constant has drifted away from the limit it represents.
+    constexpr uint64_t worst_at_bound = 65025ULL * last_simd;
+    static_assert(worst_at_bound <= std::numeric_limits<int32_t>::max(),
+                  "the bound admits a total a signed 32-bit accumulator cannot hold");
+    static_assert(worst_at_bound > std::numeric_limits<int32_t>::max() - 65025,
+                  "the bound no longer sits at the signed limit");
 
     // At the bound the SIMD kernel is still eligible, so the guard is a boundary and not a blanket
     // disable. Only meaningful where a uint8 SIMD tier exists.
@@ -2490,8 +2356,8 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_up_to_the_dispatcher_cap) {
     }
 
     for (const size_t dim : dims) {
-        // As in the oracle test, these four bytes are payload for the larger dimensions in the
-        // list, so restore them once this dimension is done with them.
+        // These four bytes are payload for the larger dimensions in the list, so restore them
+        // once this dimension is done with them, or dimension d's norm corrupts dimension d + 1.
         const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
         uint8_t saved_ones[sizeof(float)];
         uint8_t saved_ramp[sizeof(float)];

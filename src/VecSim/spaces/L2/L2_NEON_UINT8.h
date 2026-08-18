@@ -7,11 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_neon.h>
-
-// uint8 L2: Imp returns the raw integer total, the wrappers convert it. Above
-// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 
 __attribute__((always_inline)) static inline void
 L2SquareOp(const uint8x16_t &v1, const uint8x16_t &v2, uint32x4_t &sum) {
@@ -57,8 +53,7 @@ L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1, uint32x4_t 
 }
 
 template <unsigned char residual> // 0..63
-__attribute__((always_inline)) static inline uint32_t
-UINT8_L2SqrImp_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -130,11 +125,9 @@ UINT8_L2SqrImp_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) 
     total_sum = vaddq_u32(total_sum, sum2);
     total_sum = vaddq_u32(total_sum, sum3);
 
-    // Unsigned, and exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser enforces.
-    return vaddvq_u32(total_sum);
-}
+    // Horizontal sum of the 4 elements in the combined sum register
+    int32_t result = vaddvq_u32(total_sum);
 
-template <unsigned char residual> // 0..63
-float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return static_cast<float>(UINT8_L2SqrImp_NEON<residual>(pVect1v, pVect2v, dimension));
+    // Return the L2 squared distance as a float
+    return static_cast<float>(result);
 }

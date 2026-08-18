@@ -7,10 +7,6 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
-
-// uint8 L2: Imp returns the raw integer total, the wrappers convert it. Above
-// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 
 static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
@@ -36,8 +32,8 @@ static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
 }
 
 template <unsigned char residual> // 0..63
-__attribute__((always_inline)) static inline uint32_t
-UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+                                           size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -96,16 +92,5 @@ UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size
         } while (pVect1 < pEnd1);
     }
 
-    // Unsigned, and exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser enforces.
-    // The signed reduce is safe because the chooser caps dim at spaces::UINT8_MAX_EXACT_SIMD_DIM,
-    // keeping the total within INT32_MAX. GCC implements this intrinsic as signed ops ending in a
-    // scalar int + int, which is why that cap is the signed bound rather than UINT32_MAX / 65025.
-    return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
-}
-
-template <unsigned char residual> // 0..63
-float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
-                                           size_t dimension) {
-    return static_cast<float>(
-        UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1v, pVect2v, dimension));
+    return _mm512_reduce_add_epi32(sum);
 }

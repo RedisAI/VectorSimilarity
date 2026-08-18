@@ -7,11 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_sve.h>
-
-// uint8 L2: Imp returns the raw integer total, the wrappers convert it. Above
-// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 
 // Aligned step using svptrue_b8()
 inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
@@ -31,8 +27,7 @@ inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t 
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-__attribute__((always_inline)) static inline uint32_t
-UINT8_L2SqrImp_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const uint8_t *pVect1 = reinterpret_cast<const uint8_t *>(pVect1v);
     const uint8_t *pVect2 = reinterpret_cast<const uint8_t *>(pVect2v);
 
@@ -90,13 +85,5 @@ UINT8_L2SqrImp_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     sum0 = svadd_u32_x(all, sum0, sum1);
     sum2 = svadd_u32_x(all, sum2, sum3);
     svuint32_t sum_all = svadd_u32_x(all, sum0, sum2);
-    // Narrowed from svaddv_u32; exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser
-    // enforces.
-    return static_cast<uint32_t>(svaddv_u32(svptrue_b32(), sum_all));
-}
-
-template <bool partial_chunk, unsigned char additional_steps>
-float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return static_cast<float>(
-        UINT8_L2SqrImp_SVE<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
+    return svaddv_u32(svptrue_b32(), sum_all);
 }

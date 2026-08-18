@@ -31,15 +31,12 @@ public:
         test_utils::populate_uint8_vec(v2, dim, 1234);
 
         // Store the norm in the extra space for cosine calculations
-        // memcpy because v1 + dim is not guaranteed to be 4-byte aligned for arbitrary dim.
-        const float norm1 = test_utils::integral_compute_norm(v1, dim);
-        const float norm2 = test_utils::integral_compute_norm(v2, dim);
-        memcpy(v1 + dim, &norm1, sizeof(norm1));
-        memcpy(v2 + dim, &norm2, sizeof(norm2));
+        *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
+        *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
     }
     void TearDown(const ::benchmark::State &state) {
-        delete[] v1;
-        delete[] v2;
+        delete v1;
+        delete v2;
     }
 };
 

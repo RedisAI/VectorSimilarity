@@ -40,15 +40,7 @@ template <unsigned char residual> // 0..63
 float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dimension) {
     // Compute raw dot product using efficient UINT8 AVX512 VNNI implementation
     // UINT8_InnerProductImp uses _mm512_dpwssd_epi32 for native integer dot product
-    // uint32_t, matching what the helper returns. This kernel is reachable at any dimension: unlike
-    // the plain uint8 choosers, the SQ8_SQ8 choosers have no dimension guard, so the previous int
-    // narrowed and wrapped past 33,025 and the float ones lost exactness past 258.
-    //
-    // Note this calls the helper directly rather than through a uint8 chooser, so it is not
-    // covered by the dispatcher bound that sends large dimensions to the scalar kernel. SQ8 is
-    // capped well below that bound by its uint32 q_sum_squares metadata slot, so the fence
-    // belongs with SQ8 index creation (#1007), not here.
-    const uint32_t dot_product = UINT8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
+    int dot_product = UINT8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
 
     // Get dequantization parameters and precomputed values from the end of vectors
     // Layout: [data (dim)] [min (float)] [delta (float)] [sum (float)]
