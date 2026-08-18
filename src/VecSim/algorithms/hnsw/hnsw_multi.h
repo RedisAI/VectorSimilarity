@@ -125,6 +125,9 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    bool isLabelExists(labelType label) override {
+        return labelLookup.find(label) != labelLookup.end();
+    }
 };
 
 /**
