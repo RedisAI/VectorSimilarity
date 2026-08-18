@@ -19,15 +19,18 @@
 //                                                                         bound
 //   static uint32_t rest(const uint8_t *, const uint8_t *, size_t)     - the out-of-line
 //                                                                         residual-0 kernel
-// Invariants: first <= dimension always, so this is correct at any dimension, including ones
-// below the chunk size (the loop then does not execute). first is congruent to dimension modulo
-// granule, so Kernel::first's residual shape still describes it. remaining is therefore a whole
-// multiple of granule, and so is every step, which is Kernel::rest's precondition. No single call
-// ever gets more than UINT8_CHUNK_ELEMENTS elements, which is what keeps each chunk's 32-bit
-// total exact.
+// Invariants below hold for any Kernel whose granule() is in (0, UINT8_CHUNK_ELEMENTS]; all
+// current adapters return 64 (fixed-width) or 4 * svcntb() (SVE, 64 to 1024 for a 16 to 256 byte
+// vector length), so both stay within that range. Given that precondition: first <= dimension
+// always, so this is correct at any dimension, including ones below the chunk size (the loop
+// then does not execute). first is congruent to dimension modulo granule, so Kernel::first's
+// residual shape still describes it. remaining is therefore a whole multiple of granule, and so
+// is every step, which is Kernel::rest's precondition. No single call ever gets more than
+// UINT8_CHUNK_ELEMENTS elements, which is what keeps each chunk's 32-bit total exact.
 
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
@@ -41,6 +44,7 @@ static inline uint64_t uint8_chunked_total(const void *pVect1v, const void *pVec
 
     constexpr size_t chunk = UINT8_CHUNK_ELEMENTS;
     const size_t granule = Kernel::granule();
+    assert(granule > 0 && granule <= chunk);
     const size_t tail = dimension % granule;
     const size_t first_chunk = tail + ((chunk - tail) / granule) * granule;
     const size_t first = dimension < first_chunk ? dimension : first_chunk;
