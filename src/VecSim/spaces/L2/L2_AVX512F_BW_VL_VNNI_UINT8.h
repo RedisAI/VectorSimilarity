@@ -110,6 +110,15 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVec
         UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1v, pVect2v, dimension));
 }
 
+// One out-of-line copy of the residual-0 kernel, called once per whole chunk. Inlining it into
+// every chunked wrapper cost text for nothing: one call per 65,536 elements is unmeasurable, and
+// keeping it out of line leaves the first chunk's register allocation alone.
+__attribute__((noinline)) static uint32_t
+UINT8_L2SqrFullChunk_AVX512F_BW_VL_VNNI(const uint8_t *pVect1, const uint8_t *pVect2,
+                                        size_t dimension) {
+    return UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<0>(pVect1, pVect2, dimension);
+}
+
 // Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
 // total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
 // non-negative, so no individual lane can exceed the chunk total either. That is the whole
@@ -124,7 +133,11 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const vo
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
-    const size_t first = residual + (chunk - residual) / 64 * 64;
+    // Runtime min rather than the constant alone: with a compile-time trip count GCC split this
+    // loop's accumulator and copied it in and out every 64 elements, measured at 8-9.5% on Ice
+    // Lake. The min also makes this wrapper correct at any dimension, not only past the chunk size.
+    constexpr size_t first_chunk = residual + (chunk - residual) / 64 * 64;
+    const size_t first = dimension < first_chunk ? dimension : first_chunk;
     uint64_t total = UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1, pVect2, first);
     pVect1 += first;
     pVect2 += first;
@@ -132,7 +145,7 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const vo
 
     while (remaining) {
         const size_t step = remaining < chunk ? remaining : chunk;
-        total += UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<0>(pVect1, pVect2, step);
+        total += UINT8_L2SqrFullChunk_AVX512F_BW_VL_VNNI(pVect1, pVect2, step);
         pVect1 += step;
         pVect2 += step;
         remaining -= step;

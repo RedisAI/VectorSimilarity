@@ -277,7 +277,10 @@ float INT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
 float UINT8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-    return 1.0f - static_cast<float>(INTEGER_InnerProductImp(pVect1, pVect2, dimension));
+    // Integer subtract then a single conversion, matching INT8_InnerProduct above. The cast to a
+    // signed type is required because ret_t is unsigned for uint8: 1 - an unsigned total would
+    // wrap. The SIMD kernels do the same, so their results stay bit-identical to this one.
+    return 1 - static_cast<int64_t>(INTEGER_InnerProductImp(pVect1, pVect2, dimension));
 }
 
 float UINT8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension) {
