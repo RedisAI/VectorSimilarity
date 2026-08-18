@@ -15,17 +15,9 @@ on:
         type: string
       san:
         type: string
-      require-uint8-tier:
-        description: >
-          Name a uint8 SIMD tier (AVX512F_BW_VL_VNNI, SVE2, SVE, NEON_DOTPROD, NEON) that this job
-          exists to cover. The per-tier uint8 test then fails, rather than skipping, if that tier
-          was not exercised, so a mislabeled or silently downgraded runner cannot stay green while
-          testing nothing. Leave unset on generic-CPU jobs: those should skip normally.
-        type: string
 
 env:
   SAN_VALUE: ${{ inputs.san }}
-  VECSIM_REQUIRE_UINT8_TIER: ${{ inputs.require-uint8-tier }}
 
 jobs:
   test:

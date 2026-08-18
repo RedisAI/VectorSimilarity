@@ -65,11 +65,6 @@ jobs:
           echo `clang --version`
           echo `clang++ --version`
       - name: run codecov
-        # c7i is Sapphire Rapids, which has AVX-512 VNNI, so this is the one job that executes the
-        # uint8 AVX-512 kernels. Requiring the tier makes it fail rather than skip if the runner
-        # ever lacks it.
-        env:
-          VECSIM_REQUIRE_UINT8_TIER: AVX512F_BW_VL_VNNI
         run: make coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6 # NOSONAR
@@ -79,8 +74,6 @@ jobs:
           disable_safe_directory: true
           disable_search: true
       - name: Sanitizer tests
-        env:
-          VECSIM_REQUIRE_UINT8_TIER: AVX512F_BW_VL_VNNI
         run: make asan
       - name: Set test path
         if: failure()

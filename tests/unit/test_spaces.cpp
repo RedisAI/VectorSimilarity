@@ -2524,7 +2524,11 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
     // hardware-specific CI sets VECSIM_REQUIRE_UINT8_TIER to the tier that job exists to cover
     // (AVX512F_BW_VL_VNNI, SVE2, SVE, NEON_DOTPROD or NEON), and a mislabeled or silently
     // downgraded runner then fails instead of quietly skipping.
-    if (const char *required = std::getenv("VECSIM_REQUIRE_UINT8_TIER")) {
+    // An empty value counts as unset. A CI expression that expands to nothing still puts the
+    // variable in the environment, so getenv returns a pointer to "" rather than nullptr, and
+    // treating that as a requirement fails every job that did not ask for one.
+    const char *required = std::getenv("VECSIM_REQUIRE_UINT8_TIER");
+    if (required != nullptr && *required != '\0') {
         EXPECT_TRUE(all_tiers.count(required) > 0)
             << "VECSIM_REQUIRE_UINT8_TIER=" << required << " but that tier was not exercised. "
             << "This host reached " << all_tiers.size() << " tier(s), so the run proves nothing "
