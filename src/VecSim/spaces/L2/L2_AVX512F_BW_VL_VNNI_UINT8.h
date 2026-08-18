@@ -9,6 +9,16 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 
+// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser picks
+// plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h carries
+// the chunk-size argument.
+//
+// Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
+// several callers.
+// The chunked wrapper's first chunk absorbs the residual and its length is a runtime min against
+// the dimension, because a compile-time trip count cost 8-9.5% in accumulator copies; later chunks
+// share one out-of-line copy of the kernel.
+
 static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
     pVect1 += 64;
@@ -32,10 +42,6 @@ static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     // with the corresponding 32-bit integer in src, and store the packed 32-bit results in dst.
 }
 
-// Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
-// the float results per chunk would round each one. always_inline, not merely inline: the chunked
-// wrapper calls this twice, and without the attribute GCC outlines it once it has several callers,
-// which costs the plain wrapper its inlining too.
 template <unsigned char residual> // 0..63
 __attribute__((always_inline)) static inline uint32_t
 UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -97,9 +103,7 @@ UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size
         } while (pVect1 < pEnd1);
     }
 
-    // Unsigned. The lanes hold sums of squared byte differences, so the total is unsigned and
-    // reaches 255*255*dim; reading it as a signed int wrapped it negative from dimension 33,026.
-    // Exact for up to spaces::UINT8_CHUNK_ELEMENTS elements, which is what the caller guarantees.
+    // Unsigned, and exact for up to spaces::UINT8_CHUNK_ELEMENTS elements.
     return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
 }
 
@@ -110,22 +114,12 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVec
         UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1v, pVect2v, dimension));
 }
 
-// One out-of-line copy of the residual-0 kernel, called once per whole chunk. Inlining it into
-// every chunked wrapper cost text for nothing: one call per 65,536 elements is unmeasurable, and
-// keeping it out of line leaves the first chunk's register allocation alone.
 __attribute__((noinline)) static uint32_t
 UINT8_L2SqrFullChunk_AVX512F_BW_VL_VNNI(const uint8_t *pVect1, const uint8_t *pVect2,
                                         size_t dimension) {
     return UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<0>(pVect1, pVect2, dimension);
 }
 
-// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
-// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
-// non-negative, so no individual lane can exceed the chunk total either. That is the whole
-// correctness argument; no lane-distribution reasoning is needed.
-//
-// The first chunk absorbs the residual, leaving the remaining length a whole multiple of 64, so
-// every later chunk satisfies the residual-0 kernel's precondition.
 template <unsigned char residual> // 0..63
 float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
                                                    size_t dimension) {
@@ -133,9 +127,6 @@ float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const vo
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
-    // Runtime min rather than the constant alone: with a compile-time trip count GCC split this
-    // loop's accumulator and copied it in and out every 64 elements, measured at 8-9.5% on Ice
-    // Lake. The min also makes this wrapper correct at any dimension, not only past the chunk size.
     constexpr size_t first_chunk = residual + (chunk - residual) / 64 * 64;
     const size_t first = dimension < first_chunk ? dimension : first_chunk;
     uint64_t total = UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1, pVect2, first);

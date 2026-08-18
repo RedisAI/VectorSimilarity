@@ -11,6 +11,17 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 #include <arm_sve.h>
 
+// uint8 inner product: Imp returns the raw integer total and the wrappers convert it. The chooser
+// picks plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h
+// carries the chunk-size argument.
+//
+// Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
+// several callers.
+// The chunked wrapper's first chunk keeps this instantiation's residual shape, clamped to the
+// dimension; the vector length is a runtime value so that split is computed rather than folded.
+// Later chunks share one out-of-line copy of the kernel.
+// The inner product subtracts in integer and converts once, signed because the total is not.
+
 inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
                              svuint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
@@ -24,11 +35,6 @@ inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, siz
     offset += chunk; // Move to the next set of uint8 elements
 }
 
-// Split so the chunked wrapper below can fold each chunk's total in 64 bits; summing the float
-// results per chunk would round each one. always_inline because the chunked wrapper calls this
-// twice, and GCC outlines a template once it has several callers, which also costs the plain
-// wrapper its inlining. static keeps each translation unit's copy to itself: SVE.cpp and SVE2.cpp
-// both include this header, and other headers define the same name with different bodies.
 template <bool partial_chunk, unsigned char additional_steps>
 __attribute__((always_inline)) static inline uint32_t
 UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -89,16 +95,12 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
     sum0 = svadd_u32_x(svptrue_b32(), sum0, sum1);
     sum2 = svadd_u32_x(svptrue_b32(), sum2, sum3);
 
-    // svaddv_u32 reduces into a 64-bit scalar; the previous int32_t truncated it, which wrapped
-    // negative from dimension 33,027. Narrowed to uint32_t, which is exact for up to
-    // spaces::UINT8_CHUNK_ELEMENTS elements, and that is what the caller guarantees.
+    // Exact for up to spaces::UINT8_CHUNK_ELEMENTS elements; narrowed from svaddv_u32.
     return static_cast<uint32_t>(svaddv_u32(svptrue_b32(), svadd_u32_x(svptrue_b32(), sum0, sum2)));
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    // Subtract in integer and convert once: one rounding rather than two, and a signed cast
-    // because the total is unsigned, so 1 - total would wrap. Same form as INT8_InnerProduct.
     const auto ip = static_cast<int64_t>(
         UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
     return static_cast<float>(1 - ip);
@@ -113,44 +115,29 @@ float UINT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dime
     return 1.0f - ip / (norm_v1 * norm_v2);
 }
 
-// One out-of-line copy of the residual-0 kernel, called once per whole chunk. Inlining it into
-// every chunked wrapper cost text for nothing: one call per 65,536 elements is unmeasurable, and
-// keeping it out of line leaves the first chunk's register allocation alone.
 __attribute__((noinline)) static uint32_t
 UINT8_InnerProductFullChunk_SVE(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
     return UINT8_InnerProductImp<false, 0>(pVect1, pVect2, dimension);
 }
 
-// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
-// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
-// non-negative, so no accumulator lane can exceed the chunk total either. That is the whole
-// correctness argument; no reasoning about how work spreads across lanes is needed.
 template <bool partial_chunk, unsigned char additional_steps>
 static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const void *pVect2v,
                                                     size_t dimension) {
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
-    // The SVE vector length is a runtime value, so unlike the fixed-width kernels the split is
-    // computed here rather than at compile time. chunk_size matches the kernel's 4-accumulator main
-    // loop, and tail is the part the template parameters describe.
     const size_t chunk_size = 4 * svcntb();
     const size_t tail = dimension % chunk_size;
     const size_t max_step = spaces::UINT8_CHUNK_ELEMENTS / chunk_size * chunk_size;
     const size_t first_chunk =
         tail + (spaces::UINT8_CHUNK_ELEMENTS - tail) / chunk_size * chunk_size;
-    // Clamped so this wrapper is correct at any dimension, not only past the chunk size.
     const size_t first = dimension < first_chunk ? dimension : first_chunk;
 
-    // first keeps this instantiation's own residual shape: it is congruent to dimension modulo
-    // chunk_size, so partial_chunk and additional_steps still describe its tail.
     uint64_t total = UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1, pVect2, first);
     pVect1 += first;
     pVect2 += first;
     size_t remaining = dimension - first;
 
-    // remaining is a whole multiple of chunk_size, and so is every step, which is the <false, 0>
-    // shape: no partial vector and no leftover single steps.
     while (remaining) {
         const size_t step = remaining < max_step ? remaining : max_step;
         total += UINT8_InnerProductFullChunk_SVE(pVect1, pVect2, step);

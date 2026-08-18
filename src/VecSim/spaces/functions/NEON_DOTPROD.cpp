@@ -43,8 +43,6 @@ dist_func_t<float> Choose_INT8_Cosine_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
-// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
-// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_Cosine_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
     if (dim > spaces::UINT8_CHUNK_ELEMENTS) {
@@ -61,8 +59,6 @@ dist_func_t<float> Choose_INT8_L2_implementation_NEON_DOTPROD(size_t dim) {
     return ret_dist_func;
 }
 
-// Dimensions past spaces::UINT8_CHUNK_ELEMENTS use the chunked variant. Chosen here, once per
-// index, so the plain kernel carries no branch and stays exactly what it was.
 dist_func_t<float> Choose_UINT8_L2_implementation_NEON_DOTPROD(size_t dim) {
     dist_func_t<float> ret_dist_func;
     if (dim > spaces::UINT8_CHUNK_ELEMENTS) {

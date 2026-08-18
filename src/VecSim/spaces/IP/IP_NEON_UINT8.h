@@ -11,6 +11,18 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 #include <arm_neon.h>
 
+// uint8 inner product: Imp returns the raw integer total and the wrappers convert it. The chooser
+// picks plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h
+// carries the chunk-size argument.
+//
+// Imp is static because IP_NEON_DOTPROD_UINT8.h defines the same name with a different body and
+// aarch64 gcc 12.3 outlines it, so shared linkage lets a NEON call site execute udot and fault
+// where asimddp is absent. always_inline keeps the plain wrapper's codegen unchanged.
+// The chunked wrapper's first chunk absorbs the residual and its length is a runtime min against
+// the dimension, because a compile-time trip count cost 8-9.5% in accumulator copies; later chunks
+// share one out-of-line copy of the kernel.
+// The inner product subtracts in integer and converts once, signed because the total is not.
+
 __attribute__((always_inline)) static inline void InnerProductOp(uint8x16_t &v1, uint8x16_t &v2,
                                                                  uint32x4_t &sum) {
     // Multiply and accumulate low 8 elements (first half)
@@ -35,17 +47,6 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
     pVect2 += 16;
 }
 
-// Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
-// the float results per chunk would round each one.
-//
-// static and always_inline are both load-bearing here, not hygiene. The NEON and NEON_DOTPROD
-// headers define this same name with the same signature and different bodies, and both are compiled
-// into an ARM build. Whether that collides depends on whether the compiler outlines: aarch64
-// gcc 12.3 at -O2 does, emitting one weak COMDAT symbol per residual from both objects, and the
-// linker keeps a single body for both. Measured on main with that compiler, the plain NEON inner
-// product and cosine wrappers branched into the DOTPROD body and executed udot, which faults on a
-// core that has asimd but not asimddp. x86-64 gcc 13/14 and aarch64 clang 18 inline it and do not
-// collide, which is precisely why this cannot be left to the toolchain.
 template <unsigned char residual> // 0..63
 __attribute__((always_inline)) static inline uint32_t
 UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -118,16 +119,12 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
 
     uint32x4_t total_sum = vaddq_u32(sum0, sum1);
 
-    // ADDV, unsigned. The total reaches 255*255*dim, so the previous int32_t receiving this
-    // wrapped negative from dimension 33,027. Exact for up to spaces::UINT8_CHUNK_ELEMENTS
-    // elements, which is what the caller guarantees.
+    // ADDV, unsigned, and exact for up to spaces::UINT8_CHUNK_ELEMENTS elements.
     return vaddvq_u32(total_sum);
 }
 
 template <unsigned char residual> // 0..15
 float UINT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    // Subtract in integer and convert once: one rounding rather than two, and a signed cast
-    // because the total is unsigned, so 1 - total would wrap. Same form as INT8_InnerProduct.
     const auto ip =
         static_cast<int64_t>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
     return static_cast<float>(1 - ip);
@@ -141,21 +138,11 @@ float UINT8_CosineSIMD_NEON(const void *pVect1v, const void *pVect2v, size_t dim
     return 1.0f - ip / (norm_v1 * norm_v2);
 }
 
-// One out-of-line copy of the residual-0 kernel, called once per whole chunk. Inlining it into
-// every chunked wrapper cost text for nothing: one call per 65,536 elements is unmeasurable, and
-// keeping it out of line leaves the first chunk's register allocation alone.
 __attribute__((noinline)) static uint32_t
 UINT8_InnerProductFullChunk_NEON(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
     return UINT8_InnerProductImp<0>(pVect1, pVect2, dimension);
 }
 
-// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
-// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
-// non-negative, so no accumulator lane can exceed the chunk total either. That is the whole
-// correctness argument; no reasoning about how work spreads across lanes is needed.
-//
-// The first chunk absorbs the residual, so every later chunk is a whole multiple of 64 and matches
-// the residual-0 kernel's precondition.
 template <unsigned char residual> // 0..63
 static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const void *pVect2v,
                                                     size_t dimension) {
@@ -163,9 +150,6 @@ static inline uint64_t UINT8_InnerProductChunkedImp(const void *pVect1v, const v
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
-    // Runtime min rather than the constant alone: with a compile-time trip count GCC split this
-    // loop's accumulator and copied it in and out every 64 elements, measured at 8-9.5% on Ice
-    // Lake. The min also makes this wrapper correct at any dimension, not only past the chunk size.
     constexpr size_t first_chunk = residual + (chunk - residual) / 64 * 64;
     const size_t first = dimension < first_chunk ? dimension : first_chunk;
     uint64_t total = UINT8_InnerProductImp<residual>(pVect1, pVect2, first);

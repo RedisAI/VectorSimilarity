@@ -10,6 +10,16 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
 #include <arm_neon.h>
 
+// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser picks
+// plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h carries
+// the chunk-size argument.
+//
+// Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
+// several callers.
+// The chunked wrapper's first chunk absorbs the residual and its length is a runtime min against
+// the dimension, because a compile-time trip count cost 8-9.5% in accumulator copies; later chunks
+// share one out-of-line copy of the kernel.
+
 __attribute__((always_inline)) static inline void
 L2SquareOp(const uint8x16_t &v1, const uint8x16_t &v2, uint32x4_t &sum) {
     // Explicitly reinterpret the int8 vectors as uint8 for vabdq_u8
@@ -51,10 +61,6 @@ L2SquareStep32(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum1, uint32x4_t 
     pVect2 += 32;
 }
 
-// Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
-// the float results per chunk would round each one. always_inline because the chunked wrapper calls
-// this twice, and GCC outlines a template once it has several callers, which also costs the plain
-// wrapper its inlining.
 template <unsigned char residual> // 0..63
 __attribute__((always_inline)) static inline uint32_t
 UINT8_L2SqrImp_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -127,9 +133,7 @@ UINT8_L2SqrImp_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dim
     total_sum = vaddq_u32(total_sum, sum2);
     total_sum = vaddq_u32(total_sum, sum3);
 
-    // Horizontal sum of the 4 elements in the combined sum register.
-    // Unsigned: the total is a sum of squared byte differences, reaching 255*255*dim. Exact for up
-    // to spaces::UINT8_CHUNK_ELEMENTS elements, which is what the caller guarantees.
+    // Unsigned, and exact for up to spaces::UINT8_CHUNK_ELEMENTS elements.
     return vaddvq_u32(total_sum);
 }
 
@@ -138,21 +142,11 @@ float UINT8_L2SqrSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, s
     return static_cast<float>(UINT8_L2SqrImp_NEON_DOTPROD<residual>(pVect1v, pVect2v, dimension));
 }
 
-// One out-of-line copy of the residual-0 kernel, called once per whole chunk. Inlining it into
-// every chunked wrapper cost text for nothing: one call per 65,536 elements is unmeasurable, and
-// keeping it out of line leaves the first chunk's register allocation alone.
 __attribute__((noinline)) static uint32_t
 UINT8_L2SqrFullChunk_NEON_DOTPROD(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
     return UINT8_L2SqrImp_NEON_DOTPROD<0>(pVect1, pVect2, dimension);
 }
 
-// Chunked variant, selected by the chooser past spaces::UINT8_CHUNK_ELEMENTS. Each chunk's 32-bit
-// total is exact because 65025 * 65536 = 4,261,478,400 <= UINT32_MAX, and every contribution is
-// non-negative, so no accumulator lane can exceed the chunk total either. That is the whole
-// correctness argument; no reasoning about how work spreads across lanes is needed.
-//
-// The first chunk absorbs the residual, so every later chunk is a whole multiple of 64 and matches
-// the residual-0 kernel's precondition.
 template <unsigned char residual> // 0..63
 float UINT8_L2SqrSIMD16_NEON_DOTPROD_Chunked(const void *pVect1v, const void *pVect2v,
                                              size_t dimension) {
@@ -160,9 +154,6 @@ float UINT8_L2SqrSIMD16_NEON_DOTPROD_Chunked(const void *pVect1v, const void *pV
     const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
 
     constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
-    // Runtime min rather than the constant alone: with a compile-time trip count GCC split this
-    // loop's accumulator and copied it in and out every 64 elements, measured at 8-9.5% on Ice
-    // Lake. The min also makes this wrapper correct at any dimension, not only past the chunk size.
     constexpr size_t first_chunk = residual + (chunk - residual) / 64 * 64;
     const size_t first = dimension < first_chunk ? dimension : first_chunk;
     uint64_t total = UINT8_L2SqrImp_NEON_DOTPROD<residual>(pVect1, pVect2, first);
