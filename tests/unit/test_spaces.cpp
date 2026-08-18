@@ -4945,12 +4945,21 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
 // architecture-specific build flag and runs the same way on every host: an x86 box without
 // AVX512 and an ARM box exercise identical logic here, closing the gap where this driver was
 // previously only reachable through whichever hardware-specific kernel happened to be present.
-// The mock kernel below records the (offset, length) of every call it receives and returns 0;
-// the test then checks that the recorded segments exactly tile the vector for a sweep of
-// granules (64, 128, 192, 256 and 1024, standing in for fixed-width kernels and SVE vector
-// lengths of 32/48/64/256 bytes) and dimensions chosen to cover every residue class modulo the
-// granule across one-, two- and three-segment cases, plus the boundary around
-// UINT8_CHUNK_ELEMENTS itself.
+// Real coverage of "did the driver visit every element exactly once, correctly" comes from the
+// value check below: the mock's first()/rest() return the sum of the bytes in the slice they
+// were handed (read from a position-dependent, non-constant fill), and the total the driver
+// returns is compared against an independent, trivially-correct sum over the whole buffer. A
+// skipped element, a double-counted element, or a mis-sized chunk changes that sum; it cannot
+// cancel out the way it could with a constant fill or a return value of 0. The mock also records
+// the (offset, length) of every call; the tiling check on those recordings does not by itself
+// prove the driver visited the right elements (offset is derived from the same length the driver
+// just advanced its pointer by, so "no gap/overlap" holds by construction), but it does guard the
+// coupling between the length passed to the kernel and the distance the pointer is advanced, plus
+// the length-shape properties below (granule multiples, chunk-size cap, congruence). Together the
+// two checks cover a sweep of granules (64, 128, 192, 256 and 1024, standing in for fixed-width
+// kernels and SVE vector lengths of 32/48/64/256 bytes) and dimensions chosen to cover every
+// residue class modulo the granule across one-, two- and three-segment cases, plus the boundary
+// around UINT8_CHUNK_ELEMENTS itself.
 TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
     struct RecordedCall {
         size_t offset;
@@ -4963,14 +4972,17 @@ TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
     struct RecordingKernel {
         static size_t granule() { return granule_ref(); }
 
+        // Returns the sum of the bytes in [v1, v1 + length), not 0: combined with a
+        // position-dependent fill, this makes the driver's return value an end-to-end proof
+        // that every element was visited exactly once, not just a coupling check on lengths.
         static uint32_t first(const uint8_t *v1, const uint8_t *, size_t length) {
             record(v1, length);
-            return 0;
+            return sum_of(v1, length);
         }
 
         static uint32_t rest(const uint8_t *v1, const uint8_t *, size_t length) {
             record(v1, length);
-            return 0;
+            return sum_of(v1, length);
         }
 
         static void reset(const uint8_t *base, size_t granule) {
@@ -4982,6 +4994,14 @@ TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
         static const std::vector<RecordedCall> &calls_seen() { return calls_ref(); }
 
     private:
+        static uint32_t sum_of(const uint8_t *v1, size_t length) {
+            uint32_t sum = 0;
+            for (size_t i = 0; i < length; i++) {
+                sum += v1[i];
+            }
+            return sum;
+        }
+
         static void record(const uint8_t *v1, size_t length) {
             calls_ref().push_back({static_cast<size_t>(v1 - base_ref()), length});
         }
@@ -5004,10 +5024,17 @@ TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
 
     constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
     // Large enough for the biggest dimension exercised below (first segment plus two full
-    // max-size segments, bounded by chunk), with slack. Contents are irrelevant: the mock kernel
-    // never dereferences the pointers, it only computes offsets from them.
+    // max-size segments, bounded by chunk), with slack.
     constexpr size_t buffer_size = 3 * chunk + 4096;
-    std::vector<uint8_t> v1(buffer_size, 0);
+    // v1 is filled with a position-dependent, non-constant pattern so a skipped, duplicated or
+    // mis-sized element changes the summed value rather than cancelling out (a constant fill, or
+    // returning 0 from the mock, would not catch that). Values stay under 251 and dimensions
+    // stay well under 600,000, so the accumulated uint64_t sum cannot overflow. v2 is unused by
+    // the mock kernel and left zero-filled.
+    std::vector<uint8_t> v1(buffer_size);
+    for (size_t i = 0; i < buffer_size; i++) {
+        v1[i] = static_cast<uint8_t>((i * 31 + 7) % 251);
+    }
     std::vector<uint8_t> v2(buffer_size, 0);
 
     const std::array<size_t, 5> granules = {64, 128, 192, 256, 1024};
@@ -5036,10 +5063,20 @@ TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
             RecordingKernel::reset(v1.data(), granule);
             const uint64_t total =
                 spaces::uint8_chunked_total<RecordingKernel>(v1.data(), v2.data(), dimension);
-            (void)total;
 
             SCOPED_TRACE("granule=" + std::to_string(granule) +
                          " dimension=" + std::to_string(dimension));
+
+            // Value check: independently sum the same byte range the driver was asked to cover.
+            // This is what actually proves every element was visited exactly once (a skipped,
+            // duplicated or mis-sized chunk changes this sum); the tiling check below only
+            // proves the length passed to the kernel matches how far the pointer advanced.
+            uint64_t expected = 0;
+            for (size_t i = 0; i < dimension; i++) {
+                expected += v1[i];
+            }
+            EXPECT_EQ(total, expected) << "driver total does not match independent byte sum";
+
             const auto &calls = RecordingKernel::calls_seen();
             ASSERT_FALSE(calls.empty());
 
