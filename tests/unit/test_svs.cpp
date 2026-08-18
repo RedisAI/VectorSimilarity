@@ -3476,6 +3476,28 @@ TEST(SVSTest, ThreadPoolLazyInit) {
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
 }
 
+// SVS delegates label management to the external library, so it does not implement relabelVector
+// and inherits the VecSimIndexInterface default that reports "unsupported". The source label exists
+// and the target is free here, so a 0 return can only come from that default - which is the
+// contract callers must handle, and the reason the interface provides a default instead of a pure
+// virtual.
+TEST(SVSTest, relabelVectorUnsupported) {
+    size_t dim = 4;
+    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams index_params = CreateParams(params);
+    VecSimIndex *index = VecSimIndex_New(&index_params);
+    ASSERT_NE(index, nullptr);
+
+    GenerateAndAddVector<float>(index, dim, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), 0);
+    // The rejected call left the index untouched.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    VecSimIndex_Free(index);
+}
+
 #else // HAVE_SVS
 
 TEST(SVSTest, svs_not_supported) {

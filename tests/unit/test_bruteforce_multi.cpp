@@ -1323,3 +1323,79 @@ TYPED_TEST(BruteForceMultiTest, rangeQuery) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(BruteForceMultiTest, relabelVector) {
+    size_t dim = 4;
+    size_t per_label = 3;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *bf_index = this->CastToBF_Multi(index);
+
+    // Two labels, each holding several vectors.
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, i + 10);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    std::vector<std::vector<TEST_DATA_T>> before;
+    bf_index->getDataByLabel(0, before);
+    ASSERT_EQ(before.size(), per_label);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), 1);
+
+    // Every vector under the label moves together, keeping its data and order, and the untouched
+    // label is unaffected.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    std::vector<std::vector<TEST_DATA_T>> after;
+    bf_index->getDataByLabel(100, after);
+    ASSERT_EQ(after.size(), per_label);
+    for (size_t i = 0; i < per_label; i++) {
+        CompareVectors(before[i].data(), after[i].data(), dim);
+    }
+    std::vector<std::vector<TEST_DATA_T>> other;
+    bf_index->getDataByLabel(1, other);
+    ASSERT_EQ(other.size(), per_label);
+
+    // The old label is gone and the new one is searchable.
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 0, query)));
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 100, query), 0);
+    auto verify_res = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 100); };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceMultiTest, relabelVectorRejects) {
+    size_t dim = 4;
+    size_t per_label = 2;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *bf_index = this->CastToBF_Multi(index);
+
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, i + 10);
+    }
+
+    // A missing source, an occupied target and a no-op move are all rejected. In a multi index an
+    // accepted move onto an occupied label would silently merge two labels' vectors, so this is the
+    // case that matters most here.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 1), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 0), 0);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    for (labelType label : {0, 1}) {
+        std::vector<std::vector<TEST_DATA_T>> data;
+        bf_index->getDataByLabel(label, data);
+        ASSERT_EQ(data.size(), per_label) << "label " << label << " was modified";
+    }
+
+    VecSimIndex_Free(index);
+}
