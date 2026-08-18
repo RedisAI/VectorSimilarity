@@ -11,14 +11,12 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_neon.h>
 
-// uint8 inner product: Imp returns the raw integer total and the wrappers convert it. The chooser
-// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
-// no longer exact; spaces.h carries that bound and its derivation.
+// uint8 inner product: Imp returns the raw integer total, the wrappers convert it. Above
+// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 //
 // Imp is static because IP_NEON_UINT8.h defines the same name with a different body and
 // aarch64 gcc 12.3 outlines it, so shared linkage lets a NEON call site execute udot and fault
 // where asimddp is absent. always_inline keeps the plain wrapper's codegen unchanged.
-// The inner product subtracts in integer and converts once, signed because the total is not.
 
 __attribute__((always_inline)) static inline void InnerProductOp(uint8x16_t &v1, uint8x16_t &v2,
                                                                  uint32x4_t &sum) {
@@ -115,6 +113,7 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
 template <unsigned char residual> // 0..63
 float UINT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
+    // int64_t first: the total is unsigned, so 1 - ip would wrap without the widening cast.
     const auto ip =
         static_cast<int64_t>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
     return static_cast<float>(1 - ip);

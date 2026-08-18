@@ -9,12 +9,8 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 
-// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser
-// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
-// no longer exact; spaces.h carries that bound and its derivation.
-//
-// Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
-// several callers.
+// uint8 L2: Imp returns the raw integer total, the wrappers convert it. Above
+// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 
 static inline void L2SqrStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
     __m512i va = _mm512_loadu_epi8(pVect1); // AVX512BW
@@ -101,12 +97,9 @@ UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size
     }
 
     // Unsigned, and exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser enforces.
-    // Widening unsigned fold rather than _mm512_reduce_add_epi32. GCC implements that intrinsic as
-    // a chain of signed __v8si vector ops ending in a scalar `int + int`, and the worst-case total
-    // at the dispatcher cap is 65025 * 66,051, or 4,294,966,275, which is almost exactly twice
-    // INT32_MAX. The wrapped bits are the ones we want, which is why equality tests pass, but the
-    // addition itself is signed-overflow UB and UBSan flags it. Zero-extending the 16 lanes to 64
-    // bits first keeps every addition in range.
+    // Zero-extend to 64 bits before reducing. GCC implements _mm512_reduce_add_epi32 as signed
+    // ops ending in a scalar int + int, and the total reaches twice INT32_MAX at the cap, so that
+    // intrinsic is signed-overflow UB here even though the wrapped bits are correct.
     const __m512i zero = _mm512_setzero_si512();
     const __m512i widened =
         _mm512_add_epi64(_mm512_unpacklo_epi32(sum, zero), _mm512_unpackhi_epi32(sum, zero));

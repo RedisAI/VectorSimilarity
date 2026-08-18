@@ -59,10 +59,8 @@ static int inline is_little_endian() {
 // exact at any dimension. Derived from the types rather than written as a literal: the bound is a
 // property of uint8 in a uint32 accumulator, and at the limit there are only 1,020 to spare.
 //
-// Note this is the UNSIGNED bound. The total passes INT32_MAX from dimension 33,026, so a signed
-// read of the reduce wraps negative well inside the range kept on SIMD, which is why the kernels
-// return uint32_t and why the AVX512 reduce folds through 64 bits: GCC implements
-// _mm512_reduce_add_epi32 as signed vector ops ending in a scalar int + int.
+// This is the UNSIGNED bound. The total passes INT32_MAX from dimension 33,026, well inside the
+// range kept on SIMD, which is why the kernels return uint32_t.
 static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
     std::numeric_limits<uint32_t>::max() /
     (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());

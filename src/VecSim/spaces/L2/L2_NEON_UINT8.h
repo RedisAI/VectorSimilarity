@@ -10,12 +10,8 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_neon.h>
 
-// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser
-// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
-// no longer exact; spaces.h carries that bound and its derivation.
-//
-// Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
-// several callers.
+// uint8 L2: Imp returns the raw integer total, the wrappers convert it. Above
+// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 
 __attribute__((always_inline)) static inline void
 L2SquareOp(const uint8x16_t &v1, const uint8x16_t &v2, uint32x4_t &sum) {

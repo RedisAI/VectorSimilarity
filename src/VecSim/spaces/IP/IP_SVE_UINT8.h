@@ -11,13 +11,8 @@
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_sve.h>
 
-// uint8 inner product: Imp returns the raw integer total and the wrappers convert it. The chooser
-// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
-// no longer exact; spaces.h carries that bound and its derivation.
-//
-// Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
-// several callers.
-// The inner product subtracts in integer and converts once, signed because the total is not.
+// uint8 inner product: Imp returns the raw integer total, the wrappers convert it. Above
+// spaces::UINT8_MAX_EXACT_SIMD_DIM the chooser hands back the scalar kernel instead.
 
 inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
                              svuint32_t &sum, const size_t chunk) {
@@ -99,6 +94,7 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
 
 template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // int64_t first: the total is unsigned, so 1 - ip would wrap without the widening cast.
     const auto ip = static_cast<int64_t>(
         UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
     return static_cast<float>(1 - ip);
