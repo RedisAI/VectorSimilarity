@@ -524,6 +524,13 @@ dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 
     dist_func_t<float> ret_dist_func = SQ8_SQ8_L2Sqr;
+
+    // The SQ8_SQ8 kernels call the shared UINT8_InnerProductImp directly, so they inherit its
+    // 32-bit total and the same bound, and no uint8 chooser sees these calls. The scalar fallback
+    // accumulates in float: imprecise past 2^24, but well defined, unlike a wrapped signed reduce.
+    if (dim > spaces::UINT8_MAX_EXACT_SIMD_DIM) {
+        return ret_dist_func;
+    }
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64

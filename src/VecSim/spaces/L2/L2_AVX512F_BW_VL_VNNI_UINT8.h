@@ -97,13 +97,10 @@ UINT8_L2SqrImp_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v, size
     }
 
     // Unsigned, and exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser enforces.
-    // Zero-extend to 64 bits before reducing. GCC implements _mm512_reduce_add_epi32 as signed
-    // ops ending in a scalar int + int, and the total reaches twice INT32_MAX at the cap, so that
-    // intrinsic is signed-overflow UB here even though the wrapped bits are correct.
-    const __m512i zero = _mm512_setzero_si512();
-    const __m512i widened =
-        _mm512_add_epi64(_mm512_unpacklo_epi32(sum, zero), _mm512_unpackhi_epi32(sum, zero));
-    return static_cast<uint32_t>(_mm512_reduce_add_epi64(widened));
+    // The signed reduce is safe because the chooser caps dim at spaces::UINT8_MAX_EXACT_SIMD_DIM,
+    // keeping the total within INT32_MAX. GCC implements this intrinsic as signed ops ending in a
+    // scalar int + int, which is why that cap is the signed bound rather than UINT32_MAX / 65025.
+    return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
 }
 
 template <unsigned char residual> // 0..63

@@ -2299,15 +2299,14 @@ static std::vector<UInt8TierFuncs> AvailableUInt8Tiers(size_t dim) {
 // range allows. A ramp against all-255 is carried alongside because constant data lets a gap and an
 // overlap of equal size cancel.
 //
-// Why these dimensions: both bases are multiples of 64, so base + r has residual r and every
-// residual is swept at both. 33,024 + r spans the signed boundary: at 33,025 the total is
-// 2,147,450,625, the largest that fits INT32_MAX, and at 33,026 it is 2,147,515,650, which does
-// not. Both stay on SIMD, so 33,026 is what exercises the widened AVX-512 fold, since GCC's
-// _mm512_reduce_add_epi32 ends in a scalar int + int. 65,984 + r sits just under the dispatcher cap
-// of 66,051, where the total nears 4.29e9 and is still exact in uint32 with about a thousand to
-// spare.
+// Why these dimensions: the sweep runs 32,960 to 33,025, ending exactly at the chooser's cap.
+// 32,960 is a multiple of 64, so every residual 0..63 is covered, and the top of the range is the
+// largest dimension still sent to SIMD: at 33,025 the worst-case total is 2,147,450,625, the
+// largest that fits INT32_MAX, and one element more would pass it. Every dimension here therefore
+// exercises a 32-bit reduce that is at its limit but still exact.
 TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
-    constexpr size_t max_dim = 65984 + 63;
+    constexpr size_t cap = spaces::UINT8_MAX_EXACT_SIMD_DIM;
+    constexpr size_t max_dim = cap;
     std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
     std::vector<uint8_t> zeros(max_dim + sizeof(float), 0);
     std::vector<uint8_t> ramp(max_dim + sizeof(float));
@@ -2320,81 +2319,93 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
     // letting a narrower run look like a full one.
     std::set<std::string> all_tiers;
 
-    for (const size_t base : {33024UL, 65984UL}) {
-        for (size_t r = 0; r < 64; r++) {
-            const size_t dim = base + r;
-            SCOPED_TRACE("dim " + std::to_string(dim) + " residual " + std::to_string(r));
+    for (size_t dim = 32960; dim <= cap; dim++) {
+        SCOPED_TRACE("dim " + std::to_string(dim) + " residual " + std::to_string(dim % 64));
 
-            // Norms live just past the payload and move with dim, so rewrite them per dimension.
-            const float norm_ones = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
-            float norm_ramp = 0.0f;
-            for (size_t i = 0; i < dim; i++) {
-                norm_ramp += static_cast<float>(ramp[i]) * static_cast<float>(ramp[i]);
+        // Norms live just past the payload and move with dim, so rewrite them per dimension. The
+        // sweep is contiguous, so those four bytes are payload for every larger dimension: save
+        // them and put them back, or dimension d's norm silently corrupts dimension d + 1's data.
+        const float norm_ones = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
+        float norm_ramp = 0.0f;
+        for (size_t i = 0; i < dim; i++) {
+            norm_ramp += static_cast<float>(ramp[i]) * static_cast<float>(ramp[i]);
+        }
+        norm_ramp = std::sqrt(norm_ramp);
+        uint8_t saved_ones[sizeof(float)];
+        uint8_t saved_ramp[sizeof(float)];
+        memcpy(saved_ones, ones.data() + dim, sizeof(float));
+        memcpy(saved_ramp, ramp.data() + dim, sizeof(float));
+        memcpy(ones.data() + dim, &norm_ones, sizeof(float));
+        memcpy(ramp.data() + dim, &norm_ramp, sizeof(float));
+        struct RestorePayload {
+            uint8_t *ones_at;
+            uint8_t *ramp_at;
+            const uint8_t *saved_ones;
+            const uint8_t *saved_ramp;
+            ~RestorePayload() {
+                memcpy(ones_at, saved_ones, sizeof(float));
+                memcpy(ramp_at, saved_ramp, sizeof(float));
             }
-            norm_ramp = std::sqrt(norm_ramp);
-            memcpy(ones.data() + dim, &norm_ones, sizeof(float));
-            memcpy(ramp.data() + dim, &norm_ramp, sizeof(float));
+        } restore{ones.data() + dim, ramp.data() + dim, saved_ones, saved_ramp};
 
-            struct Pair {
-                const char *name;
-                const uint8_t *a;
-                const uint8_t *b;
-                float norm_a;
-                float norm_b;
-                bool check_cosine;
-            };
-            const Pair pairs[] = {
-                {"all-255 vs all-255", ones.data(), ones.data(), norm_ones, norm_ones, true},
-                {"all-255 vs all-0", ones.data(), zeros.data(), norm_ones, 0.0f, false},
-                {"ramp vs all-255", ramp.data(), ones.data(), norm_ramp, norm_ones, true},
-            };
+        struct Pair {
+            const char *name;
+            const uint8_t *a;
+            const uint8_t *b;
+            float norm_a;
+            float norm_b;
+            bool check_cosine;
+        };
+        const Pair pairs[] = {
+            {"all-255 vs all-255", ones.data(), ones.data(), norm_ones, norm_ones, true},
+            {"all-255 vs all-0", ones.data(), zeros.data(), norm_ones, 0.0f, false},
+            {"ramp vs all-255", ramp.data(), ones.data(), norm_ramp, norm_ones, true},
+        };
 
-            for (const auto &pr : pairs) {
-                // The oracle: plain 64-bit integer accumulation over the inputs.
-                uint64_t ip_total = 0;
-                uint64_t l2_total = 0;
-                for (size_t i = 0; i < dim; i++) {
-                    const uint64_t x = pr.a[i];
-                    const uint64_t y = pr.b[i];
-                    ip_total += x * y;
-                    const int64_t diff = static_cast<int64_t>(x) - static_cast<int64_t>(y);
-                    l2_total += static_cast<uint64_t>(diff * diff);
-                }
-                // At the upper base the worst case must exceed INT32_MAX, or the signed fold is
-                // untested, and must stay within UINT32_MAX, or the dispatcher would have handed
-                // this dimension to scalar and these assertions would not be testing SIMD at all.
-                if (base == 65984 && pr.a != ramp.data() && pr.b != ramp.data()) {
-                    const uint64_t worst = std::max(ip_total, l2_total);
-                    EXPECT_GT(worst, static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
-                        << "worst case no longer exceeds INT32_MAX, the signed fold is untested";
-                    EXPECT_LE(worst, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
-                        << "worst case exceeds UINT32_MAX, this dimension should not be on SIMD";
-                }
+        for (const auto &pr : pairs) {
+            // The oracle: plain 64-bit integer accumulation over the inputs.
+            uint64_t ip_total = 0;
+            uint64_t l2_total = 0;
+            for (size_t i = 0; i < dim; i++) {
+                const uint64_t x = pr.a[i];
+                const uint64_t y = pr.b[i];
+                ip_total += x * y;
+                const int64_t diff = static_cast<int64_t>(x) - static_cast<int64_t>(y);
+                l2_total += static_cast<uint64_t>(diff * diff);
+            }
+            // At the cap the worst case must sit just under INT32_MAX: within it, or the
+            // chooser would have handed this dimension to scalar and these assertions would
+            // not be testing SIMD at all, and within one element's product of it, or the
+            // sweep has drifted away from the boundary it exists to pin.
+            if (dim == cap && pr.a != ramp.data() && pr.b != ramp.data()) {
+                const uint64_t worst = std::max(ip_total, l2_total);
+                const auto i32max = static_cast<uint64_t>(std::numeric_limits<int32_t>::max());
+                EXPECT_LE(worst, i32max) << "worst case exceeds INT32_MAX at the cap";
+                EXPECT_GT(worst, i32max - 65025)
+                    << "worst case no longer reaches the limit, the reduce is untested there";
+            }
 
-                // Expected returns, formed with the same operations the kernels use so the
-                // comparison can be exact rather than approximate.
-                const float want_ip = static_cast<float>(1 - static_cast<int64_t>(ip_total));
-                const float want_l2 = static_cast<float>(l2_total);
-                const float want_cos =
-                    1.0f - static_cast<float>(ip_total) / (pr.norm_a * pr.norm_b);
+            // Expected returns, formed with the same operations the kernels use so the
+            // comparison can be exact rather than approximate.
+            const float want_ip = static_cast<float>(1 - static_cast<int64_t>(ip_total));
+            const float want_l2 = static_cast<float>(l2_total);
+            const float want_cos = 1.0f - static_cast<float>(ip_total) / (pr.norm_a * pr.norm_b);
 
-                EXPECT_EQ(want_l2, UINT8_L2Sqr(pr.a, pr.b, dim)) << "scalar L2, " << pr.name;
-                EXPECT_EQ(want_ip, UINT8_InnerProduct(pr.a, pr.b, dim)) << "scalar IP, " << pr.name;
+            EXPECT_EQ(want_l2, UINT8_L2Sqr(pr.a, pr.b, dim)) << "scalar L2, " << pr.name;
+            EXPECT_EQ(want_ip, UINT8_InnerProduct(pr.a, pr.b, dim)) << "scalar IP, " << pr.name;
+            if (pr.check_cosine) {
+                EXPECT_EQ(want_cos, UINT8_Cosine(pr.a, pr.b, dim)) << "scalar cosine, " << pr.name;
+            }
+
+            for (const auto &tier : AvailableUInt8Tiers(dim)) {
+                all_tiers.insert(tier.name);
+                EXPECT_EQ(want_l2, tier.l2(pr.a, pr.b, dim))
+                    << "L2 " << tier.name << ", " << pr.name;
+                EXPECT_EQ(want_ip, tier.ip(pr.a, pr.b, dim))
+                    << "IP " << tier.name << ", " << pr.name;
                 if (pr.check_cosine) {
-                    EXPECT_EQ(want_cos, UINT8_Cosine(pr.a, pr.b, dim))
-                        << "scalar cosine, " << pr.name;
-                }
-
-                for (const auto &tier : AvailableUInt8Tiers(dim)) {
-                    all_tiers.insert(tier.name);
-                    EXPECT_EQ(want_l2, tier.l2(pr.a, pr.b, dim))
-                        << "L2 " << tier.name << ", " << pr.name;
-                    EXPECT_EQ(want_ip, tier.ip(pr.a, pr.b, dim))
-                        << "IP " << tier.name << ", " << pr.name;
-                    if (pr.check_cosine) {
-                        EXPECT_EQ(want_cos, tier.cosine(pr.a, pr.b, dim))
-                            << "cosine " << tier.name << ", " << pr.name;
-                    }
+                    EXPECT_EQ(want_cos, tier.cosine(pr.a, pr.b, dim))
+                        << "cosine " << tier.name << ", " << pr.name;
                 }
             }
         }
@@ -2417,8 +2428,8 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
     }
 }
 
-// The dispatcher boundary. 66,051 is the last dimension whose worst-case total fits a uint32
-// accumulator, so it stays on SIMD; 66,052 is the first that does not, so it must come back as the
+// The dispatcher boundary. 33,025 is the last dimension whose worst-case total fits a signed 32-bit
+// accumulator, so it stays on SIMD; 33,026 is the first that does not, so it must come back as the
 // scalar kernel, which accumulates into a 64-bit ret_t.
 //
 // Asserting the returned pointer is the point here. On a host with no uint8 SIMD tier both sides
@@ -2427,8 +2438,8 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
 // vacuous.
 TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
     unsigned char alignment = 0;
-    constexpr size_t last_simd = 66051;
-    constexpr size_t first_scalar = 66052;
+    constexpr size_t last_simd = 33025;
+    constexpr size_t first_scalar = 33026;
     static_assert(last_simd == spaces::UINT8_MAX_EXACT_SIMD_DIM,
                   "this test pins the documented bound, update both together");
 
@@ -2447,12 +2458,12 @@ TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
 
     // And the scalar path must actually be exact where it takes over, which is what makes the
     // fallback safe rather than merely different. All-255 against all-0 gives 65,025 * dim, which
-    // passes UINT32_MAX at this dimension, so a 32-bit accumulator could not carry it.
+    // passes INT32_MAX at this dimension, so a signed 32-bit accumulator could not carry it.
     std::vector<uint8_t> ones(first_scalar + sizeof(float), 255);
     std::vector<uint8_t> zeros(first_scalar + sizeof(float), 0);
     const uint64_t expected_l2 = 65025ULL * first_scalar;
-    EXPECT_GT(expected_l2, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
-        << "this dimension no longer exceeds a 32-bit accumulator, the test has lost its point";
+    EXPECT_GT(expected_l2, static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
+        << "this dimension no longer exceeds a signed 32-bit accumulator, the test lost its point";
     EXPECT_EQ(static_cast<float>(expected_l2),
               UINT8_L2Sqr(ones.data(), zeros.data(), first_scalar));
     const uint64_t expected_ip = 65025ULL * first_scalar;
@@ -2465,13 +2476,13 @@ TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
 // executed. Reach every compiled-in tier directly instead. Each tier is still gated on the CPU
 // actually supporting it, since calling an unsupported kernel faults.
 TEST_F(SpacesTest, UINT8_every_tier_is_exact_up_to_the_dispatcher_cap) {
-    // The signed-reduction boundary, then the dispatcher cap. All of these stay on SIMD: 33,025 is
-    // the last total that fits INT32_MAX, 33,026 the first that does not, 66,051 the last that fits
-    // UINT32_MAX. Residual-bearing dimensions are included at each end.
-    const std::vector<size_t> dims = {33025, 33026, 33087, 66011, 66051};
+    // Up to the dispatcher cap, which is where the chooser stops handing out SIMD. 33,025 is the
+    // last dimension whose worst-case total fits INT32_MAX; the others are residual-bearing
+    // dimensions just below it, so every tier is exercised at its own tail handling too.
+    const std::vector<size_t> dims = {32960, 32993, 33023, 33024, 33025};
     std::set<std::string> all_tiers;
 
-    constexpr size_t max_dim = 66051;
+    constexpr size_t max_dim = 33025;
     std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
     std::vector<uint8_t> ramp(max_dim + sizeof(float));
     for (size_t i = 0; i < max_dim; i++) {
@@ -2479,7 +2490,13 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_up_to_the_dispatcher_cap) {
     }
 
     for (const size_t dim : dims) {
+        // As in the oracle test, these four bytes are payload for the larger dimensions in the
+        // list, so restore them once this dimension is done with them.
         const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
+        uint8_t saved_ones[sizeof(float)];
+        uint8_t saved_ramp[sizeof(float)];
+        memcpy(saved_ones, ones.data() + dim, sizeof(float));
+        memcpy(saved_ramp, ramp.data() + dim, sizeof(float));
         memcpy(ones.data() + dim, &norm, sizeof(float));
         memcpy(ramp.data() + dim, &norm, sizeof(float));
         const void *a = ramp.data();
@@ -2498,6 +2515,8 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_up_to_the_dispatcher_cap) {
             covered += covered.empty() ? tier.name : std::string(", ") + tier.name;
         }
         RecordProperty("tiers_at_dim_" + std::to_string(dim), covered);
+        memcpy(ones.data() + dim, saved_ones, sizeof(float));
+        memcpy(ramp.data() + dim, saved_ramp, sizeof(float));
         std::cout << "  dim " << dim << " covered tiers: " << (covered.empty() ? "<none>" : covered)
                   << std::endl;
     }

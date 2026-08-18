@@ -12,6 +12,7 @@
 #include "space_includes.h"
 
 #include <cassert>
+#include <cstdint>
 #include <limits>
 
 namespace spaces {
@@ -54,15 +55,17 @@ static int inline is_little_endian() {
 }
 
 // The uint8 kernels accumulate products or squared byte differences, so the worst-case total is
-// 255 * 255 * dim. A 32-bit accumulator holds that exactly up to this dimension and no further, so
-// the choosers hand back the scalar kernel above it, which accumulates into a 64-bit ret_t and is
-// exact at any dimension. Derived from the types rather than written as a literal: the bound is a
-// property of uint8 in a uint32 accumulator, and at the limit there are only 1,020 to spare.
+// 255 * 255 * dim. Above this dimension the choosers hand back the scalar kernel, which accumulates
+// into a 64-bit ret_t and is exact at any dimension. Decided once per index, so no distance
+// computation pays for the check.
 //
-// This is the UNSIGNED bound. The total passes INT32_MAX from dimension 33,026, well inside the
-// range kept on SIMD, which is why the kernels return uint32_t.
+// This is the SIGNED 32-bit bound, because GCC implements _mm512_reduce_add_epi32 as signed vector
+// ops ending in a scalar int + int. Reducing through 64 bits instead would extend the exact range
+// to UINT32_MAX / 65025 = 66,051, but it costs measurably at the dimensions that occur in practice
+// and buys only a band no workload reaches. NEON and SVE reduce unsigned and would be exact to
+// 66,051 either way; one bound for every architecture keeps the choosers uniform.
 static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
-    std::numeric_limits<uint32_t>::max() /
+    std::numeric_limits<int32_t>::max() /
     (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
 
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
