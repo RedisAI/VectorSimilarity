@@ -104,7 +104,15 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
     }
 
     // Unsigned, and exact for up to spaces::UINT8_CHUNK_ELEMENTS elements.
-    return static_cast<uint32_t>(_mm512_reduce_add_epi32(sum));
+    // Widening unsigned fold rather than _mm512_reduce_add_epi32. GCC implements that intrinsic as
+    // a chain of signed __v8si vector ops ending in a scalar `int + int`, and a chunk total reaches
+    // 65025 * 65536, about 4.26e9, which is roughly twice INT32_MAX. The wrapped bits are the ones
+    // we want, which is why equality tests pass, but the addition itself is signed-overflow UB and
+    // UBSan flags it. Zero-extending the 16 lanes to 64 bits first keeps every addition in range.
+    const __m512i zero = _mm512_setzero_si512();
+    const __m512i widened =
+        _mm512_add_epi64(_mm512_unpacklo_epi32(sum, zero), _mm512_unpackhi_epi32(sum, zero));
+    return static_cast<uint32_t>(_mm512_reduce_add_epi64(widened));
 }
 
 template <unsigned char residual> // 0..63
