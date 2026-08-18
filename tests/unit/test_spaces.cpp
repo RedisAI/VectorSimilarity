@@ -48,6 +48,7 @@
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
 #include "VecSim/spaces/functions/SVE2.h"
+#include "VecSim/spaces/uint8_chunking.h"
 #include "tests_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -4934,6 +4935,137 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values L2 should match baseline";
+}
+
+// spaces::uint8_chunked_total (uint8_chunking.h) is the chunked-accumulation driver shared by
+// every uint8 SIMD kernel: it tiles a vector into segments no larger than UINT8_CHUNK_ELEMENTS
+// so each segment's 32-bit SIMD partial sum stays exact, then folds the per-segment totals into
+// a 64-bit scalar. The driver only ever calls Kernel::granule/first/rest, so it can be exercised
+// directly with a mock kernel instead of a real SIMD kernel, which means this test needs no
+// architecture-specific build flag and runs the same way on every host: an x86 box without
+// AVX512 and an ARM box exercise identical logic here, closing the gap where this driver was
+// previously only reachable through whichever hardware-specific kernel happened to be present.
+// The mock kernel below records the (offset, length) of every call it receives and returns 0;
+// the test then checks that the recorded segments exactly tile the vector for a sweep of
+// granules (64, 128, 192, 256 and 1024, standing in for fixed-width kernels and SVE vector
+// lengths of 32/48/64/256 bytes) and dimensions chosen to cover every residue class modulo the
+// granule across one-, two- and three-segment cases, plus the boundary around
+// UINT8_CHUNK_ELEMENTS itself.
+TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
+    struct RecordedCall {
+        size_t offset;
+        size_t length;
+    };
+
+    // Local mock adapter matching the Kernel contract from uint8_chunking.h. All state lives in
+    // function-local statics reached through static member functions (a local class cannot have
+    // static data members), so `reset` must be called before each driver invocation.
+    struct RecordingKernel {
+        static size_t granule() { return granule_ref(); }
+
+        static uint32_t first(const uint8_t *v1, const uint8_t *, size_t length) {
+            record(v1, length);
+            return 0;
+        }
+
+        static uint32_t rest(const uint8_t *v1, const uint8_t *, size_t length) {
+            record(v1, length);
+            return 0;
+        }
+
+        static void reset(const uint8_t *base, size_t granule) {
+            calls_ref().clear();
+            base_ref() = base;
+            granule_ref() = granule;
+        }
+
+        static const std::vector<RecordedCall> &calls_seen() { return calls_ref(); }
+
+    private:
+        static void record(const uint8_t *v1, size_t length) {
+            calls_ref().push_back({static_cast<size_t>(v1 - base_ref()), length});
+        }
+
+        static std::vector<RecordedCall> &calls_ref() {
+            static std::vector<RecordedCall> calls;
+            return calls;
+        }
+
+        static const uint8_t *&base_ref() {
+            static const uint8_t *base = nullptr;
+            return base;
+        }
+
+        static size_t &granule_ref() {
+            static size_t granule = 0;
+            return granule;
+        }
+    };
+
+    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
+    // Large enough for the biggest dimension exercised below (first segment plus two full
+    // max-size segments, bounded by chunk), with slack. Contents are irrelevant: the mock kernel
+    // never dereferences the pointers, it only computes offsets from them.
+    constexpr size_t buffer_size = 3 * chunk + 4096;
+    std::vector<uint8_t> v1(buffer_size, 0);
+    std::vector<uint8_t> v2(buffer_size, 0);
+
+    const std::array<size_t, 5> granules = {64, 128, 192, 256, 1024};
+
+    for (size_t granule : granules) {
+        const size_t max_step = (chunk / granule) * granule;
+        auto first_chunk_for = [&](size_t tail) {
+            return tail + ((chunk - tail) / granule) * granule;
+        };
+
+        std::vector<size_t> dims;
+        for (size_t r = 0; r < granule; r++) {
+            const size_t fc = first_chunk_for(r);
+            dims.push_back(r == 0 ? granule : r); // one segment: dim <= chunk
+            dims.push_back(fc + max_step);        // two segments
+            dims.push_back(fc + 2 * max_step);    // three segments
+        }
+        dims.push_back(chunk - 1);
+        dims.push_back(chunk);
+        dims.push_back(chunk + 1);
+
+        for (size_t dimension : dims) {
+            ASSERT_LE(dimension, buffer_size)
+                << "granule=" << granule << " dimension=" << dimension;
+
+            RecordingKernel::reset(v1.data(), granule);
+            const uint64_t total =
+                spaces::uint8_chunked_total<RecordingKernel>(v1.data(), v2.data(), dimension);
+            (void)total;
+
+            SCOPED_TRACE("granule=" + std::to_string(granule) +
+                         " dimension=" + std::to_string(dimension));
+            const auto &calls = RecordingKernel::calls_seen();
+            ASSERT_FALSE(calls.empty());
+
+            size_t sum = 0;
+            size_t expected_offset = 0;
+            for (size_t i = 0; i < calls.size(); i++) {
+                EXPECT_EQ(calls[i].offset, expected_offset)
+                    << "call " << i << " does not tile contiguously (gap or overlap)";
+                EXPECT_LE(calls[i].length, chunk)
+                    << "call " << i << " exceeds UINT8_CHUNK_ELEMENTS";
+                if (i > 0) {
+                    EXPECT_EQ(calls[i].length % granule, 0u)
+                        << "call " << i << " length is not a whole multiple of granule";
+                }
+                sum += calls[i].length;
+                expected_offset += calls[i].length;
+            }
+            EXPECT_EQ(sum, dimension) << "recorded lengths do not sum to the dimension";
+            EXPECT_EQ(calls[0].length % granule, dimension % granule)
+                << "first call length is not congruent to dimension modulo granule";
+            if (dimension <= chunk) {
+                EXPECT_EQ(calls.size(), 1u)
+                    << "dimension at or below UINT8_CHUNK_ELEMENTS should need exactly one call";
+            }
+        }
+    }
 }
 
 // Assert the exact alignment-hint values published by the SQ8 distance dispatchers.
