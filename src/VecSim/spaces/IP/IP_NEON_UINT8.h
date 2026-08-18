@@ -38,14 +38,14 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
 // Returns the raw integer total so the chunked wrapper below can fold chunks in 64 bits; summing
 // the float results per chunk would round each one.
 //
-// static: the NEON and NEON_DOTPROD headers define this same name with the same signature and
-// different bodies, and both are compiled into an ARM build. At -O2 both are fully inlined today,
-// so no symbol is emitted and nothing collides, but nothing guarantees that: outline either one and
-// both objects define one mangled name, and a NEON call site could reach the DOTPROD body, which
-// needs the dotprod feature. Internal linkage costs nothing and removes the possibility, which
-// matters more now that the chunked wrapper below adds call sites. always_inline for the same
-// reason from the other direction: GCC does outline this once it has several callers, and that also
-// costs the plain wrapper its inlining.
+// static and always_inline are both load-bearing here, not hygiene. The NEON and NEON_DOTPROD
+// headers define this same name with the same signature and different bodies, and both are compiled
+// into an ARM build. Whether that collides depends on whether the compiler outlines: aarch64
+// gcc 12.3 at -O2 does, emitting one weak COMDAT symbol per residual from both objects, and the
+// linker keeps a single body for both. Measured on main with that compiler, the plain NEON inner
+// product and cosine wrappers branched into the DOTPROD body and executed udot, which faults on a
+// core that has asimd but not asimddp. x86-64 gcc 13/14 and aarch64 clang 18 inline it and do not
+// collide, which is precisely why this cannot be left to the toolchain.
 template <unsigned char residual> // 0..63
 __attribute__((always_inline)) static inline uint32_t
 UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
