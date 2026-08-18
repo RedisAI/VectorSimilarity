@@ -280,16 +280,14 @@ public:
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapMarkDeletedElement(idType internalId);
     void removeFromGraph(idType internalId);
-    // Remove `id` from `level_data`'s links if it is still there. Unlike `removeLink`, tolerates
-    // its absence - an element that was already isolated (see `isolateDeletedElement`) holds no
-    // links at all, and a repair job running in parallel may have dropped the edge too.
-    static void removeLinkIfExists(ElementLevelData &level_data, idType id) {
+    // Whether `level_data` holds a link to `id`.
+    static bool hasLink(const ElementLevelData &level_data, idType id) {
         for (size_t i = 0; i < level_data.getNumLinks(); i++) {
             if (level_data.getLinkAtPos(i) == id) {
-                level_data.removeLink(id);
-                return;
+                return true;
             }
         }
+        return false;
     }
     // Take a marked-deleted element out of the graph entirely: drop every edge going out of it and
     // every edge coming into it, at every level, keeping the bookkeeping of the other side
@@ -971,8 +969,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
     if (isMarkedDeleted(neighbour_id)) {
         // Just remove the deleted element from the neighbor's neighbors list. No need to repair as
         // this change is temporary, this neighbor is about to be removed from the graph as well.
-        // The link may already be gone if this neighbor was isolated upon completing its repairs.
-        removeLinkIfExists(neighbor_level, element_internal_id);
+        neighbor_level.removeLink(element_internal_id);
         return;
     }
 
@@ -1562,20 +1559,7 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
     // mutually, so it should be sufficient to look at the removed node's incoming edges set
     // alone.
     if (!removed_node_level.removeIncomingUnidirectionalEdgeIfExists(node_id)) {
-        // No record of this edge on the other side. Normally that means the edge was bidirectional,
-        // but it also happens when the removed node was already isolated: `isolateDeletedElement`
-        // clears its incoming edges set together with its links. Check whether it actually points
-        // back before recording the remaining direction.
-        bool points_back = false;
-        for (size_t i = 0; i < removed_node_level.getNumLinks(); i++) {
-            if (removed_node_level.getLinkAtPos(i) == node_id) {
-                points_back = true;
-                break;
-            }
-        }
-        if (points_back) {
-            node_level.newIncomingUnidirectionalEdge(removed_node);
-        }
+        node_level.newIncomingUnidirectionalEdge(removed_node);
     }
 }
 
@@ -1682,49 +1666,65 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
     assert(isMarkedDeleted(internalId) && "Only a marked-deleted element may be isolated");
     auto element = getGraphDataByInternalId(internalId);
     for (size_t level = 0; level <= element->toplevel; level++) {
-        // Take the element's edges at this level, and drop its own side of them right away - from
-        // here on it points to nothing, so a repair job that runs for it later finds no deleted
-        // neighbour and returns without touching it.
+        // Collect the elements this one shares an edge with at this level, in either direction. No
+        // edge can be added to a deleted element, so this set only shrinks from here on (a repair
+        // job of another element may still remove an edge concurrently).
         lockNodeLinks(internalId);
         ElementLevelData &level_data = getElementLevelData(element, level);
-        auto neighbours = level_data.copyLinks();
-        std::vector<idType> incoming_edges(level_data.getIncomingEdges().begin(),
-                                           level_data.getIncomingEdges().end());
-        level_data.setNumLinks(0);
-        for (idType incoming_id : incoming_edges) {
-            level_data.removeIncomingUnidirectionalEdgeIfExists(incoming_id);
-        }
+        auto others = level_data.copyLinks();
+        others.insert(others.end(), level_data.getIncomingEdges().begin(),
+                      level_data.getIncomingEdges().end());
         unlockNodeLinks(internalId);
 
-        // Drop the other side of the outgoing edges: the neighbour either recorded this element as
-        // an incoming unidirectional edge (the expected case, as no element points to it anymore),
-        // or still points back at it - an incoming edge whose repair job never ran, which is
-        // dropped here as well.
-        for (idType neighbour_id : neighbours) {
-            lockNodeLinks(neighbour_id);
-            ElementLevelData &neighbour = getElementLevelData(neighbour_id, level);
-            if (!neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId)) {
-                // No record on the neighbour's side, so it still points back here. Every *live*
-                // element that pointed at this one had a repair job that removed its edge before
-                // this point, so this is an edge between two deleted elements - neither of them
-                // gets a repair job for the other, hence it is dropped here.
-                assert(isMarkedDeleted(neighbour_id) &&
+        for (idType other_id : others) {
+            // Remove both sides of the edge as one atomic step, holding the two elements' locks in
+            // ascending id order (as every other multi-lock site here does, to avoid deadlocks).
+            // Doing it mutually keeps the "an edge is recorded on exactly one side" invariant true
+            // at every observable point, which is what lets `mutuallyRemoveNeighborAtPos` tell a
+            // bidirectional edge from a unidirectional one by the record alone.
+            idType first = std::min(internalId, other_id);
+            idType second = std::max(internalId, other_id);
+            lockNodeLinks(first);
+            lockNodeLinks(second);
+
+            ElementLevelData &other = getElementLevelData(other_id, level);
+            bool points_to_other = hasLink(level_data, other_id);
+            bool other_points_here = hasLink(other, internalId);
+
+            if (points_to_other && other_points_here) {
+                // Bidirectional, so neither side recorded it as an incoming edge - just drop both
+                // links. Only two deleted elements can still point at each other at this stage:
+                // neither of them gets a repair job for the other's deletion.
+                assert(isMarkedDeleted(other_id) &&
                        "a live element still points to a fully repaired deleted element");
-                removeLinkIfExists(neighbour, internalId);
+                level_data.removeLink(other_id);
+                other.removeLink(internalId);
+            } else if (points_to_other) {
+                // Unidirectional out - the other side recorded it as an incoming edge.
+                level_data.removeLink(other_id);
+                bool res = other.removeIncomingUnidirectionalEdgeIfExists(internalId);
+                (void)res;
+                assert(res && "The edge should be in the incoming unidirectional edges");
+            } else if (other_points_here) {
+                // Unidirectional in - recorded as an incoming edge here. As above, at this stage it
+                // can only come from another deleted element.
+                assert(isMarkedDeleted(other_id) &&
+                       "a live element still points to a fully repaired deleted element");
+                other.removeLink(internalId);
+                bool res = level_data.removeIncomingUnidirectionalEdgeIfExists(other_id);
+                (void)res;
+                assert(res && "The edge should be in the incoming unidirectional edges");
             }
-            unlockNodeLinks(neighbour_id);
+            // Else the edge is already gone - a repair job of another element got to it first.
+
+            unlockNodeLinks(second);
+            unlockNodeLinks(first);
         }
 
-        // Same for any incoming edge that is still registered: remove it from its origin's links.
-        for (idType incoming_id : incoming_edges) {
-            // Same here: an incoming edge that survived all the repair jobs comes from another
-            // deleted element.
-            assert(isMarkedDeleted(incoming_id) &&
-                   "a live element still points to a fully repaired deleted element");
-            lockNodeLinks(incoming_id);
-            removeLinkIfExists(getElementLevelData(incoming_id, level), internalId);
-            unlockNodeLinks(incoming_id);
-        }
+        lockNodeLinks(internalId);
+        assert(level_data.getNumLinks() == 0 && level_data.getIncomingEdges().empty() &&
+               "the element should have no edge left at this level");
+        unlockNodeLinks(internalId);
     }
 }
 
