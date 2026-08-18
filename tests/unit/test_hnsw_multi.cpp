@@ -1626,3 +1626,49 @@ TYPED_TEST(HNSWMultiTest, markDelete) {
     VecSimBatchIterator_Free(batchIterator);
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWMultiTest, relabelVectorMulti) {
+    size_t dim = 4;
+    size_t per_label = 3;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    // Two labels, each holding several vectors.
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, i + 10);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    auto ids_before = hnsw_index->getElementIds(0);
+    ASSERT_EQ(ids_before.size(), per_label);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), 1);
+
+    // Every id under the label moves together, keeping its order, and the untouched label is
+    // unaffected.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    ASSERT_FALSE(hnsw_index->isLabelExists(0));
+    ASSERT_EQ(hnsw_index->getElementIds(100), ids_before);
+    for (idType id : ids_before) {
+        ASSERT_EQ(hnsw_index->getExternalLabel(id), 100);
+    }
+    ASSERT_EQ(hnsw_index->getElementIds(1).size(), per_label);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // All `per_label` vectors are still searchable, now reported under the new label.
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+    auto verify_res = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 100); };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    // Moving onto an occupied label is rejected without disturbing either label.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 100, 1), 0);
+    ASSERT_EQ(hnsw_index->getElementIds(100).size(), per_label);
+    ASSERT_EQ(hnsw_index->getElementIds(1).size(), per_label);
+
+    VecSimIndex_Free(index);
+}

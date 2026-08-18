@@ -4532,3 +4532,181 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
               hnsw_index->indexMetaDataCapacity() +
                   tiered_index->frontendIndex->indexMetaDataCapacity());
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorFlatOnly) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // The vector lands in the flat buffer with a pending insert job; nothing is in HNSW yet.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
+    const idType flat_id = tiered_index->labelToInsertJobs.at(7)[0]->id;
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), 1);
+
+    // The flat tier moved, and so did both halves of the job bookkeeping: the map key and the
+    // job's own copy of the label. A half-applied move would make the worker below either index
+    // the vector under the stale label or throw out of `labelToInsertJobs.at`.
+    ASSERT_TRUE(frontend_index->isLabelExists(70));
+    ASSERT_FALSE(frontend_index->isLabelExists(7));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(7), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->label, 70);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->id, flat_id);
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 1);
+
+    // Draining the job must ingest the vector into HNSW under the *new* label and clear the flat
+    // tier, exactly as it would have for a label that was never moved.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_TRUE(hnsw_index->isLabelExists(70));
+    ASSERT_FALSE(hnsw_index->isLabelExists(7));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(70), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 70);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(tiered_index, query, 1, verify_res);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorBothTiers) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Reproduce the ingestion window: `executeInsertJob` inserts into HNSW *before* removing the
+    // vector from the flat buffer, so a label is legitimately live in both tiers at once. Build
+    // that state directly so the test is deterministic.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), 1);
+
+    // Both tiers must move - an implementation treating them as mutually exclusive would leave one
+    // stale copy behind under the old label.
+    ASSERT_TRUE(frontend_index->isLabelExists(70));
+    ASSERT_FALSE(frontend_index->isLabelExists(7));
+    ASSERT_TRUE(hnsw_index->isLabelExists(70));
+    ASSERT_FALSE(hnsw_index->isLabelExists(7));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->label, 70);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorRejects) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Label 1 is ingested into HNSW, label 2 stays pending in the flat buffer. The target of a
+    // relabel must be free in *both* tiers and in the pending-job map.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration();
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 2);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 2, 1), 0);   // target lives in HNSW
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2), 0);   // target lives in flat + jobs
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 1), 0);   // no-op
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), 0); // source absent
+
+    // Every rejection left both tiers and the job map untouched.
+    ASSERT_TRUE(hnsw_index->isLabelExists(1));
+    ASSERT_TRUE(frontend_index->isLabelExists(2));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(2).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(2)[0]->label, 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// Relabel racing against live ingestion by the worker threads. The point of interest is the
+// invariant that `addVector` and `deleteVector` rely on when they reach for
+// `labelToInsertJobs.at(label)` behind an `isLabelExists(label)` guard, and that
+// `executeInsertJob` relies on for `labelToInsertJobs.at(job->label)`: a label present in the flat
+// buffer must be a key in the job map. A relabel that moved the flat entry without re-keying the
+// job map (or without rewriting `job->label`) breaks it, and the resulting `std::out_of_range`
+// would be thrown inside a worker thread - i.e. it would terminate the process, not fail an
+// assertion. So reaching the end of this test at all is the real assertion.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
+    size_t dim = 4;
+    size_t n = 500;
+    // The offset that maps an original label to its relabeled value; kept larger than `n` so the
+    // two ranges cannot overlap and make a relabel fail on an occupied target.
+    const labelType relabel_offset = 10000;
+
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    mock_thread_pool.init_threads();
+
+    // Interleave adds with relabels of already-added labels, so that a relabel can land while a
+    // worker is anywhere in `executeInsertJob` for that same label - including the window where the
+    // vector is live in both tiers at once.
+    size_t relabeled = 0;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        if (i > 0) {
+            relabeled += tiered_index->relabelVector(i - 1, i - 1 + relabel_offset);
+        }
+    }
+    relabeled += tiered_index->relabelVector(n - 1, n - 1 + relabel_offset);
+
+    mock_thread_pool.thread_pool_join();
+
+    // Every relabel targeted a distinct, unoccupied label of a vector known to exist, so all of
+    // them must have been applied - otherwise the label accounting below would pass trivially.
+    ASSERT_EQ(relabeled, n);
+
+    // The index is fully ingested, holds exactly the relabeled range, and none of the original
+    // labels survived anywhere.
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_TRUE(hnsw_index->isLabelExists(i + relabel_offset)) << "missing label " << i;
+        ASSERT_FALSE(hnsw_index->isLabelExists(i)) << "stale label " << i;
+    }
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // Each moved label still resolves to its own vector, so no relabel crossed wires.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T expected[dim];
+        GenerateVector<TEST_DATA_T>(expected, dim, i);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(i + relabel_offset, expected), 0)
+            << "label " << i + relabel_offset << " does not hold its original vector";
+    }
+}
