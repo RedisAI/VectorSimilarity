@@ -8,6 +8,7 @@
  */
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
+#include "VecSim/spaces/uint8_chunking.h"
 #include <arm_sve.h>
 
 // uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser picks
@@ -113,28 +114,20 @@ UINT8_L2SqrFullChunk_SVE(const uint8_t *pVect1, const uint8_t *pVect2, size_t di
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float UINT8_L2SqrSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-
-    const size_t chunk_size = 4 * svcntb();
-    const size_t tail = dimension % chunk_size;
-    const size_t max_step = spaces::UINT8_CHUNK_ELEMENTS / chunk_size * chunk_size;
-    const size_t first_chunk =
-        tail + (spaces::UINT8_CHUNK_ELEMENTS - tail) / chunk_size * chunk_size;
-    const size_t first = dimension < first_chunk ? dimension : first_chunk;
-
-    uint64_t total = UINT8_L2SqrImp_SVE<partial_chunk, additional_steps>(pVect1, pVect2, first);
-    pVect1 += first;
-    pVect2 += first;
-    size_t remaining = dimension - first;
-
-    while (remaining) {
-        const size_t step = remaining < max_step ? remaining : max_step;
-        total += UINT8_L2SqrFullChunk_SVE(pVect1, pVect2, step);
-        pVect1 += step;
-        pVect2 += step;
-        remaining -= step;
+struct UINT8_L2ChunkKernel_SVE {
+    static size_t granule() { return 4 * svcntb(); }
+    __attribute__((always_inline)) static inline uint32_t
+    first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
+        return UINT8_L2SqrImp_SVE<partial_chunk, additional_steps>(pVect1, pVect2, dimension);
     }
-    return static_cast<float>(total);
+    static uint32_t rest(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
+        return UINT8_L2SqrFullChunk_SVE(pVect1, pVect2, dimension);
+    }
+};
+
+template <bool partial_chunk, unsigned char additional_steps>
+float UINT8_L2SqrSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return static_cast<float>(
+        spaces::uint8_chunked_total<UINT8_L2ChunkKernel_SVE<partial_chunk, additional_steps>>(
+            pVect1v, pVect2v, dimension));
 }
