@@ -468,6 +468,13 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
 
     dist_func_t<float> ret_dist_func = UINT8_L2Sqr;
 
+    // Above this dimension the SIMD kernels' 32-bit total is no longer exact, so hand back the
+    // scalar kernel, which accumulates into a 64-bit ret_t. Decided here, once per index, so no
+    // distance computation pays for the check. See spaces.h for how the bound is derived.
+    if (dim > spaces::UINT8_MAX_EXACT_SIMD_DIM) {
+        return ret_dist_func;
+    }
+
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 

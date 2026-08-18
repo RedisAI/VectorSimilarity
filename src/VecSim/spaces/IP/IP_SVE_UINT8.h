@@ -8,19 +8,15 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
-#include "VecSim/spaces/uint8_chunking.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_sve.h>
 
 // uint8 inner product: Imp returns the raw integer total and the wrappers convert it. The chooser
-// picks plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h
-// carries the chunk-size argument.
+// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
+// no longer exact; spaces.h carries that bound and its derivation.
 //
 // Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
 // several callers.
-// The chunked wrapper's first chunk keeps this instantiation's residual shape, clamped to the
-// dimension; the vector length is a runtime value so that split is computed rather than folded.
-// Later chunks share one out-of-line copy of the kernel.
 // The inner product subtracts in integer and converts once, signed because the total is not.
 
 inline void InnerProductStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
@@ -96,7 +92,8 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
     sum0 = svadd_u32_x(svptrue_b32(), sum0, sum1);
     sum2 = svadd_u32_x(svptrue_b32(), sum2, sum3);
 
-    // Exact for up to spaces::UINT8_CHUNK_ELEMENTS elements; narrowed from svaddv_u32.
+    // Narrowed from svaddv_u32; exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser
+    // enforces.
     return static_cast<uint32_t>(svaddv_u32(svptrue_b32(), svadd_u32_x(svptrue_b32(), sum0, sum2)));
 }
 
@@ -111,42 +108,6 @@ template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = static_cast<float>(
         UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
-    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
-    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
-    return 1.0f - ip / (norm_v1 * norm_v2);
-}
-
-__attribute__((noinline)) static uint32_t
-UINT8_InnerProductFullChunk_SVE(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-    return UINT8_InnerProductImp<false, 0>(pVect1, pVect2, dimension);
-}
-
-template <bool partial_chunk, unsigned char additional_steps>
-struct UINT8_IPChunkKernel_SVE {
-    static size_t granule() { return 4 * svcntb(); }
-    __attribute__((always_inline)) static inline uint32_t
-    first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_InnerProductImp<partial_chunk, additional_steps>(pVect1, pVect2, dimension);
-    }
-    static uint32_t rest(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_InnerProductFullChunk_SVE(pVect1, pVect2, dimension);
-    }
-};
-
-template <bool partial_chunk, unsigned char additional_steps>
-float UINT8_InnerProductSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v,
-                                         size_t dimension) {
-    const auto ip = static_cast<int64_t>(
-        spaces::uint8_chunked_total<UINT8_IPChunkKernel_SVE<partial_chunk, additional_steps>>(
-            pVect1v, pVect2v, dimension));
-    return static_cast<float>(1 - ip);
-}
-
-template <bool partial_chunk, unsigned char additional_steps>
-float UINT8_CosineSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    float ip = static_cast<float>(
-        spaces::uint8_chunked_total<UINT8_IPChunkKernel_SVE<partial_chunk, additional_steps>>(
-            pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);

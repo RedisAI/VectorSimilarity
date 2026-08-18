@@ -51,7 +51,6 @@
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
 #include "VecSim/spaces/functions/SVE2.h"
-#include "VecSim/spaces/uint8_chunking.h"
 #include "tests_utils.h"
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -2228,97 +2227,11 @@ TEST_F(SpacesTest, UINT8_L2Sqr_and_InnerProduct_are_exact_past_int32) {
     }
 }
 
-// Past spaces::UINT8_CHUNK_ELEMENTS the uint8 SIMD kernels accumulate in chunks: each chunk's total
-// still fits the 32-bit accumulators (65025 * 65536 <= UINT32_MAX), and the per-chunk totals are
-// folded in 64 bits. The dispatched kernel must therefore agree exactly with the scalar kernel,
-// which accumulates the whole vector into a 64-bit ret_t. Exact equality is the right assertion
-// because both paths convert the same integer total to float once, at the end.
+// Both dimensions sit at or below spaces::UINT8_MAX_EXACT_SIMD_DIM, so both stay on SIMD, and both
+// totals exceed INT32_MAX, which is where reading the reduce as signed used to wrap them negative.
+// The dispatched kernel must agree with the scalar kernel, which accumulates the whole vector into
+// a 64-bit ret_t.
 //
-// All-255 against all-0 is the worst case and puts the L2 total past UINT32_MAX from dimension
-// 66,052, so the multi-chunk dimensions below genuinely exercise the 64-bit fold. The existing
-// UINT8 suites stop at dim 128, which is why the wrap went unseen.
-TEST_F(SpacesTest, UINT8_dispatched_kernels_are_exact_across_the_chunk_boundary) {
-    // Below the boundary, on it, one past it (whose last chunk is a single 64-element block), an
-    // exact multiple of it, and dimensions spanning two and three chunks.
-    for (const size_t dim : {65535UL, 65536UL, 65537UL, 65600UL, 131072UL, 131109UL, 200000UL}) {
-        // The cosine kernels read a float norm from just past the payload, so size for both.
-        std::vector<uint8_t> ones(dim + sizeof(float), 255);
-        std::vector<uint8_t> zeros(dim + sizeof(float), 0);
-        std::vector<uint8_t> ramp(dim + sizeof(float));
-        for (size_t i = 0; i < dim; i++) {
-            ramp[i] = static_cast<uint8_t>(i % 256);
-        }
-        const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
-        memcpy(ones.data() + dim, &norm, sizeof(float));
-        memcpy(ramp.data() + dim, &norm, sizeof(float));
-
-        unsigned char alignment = 0;
-        auto l2 = L2_UINT8_GetDistFunc(dim, &alignment, nullptr);
-        auto ip = IP_UINT8_GetDistFunc(dim, &alignment, nullptr);
-        auto cosine = Cosine_UINT8_GetDistFunc(dim, &alignment, nullptr);
-
-        // Worst case: the largest total the byte range allows.
-        EXPECT_EQ(UINT8_L2Sqr(ones.data(), zeros.data(), dim), l2(ones.data(), zeros.data(), dim))
-            << "L2 all-255 vs all-0, dim " << dim;
-        EXPECT_EQ(UINT8_InnerProduct(ones.data(), ones.data(), dim),
-                  ip(ones.data(), ones.data(), dim))
-            << "IP all-255, dim " << dim;
-        EXPECT_EQ(UINT8_Cosine(ones.data(), ones.data(), dim),
-                  cosine(ones.data(), ones.data(), dim))
-            << "Cosine all-255, dim " << dim;
-
-        // A varying pattern, so the residual and chunk seams have to line up element for element
-        // rather than merely produce the right sum of identical values.
-        EXPECT_EQ(UINT8_L2Sqr(ramp.data(), ones.data(), dim), l2(ramp.data(), ones.data(), dim))
-            << "L2 ramp vs all-255, dim " << dim;
-        EXPECT_EQ(UINT8_InnerProduct(ramp.data(), ones.data(), dim),
-                  ip(ramp.data(), ones.data(), dim))
-            << "IP ramp vs all-255, dim " << dim;
-        EXPECT_EQ(UINT8_Cosine(ramp.data(), ones.data(), dim),
-                  cosine(ramp.data(), ones.data(), dim))
-            << "Cosine ramp vs all-255, dim " << dim;
-    }
-}
-
-// The boundary test above samples dimensions; this sweeps every residual instantiation. 65,600 and
-// 196,608 are both multiples of 64, so base + r has residual r: one chunk past the boundary, then
-// three chunks past it, so the seam between the residual-bearing first chunk and the residual-0
-// chunks after it is exercised for all 64 shapes. A ramp against all-255 is position sensitive, so
-// a seam that double-counts or skips elements changes the total rather than cancelling out, and the
-// total still passes UINT32_MAX (about 32,500 * dim) so the 64-bit fold is under test throughout.
-TEST_F(SpacesTest, UINT8_dispatched_kernels_are_exact_at_every_residual_past_the_chunk_boundary) {
-    constexpr size_t max_dim = 196608 + 63;
-    std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
-    std::vector<uint8_t> ramp(max_dim + sizeof(float));
-    for (size_t i = 0; i < max_dim; i++) {
-        ramp[i] = static_cast<uint8_t>(i % 256);
-    }
-
-    for (const size_t base : {65600UL, 196608UL}) {
-        for (size_t r = 0; r < 64; r++) {
-            const size_t dim = base + r;
-            // The cosine kernels read a float norm from just past the payload, which moves with
-            // dim.
-            const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
-            memcpy(ones.data() + dim, &norm, sizeof(float));
-            memcpy(ramp.data() + dim, &norm, sizeof(float));
-
-            unsigned char alignment = 0;
-            const void *a = ramp.data();
-            const void *b = ones.data();
-
-            EXPECT_EQ(UINT8_L2Sqr(a, b, dim),
-                      L2_UINT8_GetDistFunc(dim, &alignment, nullptr)(a, b, dim))
-                << "L2 at dim " << dim << " (residual " << r << ")";
-            EXPECT_EQ(UINT8_InnerProduct(a, b, dim),
-                      IP_UINT8_GetDistFunc(dim, &alignment, nullptr)(a, b, dim))
-                << "IP at dim " << dim << " (residual " << r << ")";
-            EXPECT_EQ(UINT8_Cosine(a, b, dim),
-                      Cosine_UINT8_GetDistFunc(dim, &alignment, nullptr)(a, b, dim))
-                << "Cosine at dim " << dim << " (residual " << r << ")";
-        }
-    }
-}
 
 // Every uint8 SIMD tier this host can actually execute, with its three dispatched kernels. Both
 // the per-tier exactness test and the independent-oracle test below iterate this list, so a tier
@@ -2375,25 +2288,26 @@ static std::vector<UInt8TierFuncs> AvailableUInt8Tiers(size_t dim) {
 // Worst-case inputs against an oracle computed here in 64-bit integers, rather than by calling the
 // scalar kernel.
 //
-// Why not the scalar kernel: scalar and SIMD share conventions, and this series changed the scalar
-// and SIMD inner product epilogues together so they would stay bit-identical. A test asserting only
-// scalar == SIMD cannot catch that shared convention being wrong, in either sign or width. Here the
-// expectation is derived from the inputs alone, and the scalar kernel is asserted against it on the
-// same footing as every SIMD tier.
+// Why not the scalar kernel: scalar and SIMD share conventions, and this PR changed the scalar and
+// SIMD inner product epilogues together so they would stay bit-identical. A test asserting only
+// scalar == SIMD cannot catch that shared convention being wrong, in sign or in width. Here the
+// expectation comes from the inputs alone, and the scalar kernel is asserted against it on the same
+// footing as every SIMD tier.
 //
 // Why these inputs: all-255 against all-255 puts 65,025 into the inner product accumulator for
 // every element, and all-255 against all-0 does the same for L2. Those are the maxima the byte
-// range allows, so they are where a 32-bit accumulator wraps first. A ramp against all-255 is
-// carried alongside because constant data lets a gap and an overlap of equal size cancel, which a
-// position-dependent pattern does not.
+// range allows. A ramp against all-255 is carried alongside because constant data lets a gap and an
+// overlap of equal size cancel.
 //
-// Why these dimensions: 65024 is 1016*64, so 65024+r has residual r and stays at or below the
-// 65,536 chunk size, exercising the plain kernel right up against the limit of its 32-bit reduce
-// (65025 * 65087 is about 4.23e9, just under UINT32_MAX). 131072 is 2048*64, so 131072+r has
-// residual r and its total is about 8.5e9, which only a 64-bit fold can carry. Every residual is
-// swept at both.
+// Why these dimensions: both bases are multiples of 64, so base + r has residual r and every
+// residual is swept at both. 33,024 + r spans the signed boundary: at 33,025 the total is
+// 2,147,450,625, the largest that fits INT32_MAX, and at 33,026 it is 2,147,515,650, which does
+// not. Both stay on SIMD, so 33,026 is what exercises the widened AVX-512 fold, since GCC's
+// _mm512_reduce_add_epi32 ends in a scalar int + int. 65,984 + r sits just under the dispatcher cap
+// of 66,051, where the total nears 4.29e9 and is still exact in uint32 with about a thousand to
+// spare.
 TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
-    constexpr size_t max_dim = 131072 + 63;
+    constexpr size_t max_dim = 65984 + 63;
     std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
     std::vector<uint8_t> zeros(max_dim + sizeof(float), 0);
     std::vector<uint8_t> ramp(max_dim + sizeof(float));
@@ -2401,7 +2315,12 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
         ramp[i] = static_cast<uint8_t>(i % 256);
     }
 
-    for (const size_t base : {65024UL, 131072UL}) {
+    // Which tiers this run actually reached. The loop over tiers below executes zero times on a
+    // host without a uint8 SIMD tier, leaving only the scalar assertions, so record it rather than
+    // letting a narrower run look like a full one.
+    std::set<std::string> all_tiers;
+
+    for (const size_t base : {33024UL, 65984UL}) {
         for (size_t r = 0; r < 64; r++) {
             const size_t dim = base + r;
             SCOPED_TRACE("dim " + std::to_string(dim) + " residual " + std::to_string(r));
@@ -2441,13 +2360,15 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
                     const int64_t diff = static_cast<int64_t>(x) - static_cast<int64_t>(y);
                     l2_total += static_cast<uint64_t>(diff * diff);
                 }
-                // Both worst-case pairs must exceed a 32-bit accumulator at the multi-chunk base,
-                // otherwise this test would not be reaching the case it exists for.
-                if (base == 131072 && pr.b != ramp.data() && pr.a != ramp.data()) {
-                    EXPECT_GT(std::max(ip_total, l2_total),
-                              static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
-                        << "worst case no longer exceeds UINT32_MAX, test is not exercising the "
-                           "fold";
+                // At the upper base the worst case must exceed INT32_MAX, or the signed fold is
+                // untested, and must stay within UINT32_MAX, or the dispatcher would have handed
+                // this dimension to scalar and these assertions would not be testing SIMD at all.
+                if (base == 65984 && pr.a != ramp.data() && pr.b != ramp.data()) {
+                    const uint64_t worst = std::max(ip_total, l2_total);
+                    EXPECT_GT(worst, static_cast<uint64_t>(std::numeric_limits<int32_t>::max()))
+                        << "worst case no longer exceeds INT32_MAX, the signed fold is untested";
+                    EXPECT_LE(worst, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
+                        << "worst case exceeds UINT32_MAX, this dimension should not be on SIMD";
                 }
 
                 // Expected returns, formed with the same operations the kernels use so the
@@ -2465,6 +2386,7 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
                 }
 
                 for (const auto &tier : AvailableUInt8Tiers(dim)) {
+                    all_tiers.insert(tier.name);
                     EXPECT_EQ(want_l2, tier.l2(pr.a, pr.b, dim))
                         << "L2 " << tier.name << ", " << pr.name;
                     EXPECT_EQ(want_ip, tier.ip(pr.a, pr.b, dim))
@@ -2477,19 +2399,79 @@ TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
             }
         }
     }
+    std::string covered;
+    for (const auto &t : all_tiers) {
+        covered += covered.empty() ? t : ", " + t;
+    }
+    std::cout << "  oracle covered tiers: " << (covered.empty() ? "<none, scalar only>" : covered)
+              << std::endl;
+    RecordProperty("oracle_tiers", covered);
+
+    // Same gate as the per-tier test: a hardware run that names the tier it exists to cover must
+    // fail, not quietly pass with scalar-only coverage.
+    const char *required = std::getenv("VECSIM_REQUIRE_UINT8_TIER");
+    if (required != nullptr && *required != '\0') {
+        EXPECT_TRUE(all_tiers.count(required) > 0)
+            << "VECSIM_REQUIRE_UINT8_TIER=" << required << " but the oracle test reached "
+            << all_tiers.size() << " tier(s), so it proves nothing about " << required;
+    }
+}
+
+// The dispatcher boundary. 66,051 is the last dimension whose worst-case total fits a uint32
+// accumulator, so it stays on SIMD; 66,052 is the first that does not, so it must come back as the
+// scalar kernel, which accumulates into a 64-bit ret_t.
+//
+// Asserting the returned pointer is the point here. On a host with no uint8 SIMD tier both sides
+// are the scalar function and the value comparisons below would pass either way, so the pointer
+// identity is the only thing that distinguishes the two cases, and it is skipped where it would be
+// vacuous.
+TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
+    unsigned char alignment = 0;
+    constexpr size_t last_simd = 66051;
+    constexpr size_t first_scalar = 66052;
+    static_assert(last_simd == spaces::UINT8_MAX_EXACT_SIMD_DIM,
+                  "this test pins the documented bound, update both together");
+
+    // Above the bound, every metric must hand back the scalar kernel by name.
+    EXPECT_EQ(L2_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_L2Sqr);
+    EXPECT_EQ(IP_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_InnerProduct);
+    EXPECT_EQ(Cosine_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_Cosine);
+
+    // At the bound the SIMD kernel is still eligible, so the guard is a boundary and not a blanket
+    // disable. Only meaningful where a uint8 SIMD tier exists.
+    if (!AvailableUInt8Tiers(last_simd).empty()) {
+        EXPECT_NE(L2_UINT8_GetDistFunc(last_simd, &alignment, nullptr), UINT8_L2Sqr);
+        EXPECT_NE(IP_UINT8_GetDistFunc(last_simd, &alignment, nullptr), UINT8_InnerProduct);
+        EXPECT_NE(Cosine_UINT8_GetDistFunc(last_simd, &alignment, nullptr), UINT8_Cosine);
+    }
+
+    // And the scalar path must actually be exact where it takes over, which is what makes the
+    // fallback safe rather than merely different. All-255 against all-0 gives 65,025 * dim, which
+    // passes UINT32_MAX at this dimension, so a 32-bit accumulator could not carry it.
+    std::vector<uint8_t> ones(first_scalar + sizeof(float), 255);
+    std::vector<uint8_t> zeros(first_scalar + sizeof(float), 0);
+    const uint64_t expected_l2 = 65025ULL * first_scalar;
+    EXPECT_GT(expected_l2, static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
+        << "this dimension no longer exceeds a 32-bit accumulator, the test has lost its point";
+    EXPECT_EQ(static_cast<float>(expected_l2),
+              UINT8_L2Sqr(ones.data(), zeros.data(), first_scalar));
+    const uint64_t expected_ip = 65025ULL * first_scalar;
+    EXPECT_EQ(static_cast<float>(1 - static_cast<int64_t>(expected_ip)),
+              UINT8_InnerProduct(ones.data(), ones.data(), first_scalar));
 }
 
 // The tests above go through the generic dispatcher, which only ever returns the best tier this
 // host supports, so on an ARM machine with SVE the NEON and NEON_DOTPROD chunked kernels are never
 // executed. Reach every compiled-in tier directly instead. Each tier is still gated on the CPU
 // actually supporting it, since calling an unsupported kernel faults.
-TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
-    // Boundary (plain family), one past it with residuals 0/1/63, two chunks, and a ragged
-    // multiple.
-    const std::vector<size_t> dims = {65536, 65600, 65601, 65663, 131072, 200000};
+TEST_F(SpacesTest, UINT8_every_tier_is_exact_up_to_the_dispatcher_cap) {
+    // The signed-reduction boundary, then the dispatcher cap. All of these stay on SIMD: 33,025 is
+    // the last total that fits INT32_MAX, 33,026 the first that does not, 66,051 the last that fits
+    // UINT32_MAX. Residual-bearing dimensions are included at each end.
+    const std::vector<size_t> dims = {33025, 33026, 33087, 66011, 66051};
     std::set<std::string> all_tiers;
 
-    constexpr size_t max_dim = 200000;
+    constexpr size_t max_dim = 66051;
     std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
     std::vector<uint8_t> ramp(max_dim + sizeof(float));
     for (size_t i = 0; i < max_dim; i++) {
@@ -2541,41 +2523,6 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
     if (all_tiers.empty()) {
         GTEST_SKIP() << "no uint8 SIMD tier on this host, no chunked kernel was executed";
     }
-}
-
-// The chooser picks the chunked kernel once per index rather than branching per call, so assert the
-// switch actually happens. Both dimensions are a multiple of 64, so they map to the same residual
-// instantiation: any difference in the returned pointer can only come from the chunked family being
-// chosen. Only meaningful where a uint8 SIMD tier exists, since otherwise both are the scalar
-// kernel.
-TEST_F(SpacesTest, UINT8_choosers_switch_to_the_chunked_kernel_past_the_chunk_size) {
-    const auto features = getCpuOptimizationFeatures();
-    const bool has_uint8_simd =
-#ifdef CPU_FEATURES_ARCH_X86_64
-        features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni;
-#else
-        features.sve2 || features.sve || features.asimddp || features.asimd;
-#endif
-    if (!has_uint8_simd) {
-        GTEST_SKIP() << "no uint8 SIMD tier on this host";
-    }
-
-    constexpr size_t plain = spaces::UINT8_CHUNK_ELEMENTS;       // on the boundary, not chunked
-    constexpr size_t chunked = spaces::UINT8_CHUNK_ELEMENTS * 2; // same residual, chunked
-    unsigned char alignment = 0;
-
-    EXPECT_NE(L2_UINT8_GetDistFunc(plain, &alignment, nullptr),
-              L2_UINT8_GetDistFunc(chunked, &alignment, nullptr));
-    EXPECT_NE(IP_UINT8_GetDistFunc(plain, &alignment, nullptr),
-              IP_UINT8_GetDistFunc(chunked, &alignment, nullptr));
-    EXPECT_NE(Cosine_UINT8_GetDistFunc(plain, &alignment, nullptr),
-              Cosine_UINT8_GetDistFunc(chunked, &alignment, nullptr));
-
-    // And the SIMD kernel is still what gets chosen past the boundary: the chunked variant replaces
-    // the plain one, it does not fall back to scalar.
-    EXPECT_NE(L2_UINT8_GetDistFunc(chunked, &alignment, nullptr), UINT8_L2Sqr);
-    EXPECT_NE(IP_UINT8_GetDistFunc(chunked, &alignment, nullptr), UINT8_InnerProduct);
-    EXPECT_NE(Cosine_UINT8_GetDistFunc(chunked, &alignment, nullptr), UINT8_Cosine);
 }
 
 class SQ8_FP32_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
@@ -5074,174 +5021,6 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values L2 should match baseline";
-}
-
-// spaces::uint8_chunked_total (uint8_chunking.h) is the chunked-accumulation driver shared by
-// every uint8 SIMD kernel: it tiles a vector into segments no larger than UINT8_CHUNK_ELEMENTS
-// so each segment's 32-bit SIMD partial sum stays exact, then folds the per-segment totals into
-// a 64-bit scalar. The driver only ever calls Kernel::granule/first/rest, so it can be exercised
-// directly with a mock kernel instead of a real SIMD kernel, which means this test needs no
-// architecture-specific build flag and runs the same way on every host: an x86 box without
-// AVX512 and an ARM box exercise identical logic here, closing the gap where this driver was
-// previously only reachable through whichever hardware-specific kernel happened to be present.
-// Real coverage of "did the driver visit every element exactly once, correctly" comes from the
-// value check below: the mock's first()/rest() return the sum of the bytes in the slice they
-// were handed (read from a position-dependent, non-constant fill), and the total the driver
-// returns is compared against an independent, trivially-correct sum over the whole buffer. A
-// skipped element, a double-counted element, or a mis-sized chunk changes that sum; it cannot
-// cancel out the way it could with a constant fill or a return value of 0. The mock also records
-// the (offset, length) of every call; the tiling check on those recordings does not by itself
-// prove the driver visited the right elements (offset is derived from the same length the driver
-// just advanced its pointer by, so "no gap/overlap" holds by construction), but it does guard the
-// coupling between the length passed to the kernel and the distance the pointer is advanced, plus
-// the length-shape properties below (granule multiples, chunk-size cap, congruence). Together the
-// two checks cover a sweep of granules (64, 128, 192, 256 and 1024, standing in for fixed-width
-// kernels and SVE vector lengths of 32/48/64/256 bytes) and dimensions chosen to cover every
-// residue class modulo the granule across one-, two- and three-segment cases, plus the boundary
-// around UINT8_CHUNK_ELEMENTS itself.
-TEST_F(SpacesTest, UINT8_chunked_driver_tiles_the_vector_exactly) {
-    struct RecordedCall {
-        size_t offset;
-        size_t length;
-    };
-
-    // Local mock adapter matching the Kernel contract from uint8_chunking.h. All state lives in
-    // function-local statics reached through static member functions (a local class cannot have
-    // static data members), so `reset` must be called before each driver invocation.
-    struct RecordingKernel {
-        static size_t granule() { return granule_ref(); }
-
-        // Returns the sum of the bytes in [v1, v1 + length), not 0: combined with a
-        // position-dependent fill, this makes the driver's return value an end-to-end proof
-        // that every element was visited exactly once, not just a coupling check on lengths.
-        static uint32_t first(const uint8_t *v1, const uint8_t *, size_t length) {
-            record(v1, length);
-            return sum_of(v1, length);
-        }
-
-        static uint32_t rest(const uint8_t *v1, const uint8_t *, size_t length) {
-            record(v1, length);
-            return sum_of(v1, length);
-        }
-
-        static void reset(const uint8_t *base, size_t granule) {
-            calls_ref().clear();
-            base_ref() = base;
-            granule_ref() = granule;
-        }
-
-        static const std::vector<RecordedCall> &calls_seen() { return calls_ref(); }
-
-    private:
-        static uint32_t sum_of(const uint8_t *v1, size_t length) {
-            uint32_t sum = 0;
-            for (size_t i = 0; i < length; i++) {
-                sum += v1[i];
-            }
-            return sum;
-        }
-
-        static void record(const uint8_t *v1, size_t length) {
-            calls_ref().push_back({static_cast<size_t>(v1 - base_ref()), length});
-        }
-
-        static std::vector<RecordedCall> &calls_ref() {
-            static std::vector<RecordedCall> calls;
-            return calls;
-        }
-
-        static const uint8_t *&base_ref() {
-            static const uint8_t *base = nullptr;
-            return base;
-        }
-
-        static size_t &granule_ref() {
-            static size_t granule = 0;
-            return granule;
-        }
-    };
-
-    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
-    // Large enough for the biggest dimension exercised below (first segment plus two full
-    // max-size segments, bounded by chunk), with slack.
-    constexpr size_t buffer_size = 3 * chunk + 4096;
-    // v1 is filled with a position-dependent, non-constant pattern so a skipped, duplicated or
-    // mis-sized element changes the summed value rather than cancelling out (a constant fill, or
-    // returning 0 from the mock, would not catch that). Values stay under 251 and dimensions
-    // stay well under 600,000, so the accumulated uint64_t sum cannot overflow. v2 is unused by
-    // the mock kernel and left zero-filled.
-    std::vector<uint8_t> v1(buffer_size);
-    for (size_t i = 0; i < buffer_size; i++) {
-        v1[i] = static_cast<uint8_t>((i * 31 + 7) % 251);
-    }
-    std::vector<uint8_t> v2(buffer_size, 0);
-
-    const std::array<size_t, 5> granules = {64, 128, 192, 256, 1024};
-
-    for (size_t granule : granules) {
-        const size_t max_step = (chunk / granule) * granule;
-        auto first_chunk_for = [&](size_t tail) {
-            return tail + ((chunk - tail) / granule) * granule;
-        };
-
-        std::vector<size_t> dims;
-        for (size_t r = 0; r < granule; r++) {
-            const size_t fc = first_chunk_for(r);
-            dims.push_back(r == 0 ? granule : r); // one segment: dim <= chunk
-            dims.push_back(fc + max_step);        // two segments
-            dims.push_back(fc + 2 * max_step);    // three segments
-        }
-        dims.push_back(chunk - 1);
-        dims.push_back(chunk);
-        dims.push_back(chunk + 1);
-
-        for (size_t dimension : dims) {
-            ASSERT_LE(dimension, buffer_size)
-                << "granule=" << granule << " dimension=" << dimension;
-
-            RecordingKernel::reset(v1.data(), granule);
-            const uint64_t total =
-                spaces::uint8_chunked_total<RecordingKernel>(v1.data(), v2.data(), dimension);
-
-            SCOPED_TRACE("granule=" + std::to_string(granule) +
-                         " dimension=" + std::to_string(dimension));
-
-            // Value check: independently sum the same byte range the driver was asked to cover.
-            // This is what actually proves every element was visited exactly once (a skipped,
-            // duplicated or mis-sized chunk changes this sum); the tiling check below only
-            // proves the length passed to the kernel matches how far the pointer advanced.
-            uint64_t expected = 0;
-            for (size_t i = 0; i < dimension; i++) {
-                expected += v1[i];
-            }
-            EXPECT_EQ(total, expected) << "driver total does not match independent byte sum";
-
-            const auto &calls = RecordingKernel::calls_seen();
-            ASSERT_FALSE(calls.empty());
-
-            size_t sum = 0;
-            size_t expected_offset = 0;
-            for (size_t i = 0; i < calls.size(); i++) {
-                EXPECT_EQ(calls[i].offset, expected_offset)
-                    << "call " << i << " does not tile contiguously (gap or overlap)";
-                EXPECT_LE(calls[i].length, chunk)
-                    << "call " << i << " exceeds UINT8_CHUNK_ELEMENTS";
-                if (i > 0) {
-                    EXPECT_EQ(calls[i].length % granule, 0u)
-                        << "call " << i << " length is not a whole multiple of granule";
-                }
-                sum += calls[i].length;
-                expected_offset += calls[i].length;
-            }
-            EXPECT_EQ(sum, dimension) << "recorded lengths do not sum to the dimension";
-            EXPECT_EQ(calls[0].length % granule, dimension % granule)
-                << "first call length is not congruent to dimension modulo granule";
-            if (dimension <= chunk) {
-                EXPECT_EQ(calls.size(), 1u)
-                    << "dimension at or below UINT8_CHUNK_ELEMENTS should need exactly one call";
-            }
-        }
-    }
 }
 
 // Assert the exact alignment-hint values published by the SQ8 distance dispatchers.

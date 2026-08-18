@@ -7,19 +7,15 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
-#include "VecSim/spaces/uint8_chunking.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_neon.h>
 
-// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser picks
-// plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h carries
-// the chunk-size argument.
+// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser
+// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
+// no longer exact; spaces.h carries that bound and its derivation.
 //
 // Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
 // several callers.
-// The chunked wrapper's first chunk absorbs the residual and its length is a runtime min against
-// the dimension, because a compile-time trip count cost 8-9.5% in accumulator copies; later chunks
-// share one out-of-line copy of the kernel.
 
 __attribute__((always_inline)) static inline void
 L2SquareOp(const uint8x16_t &v1, const uint8x16_t &v2, uint32x4_t &sum) {
@@ -138,34 +134,11 @@ UINT8_L2SqrImp_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) 
     total_sum = vaddq_u32(total_sum, sum2);
     total_sum = vaddq_u32(total_sum, sum3);
 
-    // Unsigned, and exact for up to spaces::UINT8_CHUNK_ELEMENTS elements.
+    // Unsigned, and exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser enforces.
     return vaddvq_u32(total_sum);
 }
 
 template <unsigned char residual> // 0..63
 float UINT8_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return static_cast<float>(UINT8_L2SqrImp_NEON<residual>(pVect1v, pVect2v, dimension));
-}
-
-__attribute__((noinline)) static uint32_t
-UINT8_L2SqrFullChunk_NEON(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-    return UINT8_L2SqrImp_NEON<0>(pVect1, pVect2, dimension);
-}
-
-template <unsigned char residual> // 0..63
-struct UINT8_L2ChunkKernel_NEON {
-    static constexpr size_t granule() { return 64; }
-    __attribute__((always_inline)) static inline uint32_t
-    first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_L2SqrImp_NEON<residual>(pVect1, pVect2, dimension);
-    }
-    static uint32_t rest(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_L2SqrFullChunk_NEON(pVect1, pVect2, dimension);
-    }
-};
-
-template <unsigned char residual> // 0..63
-float UINT8_L2SqrSIMD16_NEON_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return static_cast<float>(spaces::uint8_chunked_total<UINT8_L2ChunkKernel_NEON<residual>>(
-        pVect1v, pVect2v, dimension));
 }

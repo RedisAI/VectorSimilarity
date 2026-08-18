@@ -12,6 +12,7 @@
 #include "space_includes.h"
 
 #include <cassert>
+#include <limits>
 
 namespace spaces {
 
@@ -52,24 +53,19 @@ static int inline is_little_endian() {
     return *(char *)&x;
 }
 
-// A full-range uint8 product is at most 255 * 255 = 65,025, so a 32-bit accumulator is exact
-// through floor(UINT32_MAX / 65,025) = 66,051 terms. Twice the old signed limit of 33,025: the
-// accumulation was always fine, the top bit was being read as a sign.
+// The uint8 kernels accumulate products or squared byte differences, so the worst-case total is
+// 255 * 255 * dim. A 32-bit accumulator holds that exactly up to this dimension and no further, so
+// the choosers hand back the scalar kernel above it, which accumulates into a 64-bit ret_t and is
+// exact at any dimension. Derived from the types rather than written as a literal: the bound is a
+// property of uint8 in a uint32 accumulator, and at the limit there are only 1,020 to spare.
 //
-// Rather than cap the dimension there, the kernels accumulate in chunks of this many elements and
-// fold each chunk's exact 32-bit total into a 64-bit scalar, which makes them exact at any
-// dimension. 65,536 is chosen because it is under 66,051, so the existing 32-bit reduce needs no
-// change, and because it is a whole number of 64-byte blocks, so a chunk boundary always lands on
-// one.
-//
-// The margins are deliberately loose, because the tight version was wrong. A previous attempt
-// widened the reduce and bounded the dimension at 4 * 66,051, on the assumption that products
-// spread evenly across NEON's four lanes after its 32-bit vaddq_u32 merge. The even case already
-// sat within 1,020 of UINT32_MAX while a masked residual load can put 1,040,400 into a single lane,
-// so lanes wrapped before the widened reduce saw them. At this chunk size the per-chunk total has
-// 33 million to spare and a NEON lane has 3.2 billion, so neither constraint is close and no
-// per-ISA lane audit is needed.
-static constexpr size_t UINT8_CHUNK_ELEMENTS = 65536;
+// Note this is the UNSIGNED bound. The total passes INT32_MAX from dimension 33,026, so a signed
+// read of the reduce wraps negative well inside the range kept on SIMD, which is why the kernels
+// return uint32_t and why the AVX512 reduce folds through 64 bits: GCC implements
+// _mm512_reduce_add_epi32 as signed vector ops ending in a scalar int + int.
+static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
+    std::numeric_limits<uint32_t>::max() /
+    (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
 
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
 

@@ -7,19 +7,15 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
-#include "VecSim/spaces/uint8_chunking.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 #include <arm_sve.h>
 
-// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser picks
-// plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h carries
-// the chunk-size argument.
+// uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser
+// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
+// no longer exact; spaces.h carries that bound and its derivation.
 //
 // Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
 // several callers.
-// The chunked wrapper's first chunk keeps this instantiation's residual shape, clamped to the
-// dimension; the vector length is a runtime value so that split is computed rather than folded.
-// Later chunks share one out-of-line copy of the kernel.
 
 // Aligned step using svptrue_b8()
 inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
@@ -98,7 +94,8 @@ UINT8_L2SqrImp_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     sum0 = svadd_u32_x(all, sum0, sum1);
     sum2 = svadd_u32_x(all, sum2, sum3);
     svuint32_t sum_all = svadd_u32_x(all, sum0, sum2);
-    // Exact for up to spaces::UINT8_CHUNK_ELEMENTS elements; narrowed from svaddv_u32.
+    // Narrowed from svaddv_u32; exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser
+    // enforces.
     return static_cast<uint32_t>(svaddv_u32(svptrue_b32(), sum_all));
 }
 
@@ -106,28 +103,4 @@ template <bool partial_chunk, unsigned char additional_steps>
 float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     return static_cast<float>(
         UINT8_L2SqrImp_SVE<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension));
-}
-
-__attribute__((noinline)) static uint32_t
-UINT8_L2SqrFullChunk_SVE(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-    return UINT8_L2SqrImp_SVE<false, 0>(pVect1, pVect2, dimension);
-}
-
-template <bool partial_chunk, unsigned char additional_steps>
-struct UINT8_L2ChunkKernel_SVE {
-    static size_t granule() { return 4 * svcntb(); }
-    __attribute__((always_inline)) static inline uint32_t
-    first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_L2SqrImp_SVE<partial_chunk, additional_steps>(pVect1, pVect2, dimension);
-    }
-    static uint32_t rest(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_L2SqrFullChunk_SVE(pVect1, pVect2, dimension);
-    }
-};
-
-template <bool partial_chunk, unsigned char additional_steps>
-float UINT8_L2SqrSIMD_SVE_Chunked(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return static_cast<float>(
-        spaces::uint8_chunked_total<UINT8_L2ChunkKernel_SVE<partial_chunk, additional_steps>>(
-            pVect1v, pVect2v, dimension));
 }

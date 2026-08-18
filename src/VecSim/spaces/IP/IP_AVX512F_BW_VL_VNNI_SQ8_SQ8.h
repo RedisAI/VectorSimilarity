@@ -44,10 +44,10 @@ float SQ8_SQ8_InnerProductImp(const void *pVec1v, const void *pVec2v, size_t dim
     // the plain uint8 choosers, the SQ8_SQ8 choosers have no dimension guard, so the previous int
     // narrowed and wrapped past 33,025 and the float ones lost exactness past 258.
     //
-    // Note this calls the helper directly rather than through a uint8 chooser, so it does not get
-    // the chunked accumulation those choosers select past spaces::UINT8_CHUNK_ELEMENTS: the total
-    // here is still a single 32-bit reduce. SQ8 is capped well below that by its uint32
-    // q_sum_squares metadata slot, so the fence belongs with SQ8 index creation (#1007), not here.
+    // Note this calls the helper directly rather than through a uint8 chooser, so it is not
+    // covered by the dispatcher bound that sends large dimensions to the scalar kernel. SQ8 is
+    // capped well below that bound by its uint32 q_sum_squares metadata slot, so the fence
+    // belongs with SQ8 index creation (#1007), not here.
     const uint32_t dot_product = UINT8_InnerProductImp<residual>(pVec1v, pVec2v, dimension);
 
     // Get dequantization parameters and precomputed values from the end of vectors

@@ -8,18 +8,14 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
-#include "VecSim/spaces/uint8_chunking.h"
+#include "VecSim/spaces/spaces.h" // spaces::UINT8_MAX_EXACT_SIMD_DIM
 
 // uint8 inner product: Imp returns the raw integer total and the wrappers convert it. The chooser
-// picks plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h
-// carries the chunk-size argument.
+// hands back the scalar kernel above spaces::UINT8_MAX_EXACT_SIMD_DIM, where a 32-bit total is
+// no longer exact; spaces.h carries that bound and its derivation.
 //
 // Imp is static and always_inline so the plain wrapper's codegen is unchanged now that Imp has
 // several callers.
-// The chunked wrapper's first chunk absorbs the residual and its length is a runtime min against
-// the dimension, because a compile-time trip count cost 8-9.5% in accumulator copies; later chunks
-// share one out-of-line copy of the kernel.
 // The inner product subtracts in integer and converts once, signed because the total is not.
 
 static inline void InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i &sum) {
@@ -43,9 +39,10 @@ static inline void InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, __m512i 
     // with the corresponding 32-bit integer in src, and store the packed 32-bit results in dst.
 }
 
-// always_inline, not merely inline: the chunked wrapper below calls this twice, and without the
-// attribute GCC outlines it once it has several callers, which also costs the plain wrapper its
-// inlining. Measured: the plain residual-0 wrapper went from 33 instructions to 9 plus a call.
+// always_inline, not merely inline: the inner product and cosine wrappers both call this, and
+// without the attribute GCC outlines it once it has several callers, which also costs the plain
+// wrapper its inlining. Measured: the plain residual-0 wrapper went from 33 instructions to 9 plus
+// a call.
 template <unsigned char residual> // 0..63
 __attribute__((always_inline)) static inline uint32_t
 UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -103,12 +100,13 @@ UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension
         } while (pVect1 < pEnd1);
     }
 
-    // Unsigned, and exact for up to spaces::UINT8_CHUNK_ELEMENTS elements.
+    // Unsigned, and exact up to spaces::UINT8_MAX_EXACT_SIMD_DIM, which the chooser enforces.
     // Widening unsigned fold rather than _mm512_reduce_add_epi32. GCC implements that intrinsic as
-    // a chain of signed __v8si vector ops ending in a scalar `int + int`, and a chunk total reaches
-    // 65025 * 65536, about 4.26e9, which is roughly twice INT32_MAX. The wrapped bits are the ones
-    // we want, which is why equality tests pass, but the addition itself is signed-overflow UB and
-    // UBSan flags it. Zero-extending the 16 lanes to 64 bits first keeps every addition in range.
+    // a chain of signed __v8si vector ops ending in a scalar `int + int`, and the worst-case total
+    // at the dispatcher cap is 65025 * 66,051, or 4,294,966,275, which is almost exactly twice
+    // INT32_MAX. The wrapped bits are the ones we want, which is why equality tests pass, but the
+    // addition itself is signed-overflow UB and UBSan flags it. Zero-extending the 16 lanes to 64
+    // bits first keeps every addition in range.
     const __m512i zero = _mm512_setzero_si512();
     const __m512i widened =
         _mm512_add_epi64(_mm512_unpacklo_epi32(sum, zero), _mm512_unpackhi_epi32(sum, zero));
@@ -127,44 +125,6 @@ template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
     float ip = static_cast<float>(UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension));
-    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
-    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
-    return 1.0f - ip / (norm_v1 * norm_v2);
-}
-
-__attribute__((noinline)) static uint32_t
-UINT8_InnerProductFullChunk_AVX512F_BW_VL_VNNI(const uint8_t *pVect1, const uint8_t *pVect2,
-                                               size_t dimension) {
-    return UINT8_InnerProductImp<0>(pVect1, pVect2, dimension);
-}
-
-template <unsigned char residual> // 0..63
-struct UINT8_IPChunkKernel_AVX512F_BW_VL_VNNI {
-    static constexpr size_t granule() { return 64; }
-    __attribute__((always_inline)) static inline uint32_t
-    first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_InnerProductImp<residual>(pVect1, pVect2, dimension);
-    }
-    static uint32_t rest(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
-        return UINT8_InnerProductFullChunk_AVX512F_BW_VL_VNNI(pVect1, pVect2, dimension);
-    }
-};
-
-template <unsigned char residual> // 0..63
-float UINT8_InnerProductSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
-                                                          size_t dimension) {
-    const auto ip = static_cast<int64_t>(
-        spaces::uint8_chunked_total<UINT8_IPChunkKernel_AVX512F_BW_VL_VNNI<residual>>(
-            pVect1v, pVect2v, dimension));
-    return static_cast<float>(1 - ip);
-}
-
-template <unsigned char residual> // 0..63
-float UINT8_CosineSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
-                                                    size_t dimension) {
-    const float ip = static_cast<float>(
-        spaces::uint8_chunked_total<UINT8_IPChunkKernel_AVX512F_BW_VL_VNNI<residual>>(
-            pVect1v, pVect2v, dimension));
     const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
     const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
