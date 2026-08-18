@@ -81,3 +81,10 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_DELETE_LABEL_ASYNC)
     ->Arg(100)
     ->Arg(BM_VecSimGeneral::block_size)
     ->ArgName("SwapJobsThreshold");
+
+// RelabelLabel
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_RELABEL_LABEL, fp32_index_t)
+(benchmark::State &st) { RelabelLabel(st); }
+REGISTER_RelabelLabel(BM_RELABEL_LABEL, INDEX_BF);
+REGISTER_RelabelLabel(BM_RELABEL_LABEL, INDEX_HNSW);
+REGISTER_RelabelLabel(BM_RELABEL_LABEL, INDEX_TIERED_HNSW);
