@@ -8,6 +8,7 @@
  */
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/spaces.h" // spaces::UINT8_CHUNK_ELEMENTS
+#include "VecSim/spaces/uint8_chunking.h"
 
 // uint8 L2: Imp returns the raw integer total and the wrappers convert it. The chooser picks
 // plain up to spaces::UINT8_CHUNK_ELEMENTS and chunked above it, once per index; spaces.h carries
@@ -121,25 +122,21 @@ UINT8_L2SqrFullChunk_AVX512F_BW_VL_VNNI(const uint8_t *pVect1, const uint8_t *pV
 }
 
 template <unsigned char residual> // 0..63
+struct UINT8_L2ChunkKernel_AVX512F_BW_VL_VNNI {
+    static size_t granule() { return 64; }
+    __attribute__((always_inline)) static inline uint32_t
+    first(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
+        return UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1, pVect2, dimension);
+    }
+    static uint32_t rest(const uint8_t *pVect1, const uint8_t *pVect2, size_t dimension) {
+        return UINT8_L2SqrFullChunk_AVX512F_BW_VL_VNNI(pVect1, pVect2, dimension);
+    }
+};
+
+template <unsigned char residual> // 0..63
 float UINT8_L2SqrSIMD64_AVX512F_BW_VL_VNNI_Chunked(const void *pVect1v, const void *pVect2v,
                                                    size_t dimension) {
-    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const auto *pVect2 = static_cast<const uint8_t *>(pVect2v);
-
-    constexpr size_t chunk = spaces::UINT8_CHUNK_ELEMENTS;
-    constexpr size_t first_chunk = residual + (chunk - residual) / 64 * 64;
-    const size_t first = dimension < first_chunk ? dimension : first_chunk;
-    uint64_t total = UINT8_L2SqrImp_AVX512F_BW_VL_VNNI<residual>(pVect1, pVect2, first);
-    pVect1 += first;
-    pVect2 += first;
-    size_t remaining = dimension - first;
-
-    while (remaining) {
-        const size_t step = remaining < chunk ? remaining : chunk;
-        total += UINT8_L2SqrFullChunk_AVX512F_BW_VL_VNNI(pVect1, pVect2, step);
-        pVect1 += step;
-        pVect2 += step;
-        remaining -= step;
-    }
-    return static_cast<float>(total);
+    return static_cast<float>(
+        spaces::uint8_chunked_total<UINT8_L2ChunkKernel_AVX512F_BW_VL_VNNI<residual>>(
+            pVect1v, pVect2v, dimension));
 }
