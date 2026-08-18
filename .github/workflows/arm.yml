@@ -34,6 +34,10 @@ jobs:
     uses: ./.github/workflows/task-unit-test.yml
     with:
       env: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
+      # r8g is Graviton4, which has NEON, DOTPROD, SVE and SVE2. Requiring the highest of those
+      # makes this job fail rather than skip if it ever lands on weaker hardware, which would
+      # otherwise look green while covering none of the ARM uint8 kernels.
+      require-uint8-tier: SVE2
 
   stop-runner:
     name: Stop self-hosted EC2 runner

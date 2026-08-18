@@ -51,6 +51,10 @@ static inline uint64_t uint8_chunked_total(const void *pVect1v, const void *pVec
         static_assert(Kernel::granule() > 0 && Kernel::granule() <= UINT8_CHUNK_ELEMENTS,
                       "Kernel::granule() must be in (0, UINT8_CHUNK_ELEMENTS]");
     }
+    // SVE is the only adapter whose granule cannot be constant, so it keeps the runtime assert and
+    // is unprotected under NDEBUG. That is acceptable because the architecture bounds it: an SVE
+    // vector is 16 to 256 bytes, so 4 * svcntb() is 64 to 1024, three orders of magnitude below the
+    // 65,536 limit. Only a change to that multiplier, or to the chunk size, could approach it.
     const size_t granule = Kernel::granule();
     assert(granule > 0 && granule <= chunk);
     const size_t tail = dimension % granule;

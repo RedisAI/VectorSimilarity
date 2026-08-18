@@ -13,6 +13,7 @@
 #include <utility>
 #include <random>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <set>
 #include <cstdlib>
@@ -2319,6 +2320,165 @@ TEST_F(SpacesTest, UINT8_dispatched_kernels_are_exact_at_every_residual_past_the
     }
 }
 
+// Every uint8 SIMD tier this host can actually execute, with its three dispatched kernels. Both
+// the per-tier exactness test and the independent-oracle test below iterate this list, so a tier
+// cannot be covered by one and silently missed by the other.
+struct UInt8TierFuncs {
+    const char *name;
+    dist_func_t<float> l2;
+    dist_func_t<float> ip;
+    dist_func_t<float> cosine;
+};
+
+static std::vector<UInt8TierFuncs> AvailableUInt8Tiers(size_t dim) {
+    std::vector<UInt8TierFuncs> tiers;
+    [[maybe_unused]] const auto opt = getCpuOptimizationFeatures();
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
+        tiers.push_back({"AVX512F_BW_VL_VNNI",
+                         Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim),
+                         Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim),
+                         Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim)});
+    }
+#endif
+#ifdef OPT_SVE2
+    if (opt.sve2) {
+        tiers.push_back({"SVE2", Choose_UINT8_L2_implementation_SVE2(dim),
+                         Choose_UINT8_IP_implementation_SVE2(dim),
+                         Choose_UINT8_Cosine_implementation_SVE2(dim)});
+    }
+#endif
+#ifdef OPT_SVE
+    if (opt.sve) {
+        tiers.push_back({"SVE", Choose_UINT8_L2_implementation_SVE(dim),
+                         Choose_UINT8_IP_implementation_SVE(dim),
+                         Choose_UINT8_Cosine_implementation_SVE(dim)});
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (opt.asimddp) {
+        tiers.push_back({"NEON_DOTPROD", Choose_UINT8_L2_implementation_NEON_DOTPROD(dim),
+                         Choose_UINT8_IP_implementation_NEON_DOTPROD(dim),
+                         Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim)});
+    }
+#endif
+#ifdef OPT_NEON
+    if (opt.asimd) {
+        tiers.push_back({"NEON", Choose_UINT8_L2_implementation_NEON(dim),
+                         Choose_UINT8_IP_implementation_NEON(dim),
+                         Choose_UINT8_Cosine_implementation_NEON(dim)});
+    }
+#endif
+    return tiers;
+}
+
+// Worst-case inputs against an oracle computed here in 64-bit integers, rather than by calling the
+// scalar kernel.
+//
+// Why not the scalar kernel: scalar and SIMD share conventions, and this series changed the scalar
+// and SIMD inner product epilogues together so they would stay bit-identical. A test asserting only
+// scalar == SIMD cannot catch that shared convention being wrong, in either sign or width. Here the
+// expectation is derived from the inputs alone, and the scalar kernel is asserted against it on the
+// same footing as every SIMD tier.
+//
+// Why these inputs: all-255 against all-255 puts 65,025 into the inner product accumulator for
+// every element, and all-255 against all-0 does the same for L2. Those are the maxima the byte
+// range allows, so they are where a 32-bit accumulator wraps first. A ramp against all-255 is
+// carried alongside because constant data lets a gap and an overlap of equal size cancel, which a
+// position-dependent pattern does not.
+//
+// Why these dimensions: 65024 is 1016*64, so 65024+r has residual r and stays at or below the
+// 65,536 chunk size, exercising the plain kernel right up against the limit of its 32-bit reduce
+// (65025 * 65087 is about 4.23e9, just under UINT32_MAX). 131072 is 2048*64, so 131072+r has
+// residual r and its total is about 8.5e9, which only a 64-bit fold can carry. Every residual is
+// swept at both.
+TEST_F(SpacesTest, UINT8_worst_case_matches_an_independent_64bit_oracle) {
+    constexpr size_t max_dim = 131072 + 63;
+    std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
+    std::vector<uint8_t> zeros(max_dim + sizeof(float), 0);
+    std::vector<uint8_t> ramp(max_dim + sizeof(float));
+    for (size_t i = 0; i < max_dim; i++) {
+        ramp[i] = static_cast<uint8_t>(i % 256);
+    }
+
+    for (const size_t base : {65024UL, 131072UL}) {
+        for (size_t r = 0; r < 64; r++) {
+            const size_t dim = base + r;
+            SCOPED_TRACE("dim " + std::to_string(dim) + " residual " + std::to_string(r));
+
+            // Norms live just past the payload and move with dim, so rewrite them per dimension.
+            const float norm_ones = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
+            float norm_ramp = 0.0f;
+            for (size_t i = 0; i < dim; i++) {
+                norm_ramp += static_cast<float>(ramp[i]) * static_cast<float>(ramp[i]);
+            }
+            norm_ramp = std::sqrt(norm_ramp);
+            memcpy(ones.data() + dim, &norm_ones, sizeof(float));
+            memcpy(ramp.data() + dim, &norm_ramp, sizeof(float));
+
+            struct Pair {
+                const char *name;
+                const uint8_t *a;
+                const uint8_t *b;
+                float norm_a;
+                float norm_b;
+                bool check_cosine;
+            };
+            const Pair pairs[] = {
+                {"all-255 vs all-255", ones.data(), ones.data(), norm_ones, norm_ones, true},
+                {"all-255 vs all-0", ones.data(), zeros.data(), norm_ones, 0.0f, false},
+                {"ramp vs all-255", ramp.data(), ones.data(), norm_ramp, norm_ones, true},
+            };
+
+            for (const auto &pr : pairs) {
+                // The oracle: plain 64-bit integer accumulation over the inputs.
+                uint64_t ip_total = 0;
+                uint64_t l2_total = 0;
+                for (size_t i = 0; i < dim; i++) {
+                    const uint64_t x = pr.a[i];
+                    const uint64_t y = pr.b[i];
+                    ip_total += x * y;
+                    const int64_t diff = static_cast<int64_t>(x) - static_cast<int64_t>(y);
+                    l2_total += static_cast<uint64_t>(diff * diff);
+                }
+                // Both worst-case pairs must exceed a 32-bit accumulator at the multi-chunk base,
+                // otherwise this test would not be reaching the case it exists for.
+                if (base == 131072 && pr.b != ramp.data() && pr.a != ramp.data()) {
+                    EXPECT_GT(std::max(ip_total, l2_total),
+                              static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
+                        << "worst case no longer exceeds UINT32_MAX, test is not exercising the "
+                           "fold";
+                }
+
+                // Expected returns, formed with the same operations the kernels use so the
+                // comparison can be exact rather than approximate.
+                const float want_ip = static_cast<float>(1 - static_cast<int64_t>(ip_total));
+                const float want_l2 = static_cast<float>(l2_total);
+                const float want_cos =
+                    1.0f - static_cast<float>(ip_total) / (pr.norm_a * pr.norm_b);
+
+                EXPECT_EQ(want_l2, UINT8_L2Sqr(pr.a, pr.b, dim)) << "scalar L2, " << pr.name;
+                EXPECT_EQ(want_ip, UINT8_InnerProduct(pr.a, pr.b, dim)) << "scalar IP, " << pr.name;
+                if (pr.check_cosine) {
+                    EXPECT_EQ(want_cos, UINT8_Cosine(pr.a, pr.b, dim))
+                        << "scalar cosine, " << pr.name;
+                }
+
+                for (const auto &tier : AvailableUInt8Tiers(dim)) {
+                    EXPECT_EQ(want_l2, tier.l2(pr.a, pr.b, dim))
+                        << "L2 " << tier.name << ", " << pr.name;
+                    EXPECT_EQ(want_ip, tier.ip(pr.a, pr.b, dim))
+                        << "IP " << tier.name << ", " << pr.name;
+                    if (pr.check_cosine) {
+                        EXPECT_EQ(want_cos, tier.cosine(pr.a, pr.b, dim))
+                            << "cosine " << tier.name << ", " << pr.name;
+                    }
+                }
+            }
+        }
+    }
+}
+
 // The tests above go through the generic dispatcher, which only ever returns the best tier this
 // host supports, so on an ARM machine with SVE the NEON and NEON_DOTPROD chunked kernels are never
 // executed. Reach every compiled-in tier directly instead. Each tier is still gated on the CPU
@@ -2327,7 +2487,6 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
     // Boundary (plain family), one past it with residuals 0/1/63, two chunks, and a ragged
     // multiple.
     const std::vector<size_t> dims = {65536, 65600, 65601, 65663, 131072, 200000};
-    const auto opt = getCpuOptimizationFeatures();
     std::set<std::string> all_tiers;
 
     constexpr size_t max_dim = 200000;
@@ -2348,64 +2507,17 @@ TEST_F(SpacesTest, UINT8_every_tier_is_exact_past_the_chunk_boundary) {
         const float want_ip = UINT8_InnerProduct(a, b, dim);
         const float want_cos = UINT8_Cosine(a, b, dim);
 
-        // Track which tiers ran. A tier the CPU lacks is skipped silently, so without this the
-        // whole test would pass vacuously on a host with no uint8 SIMD at all, and the log would
-        // not say which kernels were actually covered.
-        std::vector<std::string> tiers_checked;
-        auto check = [&](const char *tier, dist_func_t<float> l2, dist_func_t<float> ip,
-                         dist_func_t<float> cosine) {
-            tiers_checked.emplace_back(tier);
-            EXPECT_EQ(want_l2, l2(a, b, dim)) << "L2 " << tier << " dim " << dim;
-            EXPECT_EQ(want_ip, ip(a, b, dim)) << "IP " << tier << " dim " << dim;
-            EXPECT_EQ(want_cos, cosine(a, b, dim)) << "Cosine " << tier << " dim " << dim;
-        };
-
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-        if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
-            check("AVX512F_BW_VL_VNNI", Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim),
-                  Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim),
-                  Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim));
-        }
-#endif
-#ifdef OPT_SVE2
-        if (opt.sve2) {
-            check("SVE2", Choose_UINT8_L2_implementation_SVE2(dim),
-                  Choose_UINT8_IP_implementation_SVE2(dim),
-                  Choose_UINT8_Cosine_implementation_SVE2(dim));
-        }
-#endif
-#ifdef OPT_SVE
-        if (opt.sve) {
-            check("SVE", Choose_UINT8_L2_implementation_SVE(dim),
-                  Choose_UINT8_IP_implementation_SVE(dim),
-                  Choose_UINT8_Cosine_implementation_SVE(dim));
-        }
-#endif
-#ifdef OPT_NEON_DOTPROD
-        if (opt.asimddp) {
-            check("NEON_DOTPROD", Choose_UINT8_L2_implementation_NEON_DOTPROD(dim),
-                  Choose_UINT8_IP_implementation_NEON_DOTPROD(dim),
-                  Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim));
-        }
-#endif
-#ifdef OPT_NEON
-        if (opt.asimd) {
-            check("NEON", Choose_UINT8_L2_implementation_NEON(dim),
-                  Choose_UINT8_IP_implementation_NEON(dim),
-                  Choose_UINT8_Cosine_implementation_NEON(dim));
-        }
-#endif
-
         std::string covered;
-        for (const auto &t : tiers_checked) {
-            covered += covered.empty() ? t : ", " + t;
+        for (const auto &tier : AvailableUInt8Tiers(dim)) {
+            EXPECT_EQ(want_l2, tier.l2(a, b, dim)) << "L2 " << tier.name << " dim " << dim;
+            EXPECT_EQ(want_ip, tier.ip(a, b, dim)) << "IP " << tier.name << " dim " << dim;
+            EXPECT_EQ(want_cos, tier.cosine(a, b, dim)) << "Cosine " << tier.name << " dim " << dim;
+            all_tiers.insert(tier.name);
+            covered += covered.empty() ? tier.name : std::string(", ") + tier.name;
         }
         RecordProperty("tiers_at_dim_" + std::to_string(dim), covered);
         std::cout << "  dim " << dim << " covered tiers: " << (covered.empty() ? "<none>" : covered)
                   << std::endl;
-        for (const auto &t : tiers_checked) {
-            all_tiers.insert(t);
-        }
     }
 
     // Order matters. A stated requirement must be able to FAIL, so it is checked before the skip:
