@@ -55,15 +55,16 @@ static int inline is_little_endian() {
 }
 
 // The uint8 kernels accumulate products or squared byte differences, so the worst-case total is
-// 255 * 255 * dim. Above this dimension the choosers hand back the scalar kernel, which accumulates
-// into a 64-bit ret_t and is exact at any dimension. Decided once per index, so no distance
-// computation pays for the check.
+// 255 * 255 * dim, and every kernel holds that total in a signed 32-bit int. This is therefore the
+// largest dimension they are exact at. Above it the choosers hand back the scalar kernel, which
+// accumulates into a 64-bit ret_t and is exact at any dimension. Decided once per index, so no
+// distance computation pays for the check.
 //
-// This is the SIGNED 32-bit bound, because GCC implements _mm512_reduce_add_epi32 as signed vector
-// ops ending in a scalar int + int. Reducing through 64 bits instead would extend the exact range
-// to UINT32_MAX / 65025 = 66,051, but it costs measurably at the dimensions that occur in practice
-// and buys only a band no workload reaches. NEON and SVE reduce unsigned and would be exact to
-// 66,051 either way; one bound for every architecture keeps the choosers uniform.
+// Bounding at the signed limit rather than at UINT32_MAX / 65025 = 66,051 is what lets the kernels
+// stay exactly as they are. Reaching 66,051 would mean making every total unsigned and, on AVX-512,
+// replacing _mm512_reduce_add_epi32, which GCC implements as signed vector ops ending in a scalar
+// int + int, so the overflow happens inside the intrinsic before any cast can help. That extra
+// range serves no real workload: embeddings run 384 to 4096.
 static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
     std::numeric_limits<int32_t>::max() /
     (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
