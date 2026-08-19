@@ -76,7 +76,7 @@ dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes; no point in aligning if there's a residual
             *alignment = 16 * sizeof(uint8_t);
         return Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim);
@@ -563,7 +563,8 @@ dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 #ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     // AVX512 VNNI SQ8_SQ8 uses 64-element chunks; residual handling is in 32-byte sub-chunks.
-    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vl &&
+        features.avx512vnni) {
         if (dim % 32 == 0) // align to 256 bits when there is no offsetting residual
             *alignment = 32 * sizeof(uint8_t);
         return Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
