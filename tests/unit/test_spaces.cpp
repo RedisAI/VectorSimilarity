@@ -2242,6 +2242,14 @@ TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
     EXPECT_EQ(IP_UINT8_GetDistFunc(first_scalar, &alignment, &optimization), UINT8_InnerProduct);
     EXPECT_EQ(Cosine_UINT8_GetDistFunc(first_scalar, &alignment, &optimization), UINT8_Cosine);
 
+    // The SQ8_SQ8 kernels call the shared uint8 helper directly, bypassing every uint8 chooser, so
+    // their own dispatchers carry the same guard. Without this they would be the one path left able
+    // to wrap a signed 32-bit total, and nothing else in the suite reaches these three lines.
+    EXPECT_EQ(IP_SQ8_SQ8_GetDistFunc(first_scalar, &alignment, &optimization),
+              SQ8_SQ8_InnerProduct);
+    EXPECT_EQ(Cosine_SQ8_SQ8_GetDistFunc(first_scalar, &alignment, &optimization), SQ8_SQ8_Cosine);
+    EXPECT_EQ(L2_SQ8_SQ8_GetDistFunc(first_scalar, &alignment, &optimization), SQ8_SQ8_L2Sqr);
+
     // The bound is where a signed 32-bit total runs out, so pin that arithmetically rather than
     // trusting the constant: the worst case at the bound must fit INT32_MAX, and must come within
     // one element's product of it, or the constant has drifted away from the limit it represents.
