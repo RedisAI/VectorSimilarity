@@ -8,6 +8,8 @@
  */
 
 #include <sstream>
+#include <limits>
+#include <cmath>
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
@@ -1200,7 +1202,196 @@ TEST(PreprocessorsTest, QuantizationAsymmetricAlignment) {
     }
 }
 
-// Test edge case where all entries are equal
+// Finite input whose range is not representable in FP32. max - min overflowed to inf, which made
+// delta inf and inv_delta 0, and inf * 0 is NaN; converting that NaN to an integer is undefined
+// behaviour, so this reproduced UB on AddVector for input the API accepts. Runs under UBSan in CI.
+TEST(PreprocessorsTest, QuantizationHandlesNonRepresentableRange) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 4;
+    constexpr unsigned char alignment = 0;
+    constexpr float huge = std::numeric_limits<float>::max();
+    float original_blob[dim] = {-huge, 0.0f, huge, 1.0f};
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+
+    void *storage_blob = nullptr;
+    void *query_blob = nullptr;
+    size_t storage_blob_size = dim * sizeof(float);
+    size_t query_blob_size = dim * sizeof(float);
+    quant_preprocessor->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
+                                   query_blob_size, alignment, alignment);
+    ASSERT_NE(storage_blob, nullptr);
+
+    // max - min overflows FP32 to infinity, so delta is infinite and its reciprocal is zero, and
+    // every scaled value comes out zero or NaN. Both now convert to 0 instead of being undefined.
+    // The result is degenerate rather than useful, and deliberately so: this PR defines the
+    // conversion and leaves intermediate overflow alone. See the tech debt ticket.
+    const auto *quantized = static_cast<const uint8_t *>(storage_blob);
+    for (size_t i = 0; i < dim; i++) {
+        EXPECT_EQ(quantized[i], 0) << "element " << i;
+    }
+
+    allocator->free_allocation(storage_blob);
+    if (query_blob != storage_blob) {
+        allocator->free_allocation(query_blob);
+    }
+    delete quant_preprocessor;
+}
+
+// Finite input whose range is not representable in FP32. max - min overflowed to inf, which made
+// delta inf and inv_delta 0, and inf * 0 is NaN; converting that NaN to an integer is undefined
+// behaviour, so this reproduced UB on AddVector for input the API accepts. Runs under UBSan in CI.
+// delta underflows to zero while max - min is still nonzero, so the reciprocal is infinite and a
+// scaled value reaches +inf. main guards only the exactly-equal case (diff == 0 ? 1 : diff / 255),
+// so this input converted an infinity to uint8_t: undefined, and on x86 it produced 0, the opposite
+// end of the scale from where the value belongs. This is the only case here that reaches the upper
+// saturation branch, and it does so from entirely finite input.
+TEST(PreprocessorsTest, QuantizationSaturatesWhenDeltaUnderflows) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 2;
+    // 1e-44 / 255 underflows FP32 to zero, while 1e-44 itself is a nonzero subnormal.
+    float original_blob[dim] = {0.0f, 1e-44f};
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+
+    void *storage_blob = nullptr;
+    size_t storage_blob_size = dim * sizeof(float);
+    quant_preprocessor->preprocessForStorage(original_blob, storage_blob, storage_blob_size, 0);
+    ASSERT_NE(storage_blob, nullptr);
+
+    const auto *quantized = static_cast<const uint8_t *>(storage_blob);
+    EXPECT_EQ(quantized[0], 0);   // scaled is NaN (0 * inf), so the lower branch takes it
+    EXPECT_EQ(quantized[1], 255); // scaled is +inf, saturated rather than converted
+
+    allocator->free_allocation(storage_blob);
+    delete quant_preprocessor;
+}
+
+TEST(PreprocessorsTest, QuantizationHandlesNonRepresentableCenteredRange) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 4;
+    constexpr unsigned char alignment = 0;
+    constexpr float huge = std::numeric_limits<float>::max();
+
+    float original_blob[dim] = {huge, 0.0f, -huge, 1.0f};
+    vecsim_stl::vector<float> mean_vec(allocator);
+    // Centers element 0 to +inf and element 2 to -inf, from entirely finite operands.
+    mean_vec.push_back(-huge);
+    mean_vec.push_back(0.0f);
+    mean_vec.push_back(huge);
+    mean_vec.push_back(0.0f);
+
+    auto quant_preprocessor =
+        new (allocator) QuantPreprocessor<float, VecSimMetric_L2, true>(allocator, dim, mean_vec);
+
+    void *storage_blob = nullptr;
+    size_t storage_blob_size = dim * sizeof(float);
+    quant_preprocessor->preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                             alignment);
+    ASSERT_NE(storage_blob, nullptr);
+
+    // Centering drives element 0 to +inf and element 2 to -inf from finite operands, so the
+    // endpoints are infinite, delta is infinite and its reciprocal is zero. Every byte converts to
+    // 0 rather than being undefined. Degenerate on purpose: the metadata stays infinite because
+    // this PR only defines the conversion. See the tech debt ticket.
+    const auto *quantized = static_cast<const uint8_t *>(storage_blob);
+    for (size_t i = 0; i < dim; i++) {
+        EXPECT_EQ(quantized[i], 0) << "element " << i;
+    }
+
+    allocator->free_allocation(storage_blob);
+    delete quant_preprocessor;
+}
+
+// The finite-input domain matrix for quantize(). Every case is either an extreme the API accepts
+// without validating, or a range too narrow for a representable delta. The contract under test: the
+// byte conversion is defined, the stored min and delta are finite with delta > 0, and where the
+// range survives, the extreme elements land on the ends of the byte range. Runs under UBSan
+// (float-cast-overflow) in CI, which is where the conversion itself is checked.
+namespace {
+
+struct QuantizedVector {
+    std::vector<uint8_t> bytes;
+    float min_val;
+    float delta;
+};
+
+// Runs one vector through the production preprocessor on the plain (non-centered) L2 path.
+QuantizedVector quantizeThroughPreprocessor(const std::vector<float> &input) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    const size_t dim = input.size();
+    auto *pp = new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+
+    void *storage_blob = nullptr;
+    size_t sz = dim * sizeof(float);
+    pp->preprocessForStorage(input.data(), storage_blob, sz, 0);
+
+    const auto *quantized = static_cast<const uint8_t *>(storage_blob);
+    const auto *metadata = quantized + dim;
+    QuantizedVector out;
+    out.bytes.assign(quantized, quantized + dim);
+    out.min_val = load_unaligned<float>(metadata + sq8::MIN_VAL * sizeof(float));
+    out.delta = load_unaligned<float>(metadata + sq8::DELTA * sizeof(float));
+
+    allocator->free_allocation(storage_blob);
+    delete pp;
+    return out;
+}
+
+struct QuantDomainCase {
+    const char *name;
+    std::vector<float> input;
+    // Asserted element by element, so it must have one entry per input value. Derived by
+    // simulating the pipeline rather than predicted; three of them came out different from the
+    // first guess.
+    std::vector<uint8_t> expected_bytes;
+};
+
+class QuantDomainTest : public testing::TestWithParam<QuantDomainCase> {};
+
+} // namespace
+
+TEST_P(QuantDomainTest, ScaleMetadataAndBytesAreAsExpected) {
+    const auto &c = GetParam();
+    const QuantizedVector q = quantizeThroughPreprocessor(c.input);
+
+    // Every case in this table has a range FP32 can scale, so min and delta must come out finite
+    // with delta positive. Ranges that overflow or underflow the FP32 metadata produce degenerate
+    // values instead, and are covered by their own tests rather than folded in here, because the
+    // assertions below would not hold for them. The sums are deliberately not checked: they are
+    // accumulated in FP32 and are a separate problem.
+    EXPECT_TRUE(std::isfinite(q.min_val)) << c.name << ": min " << q.min_val;
+    EXPECT_TRUE(std::isfinite(q.delta)) << c.name << ": delta " << q.delta;
+    EXPECT_GT(q.delta, 0.0f) << c.name;
+
+    ASSERT_EQ(q.bytes.size(), c.expected_bytes.size()) << c.name;
+    for (size_t i = 0; i < q.bytes.size(); ++i) {
+        EXPECT_EQ(q.bytes[i], c.expected_bytes[i]) << c.name << " at index " << i;
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    QuantDomain, QuantDomainTest,
+    testing::Values(
+        // Constant vectors: min == max, so delta collapses to 1 and every value maps to byte 0.
+        QuantDomainCase{"all_equal_positive", {3.5f, 3.5f, 3.5f}, {0, 0, 0}},
+        QuantDomainCase{"all_equal_negative", {-2.5f, -2.5f, -2.5f}, {0, 0, 0}},
+        QuantDomainCase{"all_zero", {0.0f, 0.0f, 0.0f}, {0, 0, 0}},
+
+        // Subnormal but *representable* delta: 7e-37 / 255 = 2.7e-39, which survives as an FP32
+        // subnormal, and its FP64 reciprocal 3.6e38 is finite. The range is preserved, so the
+        // endpoints must reach 0 and 255. This is the case an FP32 reciprocal would break.
+        QuantDomainCase{"subnormal_delta_survives", {0.0f, 7e-37f}, {0, 255}},
+
+        // Every case here is finite input with a scalable range, deliberately. The degenerate
+        // cases, where the range overflows or underflows what FP32 metadata can express, live in
+        // QuantizationSaturatesWhenDeltaUnderflows and the two NonRepresentable tests, which assert
+        // that the conversion is defined rather than that the result is useful.
+        QuantDomainCase{"single_element", {7.5f}, {0}}),
+    [](const testing::TestParamInfo<QuantDomainCase> &info) { return info.param.name; });
+
 TEST(PreprocessorsTest, QuantizationTestAllEntriesEqual) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t dim = 5;

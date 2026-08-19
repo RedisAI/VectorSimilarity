@@ -274,6 +274,25 @@ class QuantPreprocessor : public PreprocessorInterface {
         const MetadataType delta = (diff == 0.0f) ? MetadataType{1} : diff / MetadataType{255};
         const MetadataType inv_delta = MetadataType{1} / delta;
 
+        // Saturating conversion. Casting a float to uint8_t is undefined when the truncated value
+        // does not fit, and std::round does not help: it returns 300.0 for 300.0 and NaN for NaN,
+        // both of which then convert with no defined result. On x86 an out-of-range value becomes
+        // the integer indefinite 0x80000000, so a component above the range silently quantizes to
+        // 0, the bottom of the scale. Bounding first makes every input defined, and `+ 0.5` then
+        // truncating matches std::round for non-negative values without its libm call.
+        //
+        // Only the conversion is guarded here. The FP32 arithmetic feeding it keeps whatever
+        // overflow behavior it had; see the tech debt ticket for the intermediate cases.
+        const auto to_byte = [](MetadataType scaled) -> OUTPUT_TYPE {
+            if (!(scaled > MetadataType{0})) {
+                return OUTPUT_TYPE{0}; // zero, negative, -inf, or NaN
+            }
+            if (scaled >= MetadataType{255}) {
+                return OUTPUT_TYPE{255}; // includes +inf
+            }
+            return static_cast<OUTPUT_TYPE>(scaled + MetadataType{0.5});
+        };
+
         // Compute sum (and sum of squares for L2) while quantizing.
         // Accumulators are FP32 to preserve metadata precision for FP16 inputs.
         // 4 independent accumulators (sum)
@@ -296,10 +315,10 @@ class QuantPreprocessor : public PreprocessorInterface {
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
-            quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x0 - min_val) * inv_delta));
-            quantized[i + 1] = static_cast<OUTPUT_TYPE>(std::round((x1 - min_val) * inv_delta));
-            quantized[i + 2] = static_cast<OUTPUT_TYPE>(std::round((x2 - min_val) * inv_delta));
-            quantized[i + 3] = static_cast<OUTPUT_TYPE>(std::round((x3 - min_val) * inv_delta));
+            quantized[i] = to_byte((x0 - min_val) * inv_delta);
+            quantized[i + 1] = to_byte((x1 - min_val) * inv_delta);
+            quantized[i + 2] = to_byte((x2 - min_val) * inv_delta);
+            quantized[i + 3] = to_byte((x3 - min_val) * inv_delta);
 
             // Accumulate sum for all metrics
             s0 += x0;
@@ -323,7 +342,7 @@ class QuantPreprocessor : public PreprocessorInterface {
 
         for (; i < this->dim; ++i) {
             const float x = transformed_value(input, i);
-            quantized[i] = static_cast<OUTPUT_TYPE>(std::round((x - min_val) * inv_delta));
+            quantized[i] = to_byte((x - min_val) * inv_delta);
             sum += x;
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += x * x;
