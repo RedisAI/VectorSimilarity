@@ -1721,10 +1721,13 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
             unlockNodeLinks(first);
         }
 
+#ifdef BUILD_TESTS
+        // Sanity check - every edge of this element at this level was taken out above.
         lockNodeLinks(internalId);
         assert(level_data.getNumLinks() == 0 && level_data.getIncomingEdges().empty() &&
                "the element should have no edge left at this level");
         unlockNodeLinks(internalId);
+#endif
     }
 }
 
