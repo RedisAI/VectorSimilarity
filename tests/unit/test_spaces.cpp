@@ -14,10 +14,6 @@
 #include <random>
 #include <cmath>
 #include <limits>
-#include <string>
-#include <set>
-#include <cstdlib>
-#include <iostream>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -2227,83 +2223,24 @@ TEST_F(SpacesTest, UINT8_L2Sqr_and_InnerProduct_are_exact_past_int32) {
     }
 }
 
-// Both dimensions sit at or below spaces::UINT8_MAX_EXACT_SIMD_DIM, so both stay on SIMD, and both
-// totals exceed INT32_MAX, which is where reading the reduce as signed used to wrap them negative.
-// The dispatched kernel must agree with the scalar kernel, which accumulates the whole vector into
-// a 64-bit ret_t.
-//
-
-// Every uint8 SIMD tier this host can actually execute, with its three dispatched kernels. Both
-// the per-tier exactness test below iterates this list, and the boundary test uses it to skip an
-// assertion that would be vacuous on a host with no uint8 SIMD tier.
-struct UInt8TierFuncs {
-    const char *name;
-    dist_func_t<float> l2;
-    dist_func_t<float> ip;
-    dist_func_t<float> cosine;
-};
-
-static std::vector<UInt8TierFuncs> AvailableUInt8Tiers(size_t dim) {
-    std::vector<UInt8TierFuncs> tiers;
-    [[maybe_unused]] const auto opt = getCpuOptimizationFeatures();
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
-        tiers.push_back({"AVX512F_BW_VL_VNNI",
-                         Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim),
-                         Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim),
-                         Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim)});
-    }
-#endif
-#ifdef OPT_SVE2
-    if (opt.sve2) {
-        tiers.push_back({"SVE2", Choose_UINT8_L2_implementation_SVE2(dim),
-                         Choose_UINT8_IP_implementation_SVE2(dim),
-                         Choose_UINT8_Cosine_implementation_SVE2(dim)});
-    }
-#endif
-#ifdef OPT_SVE
-    if (opt.sve) {
-        tiers.push_back({"SVE", Choose_UINT8_L2_implementation_SVE(dim),
-                         Choose_UINT8_IP_implementation_SVE(dim),
-                         Choose_UINT8_Cosine_implementation_SVE(dim)});
-    }
-#endif
-#ifdef OPT_NEON_DOTPROD
-    if (opt.asimddp) {
-        tiers.push_back({"NEON_DOTPROD", Choose_UINT8_L2_implementation_NEON_DOTPROD(dim),
-                         Choose_UINT8_IP_implementation_NEON_DOTPROD(dim),
-                         Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim)});
-    }
-#endif
-#ifdef OPT_NEON
-    if (opt.asimd) {
-        tiers.push_back({"NEON", Choose_UINT8_L2_implementation_NEON(dim),
-                         Choose_UINT8_IP_implementation_NEON(dim),
-                         Choose_UINT8_Cosine_implementation_NEON(dim)});
-    }
-#endif
-    return tiers;
-}
-
 // The dispatcher boundary. 33,025 is the last dimension whose worst-case total fits a signed 32-bit
 // accumulator, so it stays on SIMD; 33,026 is the first that does not, so it must come back as the
-// scalar kernel, which accumulates into a 64-bit ret_t.
-//
-// Asserting the returned pointer is the point here. On a host with no uint8 SIMD tier both sides
-// are the scalar function and the value comparisons below would pass either way, so the pointer
-// identity is the only thing that distinguishes the two cases, and it is skipped where it would be
-// vacuous.
+// scalar kernel, which accumulates into a 64-bit ret_t. At the bound the flags are stepped down the
+// way the UINT8SpacesOptimizationTest suites above do, so every tier this host has is asserted to
+// still be handed out there, not only the best one.
 TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
+    auto optimization = getCpuOptimizationFeatures();
     unsigned char alignment = 0;
     constexpr size_t last_simd = 33025;
     constexpr size_t first_scalar = 33026;
     static_assert(last_simd == spaces::UINT8_MAX_EXACT_SIMD_DIM,
                   "this test pins the documented bound, update both together");
 
-    // Above the bound, every metric must hand back the scalar kernel by name.
-    EXPECT_EQ(L2_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_L2Sqr);
-    EXPECT_EQ(IP_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_InnerProduct);
-    EXPECT_EQ(Cosine_UINT8_GetDistFunc(first_scalar, &alignment, nullptr), UINT8_Cosine);
+    // Above the bound, every metric must hand back the scalar kernel by name, whatever this host
+    // supports.
+    EXPECT_EQ(L2_UINT8_GetDistFunc(first_scalar, &alignment, &optimization), UINT8_L2Sqr);
+    EXPECT_EQ(IP_UINT8_GetDistFunc(first_scalar, &alignment, &optimization), UINT8_InnerProduct);
+    EXPECT_EQ(Cosine_UINT8_GetDistFunc(first_scalar, &alignment, &optimization), UINT8_Cosine);
 
     // The bound is where a signed 32-bit total runs out, so pin that arithmetically rather than
     // trusting the constant: the worst case at the bound must fit INT32_MAX, and must come within
@@ -2314,13 +2251,75 @@ TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
     static_assert(worst_at_bound > std::numeric_limits<int32_t>::max() - 65025,
                   "the bound no longer sits at the signed limit");
 
-    // At the bound the SIMD kernel is still eligible, so the guard is a boundary and not a blanket
-    // disable. Only meaningful where a uint8 SIMD tier exists.
-    if (!AvailableUInt8Tiers(last_simd).empty()) {
-        EXPECT_NE(L2_UINT8_GetDistFunc(last_simd, &alignment, nullptr), UINT8_L2Sqr);
-        EXPECT_NE(IP_UINT8_GetDistFunc(last_simd, &alignment, nullptr), UINT8_InnerProduct);
-        EXPECT_NE(Cosine_UINT8_GetDistFunc(last_simd, &alignment, nullptr), UINT8_Cosine);
+    // At the bound the SIMD kernels are still eligible, so the guard is a boundary and not a
+    // blanket disable.
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        EXPECT_EQ(L2_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_L2_implementation_SVE2(last_simd));
+        EXPECT_EQ(IP_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_IP_implementation_SVE2(last_simd));
+        EXPECT_EQ(Cosine_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_Cosine_implementation_SVE2(last_simd));
+        // Unset sve2 flag as well, so we'll choose the next option (default).
+        optimization.sve2 = 0;
     }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        EXPECT_EQ(L2_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_L2_implementation_SVE(last_simd));
+        EXPECT_EQ(IP_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_IP_implementation_SVE(last_simd));
+        EXPECT_EQ(Cosine_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_Cosine_implementation_SVE(last_simd));
+        // Unset sve flag as well, so we'll choose the next option (default).
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        EXPECT_EQ(L2_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_L2_implementation_NEON_DOTPROD(last_simd));
+        EXPECT_EQ(IP_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_IP_implementation_NEON_DOTPROD(last_simd));
+        EXPECT_EQ(Cosine_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_Cosine_implementation_NEON_DOTPROD(last_simd));
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimddp = 0;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        EXPECT_EQ(L2_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_L2_implementation_NEON(last_simd));
+        EXPECT_EQ(IP_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_IP_implementation_NEON(last_simd));
+        EXPECT_EQ(Cosine_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_Cosine_implementation_NEON(last_simd));
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.asimd = 0;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        EXPECT_EQ(L2_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(last_simd));
+        EXPECT_EQ(IP_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(last_simd));
+        EXPECT_EQ(Cosine_UINT8_GetDistFunc(last_simd, &alignment, &optimization),
+                  Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(last_simd));
+        // Unset optimizations flag, so we'll choose the next optimization.
+        optimization.avx512f = optimization.avx512bw = optimization.avx512vl =
+            optimization.avx512vnni = 0;
+    }
+#endif
+    // With every flag cleared the bound is served by the scalar kernel, same as any other
+    // dimension.
+    EXPECT_EQ(L2_UINT8_GetDistFunc(last_simd, &alignment, &optimization), UINT8_L2Sqr);
+    EXPECT_EQ(IP_UINT8_GetDistFunc(last_simd, &alignment, &optimization), UINT8_InnerProduct);
+    EXPECT_EQ(Cosine_UINT8_GetDistFunc(last_simd, &alignment, &optimization), UINT8_Cosine);
 
     // And the scalar path must actually be exact where it takes over, which is what makes the
     // fallback safe rather than merely different. All-255 against all-0 gives 65,025 * dim, which
@@ -2337,76 +2336,100 @@ TEST_F(SpacesTest, UINT8_dispatcher_falls_back_to_scalar_above_the_exact_dim) {
               UINT8_InnerProduct(ones.data(), ones.data(), first_scalar));
 }
 
-// The tests above go through the generic dispatcher, which only ever returns the best tier this
-// host supports, so on an ARM machine with SVE the NEON and NEON_DOTPROD chunked kernels are never
-// executed. Reach every compiled-in tier directly instead. Each tier is still gated on the CPU
-// actually supporting it, since calling an unsupported kernel faults.
+// The tests above go through the dispatcher, which only ever returns the best tier this host
+// supports, so on an ARM machine with SVE the NEON and NEON_DOTPROD kernels are never executed.
+// Reach every compiled-in tier directly, the way UINT8_full_range_test does, at the dimensions
+// where the accumulator is nearly full: 33,025 is the last dimension whose worst-case total fits
+// INT32_MAX and the others are residual-bearing, so every tier is exercised at its own tail
+// handling too. Each tier stays gated on the CPU supporting it, since calling an unsupported
+// kernel faults.
+//
+// Each metric gets the pair that maximises its total: 65,025 * dim, which is 2,147,450,625 at the
+// bound. Cosine cannot use the all-zero vector, whose norm is zero, so it runs against the ramp.
 TEST_F(SpacesTest, UINT8_every_tier_is_exact_up_to_the_dispatcher_cap) {
-    // Up to the dispatcher cap, which is where the chooser stops handing out SIMD. 33,025 is the
-    // last dimension whose worst-case total fits INT32_MAX; the others are residual-bearing
-    // dimensions just below it, so every tier is exercised at its own tail handling too.
-    const std::vector<size_t> dims = {32960, 32993, 33023, 33024, 33025};
-    std::set<std::string> all_tiers;
+    [[maybe_unused]] auto optimization = getCpuOptimizationFeatures();
 
-    constexpr size_t max_dim = 33025;
-    std::vector<uint8_t> ones(max_dim + sizeof(float), 255);
-    std::vector<uint8_t> ramp(max_dim + sizeof(float));
-    for (size_t i = 0; i < max_dim; i++) {
-        ramp[i] = static_cast<uint8_t>(i % 256);
-    }
-
-    for (const size_t dim : dims) {
-        // These four bytes are payload for the larger dimensions in the list, so restore them
-        // once this dimension is done with them, or dimension d's norm corrupts dimension d + 1.
-        const float norm = std::sqrt(255.0f * 255.0f * static_cast<float>(dim));
-        uint8_t saved_ones[sizeof(float)];
-        uint8_t saved_ramp[sizeof(float)];
-        memcpy(saved_ones, ones.data() + dim, sizeof(float));
-        memcpy(saved_ramp, ramp.data() + dim, sizeof(float));
-        memcpy(ones.data() + dim, &norm, sizeof(float));
-        memcpy(ramp.data() + dim, &norm, sizeof(float));
-        const void *a = ramp.data();
-        const void *b = ones.data();
-
-        const float want_l2 = UINT8_L2Sqr(a, b, dim);
-        const float want_ip = UINT8_InnerProduct(a, b, dim);
-        const float want_cos = UINT8_Cosine(a, b, dim);
-
-        std::string covered;
-        for (const auto &tier : AvailableUInt8Tiers(dim)) {
-            EXPECT_EQ(want_l2, tier.l2(a, b, dim)) << "L2 " << tier.name << " dim " << dim;
-            EXPECT_EQ(want_ip, tier.ip(a, b, dim)) << "IP " << tier.name << " dim " << dim;
-            EXPECT_EQ(want_cos, tier.cosine(a, b, dim)) << "Cosine " << tier.name << " dim " << dim;
-            all_tiers.insert(tier.name);
-            covered += covered.empty() ? tier.name : std::string(", ") + tier.name;
+    for (const size_t dim : {32960UL, 32993UL, 33023UL, 33024UL, 33025UL}) {
+        std::vector<uint8_t> ones(dim + sizeof(float), 255);
+        std::vector<uint8_t> zeros(dim + sizeof(float), 0);
+        std::vector<uint8_t> ramp(dim + sizeof(float));
+        for (size_t i = 0; i < dim; i++) {
+            ramp[i] = static_cast<uint8_t>(i % 256);
         }
-        RecordProperty("tiers_at_dim_" + std::to_string(dim), covered);
-        memcpy(ones.data() + dim, saved_ones, sizeof(float));
-        memcpy(ramp.data() + dim, saved_ramp, sizeof(float));
-        std::cout << "  dim " << dim << " covered tiers: " << (covered.empty() ? "<none>" : covered)
-                  << std::endl;
-    }
 
-    // Order matters. A stated requirement must be able to FAIL, so it is checked before the skip:
-    // hardware-specific CI sets VECSIM_REQUIRE_UINT8_TIER to the tier that job exists to cover
-    // (AVX512F_BW_VL_VNNI, SVE2, SVE, NEON_DOTPROD or NEON), and a mislabeled or silently
-    // downgraded runner then fails instead of quietly skipping.
-    // An empty value counts as unset. A CI expression that expands to nothing still puts the
-    // variable in the environment, so getenv returns a pointer to "" rather than nullptr, and
-    // treating that as a requirement fails every job that did not ask for one.
-    const char *required = std::getenv("VECSIM_REQUIRE_UINT8_TIER");
-    if (required != nullptr && *required != '\0') {
-        EXPECT_TRUE(all_tiers.count(required) > 0)
-            << "VECSIM_REQUIRE_UINT8_TIER=" << required << " but that tier was not exercised. "
-            << "This host reached " << all_tiers.size() << " tier(s), so the run proves nothing "
-            << "about " << required;
-        return;
-    }
+        // write the norm at the end of the vector
+        const float norm_ones = test_utils::integral_compute_norm(ones.data(), dim);
+        const float norm_ramp = test_utils::integral_compute_norm(ramp.data(), dim);
+        std::memcpy(ones.data() + dim, &norm_ones, sizeof(norm_ones));
+        std::memcpy(ramp.data() + dim, &norm_ramp, sizeof(norm_ramp));
 
-    // With no requirement stated, a run that exercised no tier proves nothing. Report it skipped
-    // rather than passed, because passing reads as coverage on a host that has none.
-    if (all_tiers.empty()) {
-        GTEST_SKIP() << "no uint8 SIMD tier on this host, no chunked kernel was executed";
+        const uint8_t *l2_a = ones.data(), *l2_b = zeros.data();
+        const uint8_t *ip_a = ones.data(), *ip_b = ones.data();
+        const uint8_t *cos_a = ones.data(), *cos_b = ramp.data();
+
+        float baseline_l2 = UINT8_L2Sqr(l2_a, l2_b, dim);
+        float baseline_ip = UINT8_InnerProduct(ip_a, ip_b, dim);
+        float baseline_cosine = UINT8_Cosine(cos_a, cos_b, dim);
+
+        dist_func_t<float> arch_opt_func;
+#ifdef OPT_SVE2
+        if (optimization.sve2) {
+            arch_opt_func = Choose_UINT8_L2_implementation_SVE2(dim);
+            ASSERT_EQ(baseline_l2, arch_opt_func(l2_a, l2_b, dim)) << "L2 SVE2 with dim " << dim;
+            arch_opt_func = Choose_UINT8_IP_implementation_SVE2(dim);
+            ASSERT_EQ(baseline_ip, arch_opt_func(ip_a, ip_b, dim)) << "IP SVE2 with dim " << dim;
+            arch_opt_func = Choose_UINT8_Cosine_implementation_SVE2(dim);
+            ASSERT_EQ(baseline_cosine, arch_opt_func(cos_a, cos_b, dim))
+                << "Cosine SVE2 with dim " << dim;
+        }
+#endif
+#ifdef OPT_SVE
+        if (optimization.sve) {
+            arch_opt_func = Choose_UINT8_L2_implementation_SVE(dim);
+            ASSERT_EQ(baseline_l2, arch_opt_func(l2_a, l2_b, dim)) << "L2 SVE with dim " << dim;
+            arch_opt_func = Choose_UINT8_IP_implementation_SVE(dim);
+            ASSERT_EQ(baseline_ip, arch_opt_func(ip_a, ip_b, dim)) << "IP SVE with dim " << dim;
+            arch_opt_func = Choose_UINT8_Cosine_implementation_SVE(dim);
+            ASSERT_EQ(baseline_cosine, arch_opt_func(cos_a, cos_b, dim))
+                << "Cosine SVE with dim " << dim;
+        }
+#endif
+#ifdef OPT_NEON_DOTPROD
+        if (optimization.asimddp) {
+            arch_opt_func = Choose_UINT8_L2_implementation_NEON_DOTPROD(dim);
+            ASSERT_EQ(baseline_l2, arch_opt_func(l2_a, l2_b, dim))
+                << "L2 NEON_DOTPROD with dim " << dim;
+            arch_opt_func = Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
+            ASSERT_EQ(baseline_ip, arch_opt_func(ip_a, ip_b, dim))
+                << "IP NEON_DOTPROD with dim " << dim;
+            arch_opt_func = Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
+            ASSERT_EQ(baseline_cosine, arch_opt_func(cos_a, cos_b, dim))
+                << "Cosine NEON_DOTPROD with dim " << dim;
+        }
+#endif
+#ifdef OPT_NEON
+        if (optimization.asimd) {
+            arch_opt_func = Choose_UINT8_L2_implementation_NEON(dim);
+            ASSERT_EQ(baseline_l2, arch_opt_func(l2_a, l2_b, dim)) << "L2 NEON with dim " << dim;
+            arch_opt_func = Choose_UINT8_IP_implementation_NEON(dim);
+            ASSERT_EQ(baseline_ip, arch_opt_func(ip_a, ip_b, dim)) << "IP NEON with dim " << dim;
+            arch_opt_func = Choose_UINT8_Cosine_implementation_NEON(dim);
+            ASSERT_EQ(baseline_cosine, arch_opt_func(cos_a, cos_b, dim))
+                << "Cosine NEON with dim " << dim;
+        }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+            optimization.avx512vnni) {
+            arch_opt_func = Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+            ASSERT_EQ(baseline_l2, arch_opt_func(l2_a, l2_b, dim)) << "L2 AVX512 with dim " << dim;
+            arch_opt_func = Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+            ASSERT_EQ(baseline_ip, arch_opt_func(ip_a, ip_b, dim)) << "IP AVX512 with dim " << dim;
+            arch_opt_func = Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+            ASSERT_EQ(baseline_cosine, arch_opt_func(cos_a, cos_b, dim))
+                << "Cosine AVX512 with dim " << dim;
+        }
+#endif
     }
 }
 
