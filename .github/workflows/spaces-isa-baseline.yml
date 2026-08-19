@@ -29,7 +29,7 @@ jobs:
             echo "Expected the configure to fail because of the inherited -march=native, but it succeeded."
             exit 1
           fi
-          if ! echo "$output" | grep -q -- "-march=native"; then
+          if ! echo "$output" | grep -q -- "Refusing to configure"; then
             echo "Configure failed, but not with the expected message about -march=native."
             exit 1
           fi

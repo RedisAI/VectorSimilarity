@@ -5009,3 +5009,49 @@ TEST_F(SpacesTest, CpuFeatureIntersectionAarch64) {
     }
 }
 #endif // CPU_FEATURES_ARCH_AARCH64
+
+// The CpuFeatureIntersection* tests above call intersectWithDetectedFeatures() directly; they do
+// not exercise getCpuOptimizationFeatures(&mask), which is the actual entry point every real
+// caller (and every chooser in spaces.cpp) goes through, and the function whose behavior this
+// series of fixes changed. Cover that entry point here: a mask claiming every feature still
+// cannot make the result report a feature the live hardware does not have, since
+// getCpuOptimizationFeatures() always intersects the passed-in mask with a fresh read of the
+// real detected features, not with whatever the caller believes is detected.
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST_F(SpacesTest, GetCpuOptimizationFeaturesAppliesMaskX86) {
+    auto detected = getCpuOptimizationFeatures();
+
+    auto all_claimed = detected;
+    std::memset(&all_claimed, 0xFF, sizeof(all_claimed));
+
+    auto result = getCpuOptimizationFeatures(&all_claimed);
+    for (int i = 0; i < cpu_features::X86_LAST_; i++) {
+        auto value = static_cast<cpu_features::X86FeaturesEnum>(i);
+        bool detected_bit =
+            static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&detected, value));
+        bool result_bit = static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&result, value));
+        ASSERT_EQ(result_bit, detected_bit)
+            << "feature " << cpu_features::GetX86FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_X86_64
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+TEST_F(SpacesTest, GetCpuOptimizationFeaturesAppliesMaskAarch64) {
+    auto detected = getCpuOptimizationFeatures();
+
+    auto all_claimed = detected;
+    std::memset(&all_claimed, 0xFF, sizeof(all_claimed));
+
+    auto result = getCpuOptimizationFeatures(&all_claimed);
+    for (int i = 0; i < cpu_features::AARCH64_LAST_; i++) {
+        auto value = static_cast<cpu_features::Aarch64FeaturesEnum>(i);
+        bool detected_bit =
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&detected, value));
+        bool result_bit =
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&result, value));
+        ASSERT_EQ(result_bit, detected_bit)
+            << "feature " << cpu_features::GetAarch64FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_AARCH64

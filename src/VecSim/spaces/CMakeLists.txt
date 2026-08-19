@@ -27,15 +27,26 @@ set(OPTIMIZATIONS "")
 # upstream already raised it.
 include(CheckCXXCompilerFlag)
 
+# SPACES_ARCH_FAMILY is computed once here from CMAKE_SYSTEM_PROCESSOR so the two arch regexes
+# below are not repeated again at the tier-gating if() blocks further down (x86_64 tiers and ARM
+# tiers each used to re-run the same MATCHES check). Everything downstream branches on this
+# variable instead of re-matching CMAKE_SYSTEM_PROCESSOR.
+set(SPACES_ARCH_FAMILY "")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+	set(SPACES_ARCH_FAMILY "x86_64")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+	set(SPACES_ARCH_FAMILY "aarch64")
+endif()
+
 set(SPACES_BASELINE_ARCH_FLAG "")
 set(SPACES_BASELINE_VALUE "")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+if(SPACES_ARCH_FAMILY STREQUAL "x86_64")
 	CHECK_CXX_COMPILER_FLAG(-march=x86-64 CXX_BASELINE_X86_64)
 	if(CXX_BASELINE_X86_64)
 		set(SPACES_BASELINE_VALUE "x86-64")
 		set(SPACES_BASELINE_ARCH_FLAG "-march=${SPACES_BASELINE_VALUE}")
 	endif()
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+elseif(SPACES_ARCH_FAMILY STREQUAL "aarch64")
 	CHECK_CXX_COMPILER_FLAG(-march=armv8-a CXX_BASELINE_ARMV8A)
 	if(CXX_BASELINE_ARMV8A)
 		set(SPACES_BASELINE_VALUE "armv8-a")
@@ -46,13 +57,18 @@ endif()
 # the compiler may reject. A compiler that rejects the baseline flag above also degrades to
 # adding nothing rather than failing the configure.
 
-# Reject flags that would raise that baseline outside this file's control. This library is
-# built on one machine and run on another, so a native baseline (auto-detected from the build
-# machine) or an explicit -march/-mcpu different from the one chosen above would let the
-# compiler vectorize the scalar fallback with instructions the deployment CPU may lack,
-# defeating runtime dispatch. -mtune is deliberately not checked: it only changes instruction
-# scheduling, not which instructions are legal, so a non-native -mtune does not threaten the
-# invariant and rejecting it would break legitimate consumer builds.
+# A native baseline (auto-detected from the build machine, so its instruction set is unknown
+# ahead of time) is rejected outright below: it would let the compiler vectorize the scalar
+# fallback with instructions the deployment CPU may lack, defeating runtime dispatch, and there
+# is no safe way to honor it. An explicit non-native -march/-mcpu that merely differs from the
+# baseline chosen above is a deliberate, known deployment floor (for example -march=x86-64-v2,
+# now a distro default, or -mcpu=neoverse-n1), so it only gets a warning: the target-level
+# baseline applied further down with target_compile_options() still keeps the scalar fallback
+# on the conservative baseline regardless, and the per-tier source-level flags still win for the
+# functions/*.cpp tiers, so the value is respected everywhere else it is meant to apply.
+# -mtune is deliberately not checked: it only changes instruction scheduling, not which
+# instructions are legal, so a non-native -mtune does not threaten the invariant and rejecting
+# it would break legitimate consumer builds.
 function(_spaces_reject_isa_override description flags_string)
 	if("${flags_string}" STREQUAL "")
 		return()
@@ -68,12 +84,12 @@ function(_spaces_reject_isa_override description flags_string)
 				"Remove '${_flag}' from ${description}.")
 		elseif(_flag MATCHES "^-m(arch|cpu)=(.+)$")
 			if(NOT SPACES_BASELINE_VALUE STREQUAL "" AND NOT CMAKE_MATCH_2 STREQUAL SPACES_BASELINE_VALUE)
-				message(FATAL_ERROR
-					"Found '${_flag}' in ${description}. Refusing to configure: this raises the "
-					"ISA baseline above '${SPACES_BASELINE_ARCH_FLAG}'. This library is built on "
-					"one machine and run on another, so raising the baseline for the scalar "
-					"fallback (VectorSimilaritySpaces_no_optimization) would defeat runtime "
-					"dispatch. Remove '${_flag}' from ${description} or match the baseline.")
+				message(WARNING
+					"Found '${_flag}' in ${description}, which differs from the baseline "
+					"'${SPACES_BASELINE_ARCH_FLAG}' this build would otherwise pick. The conservative "
+					"baseline is still applied to the scalar fallback "
+					"(VectorSimilaritySpaces_no_optimization), so it stays safe; '${_flag}' is "
+					"respected everywhere else.")
 			endif()
 		endif()
 	endforeach()
@@ -86,7 +102,7 @@ if(CMAKE_BUILD_TYPE)
 endif()
 _spaces_reject_isa_override("the CXXFLAGS environment variable" "$ENV{CXXFLAGS}")
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+if(SPACES_ARCH_FAMILY STREQUAL "x86_64")
 	# Check that the compiler supports instructions flag.
 	# from gcc14+ -mavx512bw is implicitly enabled when -mavx512vbmi2 is requested
 	include(${root}/cmake/x86_64InstructionFlags.cmake)
@@ -196,7 +212,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	endif()
 endif()
 
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+if (SPACES_ARCH_FAMILY STREQUAL "aarch64")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 
 	# Create different optimization implementations for ARM architecture
