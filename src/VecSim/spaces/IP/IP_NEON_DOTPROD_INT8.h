@@ -27,7 +27,8 @@ __attribute__((always_inline)) static inline void InnerProductStep(int8_t *&pVec
 }
 
 template <unsigned char residual> // 0..63
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+// static: IP_NEON_INT8.h defines this same name with a different body. See the note there.
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 

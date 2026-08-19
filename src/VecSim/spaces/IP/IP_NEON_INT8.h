@@ -34,7 +34,10 @@ __attribute__((always_inline)) static inline void InnerProductStep(int8_t *&pVec
 }
 
 template <unsigned char residual> // 0..63
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+// static: IP_NEON_DOTPROD_INT8.h defines this same name with a different body and both are
+// compiled into every ARM build, so external linkage let the linker keep one body and a
+// plain-NEON call site execute sdot, which faults where asimddp is absent.
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
