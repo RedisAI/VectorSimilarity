@@ -12,6 +12,8 @@
 #include "space_includes.h"
 
 #include <cassert>
+#include <cstdint>
+#include <limits>
 
 namespace spaces {
 
@@ -51,6 +53,17 @@ static int inline is_little_endian() {
     unsigned int x = 1;
     return *(char *)&x;
 }
+
+// The uint8 kernels accumulate products or squared byte differences, so the worst-case total is
+// 255 * 255 * dim, and every kernel holds that total in a signed 32-bit int. That makes 33,025 the
+// largest dimension they are exact at: 65025 * 33,025 is 2,147,450,625 and fits INT32_MAX, and one
+// dimension more does not. Above it the choosers hand back the scalar kernel, which accumulates
+// into a 64-bit ret_t and is exact at any dimension. Decided once per index, so no distance
+// computation pays for the check. The pull request covers why the bound is here and not at the
+// unsigned limit.
+static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
+    std::numeric_limits<int32_t>::max() /
+    (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
 
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
 

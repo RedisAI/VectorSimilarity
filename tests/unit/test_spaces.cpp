@@ -13,6 +13,7 @@
 #include <utility>
 #include <random>
 #include <cmath>
+#include <limits>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -2183,8 +2184,148 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
 #endif
 }
 
+// Worst-case bytes: all-255 against all-0 is the largest possible L2 total and all-255 against
+// itself the largest possible IP and cosine total, both 255 * 255 * dim. At
+// spaces::UINT8_MAX_EXACT_SIMD_DIM that is the largest total the kernels' 32-bit accumulators hold,
+// and one dimension later it passes INT32_MAX, which is what the dispatcher cap exists to keep out.
+// Tiers are called directly so a host with SVE still exercises its NEON kernels.
+TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
+    auto optimization = getCpuOptimizationFeatures();
+    const size_t dim = GetParam();
+
+    std::vector<uint8_t> v1(dim + sizeof(float), 255);
+    std::vector<uint8_t> v2(dim + sizeof(float), 0);
+
+    // write the norm at the end of the vector
+    const float norm_v1 = test_utils::integral_compute_norm(v1.data(), dim);
+    std::memcpy(v1.data() + dim, &norm_v1, sizeof(norm_v1));
+
+    float baseline_l2 = UINT8_L2Sqr(v1.data(), v2.data(), dim);
+    float baseline_ip = UINT8_InnerProduct(v1.data(), v1.data(), dim);
+    float baseline_cosine = UINT8_Cosine(v1.data(), v1.data(), dim);
+
+    // NEON and SVE compute 1.0f - float(sum), while the scalar and AVX512 kernels subtract in
+    // integers and convert once. Both are exact in integers, which is what the cap protects, but
+    // the two forms can land one float ULP apart at these totals: dimension 32,960 against all-255
+    // bytes is such a case, 128 apart at a magnitude of 2.1e9. So IP is compared within one ULP,
+    // while L2 and cosine, which convert the total and do no further integer arithmetic, are exact.
+    const float ip_ulp =
+        std::nextafterf(std::fabs(baseline_ip), std::numeric_limits<float>::infinity()) -
+        std::fabs(baseline_ip);
+
+    dist_func_t<float> arch_opt_func;
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        arch_opt_func = Choose_UINT8_L2_implementation_SVE2(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 SVE2 with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_SVE2(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP SVE2 with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_SVE2(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine SVE2 with dim " << dim;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        arch_opt_func = Choose_UINT8_L2_implementation_SVE(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_SVE(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_SVE(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine SVE with dim " << dim;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        arch_opt_func = Choose_UINT8_L2_implementation_NEON_DOTPROD(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 NEON_DOTPROD with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP NEON_DOTPROD with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine NEON_DOTPROD with dim " << dim;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        arch_opt_func = Choose_UINT8_L2_implementation_NEON(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 NEON with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_NEON(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP NEON with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_NEON(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine NEON with dim " << dim;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        arch_opt_func = Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 AVX512 with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP AVX512 with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine AVX512 with dim " << dim;
+    }
+#endif
+}
+
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                          testing::Range(32UL, 64 * 2UL + 1));
+
+// Dimensions just below spaces::UINT8_MAX_EXACT_SIMD_DIM, where the accumulated total is nearly all
+// a 32-bit accumulator holds. 33,025 is the cap itself and the others are residual-bearing, so each
+// tier is exercised at its own tail handling there. The [32, 128] range above cannot reach this:
+// its totals are four orders of magnitude smaller.
+INSTANTIATE_TEST_SUITE_P(UINT8OptFuncsNearCap, UINT8SpacesOptimizationTest,
+                         testing::Values(32960UL, 32993UL, 33023UL, 33024UL, 33025UL));
+
+// The dispatcher cap. Above spaces::UINT8_MAX_EXACT_SIMD_DIM every uint8 and SQ8_SQ8 chooser must
+// hand back its scalar kernel, whose ret_t is long long and so stays exact. The SQ8_SQ8 kernels
+// call the shared uint8 helper directly and never pass through a uint8 chooser, so they carry the
+// same guard. That the SIMD kernels are still handed out at the cap is covered by
+// UINT8OptFuncsNearCap above.
+TEST_F(SpacesTest, UINT8_DispatcherCapFallback) {
+    constexpr size_t cap = spaces::UINT8_MAX_EXACT_SIMD_DIM;
+    constexpr size_t above = cap + 1;
+    constexpr uint64_t max_term = 255ULL * 255ULL;
+    constexpr uint64_t int32_max = std::numeric_limits<int32_t>::max();
+    auto optimization = getCpuOptimizationFeatures();
+    unsigned char alignment = 0;
+
+    // The cap must sit exactly where a signed 32-bit total runs out, so pin it arithmetically
+    // rather than trusting the constant.
+    ASSERT_LE(max_term * cap, int32_max);
+    ASSERT_GT(max_term * above, int32_max);
+
+    ASSERT_EQ(L2_UINT8_GetDistFunc(above, &alignment, &optimization), UINT8_L2Sqr);
+    ASSERT_EQ(IP_UINT8_GetDistFunc(above, &alignment, &optimization), UINT8_InnerProduct);
+    ASSERT_EQ(Cosine_UINT8_GetDistFunc(above, &alignment, &optimization), UINT8_Cosine);
+    ASSERT_EQ(L2_SQ8_SQ8_GetDistFunc(above, &alignment, &optimization), SQ8_SQ8_L2Sqr);
+    ASSERT_EQ(IP_SQ8_SQ8_GetDistFunc(above, &alignment, &optimization), SQ8_SQ8_InnerProduct);
+    ASSERT_EQ(Cosine_SQ8_SQ8_GetDistFunc(above, &alignment, &optimization), SQ8_SQ8_Cosine);
+
+    // And the scalar kernels must be exact where they take over, which is what makes the fallback
+    // safe rather than merely different.
+    std::vector<uint8_t> v1(above + sizeof(float), 255);
+    std::vector<uint8_t> v2(above + sizeof(float), 0);
+    const int64_t total = static_cast<int64_t>(max_term * above);
+    ASSERT_EQ(static_cast<float>(total), UINT8_L2Sqr(v1.data(), v2.data(), above));
+    ASSERT_EQ(static_cast<float>(1 - total), UINT8_InnerProduct(v1.data(), v1.data(), above));
+}
 
 class SQ8_FP32_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 

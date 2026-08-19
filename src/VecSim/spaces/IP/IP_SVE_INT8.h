@@ -24,8 +24,9 @@ inline void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_
     offset += chunk; // Move to the next set of int8 elements
 }
 
+// static: this header is built into both the SVE and SVE2 units, at different -march.
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const int8_t *pVect1 = reinterpret_cast<const int8_t *>(pVect1v);
     const int8_t *pVect2 = reinterpret_cast<const int8_t *>(pVect2v);
 

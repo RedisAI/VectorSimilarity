@@ -467,6 +467,14 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 
     dist_func_t<float> ret_dist_func = UINT8_L2Sqr;
+
+    // Above this dimension the SIMD kernels' 32-bit total is no longer exact, so hand back the
+    // scalar kernel, which accumulates into a 64-bit ret_t. Decided here, once per index, so no
+    // distance computation pays for the check. See spaces.h for how the bound is derived.
+    if (dim > spaces::UINT8_MAX_EXACT_SIMD_DIM) {
+        return ret_dist_func;
+    }
+
     // Optimizations assume at least 32 uint8. If we have less, we use the naive implementation.
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
@@ -516,6 +524,13 @@ dist_func_t<float> L2_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 
     dist_func_t<float> ret_dist_func = SQ8_SQ8_L2Sqr;
+
+    // The SQ8_SQ8 kernels call the shared UINT8_InnerProductImp directly, so they inherit its
+    // 32-bit total and the same bound, and no uint8 chooser sees these calls. The scalar fallback
+    // accumulates in float: imprecise past 2^24, but well defined, unlike a wrapped signed reduce.
+    if (dim > spaces::UINT8_MAX_EXACT_SIMD_DIM) {
+        return ret_dist_func;
+    }
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 
 #ifdef CPU_FEATURES_ARCH_AARCH64

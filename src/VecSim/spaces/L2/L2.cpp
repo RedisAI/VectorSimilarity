@@ -133,11 +133,11 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {
 }
 
 // Return type for the L2 functions.
-// The type should be able to hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`.
-// To support dimension up to 2^16, we need the difference between the type and int_elem_t to be at
-// least 2 bytes. We assert that in the implementation.
+// The type must hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`. For uint8 that
+// is 65025 * dimension, which overflows a 32-bit int from dimension 33,026, and this is the
+// kernel the chooser falls back to above that dimension, so UINT8_L2Sqr must be exact there.
 template <typename int_elem_t>
-using ret_t = std::conditional_t<sizeof(int_elem_t) == 1, int, long long>;
+using ret_t = long long;
 
 // Difference type for the L2 functions.
 // The type should be able to hold `MIN_VAL(int_elem_t)-MAX_VAL(int_elem_t)`, and should be signed

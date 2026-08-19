@@ -33,8 +33,9 @@ __attribute__((always_inline)) static inline void InnerProductStep(int8_t *&pVec
     pVect2 += 16;
 }
 
+// static: the DOTPROD header defines this name too, with a different body.
 template <unsigned char residual> // 0..63
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
