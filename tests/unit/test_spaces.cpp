@@ -3372,7 +3372,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
     }
 #endif
 #ifdef OPT_NEON_FHM
-    if (optimization.asimdfhm) {
+    if (optimization.asimdhp && optimization.asimdfhm) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_NEON_FHM(dim))
@@ -3498,7 +3498,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     }
 #endif
 #ifdef OPT_NEON_FHM
-    if (optimization.asimdfhm) {
+    if (optimization.asimdhp && optimization.asimdfhm) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_NEON_FHM(dim))
@@ -3624,7 +3624,7 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
     }
 #endif
 #ifdef OPT_NEON_FHM
-    if (optimization.asimdfhm) {
+    if (optimization.asimdhp && optimization.asimdfhm) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(dim))
