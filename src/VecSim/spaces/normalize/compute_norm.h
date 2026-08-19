@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <cmath>
 #include <type_traits>
 
@@ -17,9 +18,9 @@ template <typename DataType>
 static inline float IntegralType_ComputeNorm(const DataType *vec, const size_t dim) {
     static_assert(std::is_integral_v<DataType>, "DataType must be an integral type");
 
-    // long long, not int: each uint8 term reaches 65,025, so the total passes INT32_MAX from
+    // uint64_t, not int: each uint8 term reaches 65,025, so the total passes INT32_MAX from
     // dimension 33,026 and this norm feeds every cosine distance. int8 overflowed from 131,072.
-    long long sum = 0;
+    uint64_t sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
         // No need to cast to int because c++ integer promotion ensures vec[i] is promoted to int
