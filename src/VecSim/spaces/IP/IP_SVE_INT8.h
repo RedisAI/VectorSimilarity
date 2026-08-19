@@ -25,7 +25,9 @@ inline void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_
 }
 
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+// static: this header is compiled into both SVE.cpp (-march=armv8-a+sve) and SVE2.cpp
+// (-march=armv9-a+sve2), so one mangled name carried two different bodies.
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const int8_t *pVect1 = reinterpret_cast<const int8_t *>(pVect1v);
     const int8_t *pVect2 = reinterpret_cast<const int8_t *>(pVect2v);
 
