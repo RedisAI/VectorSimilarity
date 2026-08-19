@@ -1,0 +1,35 @@
+name: spaces ISA baseline guard
+
+# This job asserts a negative: that configuring with an ISA-raising flag injected through
+# CXXFLAGS makes CMake fail, because src/VecSim/spaces/CMakeLists.txt rejects it. It is kept
+# separate from the main build jobs, since a green run here proves nothing about the build
+# itself, only that the rejection still fires.
+
+on: [workflow_call, workflow_dispatch]
+
+jobs:
+  reject-native-baseline:
+    name: configure with CXXFLAGS=-march=native must fail
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: assert configure fails on an inherited -march=native
+        env:
+          CXXFLAGS: -march=native
+        run: |
+          set +e
+          output=$(cmake -S . -B build-reject -DVECSIM_BUILD_TESTS=OFF 2>&1)
+          status=$?
+          echo "$output"
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Expected the configure to fail because of the inherited -march=native, but it succeeded."
+            exit 1
+          fi
+          if ! echo "$output" | grep -q -- "-march=native"; then
+            echo "Configure failed, but not with the expected message about -march=native."
+            exit 1
+          fi

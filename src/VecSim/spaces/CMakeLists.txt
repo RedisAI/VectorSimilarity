@@ -13,6 +13,79 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wall")
 
 set(OPTIMIZATIONS "")
 
+# --------------------------------------------------------------------------------------------
+# Conservative architecture baseline for the scalar fallback.
+#
+# VectorSimilaritySpaces_no_optimization (L2/L2.cpp, IP/IP.cpp) is the scalar fallback that
+# runtime dispatch degrades to when the CPU lacks a tier's required features, and the only
+# implementation that must run on every deployment CPU. The root CMakeLists.txt repeatedly
+# appends to whatever CMAKE_CXX_FLAGS it inherits, and consumers export CXXFLAGS into this
+# build (RediSearch's build.sh does), so an inherited -march=native would silently let the
+# compiler auto-vectorize the fallback itself with instructions the deployment CPU may not
+# have, defeating runtime dispatch in the one place that must be universally safe. Pin a
+# conservative baseline per target architecture below, and refuse to configure if something
+# upstream already raised it.
+include(CheckCXXCompilerFlag)
+
+set(SPACES_BASELINE_ARCH_FLAG "")
+set(SPACES_BASELINE_VALUE "")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
+	CHECK_CXX_COMPILER_FLAG(-march=x86-64 CXX_BASELINE_X86_64)
+	if(CXX_BASELINE_X86_64)
+		set(SPACES_BASELINE_VALUE "x86-64")
+		set(SPACES_BASELINE_ARCH_FLAG "-march=${SPACES_BASELINE_VALUE}")
+	endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+	CHECK_CXX_COMPILER_FLAG(-march=armv8-a CXX_BASELINE_ARMV8A)
+	if(CXX_BASELINE_ARMV8A)
+		set(SPACES_BASELINE_VALUE "armv8-a")
+		set(SPACES_BASELINE_ARCH_FLAG "-march=${SPACES_BASELINE_VALUE}")
+	endif()
+endif()
+# Any other architecture keeps an empty baseline: adding nothing is safer than guessing a flag
+# the compiler may reject. A compiler that rejects the baseline flag above also degrades to
+# adding nothing rather than failing the configure.
+
+# Reject flags that would raise that baseline outside this file's control. This library is
+# built on one machine and run on another, so a native baseline (auto-detected from the build
+# machine) or an explicit -march/-mcpu different from the one chosen above would let the
+# compiler vectorize the scalar fallback with instructions the deployment CPU may lack,
+# defeating runtime dispatch. -mtune is deliberately not checked: it only changes instruction
+# scheduling, not which instructions are legal, so a non-native -mtune does not threaten the
+# invariant and rejecting it would break legitimate consumer builds.
+function(_spaces_reject_isa_override description flags_string)
+	if("${flags_string}" STREQUAL "")
+		return()
+	endif()
+	separate_arguments(_flags UNIX_COMMAND "${flags_string}")
+	foreach(_flag ${_flags})
+		if(_flag MATCHES "^-m(arch|tune|cpu)=native$")
+			message(FATAL_ERROR
+				"Found '${_flag}' in ${description}. Refusing to configure: this library is "
+				"built on one machine and run on another, so a native ISA baseline would let "
+				"the compiler vectorize the scalar fallback (VectorSimilaritySpaces_no_optimization) "
+				"with instructions the deployment CPU may lack, defeating runtime dispatch. "
+				"Remove '${_flag}' from ${description}.")
+		elseif(_flag MATCHES "^-m(arch|cpu)=(.+)$")
+			if(NOT SPACES_BASELINE_VALUE STREQUAL "" AND NOT CMAKE_MATCH_2 STREQUAL SPACES_BASELINE_VALUE)
+				message(FATAL_ERROR
+					"Found '${_flag}' in ${description}. Refusing to configure: this raises the "
+					"ISA baseline above '${SPACES_BASELINE_ARCH_FLAG}'. This library is built on "
+					"one machine and run on another, so raising the baseline for the scalar "
+					"fallback (VectorSimilaritySpaces_no_optimization) would defeat runtime "
+					"dispatch. Remove '${_flag}' from ${description} or match the baseline.")
+			endif()
+		endif()
+	endforeach()
+endfunction()
+
+_spaces_reject_isa_override("CMAKE_CXX_FLAGS" "${CMAKE_CXX_FLAGS}")
+if(CMAKE_BUILD_TYPE)
+	string(TOUPPER "${CMAKE_BUILD_TYPE}" _spaces_build_type_upper)
+	_spaces_reject_isa_override("CMAKE_CXX_FLAGS_${_spaces_build_type_upper}" "${CMAKE_CXX_FLAGS_${_spaces_build_type_upper}}")
+endif()
+_spaces_reject_isa_override("the CXXFLAGS environment variable" "$ENV{CXXFLAGS}")
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64)|(AMD64|amd64)|(^i.86$)")
 	# Check that the compiler supports instructions flag.
 	# from gcc14+ -mavx512bw is implicitly enabled when -mavx512vbmi2 is requested
@@ -191,3 +264,14 @@ add_library(VectorSimilaritySpaces
 )
 
 target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features)
+
+if(NOT SPACES_BASELINE_ARCH_FLAG STREQUAL "")
+	# Appended at target level (PRIVATE, so it does not propagate to consumers linking this
+	# library) rather than folded into CMAKE_CXX_FLAGS, so it overrides anything a parent build
+	# inherited through CMAKE_CXX_FLAGS. CMake emits target-level COMPILE_OPTIONS before
+	# source-level COMPILE_FLAGS on the same command line, so the per-tier ISA flags attached
+	# above via set_source_files_properties() still win for the functions/*.cpp TUs that carry
+	# them.
+	target_compile_options(VectorSimilaritySpaces_no_optimization PRIVATE ${SPACES_BASELINE_ARCH_FLAG})
+	target_compile_options(VectorSimilaritySpaces PRIVATE ${SPACES_BASELINE_ARCH_FLAG})
+endif()
