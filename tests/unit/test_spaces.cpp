@@ -2204,6 +2204,15 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
     float baseline_ip = UINT8_InnerProduct(v1.data(), v1.data(), dim);
     float baseline_cosine = UINT8_Cosine(v1.data(), v1.data(), dim);
 
+    // NEON and SVE compute 1.0f - float(sum), while the scalar and AVX512 kernels subtract in
+    // integers and convert once. Both are exact in integers, which is what the cap protects, but
+    // the two forms can land one float ULP apart at these totals: dimension 32,960 against all-255
+    // bytes is such a case, 128 apart at a magnitude of 2.1e9. So IP is compared within one ULP,
+    // while L2 and cosine, which convert the total and do no further integer arithmetic, are exact.
+    const float ip_ulp =
+        std::nextafterf(std::fabs(baseline_ip), std::numeric_limits<float>::infinity()) -
+        std::fabs(baseline_ip);
+
     dist_func_t<float> arch_opt_func;
 
 #ifdef OPT_SVE2
@@ -2212,7 +2221,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
         ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
             << "L2 SVE2 with dim " << dim;
         arch_opt_func = Choose_UINT8_IP_implementation_SVE2(dim);
-        ASSERT_EQ(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim))
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
             << "IP SVE2 with dim " << dim;
         arch_opt_func = Choose_UINT8_Cosine_implementation_SVE2(dim);
         ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
@@ -2225,7 +2234,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
         ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
             << "L2 SVE with dim " << dim;
         arch_opt_func = Choose_UINT8_IP_implementation_SVE(dim);
-        ASSERT_EQ(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim))
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
             << "IP SVE with dim " << dim;
         arch_opt_func = Choose_UINT8_Cosine_implementation_SVE(dim);
         ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
@@ -2238,7 +2247,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
         ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
             << "L2 NEON_DOTPROD with dim " << dim;
         arch_opt_func = Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
-        ASSERT_EQ(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim))
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
             << "IP NEON_DOTPROD with dim " << dim;
         arch_opt_func = Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
         ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
@@ -2251,7 +2260,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
         ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
             << "L2 NEON with dim " << dim;
         arch_opt_func = Choose_UINT8_IP_implementation_NEON(dim);
-        ASSERT_EQ(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim))
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
             << "IP NEON with dim " << dim;
         arch_opt_func = Choose_UINT8_Cosine_implementation_NEON(dim);
         ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
@@ -2265,7 +2274,7 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
         ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
             << "L2 AVX512 with dim " << dim;
         arch_opt_func = Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
-        ASSERT_EQ(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim))
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
             << "IP AVX512 with dim " << dim;
         arch_opt_func = Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
         ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
