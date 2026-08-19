@@ -26,8 +26,8 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
     pVect2 += 16;
 }
 
+// static: the plain NEON header defines this name too, with a different body.
 template <unsigned char residual> // 0..63
-// static: IP_NEON_UINT8.h defines this same name with a different body. See the note there.
 static float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;

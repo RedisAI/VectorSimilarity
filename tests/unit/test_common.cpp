@@ -762,8 +762,8 @@ TEST(CommonAPITest, NormalizeUint8) {
 // takes this path, so a wrong norm reaches the distance kernels before they run, and no amount of
 // exactness inside the kernels can repair it.
 //
-// Raised in review of MOD-17527 by @lerman25. It went unnoticed because the kernel tests append the
-// norm by hand and so never exercised this path at all.
+// This went unnoticed because the kernel tests append the norm by hand, so no test
+// exercised this path at all.
 TEST(CommonAPITest, NormalizeUint8LargeDimension) {
     // 33,025 is the last dimension whose worst case fits a signed int; the rest are past it.
     for (const size_t dim : {size_t{33025}, size_t{33026}, size_t{65537}, size_t{66052}}) {

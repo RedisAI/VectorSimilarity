@@ -34,10 +34,8 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
     pVect2 += 16;
 }
 
+// static: the DOTPROD header defines this name too, with a different body.
 template <unsigned char residual> // 0..63
-// static: IP_NEON_DOTPROD_UINT8.h defines this same name with a different body and both are
-// compiled into every ARM build, so external linkage let the linker keep one body and a
-// plain-NEON call site execute udot, which faults where asimddp is absent.
 static float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
