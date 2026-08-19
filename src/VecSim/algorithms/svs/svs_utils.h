@@ -167,13 +167,14 @@ joinSearchParams(svs::index::vamana::VamanaSearchParameters &&sp,
 // @param bs VecSim block size
 // @param elem_size SVS storage element size
 // @return block size in type of SVS `PowerOfTwo`
-inline svs::lib::PowerOfTwo SVSBlockSize(size_t bs, size_t elem_size) {
+inline svs::data::BlockingParameters SVSBlockSize(size_t bs, size_t elem_size) {
     auto svs_bs = svs::lib::prevpow2(bs * elem_size);
     // block size should not be less than element size
     while (svs_bs.value() < elem_size) {
         svs_bs = svs::lib::PowerOfTwo{svs_bs.raw() + 1};
     }
-    return svs_bs;
+    auto svs_bs_elems = svs::lib::prevpow2(bs);
+    return svs::data::BlockingParameters{svs_bs, svs_bs_elems};
 }
 
 // Check if the SVS implementation supports Quantization mode
