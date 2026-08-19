@@ -27,7 +27,7 @@ endforeach()
 
 include(GoogleTest)
 
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 	add_compile_definitions(BENCHMARK_ARCH=arm64)
 else()
