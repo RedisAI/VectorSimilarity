@@ -2236,6 +2236,80 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     VecSimIndex_Free(index);
 }
 
+// `isolateDeletedElement` handles three edge shapes, and the two that involve another *deleted*
+// element are the ones that no repair job ever fixes - two deleted elements never get a repair job
+// for each other's deletion. Build those two shapes explicitly, as a workload only runs into them
+// incidentally.
+TYPED_TEST(HNSWTest, isolateDeletedElementEdgeShapes) {
+    size_t dim = 8;
+    size_t n = dim;
+    size_t M = 8;
+
+    // An index with a full graph at level 0, in which 0 and 1 are marked deleted and every live
+    // element was already repaired. The only edges left on 0 are then the one to 1 - between two
+    // deleted elements, recorded on neither side - and unidirectional ones to the live elements.
+    auto build_index = [&]() {
+        HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M};
+        VecSimIndex *index = this->CreateNewIndex(params);
+        TEST_DATA_T vec[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (size_t i = 0; i < n; i++) {
+            vec[i] = 1.0;
+            VecSimIndex_AddVector(index, vec, i);
+            vec[i] = 0.0;
+        }
+        auto *hnsw_index = this->CastToHNSW(index);
+        hnsw_index->markDelete(0);
+        hnsw_index->markDelete(1);
+        for (size_t i = 2; i < n; i++) {
+            hnsw_index->repairNodeConnections(i, 0);
+        }
+        return index;
+    };
+
+    const idType isolated_id = 0;
+    const idType deleted_neighbour_id = 1;
+
+    auto assert_isolated = [&](auto *hnsw_index) {
+        ElementLevelData &isolated = hnsw_index->getElementLevelData(isolated_id, 0);
+        ASSERT_EQ(isolated.getNumLinks(), 0);
+        ASSERT_TRUE(isolated.getIncomingEdges().empty());
+        for (idType i = 1; i < (idType)n; i++) {
+            ASSERT_FALSE(hnsw_index->hasLink(hnsw_index->getElementLevelData(i, 0), isolated_id));
+        }
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    };
+
+    // A bidirectional edge between two deleted elements: 1 was never repaired, so 0 <-> 1 is
+    // still intact.
+    {
+        VecSimIndex *index = build_index();
+        auto *hnsw_index = this->CastToHNSW(index);
+        ASSERT_TRUE(hnsw_index->hasLink(hnsw_index->getElementLevelData(isolated_id, 0),
+                                        deleted_neighbour_id));
+        ASSERT_TRUE(hnsw_index->hasLink(hnsw_index->getElementLevelData(deleted_neighbour_id, 0),
+                                        isolated_id));
+
+        hnsw_index->isolateDeletedElement(isolated_id);
+        assert_isolated(hnsw_index);
+        VecSimIndex_Free(index);
+    }
+
+    // The same edge, now unidirectional *into* the isolated element: drop 0->1 and record it as an
+    // incoming edge of 0, exactly as removing that side of the edge would.
+    {
+        VecSimIndex *index = build_index();
+        auto *hnsw_index = this->CastToHNSW(index);
+        ElementLevelData &isolated = hnsw_index->getElementLevelData(isolated_id, 0);
+        isolated.removeLink(deleted_neighbour_id);
+        isolated.newIncomingUnidirectionalEdge(deleted_neighbour_id);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+        hnsw_index->isolateDeletedElement(isolated_id);
+        assert_isolated(hnsw_index);
+        VecSimIndex_Free(index);
+    }
+}
+
 TYPED_TEST(HNSWTest, getElementNeighbors) {
     size_t dim = 4;
     size_t n = 0;
