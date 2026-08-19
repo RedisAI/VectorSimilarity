@@ -4915,3 +4915,97 @@ TEST_F(SpacesTest, SQ8_SQ8_DispatcherAlignmentHints) {
     check("Cosine", &spaces::Cosine_SQ8_SQ8_GetDistFunc);
 }
 #endif // CPU_FEATURES_ARCH_X86_64
+
+// Enforce the pure-bitfield layout assumption that spaces::intersectWithDetectedFeatures (see
+// spaces/spaces.h) relies on: the platform's cpu_features Features struct must be composed
+// entirely of `int <name> : 1;` bitfields with no other members, so a byte-wise AND over the
+// struct's object representation is equivalent to a per-feature logical AND. We do not hand-list
+// the fields, since that would rot the moment cpu_features adds one; instead we walk every enum
+// value via cpu_features' own enum-value reader and compare it against the field-wise AND. If
+// cpu_features ever adds a non-bitfield member, the byte-wise AND diverges from this field-wise
+// truth and the test below fails.
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST_F(SpacesTest, CpuFeatureIntersectionX86) {
+    auto detected = getCpuOptimizationFeatures();
+
+    // An all-detected mask ANDed with a mask that clears one feature yields that feature cleared.
+    auto clears_one = detected;
+    clears_one.sse = 0;
+    auto cleared_result = intersectWithDetectedFeatures(clears_one, detected);
+    ASSERT_EQ(cpu_features::GetX86FeaturesEnumValue(&cleared_result, cpu_features::X86_SSE), 0);
+
+    // This is the hole being closed: build a detected set that (synthetically) lacks a feature,
+    // and an override that claims it anyway. The intersection must keep it clear regardless.
+    auto lacks_avx512f = detected;
+    lacks_avx512f.avx512f = 0;
+    auto claims_avx512f = lacks_avx512f;
+    claims_avx512f.avx512f = 1;
+    auto claimed_result = intersectWithDetectedFeatures(claims_avx512f, lacks_avx512f);
+    ASSERT_EQ(cpu_features::GetX86FeaturesEnumValue(&claimed_result, cpu_features::X86_AVX512F), 0);
+
+    // General correctness for both scenarios above: every feature in the intersection must equal
+    // the logical AND of the two masks it was built from.
+    // GetX86FeaturesEnumValue returns the raw `int <name> : 1;` field, which for a set signed
+    // 1-bit field reads back as -1 (sign-extended), not 1. Compare as bool so the sign
+    // representation of "set" does not matter, only whether the bit is set.
+    for (int i = 0; i < cpu_features::X86_LAST_; i++) {
+        auto value = static_cast<cpu_features::X86FeaturesEnum>(i);
+        bool expected_cleared = cpu_features::GetX86FeaturesEnumValue(&clears_one, value) &&
+                                cpu_features::GetX86FeaturesEnumValue(&detected, value);
+        ASSERT_EQ(static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&cleared_result, value)),
+                  expected_cleared)
+            << "feature " << cpu_features::GetX86FeaturesEnumName(value);
+
+        bool expected_claimed = cpu_features::GetX86FeaturesEnumValue(&claims_avx512f, value) &&
+                                cpu_features::GetX86FeaturesEnumValue(&lacks_avx512f, value);
+        ASSERT_EQ(static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&claimed_result, value)),
+                  expected_claimed)
+            << "feature " << cpu_features::GetX86FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_X86_64
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+TEST_F(SpacesTest, CpuFeatureIntersectionAarch64) {
+    auto detected = getCpuOptimizationFeatures();
+
+    // An all-detected mask ANDed with a mask that clears one feature yields that feature cleared.
+    auto clears_one = detected;
+    clears_one.asimd = 0;
+    auto cleared_result = intersectWithDetectedFeatures(clears_one, detected);
+    ASSERT_EQ(
+        cpu_features::GetAarch64FeaturesEnumValue(&cleared_result, cpu_features::AARCH64_ASIMD), 0);
+
+    // This is the hole being closed: build a detected set that (synthetically) lacks a feature,
+    // and an override that claims it anyway. The intersection must keep it clear regardless.
+    auto lacks_sve = detected;
+    lacks_sve.sve = 0;
+    auto claims_sve = lacks_sve;
+    claims_sve.sve = 1;
+    auto claimed_result = intersectWithDetectedFeatures(claims_sve, lacks_sve);
+    ASSERT_EQ(cpu_features::GetAarch64FeaturesEnumValue(&claimed_result, cpu_features::AARCH64_SVE),
+              0);
+
+    // General correctness for both scenarios above: every feature in the intersection must equal
+    // the logical AND of the two masks it was built from.
+    // GetAarch64FeaturesEnumValue returns the raw `int <name> : 1;` field, which for a set signed
+    // 1-bit field reads back as -1 (sign-extended), not 1. Compare as bool so the sign
+    // representation of "set" does not matter, only whether the bit is set.
+    for (int i = 0; i < cpu_features::AARCH64_LAST_; i++) {
+        auto value = static_cast<cpu_features::Aarch64FeaturesEnum>(i);
+        bool expected_cleared = cpu_features::GetAarch64FeaturesEnumValue(&clears_one, value) &&
+                                cpu_features::GetAarch64FeaturesEnumValue(&detected, value);
+        ASSERT_EQ(
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&cleared_result, value)),
+            expected_cleared)
+            << "feature " << cpu_features::GetAarch64FeaturesEnumName(value);
+
+        bool expected_claimed = cpu_features::GetAarch64FeaturesEnumValue(&claims_sve, value) &&
+                                cpu_features::GetAarch64FeaturesEnumValue(&lacks_sve, value);
+        ASSERT_EQ(
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&claimed_result, value)),
+            expected_claimed)
+            << "feature " << cpu_features::GetAarch64FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_AARCH64

@@ -13,7 +13,9 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 #include <limits>
+#include <type_traits>
 
 namespace spaces {
 
@@ -65,6 +67,38 @@ static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
     std::numeric_limits<int32_t>::max() /
     (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
 
+// Intersect an overridden feature mask with the features actually detected on this machine, so
+// that the override can only clear a capability, never claim one the hardware does not have.
+//
+// `arch_opt` (below) is a test-only affordance: no production caller passes a non-null value
+// (every chooser in spaces.cpp calls getCpuOptimizationFeatures() with the `= nullptr` default),
+// tests use it to force a specific SIMD tier onto whatever machine runs the suite. Without this
+// intersection, a test that claims a feature the real CPU lacks would hand back a function
+// pointer into a tier that executes an illegal instruction.
+//
+// This is sound only because cpu_features::X86Features and cpu_features::Aarch64Features are
+// composed entirely of `int <name> : 1;` bitfields with no other members, so a byte-wise AND of
+// the two object representations performs a per-feature logical AND. The
+// CpuFeatureIntersection.* tests in test_spaces.cpp walk every feature via cpu_features' own
+// GetX86FeaturesEnumValue / GetAarch64FeaturesEnumValue readers and enforce that layout
+// assumption, so this breaks loudly if cpu_features ever adds a non-bitfield member.
+template <typename FeaturesType>
+static inline FeaturesType intersectWithDetectedFeatures(const FeaturesType &overridden,
+                                                         const FeaturesType &detected) {
+    static_assert(std::is_trivially_copyable_v<FeaturesType>,
+                  "byte-wise AND requires a trivially copyable features type");
+    unsigned char overridden_bytes[sizeof(FeaturesType)];
+    unsigned char detected_bytes[sizeof(FeaturesType)];
+    std::memcpy(overridden_bytes, &overridden, sizeof(FeaturesType));
+    std::memcpy(detected_bytes, &detected, sizeof(FeaturesType));
+    for (size_t i = 0; i < sizeof(FeaturesType); i++) {
+        overridden_bytes[i] &= detected_bytes[i];
+    }
+    FeaturesType result;
+    std::memcpy(&result, overridden_bytes, sizeof(FeaturesType));
+    return result;
+}
+
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
@@ -74,7 +108,10 @@ static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
     using FeaturesType = cpu_features::X86Features; // Fallback
     constexpr auto getFeatures = cpu_features::GetX86Info;
 #endif
-    return arch_opt ? *static_cast<const FeaturesType *>(arch_opt) : getFeatures().features;
+    const FeaturesType detected = getFeatures().features;
+    return arch_opt ? intersectWithDetectedFeatures(*static_cast<const FeaturesType *>(arch_opt),
+                                                    detected)
+                    : detected;
 }
 
 } // namespace spaces
