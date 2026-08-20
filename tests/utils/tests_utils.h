@@ -188,8 +188,11 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
         delta = 1.0f; // Avoid division by zero
 
     // Quantize, accumulating the bytes as exact integers.
+    // 64-bit for the squares: 255^2 * dim passes UINT32_MAX just above dim 66051, and a
+    // wrapped counter would corrupt the stored norm rather than round it. Mirrors
+    // QuantPreprocessor::quantize.
     uint32_t q_sum = 0;
-    uint32_t q_sum_squares = 0;
+    uint64_t q_sum_squares = 0;
     for (size_t i = 0; i < dim; i++) {
         float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));

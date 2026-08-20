@@ -253,8 +253,11 @@ inline void ComputeSQ8Quantization(const float *original_blob, size_t dim, uint8
     // Quantize, accumulating the bytes as exact integers, then derive the sums over the
     // reconstruction min + delta * a[i], which is what the kernel algebra is written in terms of.
     // See QuantPreprocessor::quantize.
+    // 64-bit for the squares: 255^2 * dim passes UINT32_MAX just above dim 66051, and a
+    // wrapped counter would corrupt the stored norm rather than round it. Mirrors
+    // QuantPreprocessor::quantize.
     uint32_t q_sum = 0;
-    uint32_t q_sum_squares = 0;
+    uint64_t q_sum_squares = 0;
     for (size_t i = 0; i < dim; i++) {
         float normalized = (original_blob[i] - min_val) / delta;
         const uint32_t q = static_cast<uint8_t>(std::round(normalized));

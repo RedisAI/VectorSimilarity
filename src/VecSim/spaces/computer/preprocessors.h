@@ -152,9 +152,14 @@ private:
  *
  * Storage layout:
  * | quantized_values[dim] | min_val | delta | x_sum | (x_sum_squares for L2 only) |
- * where:
- * x_sum = Σx_i: sum of the original values,
- * x_sum_squares = Σx_i²: sum of squares of the original values.
+ * where, writing x_r[i] = min_val + delta * a[i] for the value a blob actually represents:
+ * x_sum        = Σx_r[i]:  sum of the reconstructed values,
+ * x_sum_squares = Σx_r[i]²: sum of their squares.
+ *
+ * These describe x_r, not the input x. Every formula below is written in terms of x_r, because
+ * that is what a quantized blob holds, so sums over the input would not satisfy them: the gap is
+ * the quantization error, about 0.4% of ||x||², which is larger than the distance between two
+ * similar vectors and made L2 come out negative.
  *
  * Storage metadata is always FP32 (independent of DataType) to match the asymmetric distance
  * kernels. The quantized blob size is:
@@ -194,10 +199,11 @@ private:
  *   where y_sum = Σy_i is precomputed and stored in the query blob.
  *
  * For L2:
- *   ||x - y||² = Σx_i² - 2*Σ(x_i * y_i) + Σy_i²
- *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
+ *   ||x_r - y||² = Σx_r[i]² - 2*Σ(x_r[i] * y_i) + Σy_i²
+ *                = x_sum_squares - 2 * IP(x_r, y) + y_sum_squares
  *   where:
- *     - x_sum_squares = Σx_i² is precomputed and stored in the storage blob
+ *     - x_sum_squares = Σx_r[i]² is precomputed and stored in the storage blob. A query is not
+ *       quantized, so y_sum_squares is Σy_i² over the query itself.
  *     - IP(x, y) is computed using the formula above
  *     - y_sum_squares = Σy_i² is precomputed and stored in the query blob
  *   For normalized L2, x and y in this formula are the centered values x' and y'; their distance
@@ -217,7 +223,7 @@ private:
  *              + delta_x * delta_y * Σ(qx_i * qy_i)
  *   where:
  *     - sum_x, sum_y are precomputed sums of the values represented by each blob
- *     - Σqx_i = (sum_x - dim * min_x) / delta_x  (sum of quantized values, derived from stored sum)
+ *     - Σqx_i = (sum_x - dim * min_x) / delta_x  (exact, since sum_x is derived from Σqx_i)
  *     - Σqy_i = (sum_y - dim * min_y) / delta_y
  *
  * For L2:
@@ -303,7 +309,9 @@ class QuantPreprocessor : public PreprocessorInterface {
         //
         // 4 independent accumulators each, so the unrolled loop keeps four dependency chains.
         uint32_t s0{}, s1{}, s2{}, s3{};
-        uint32_t q0{}, q1{}, q2{}, q3{}; // only used for L2
+        // 64-bit: 65025 * 65536 leaves under 1% of UINT32_MAX, and overflow here would corrupt
+        // the metadata rather than round it. This is the write path, once per vector.
+        uint64_t q0{}, q1{}, q2{}, q3{}; // only used for L2
 
         size_t i = 0;
         // round dim down to the nearest multiple of 4
@@ -334,16 +342,19 @@ class QuantPreprocessor : public PreprocessorInterface {
             s3 += a3;
 
             if constexpr (Metric == VecSimMetric_L2) {
-                q0 += uint32_t{a0} * a0;
-                q1 += uint32_t{a1} * a1;
-                q2 += uint32_t{a2} * a2;
-                q3 += uint32_t{a3} * a3;
+                q0 += uint64_t{a0} * a0;
+                q1 += uint64_t{a1} * a1;
+                q2 += uint64_t{a2} * a2;
+                q3 += uint64_t{a3} * a3;
             }
         }
 
         // Tail: 0..3 remaining elements (still the same pass, just finishing work).
         uint32_t q_sum = (s0 + s1) + (s2 + s3);
-        uint32_t q_sum_squares = (q0 + q1) + (q2 + q3);
+        uint64_t q_sum_squares{};
+        if constexpr (Metric == VecSimMetric_L2) {
+            q_sum_squares = (q0 + q1) + (q2 + q3);
+        }
 
         for (; i < this->dim; ++i) {
             const float x = transformed_value(input, i);
@@ -351,7 +362,7 @@ class QuantPreprocessor : public PreprocessorInterface {
             quantized[i] = a;
             q_sum += a;
             if constexpr (Metric == VecSimMetric_L2) {
-                q_sum_squares += uint32_t{a} * a;
+                q_sum_squares += uint64_t{a} * a;
             }
         }
 
