@@ -54,8 +54,30 @@ elseif(SPACES_ARCH_FAMILY STREQUAL "aarch64")
 	endif()
 endif()
 # Any other architecture keeps an empty baseline: adding nothing is safer than guessing a flag
-# the compiler may reject. A compiler that rejects the baseline flag above also degrades to
-# adding nothing rather than failing the configure.
+# the compiler may reject.
+#
+# On x86_64 and aarch64, though, the baseline flag probed above is supported by every gcc and clang
+# that can build this library, so a failed probe never means "this compiler lacks the flag". It
+# means something in the inherited flags made the probe fail. CHECK_CXX_COMPILER_FLAG compiles its
+# test with CMAKE_CXX_FLAGS included and treats any warning that names a flag as failure, so an
+# inherited -mcpu=neoverse-n1 makes gcc emit
+#   switch '-mcpu=neoverse-n1' conflicts with '-march=armv8-a' switch
+# and the probe reports Failed. Failing open there would silently drop the baseline from the scalar
+# fallback while the configure still succeeded, which is the exact hazard this block exists to
+# prevent, so fail closed instead and name the likely cause.
+if(SPACES_ARCH_FAMILY STREQUAL "x86_64" OR SPACES_ARCH_FAMILY STREQUAL "aarch64")
+	if(SPACES_BASELINE_ARCH_FLAG STREQUAL "")
+		message(FATAL_ERROR
+			"Could not establish a conservative ISA baseline on ${SPACES_ARCH_FAMILY}: the probe "
+			"for the baseline -march flag failed. Refusing to configure, because continuing would "
+			"leave the scalar fallback (VectorSimilaritySpaces_no_optimization) compiled with "
+			"whatever ISA the inherited flags imply, defeating runtime dispatch on any deployment "
+			"CPU that lacks it. The usual cause is an inherited -mcpu= or -march= in CMAKE_CXX_FLAGS "
+			"or CXXFLAGS that conflicts with the baseline flag: the probe compiles with those flags "
+			"present and counts a conflict warning as failure. Current CMAKE_CXX_FLAGS: "
+			"'${CMAKE_CXX_FLAGS}'.")
+	endif()
+endif()
 
 # A native baseline (auto-detected from the build machine, so its instruction set is unknown
 # ahead of time) is rejected outright below: it would let the compiler vectorize the scalar
@@ -82,6 +104,18 @@ function(_spaces_reject_isa_override description flags_string)
 				"the compiler vectorize the scalar fallback (VectorSimilaritySpaces_no_optimization) "
 				"with instructions the deployment CPU may lack, defeating runtime dispatch. "
 				"Remove '${_flag}' from ${description}.")
+		elseif(_flag MATCHES "^-m(mmx|3dnow[a-z]*|sse[0-9a-z_.]*|avx[0-9a-z_.]*|fma[0-9a-z_.]*|f16c|bmi[0-9]*|abm|lzcnt|popcnt|aes|vaes|sha|pclmul|gfni|xop|amx[-a-z0-9_]*|fp16|dotprod|crypto|simd)$")
+			message(FATAL_ERROR
+				"Found '${_flag}' in ${description}. Refusing to configure: an explicit ISA "
+				"feature flag enables those instructions directly and a later -march= baseline "
+				"does NOT cancel it. Measured on gcc 13: '-mavx2 ... -march=x86-64' still emitted "
+				"hundreds of AVX instructions into the scalar fallback "
+				"(VectorSimilaritySpaces_no_optimization), which is the one implementation runtime "
+				"dispatch degrades to when the CPU lacks everything else, so the fallback itself "
+				"would fault on a deployment CPU without ${_flag}'s instructions. There is no "
+				"reliable way to neutralize it, so remove '${_flag}' from ${description}. Disabling "
+				"forms (-mno-...) are not affected, and -mtune= is fine: it changes scheduling, not "
+				"which instructions are legal.")
 		elseif(_flag MATCHES "^-m(arch|cpu)=(.+)$")
 			if(NOT SPACES_BASELINE_VALUE STREQUAL "" AND NOT CMAKE_MATCH_2 STREQUAL SPACES_BASELINE_VALUE)
 				message(WARNING
