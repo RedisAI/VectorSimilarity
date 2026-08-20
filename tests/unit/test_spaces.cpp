@@ -14,6 +14,7 @@
 #include <random>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -1427,12 +1428,11 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     std::mt19937 gen(42);
     std::uniform_real_distribution<> dis(-0.99, 0.99);
 
-#if defined(CPU_FEATURES_ARCH_AARCH64) && defined(__GNUC__) && (__GNUC__ < 13)
-    // https://github.com/pytorch/executorch/issues/6844
-    __fp16 baseline = 0;
-#else
-    _Float16 baseline = 0;
-#endif
+    // Accumulate the reference in float, exactly as FP16_InnerProduct does: it widens each stored
+    // half with FP16_to_FP32 and sums into a float. A _Float16 accumulator here would make this
+    // test agree with any kernel that also accumulates in half precision, which is how an fp16
+    // accumulator in these tiers went unnoticed.
+    float baseline = 0;
 
     for (size_t i = 0; i < dim; i++) {
         float val1 = (dis(gen));
@@ -1440,9 +1440,9 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
         v1[i] = vecsim_types::FP32_to_FP16((val1));
         v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-        baseline += static_cast<decltype(baseline)>(val1) * static_cast<decltype(baseline)>(val2);
+        baseline += vecsim_types::FP16_to_FP32(v1[i]) * vecsim_types::FP16_to_FP32(v2[i]);
     }
-    baseline = decltype(baseline)(1) - baseline;
+    baseline = 1.0f - baseline;
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
@@ -1532,14 +1532,17 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
         std::mt19937 gen(42);
         std::uniform_real_distribution<float> dis(-0.99f, 0.99f);
 
-        _Float16 baseline = 0;
+        // Accumulate the reference in float, exactly as FP16_L2Sqr does: widen both stored halves
+        // with FP16_to_FP32, subtract in float, and sum into a float. See the note on the inner
+        // product baseline above.
+        float baseline = 0;
         for (size_t i = 0; i < dim; i++) {
             float val1 = (dis(gen));
             float val2 = (dis(gen));
             v1[i] = vecsim_types::FP32_to_FP16((val1));
             v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-            _Float16 diff = static_cast<_Float16>(val1) - static_cast<_Float16>(val2);
+            float diff = vecsim_types::FP16_to_FP32(v1[i]) - vecsim_types::FP16_to_FP32(v2[i]);
             baseline += diff * diff;
         }
 
@@ -1569,6 +1572,47 @@ INSTANTIATE_TEST_SUITE_P(, FP16SpacesOptimizationTestAdvanced,
                          testing::Range(512UL, 512 + 32UL + 1));
 
 #endif // defined(OPT_AVX512_FP16_VL) || defined(CPU_FEATURES_ARCH_AARCH64)
+
+// Regression test for the accumulator width of the float16 SIMD kernels.
+//
+// The randomized tests above cannot catch a half precision accumulator. They draw values from
+// [-0.99, 0.99] and allow 1% relative error, and a kernel that accumulates in fp16 stays inside
+// that budget: its worst error over dim 32..256 on that distribution is about 0.54%. These inputs
+// separate the two implementations by a wide margin instead. 65504 is the largest finite fp16
+// value, so summing even a handful of squared differences of 200 pushes a half precision
+// accumulator past it and the result becomes infinity, while every value here is exactly
+// representable in fp32 and the expected total is exact.
+//
+// The public choosers are called without a feature override, so whichever tier this CPU selects is
+// the one under test, and the scalar path is covered on machines with no SIMD tier at all.
+TEST(FP16SpacesTest, LargeValuesDoNotOverflowTheAccumulator) {
+    // Exactly `dim` elements, no padding: the residual paths issue full-width loads that overlap
+    // the prefix rather than reading past the end, so at dim=35 the x86 kernel covers 0..15, then
+    // 3..18 and 19..34. Tight buffers keep ASan's bounds checking meaningful here.
+    for (size_t dim : {32UL, 35UL, 40UL, 64UL, 128UL}) {
+        std::vector<float16> v1(dim, vecsim_types::FP32_to_FP16(0.0f));
+        std::vector<float16> v2(dim, vecsim_types::FP32_to_FP16(0.0f));
+        for (size_t i = 0; i < dim; i++) {
+            v1[i] = vecsim_types::FP32_to_FP16(200.0f);
+        }
+
+        // L2: v2 is all zeros, so the distance is dim * 200^2.
+        const float expected_l2 = static_cast<float>(dim) * 200.0f * 200.0f;
+        const float l2 = L2_FP16_GetDistFunc(dim)(v1.data(), v2.data(), dim);
+        ASSERT_TRUE(std::isfinite(l2)) << "L2 accumulator overflowed at dim " << dim;
+        ASSERT_NEAR(l2, expected_l2, expected_l2 * 1e-6f) << "L2 at dim " << dim;
+
+        // Inner product: both sides at 200, so the raw product sums to dim * 200^2 and the
+        // returned distance is 1 - that.
+        for (size_t i = 0; i < dim; i++) {
+            v2[i] = vecsim_types::FP32_to_FP16(200.0f);
+        }
+        const float expected_ip = 1.0f - static_cast<float>(dim) * 200.0f * 200.0f;
+        const float ip = IP_FP16_GetDistFunc(dim)(v1.data(), v2.data(), dim);
+        ASSERT_TRUE(std::isfinite(ip)) << "IP accumulator overflowed at dim " << dim;
+        ASSERT_NEAR(ip, expected_ip, std::abs(expected_ip) * 1e-6f) << "IP at dim " << dim;
+    }
+}
 
 class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
