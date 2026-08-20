@@ -169,9 +169,11 @@ static float SQ8_SQ8_NotOptimized_L2Sqr(const void *pVect1v, const void *pVect2v
 }
 
 /**
- * Quantize float vector to SQ8 with precomputed sum and sum_squares.
- * Vector layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares
- * (float)] where sum = Σv[i] and norm = Σv[i]² (sum of squares of uint8 elements)
+ * Quantize a float vector to SQ8 with precomputed sums.
+ * Layout: [uint8_t values (dim)] [min (float)] [delta (float)] [sum (float)] [sum_squares (float)]
+ * where sum = sum(x_r[i]) and sum_squares = sum(x_r[i]^2) over the reconstruction
+ * x_r[i] = min + delta * qv[i]. The kernels are written in terms of x_r, so the metadata has to
+ * describe x_r and not the input. See QuantPreprocessor::quantize.
  */
 static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, uint8_t *qv) {
     float min_val = v[0];
@@ -181,26 +183,31 @@ static void quantize_float_vec_to_sq8_with_metadata(const float *v, size_t dim, 
         max_val = std::max(max_val, v[i]);
     }
 
-    float sum = 0.0f;
-    float square_sum = 0.0f;
-    for (size_t i = 0; i < dim; i++) {
-        sum += v[i];
-        square_sum += v[i] * v[i];
-    }
-
-    // Calculate delta
     float delta = (max_val - min_val) / 255.0f;
     if (delta == 0)
         delta = 1.0f; // Avoid division by zero
 
-    // Quantize each value
+    // Quantize, accumulating the bytes as exact integers.
+    // 64-bit for the squares: 255^2 * dim passes UINT32_MAX just above dim 66051, and a
+    // wrapped counter would corrupt the stored norm rather than round it. Mirrors
+    // QuantPreprocessor::quantize.
+    uint32_t q_sum = 0;
+    uint64_t q_sum_squares = 0;
     for (size_t i = 0; i < dim; i++) {
         float normalized = (v[i] - min_val) / delta;
         normalized = std::max(0.0f, std::min(255.0f, normalized));
-        qv[i] = static_cast<uint8_t>(std::round(normalized));
+        const uint32_t q = static_cast<uint8_t>(std::round(normalized));
+        qv[i] = static_cast<uint8_t>(q);
+        q_sum += q;
+        q_sum_squares += q * q;
     }
 
-    // Store parameters: [min, delta, sum, square_sum]
+    // Derive in double, store FP32.
+    const double d_min = min_val, d_delta = delta, d_dim = static_cast<double>(dim);
+    const float sum = static_cast<float>(d_dim * d_min + d_delta * q_sum);
+    const float square_sum = static_cast<float>(
+        d_dim * d_min * d_min + 2.0 * d_min * d_delta * q_sum + d_delta * d_delta * q_sum_squares);
+
     auto *params = qv + dim;
     std::memcpy(params + sq8::MIN_VAL * sizeof(float), &min_val, sizeof(float));
     std::memcpy(params + sq8::DELTA * sizeof(float), &delta, sizeof(float));
