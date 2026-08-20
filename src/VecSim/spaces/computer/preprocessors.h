@@ -293,13 +293,17 @@ class QuantPreprocessor : public PreprocessorInterface {
             return static_cast<OUTPUT_TYPE>(scaled + MetadataType{0.5});
         };
 
-        // Compute sum (and sum of squares for L2) while quantizing.
-        // Accumulators are FP32 to preserve metadata precision for FP16 inputs.
-        // 4 independent accumulators (sum)
-        float s0{}, s1{}, s2{}, s3{};
-
-        // 4 independent accumulators (sum of squares), only used for L2
-        float q0{}, q1{}, q2{}, q3{};
+        // Sum the quantized bytes, not the input values. Every kernel term is written in terms of
+        // the reconstruction x_r[i] = min + delta * a[i], so the stored sums have to describe x_r
+        // as well. Summing the input instead leaves a systematic mismatch of about 0.4% of ||x||^2,
+        // which is larger than a small true distance and made L2 come out negative: for two
+        // near-duplicate vectors at dim 128 the reconstruction distance is 2.93e-04 and the kernels
+        // returned -1.49e-01. The byte sums are exact integers, so the derivation below is the only
+        // place rounding enters.
+        //
+        // 4 independent accumulators each, so the unrolled loop keeps four dependency chains.
+        uint32_t s0{}, s1{}, s2{}, s3{};
+        uint32_t q0{}, q1{}, q2{}, q3{}; // only used for L2
 
         size_t i = 0;
         // round dim down to the nearest multiple of 4
@@ -315,38 +319,54 @@ class QuantPreprocessor : public PreprocessorInterface {
             // We know (input - min) => 0
             // If min == max, all values are the same and should be quantized to 0.
             // reconstruction will yield the same original value for all vectors.
-            quantized[i] = to_byte((x0 - min_val) * inv_delta);
-            quantized[i + 1] = to_byte((x1 - min_val) * inv_delta);
-            quantized[i + 2] = to_byte((x2 - min_val) * inv_delta);
-            quantized[i + 3] = to_byte((x3 - min_val) * inv_delta);
+            const OUTPUT_TYPE a0 = to_byte((x0 - min_val) * inv_delta);
+            const OUTPUT_TYPE a1 = to_byte((x1 - min_val) * inv_delta);
+            const OUTPUT_TYPE a2 = to_byte((x2 - min_val) * inv_delta);
+            const OUTPUT_TYPE a3 = to_byte((x3 - min_val) * inv_delta);
+            quantized[i] = a0;
+            quantized[i + 1] = a1;
+            quantized[i + 2] = a2;
+            quantized[i + 3] = a3;
 
-            // Accumulate sum for all metrics
-            s0 += x0;
-            s1 += x1;
-            s2 += x2;
-            s3 += x3;
+            s0 += a0;
+            s1 += a1;
+            s2 += a2;
+            s3 += a3;
 
-            // Accumulate sum of squares only for L2 metric
             if constexpr (Metric == VecSimMetric_L2) {
-                q0 += x0 * x0;
-                q1 += x1 * x1;
-                q2 += x2 * x2;
-                q3 += x3 * x3;
+                q0 += uint32_t{a0} * a0;
+                q1 += uint32_t{a1} * a1;
+                q2 += uint32_t{a2} * a2;
+                q3 += uint32_t{a3} * a3;
             }
         }
 
         // Tail: 0..3 remaining elements (still the same pass, just finishing work).
-        // Sum/sum_squares become metadata, so they are MetadataType.
-        MetadataType sum = (s0 + s1) + (s2 + s3);
-        MetadataType sum_squares = (q0 + q1) + (q2 + q3);
+        uint32_t q_sum = (s0 + s1) + (s2 + s3);
+        uint32_t q_sum_squares = (q0 + q1) + (q2 + q3);
 
         for (; i < this->dim; ++i) {
             const float x = transformed_value(input, i);
-            quantized[i] = to_byte((x - min_val) * inv_delta);
-            sum += x;
+            const OUTPUT_TYPE a = to_byte((x - min_val) * inv_delta);
+            quantized[i] = a;
+            q_sum += a;
             if constexpr (Metric == VecSimMetric_L2) {
-                sum_squares += x * x;
+                q_sum_squares += uint32_t{a} * a;
             }
+        }
+
+        // Derive the reconstruction sums from the exact byte sums, in double so the expansion does
+        // not lose the cross term, then store FP32 as before. The slot layout and types are
+        // unchanged; only what the numbers describe changes.
+        //   sum         = sum(x_r[i])   = dim*min + delta*q_sum
+        //   sum_squares = sum(x_r[i]^2) = dim*min^2 + 2*min*delta*q_sum + delta^2*q_sum_squares
+        const double d_min = min_val, d_delta = delta, d_dim = static_cast<double>(this->dim);
+        const MetadataType sum = static_cast<MetadataType>(d_dim * d_min + d_delta * q_sum);
+        MetadataType sum_squares{};
+        if constexpr (Metric == VecSimMetric_L2) {
+            sum_squares =
+                static_cast<MetadataType>(d_dim * d_min * d_min + 2.0 * d_min * d_delta * q_sum +
+                                          d_delta * d_delta * q_sum_squares);
         }
 
         // Metadata uses MetadataType. Use memcpy because the metadata offset

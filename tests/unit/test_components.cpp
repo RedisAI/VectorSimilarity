@@ -1650,6 +1650,14 @@ protected:
         ComputeSQ8Quantization(widened_blob, dim, baseline_storage);
         const float baseline_min = load_meta(baseline_storage, dim + sq8::MIN_VAL * sizeof(float));
         const float baseline_delta = load_meta(baseline_storage, dim + sq8::DELTA * sizeof(float));
+        // The storage baseline's sums describe the reconstruction min + delta * a[i]. The query is
+        // not quantized, so its sums describe the input itself. Those are different quantities and
+        // must be checked separately: they were only ever equal because both used to be the input.
+        float input_sum = 0.0f, input_sum_sq = 0.0f;
+        for (size_t i = 0; i < dim; i++) {
+            input_sum += widened_blob[i];
+            input_sum_sq += widened_blob[i] * widened_blob[i];
+        }
         const float baseline_sum = load_meta(baseline_storage, dim + sq8::SUM * sizeof(float));
         const float baseline_sum_sq =
             load_meta(baseline_storage, dim + sq8::SUM_SQUARES * sizeof(float));
@@ -1702,11 +1710,11 @@ protected:
             // Query FP32 metadata: y_sum (and y_sum_squares for L2) match the FP32 baseline.
             ASSERT_FLOAT_EQ(
                 load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
-                baseline_sum);
+                input_sum);
             if constexpr (Metric == VecSimMetric_L2) {
                 ASSERT_FLOAT_EQ(load_meta(query_blob, query_meta_offset +
                                                           sq8::SUM_SQUARES_QUERY * sizeof(float)),
-                                baseline_sum_sq);
+                                input_sum_sq);
             }
 
             allocator->free_allocation(storage_blob);
@@ -1724,11 +1732,11 @@ protected:
             EXPECT_NO_FATAL_FAILURE(
                 CompareVectors<float16>(static_cast<const float16 *>(blob), original_blob, dim));
             ASSERT_FLOAT_EQ(load_meta(blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
-                            baseline_sum);
+                            input_sum);
             if constexpr (Metric == VecSimMetric_L2) {
                 ASSERT_FLOAT_EQ(
                     load_meta(blob, query_meta_offset + sq8::SUM_SQUARES_QUERY * sizeof(float)),
-                    baseline_sum_sq);
+                    input_sum_sq);
             }
             allocator->free_allocation(blob);
         }

@@ -4908,3 +4908,90 @@ TEST_F(SpacesTest, SQ8_SQ8_DispatcherAlignmentHints) {
     check("Cosine", &spaces::Cosine_SQ8_SQ8_GetDistFunc);
 }
 #endif // CPU_FEATURES_ARCH_X86_64
+
+namespace {
+std::vector<uint8_t> sq8_quantize_l2(const std::vector<float> &v) {
+    const size_t dim = v.size();
+    std::vector<uint8_t> blob(dim * sizeof(uint8_t) + 4 * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v.data(), dim, blob.data());
+    return blob;
+}
+} // namespace
+
+namespace {
+// The reconstruction the kernels compute distances over: x_r[i] = min + delta * a[i]. Reference
+// values are accumulated in double so the comparison is against the algebra, not against another
+// FP32 implementation with the same rounding.
+double ReferenceL2SqrOverReconstruction(const uint8_t *a, const uint8_t *b, size_t dim) {
+    const float min_a = load_unaligned<float>(a + dim + sq8::MIN_VAL * sizeof(float));
+    const float delta_a = load_unaligned<float>(a + dim + sq8::DELTA * sizeof(float));
+    const float min_b = load_unaligned<float>(b + dim + sq8::MIN_VAL * sizeof(float));
+    const float delta_b = load_unaligned<float>(b + dim + sq8::DELTA * sizeof(float));
+    double acc = 0.0;
+    for (size_t i = 0; i < dim; i++) {
+        const double d = (static_cast<double>(min_a) + static_cast<double>(delta_a) * a[i]) -
+                         (static_cast<double>(min_b) + static_cast<double>(delta_b) * b[i]);
+        acc += d * d;
+    }
+    return acc;
+}
+} // namespace
+
+// The stored sums describe the reconstruction, not the input. Summing the input instead left a
+// systematic mismatch of about 0.4% of ||x||^2, which is larger than the distance between two
+// near-duplicate vectors, so L2 came back negative: at dim 128 the reconstruction distance is
+// 2.93e-04 and the kernels returned -1.49e-01. Near-duplicates are the case that exposes it,
+// because the true distance is small enough for the mismatch to dominate.
+TEST_F(SpacesTest, SQ8_SQ8_L2_is_non_negative_and_matches_reconstruction) {
+    std::mt19937 gen(20260820);
+    std::uniform_real_distribution<float> value_gen(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> nudge_gen(-1e-3f, 1e-3f);
+
+    for (const size_t dim : {4UL, 15UL, 64UL, 128UL, 512UL}) {
+        std::vector<float> x(dim), y(dim);
+        for (size_t i = 0; i < dim; i++) {
+            x[i] = value_gen(gen);
+            y[i] = x[i] + nudge_gen(gen);
+        }
+        const std::vector<uint8_t> qx = sq8_quantize_l2(x);
+        const std::vector<uint8_t> qy = sq8_quantize_l2(y);
+
+        const double expected = ReferenceL2SqrOverReconstruction(qx.data(), qy.data(), dim);
+        unsigned char alignment = 0;
+        auto dispatched = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+
+        for (const auto &probe :
+             {std::make_pair("scalar", SQ8_SQ8_L2Sqr), std::make_pair("dispatched", dispatched)}) {
+            const float got = probe.second(qx.data(), qy.data(), dim);
+            EXPECT_GE(got, 0.0f) << probe.first << " returned a negative distance, dim " << dim;
+            EXPECT_NEAR(got, expected, 1e-3 * std::max(1.0, expected))
+                << probe.first << " does not match the reconstruction, dim " << dim;
+        }
+    }
+}
+
+// A blob against itself. Exact zero is not claimed here: the two sides of
+// sum_sq_x + sum_sq_y - 2*IP are computed by different routes and round differently, so this pins
+// the magnitude rather than the bit pattern.
+TEST_F(SpacesTest, SQ8_SQ8_L2_self_distance_is_near_zero) {
+    std::mt19937 gen(20260821);
+    std::uniform_real_distribution<float> value_gen(-3.0f, 5.0f);
+
+    for (const size_t dim : {3UL, 8UL, 64UL, 512UL}) {
+        std::vector<float> x(dim);
+        double norm_sq = 0.0;
+        for (size_t i = 0; i < dim; i++) {
+            x[i] = value_gen(gen);
+            norm_sq += static_cast<double>(x[i]) * x[i];
+        }
+        const std::vector<uint8_t> q = sq8_quantize_l2(x);
+        const float tol = static_cast<float>(1e-5 * norm_sq);
+
+        EXPECT_NEAR(SQ8_SQ8_L2Sqr(q.data(), q.data(), dim), 0.0f, tol)
+            << "scalar kernel, dim " << dim;
+        unsigned char alignment = 0;
+        auto dispatched = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+        EXPECT_NEAR(dispatched(q.data(), q.data(), dim), 0.0f, tol)
+            << "dispatched kernel, dim " << dim;
+    }
+}
