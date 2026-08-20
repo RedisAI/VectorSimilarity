@@ -26,9 +26,8 @@ struct HNSWSQ8IndexType : IndexType<type, DataType, float> {
     static constexpr bool with_quant_params = WithQuantParams;
 };
 
-// FLOAT16 with a mean vector is absent on purpose: the functional tests below all use L2, and
-// mean-centred FP16 L2 is rejected at construction (see HNSWFactory::NewIndex). That combination is
-// covered explicitly by HNSWSQ8ParamsTest.RejectsMeanCenteredFP16L2 instead.
+// Typed tests default to L2, where mean-centered FLOAT16 is unsupported. A parameter test below
+// covers both that restriction and the supported inner-product case.
 using HNSWSQ8DataTypeSet =
     ::testing::Types<HNSWSQ8IndexType<VecSimType_FLOAT32, float, false>,
                      HNSWSQ8IndexType<VecSimType_FLOAT32, float, true>,
@@ -101,7 +100,7 @@ protected:
 
 TYPED_TEST_SUITE(HNSWSQ8Test, HNSWSQ8DataTypeSet);
 
-/* ---------------------------- Create index tests ---------------------------- */
+// Index creation
 
 template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::create_index_test() {
@@ -120,7 +119,7 @@ void HNSWSQ8Test<index_type_t>::create_index_test() {
     EXPECT_EQ(stored[0], 0);
     EXPECT_EQ(stored[dim - 1], 255);
 
-    // The quantized vector is followed by the minimum value and quantization delta.
+    // Stored layout: quantized bytes followed by the minimum value and quantization delta.
     float stored_min;
     float stored_delta;
     std::memcpy(&stored_min, stored + dim + sq8::MIN_VAL * sizeof(float), sizeof(float));
@@ -150,20 +149,17 @@ TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {
     this->index = VecSimIndex_New(&vecsim_params);
     EXPECT_EQ(this->index, nullptr);
 
-    // The size estimate must reject what creation rejects, so a caller cannot size its capacity
-    // from a configuration it will then fail to build.
     EXPECT_THROW(EstimateInitialSize(params), std::invalid_argument);
 }
 
-/* ---------------------------- Size Estimation tests ---------------------------- */
+// Size estimation
 
 TYPED_TEST(HNSWSQ8Test, SizeEstimation) {
     constexpr size_t block_size = 256;
     HNSWParams params = {.dim = 128, .blockSize = block_size, .M = 64};
     this->SetUp(params);
 
-    // EstimateInitialSize is called after creating the index because index creation normalizes
-    // the parameters.
+    // SetUp fills the data type and SQ8 settings used by the estimator.
     EXPECT_EQ(EstimateInitialSize(params), this->index->getAllocationSize());
 
     size_t label = 0;
@@ -172,18 +168,17 @@ TYPED_TEST(HNSWSQ8Test, SizeEstimation) {
         label++;
     }
 
-    // Estimate the memory delta of adding a vector that requires a full new block.
+    // Measure the allocation caused by growing the index by one block.
     const size_t estimation = EstimateElementSize(params) * block_size;
     const size_t before = this->index->getAllocationSize();
     ASSERT_EQ(this->GenerateAndAddVector(label, static_cast<float>(label)), 1);
     const size_t actual = this->index->getAllocationSize() - before;
 
-    // Check that the actual size is within 1% of the estimation.
     EXPECT_GE(estimation, actual * 0.99);
     EXPECT_LE(estimation, actual * 1.01);
 }
 
-/* ---------------------------- Functionality tests ---------------------------- */
+// Search behavior
 
 template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::search_by_id_test() {
@@ -197,12 +192,11 @@ void HNSWSQ8Test<index_type_t>::search_by_id_test() {
 
     data_t query[4];
     GenerateVector(query, 50.0f);
-    // Vector values are equal to their labels, so the closest vectors have labels 45 through 55.
+    // BY_ID returns the 11 nearest labels (45 through 55) in label order.
     static constexpr size_t expected[] = {45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55};
     auto verify = [&](size_t id, double score, size_t result_index) {
-        // Results are sorted by ID.
         EXPECT_EQ(id, expected[result_index]);
-        EXPECT_FLOAT_EQ(score, 4.0f * (50.0f - id) * (50.0f - id)); // L2 distance.
+        EXPECT_FLOAT_EQ(score, 4.0f * (50.0f - id) * (50.0f - id));
     };
     runTopKSearchTest(index, query, std::size(expected), verify, nullptr, BY_ID);
 }
@@ -221,7 +215,7 @@ void HNSWSQ8Test<index_type_t>::search_by_score_test() {
 
     data_t query[4];
     GenerateVector(query, 50.0f);
-    // Vector values are equal to their labels, so results are ordered by distance from label 50.
+    // BY_SCORE orders labels by their distance from label 50.
     static constexpr size_t expected[] = {50, 49, 51, 48, 52, 47, 53, 46, 54, 45, 55};
     auto verify = [&](size_t id, double score, size_t result_index) {
         EXPECT_EQ(id, expected[result_index]);
@@ -240,7 +234,6 @@ void HNSWSQ8Test<index_type_t>::search_empty_index_test() {
     data_t query[4];
     GenerateVector(query, 50.0f);
 
-    // We do not expect any results.
     VecSimQueryReply *reply = VecSimIndex_TopKQuery(index, query, 11, nullptr, BY_SCORE);
     ASSERT_EQ(VecSimQueryReply_Len(reply), 0u);
     VecSimQueryReply_Free(reply);
@@ -249,7 +242,6 @@ void HNSWSQ8Test<index_type_t>::search_empty_index_test() {
     ASSERT_EQ(VecSimQueryReply_Len(reply), 0u);
     VecSimQueryReply_Free(reply);
 
-    // Add some vectors and remove them all from the index, so it will be empty again.
     for (size_t i = 0; i < 100; i++) {
         GenerateAndAddVector(i, static_cast<float>(i));
     }
@@ -258,7 +250,6 @@ void HNSWSQ8Test<index_type_t>::search_empty_index_test() {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0u);
 
-    // Again, we do not expect any results.
     reply = VecSimIndex_TopKQuery(index, query, 11, nullptr, BY_SCORE);
     ASSERT_EQ(VecSimQueryReply_Len(reply), 0u);
     VecSimQueryReply_Free(reply);
@@ -277,19 +268,17 @@ void HNSWSQ8Test<index_type_t>::test_override() {
         .dim = 4, .initialCapacity = 100, .M = 8, .efConstruction = 20, .efRuntime = count};
     SetUp(params);
 
-    // Insert 100 vectors and then overwrite each one with the same value.
     for (size_t i = 0; i < 100; i++) {
         ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
         ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 0);
     }
-    // Add vectors up to count.
     for (size_t i = 100; i < count; i++) {
         ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
     }
 
     data_t query[4];
     GenerateVector(query, static_cast<float>(count));
-    // The largest label is closest to the query, so labels are returned in descending order.
+    // Distance decreases as the label increases, so results are in descending label order.
     auto verify = [&](size_t id, double score, size_t result_index) {
         EXPECT_EQ(id, count - result_index - 1);
         EXPECT_FLOAT_EQ(score, 4.0f * (count - id) * (count - id));
@@ -310,11 +299,9 @@ void HNSWSQ8Test<index_type_t>::test_range_query() {
     constexpr float value_radius = 1.5f;
     std::mt19937 generator(42);
     std::uniform_real_distribution<float> distribution(pivot - value_radius, pivot + value_radius);
-    // Insert close_count vectors near the pivot vector.
     for (size_t i = 0; i < close_count; i++) {
         GenerateAndAddVector(i, distribution(generator));
     }
-    // Add the remaining vectors far from the pivot vector.
     for (size_t i = close_count; i < count; i++) {
         GenerateAndAddVector(i, 5.0f + distribution(generator));
     }
@@ -340,8 +327,7 @@ void HNSWSQ8Test<index_type_t>::test_get_distance(VecSimMetric metric) {
     data_t query[4];
     GenerateVector(query, 0.5f, 0.25f);
 
-    // Values were chosen so the expected distances can be calculated exactly. Comparing against a
-    // stored SQ8 blob needs a preprocessed query, which only the index itself can produce.
+    // SQ8 distance kernels require the index's preprocessed query format.
     auto *hnsw_index = CastToHNSW();
     auto processed_query = hnsw_index->preprocessQuery(query);
     const double expected = metric == VecSimMetric_L2 ? 0.25 : -1.5;
@@ -349,16 +335,14 @@ void HNSWSQ8Test<index_type_t>::test_get_distance(VecSimMetric metric) {
         hnsw_index->calcDistanceForQuery(hnsw_index->getDataByInternalId(0), processed_query.get()),
         expected, 1e-5);
 
-    // The public API documents blob as a raw dim-by-type vector, which is not a usable query blob
-    // for a quantized index: the kernels read query metadata appended past it. It must report no
-    // answer rather than read past the caller's buffer.
+    // The public raw-vector API cannot supply SQ8 query metadata and returns INVALID_SCORE.
     EXPECT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 0, query)));
 }
 
 TYPED_TEST(HNSWSQ8Test, GetDistanceL2) { this->test_get_distance(VecSimMetric_L2); }
 TYPED_TEST(HNSWSQ8Test, GetDistanceIP) { this->test_get_distance(VecSimMetric_IP); }
 
-/* ---------------------------- Batch iterator tests ---------------------------- */
+// Batch iteration
 
 template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
@@ -368,7 +352,7 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
         .dim = 4, .initialCapacity = count, .M = 8, .efConstruction = 20, .efRuntime = count};
     SetUp(params);
 
-    // For every i, add the vector (i, i, i, i) under label i.
+    // Store [i, i, i, i] under label i.
     for (size_t i = 0; i < count; i++) {
         ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
     }
@@ -378,8 +362,7 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
     VecSimBatchIterator *iterator = VecSimBatchIterator_New(index, query, nullptr);
     ASSERT_NE(iterator, nullptr);
 
-    // Get the five largest remaining labels in each iteration. Since vector values equal their
-    // labels, this is also their order by distance from the query vector.
+    // Each batch contains the five largest remaining labels, ordered by distance.
     size_t iteration = 0;
     while (VecSimBatchIterator_HasNext(iterator)) {
         auto verify = [&](size_t id, double, size_t result_index) {
@@ -394,10 +377,7 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
 
 TYPED_TEST(HNSWSQ8Test, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
 
-// SQ8 quantizes to uint8 with FP32 metadata and only has kernels for FP32 and FP16 sources, so
-// every other data type must be rejected outright rather than produce an index. EstimateInitialSize
-// rejects the same set; EstimateElementSize deliberately does not, because it has no error channel
-// (see the note at its definition).
+// SQ8 kernels support only FLOAT32 and FLOAT16 input vectors.
 TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
     for (auto type : {VecSimType_FLOAT64, VecSimType_BFLOAT16, VecSimType_INT8, VecSimType_UINT8}) {
         HNSWParams hnsw_params = {
@@ -410,10 +390,8 @@ TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
     }
 }
 
-// An out-of-range metric must be rejected before dispatch. Reaching the unreachable-branch assert
-// in the SQ8 dispatcher would abort an assertions-enabled host, where the unquantized path throws
-// and VecSimIndex_New catches it. VecSimMetric has three enumerators, so 3 is the smallest value
-// outside the valid set that is still inside the enum's value range and therefore safe to form.
+// Value 3 has no VecSimMetric enumerator but is within the enum's representable range, so the
+// factory must reject it before dispatch.
 TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
     HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
                               .dim = 4,
@@ -425,10 +403,8 @@ TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
     EXPECT_THROW(EstimateInitialSize(hnsw_params), std::invalid_argument);
 }
 
-// Mean-centred FP16 with L2 must be rejected: QuantPreprocessor narrows the centred query back into
-// the FP16 query body while storage keeps its centred min/delta in FP32, so identical vector and
-// query pairs diverge and a large mean overflows FP16 to infinity. The same combination with IP is
-// supported, because that path does not centre the query.
+// Mean-centering a FLOAT16 L2 query can lose precision or overflow when it is narrowed back to
+// FLOAT16. Inner-product queries are not centered and remain supported.
 TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
     std::vector<float> mean(4, 1.0f);
 
@@ -453,9 +429,7 @@ TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
     EXPECT_NO_THROW(EstimateInitialSize(ip));
 }
 
-// Serialization does not record quantType or the mean vector, and the loading path always builds
-// unquantized components, so saving a quantized index would produce a file the loader misreads.
-// saveIndex must refuse rather than emit one.
+// V4 cannot encode the quantization settings needed to reload an SQ8 index.
 TYPED_TEST(HNSWSQ8Test, RejectsSerialization) {
     HNSWParams params = {.dim = 4, .initialCapacity = 1};
     this->SetUp(params);
@@ -466,9 +440,7 @@ TYPED_TEST(HNSWSQ8Test, RejectsSerialization) {
     std::remove(file_name.c_str());
 }
 
-// Every other functional test uses L2, so without this the symmetric SQ8-to-SQ8 IP kernel that
-// graph construction selects for an IP index would never run. Vectors vary per component as well as
-// per label, so quantization does not collapse into the degenerate min == max branch.
+// Exercise graph construction's stored-to-stored IP kernel with non-degenerate quantization ranges.
 TYPED_TEST(HNSWSQ8Test, GraphConstructionIP) {
     constexpr size_t n = 100;
     constexpr size_t dim = 16;
@@ -476,17 +448,13 @@ TYPED_TEST(HNSWSQ8Test, GraphConstructionIP) {
         .dim = dim, .metric = VecSimMetric_IP, .initialCapacity = n, .M = 16, .efRuntime = n};
     this->SetUp(params);
 
-    // Each label i gets a vector whose components ramp from i upward, so no two vectors share a
-    // quantization range and every vector has a non-zero delta.
     for (size_t i = 0; i < n; i++) {
         ASSERT_EQ(this->GenerateAndAddVector(i, static_cast<float>(i) * 0.5f, 0.25f), 1);
     }
     ASSERT_EQ(VecSimIndex_IndexSize(this->index), n);
 
-    // This is plain inner product, not cosine: the distance is 1 - IP, so the closest vector is the
-    // one with the largest projection onto the query rather than the query's own twin. Every vector
-    // and the query are positive and magnitude grows with the label, so IP is strictly increasing
-    // in the label and results must come back from the highest label downward.
+    // For inner-product distance (1 - dot product), these positive vectors rank by descending
+    // label.
     std::vector<typename TestFixture::data_t> query(dim);
     this->GenerateVector(query.data(), 1.0f, 0.25f);
 
@@ -496,23 +464,18 @@ TYPED_TEST(HNSWSQ8Test, GraphConstructionIP) {
     runTopKSearchTest(this->index, query.data(), 10, verify);
 }
 
-// SQ8 is not wired into the tiered index yet, so the tiered factory must reject it instead of
-// building a quantized primary index against an unquantized frontend. Without the guard this aborts
-// on a debug build and silently mismatches the two blob layouts on a release one. Whoever wires
-// quantization through the tiered index should replace this expectation rather than delete it.
+// The tiered frontend does not propagate SQ8 settings, so creation and initial-size estimation must
+// reject quantization.
 TEST(HNSWSQ8TieredTest, RejectsQuantizedTieredIndex) {
     HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
                               .dim = 4,
                               .metric = VecSimMetric_L2,
                               .quantType = VecSimQuant_SQ8};
     VecSimParams primary_params = CreateParams(hnsw_params);
-    // No job queue or thread pool is needed: the factory rejects these params before it reaches
-    // anything that would use them.
+    // Rejection happens before the factory needs a job queue or thread pool.
     TieredIndexParams tiered_params = {.primaryIndexParams = &primary_params};
     VecSimParams params = CreateParams(tiered_params);
 
     EXPECT_EQ(VecSimIndex_New(&params), nullptr);
-    // The primary index alone would accept these params, so the tiered estimate needs its own check
-    // rather than inheriting one from HNSWFactory.
     EXPECT_THROW(EstimateInitialSize(tiered_params), std::invalid_argument);
 }

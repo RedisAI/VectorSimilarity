@@ -66,9 +66,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
-    // NewIndex below rejects quantization until the tiered index handles it, so refuse to size it
-    // too. The primary index on its own would accept these params, so without this check the
-    // estimate reports a number for an index that cannot be created.
+    // Keep size estimation consistent with NewIndex, which rejects quantized tiered indexes.
     if (hnsw_params.quantType != VecSimQuant_NONE) {
         throw std::invalid_argument("Quantization is not supported for tiered HNSW indexes");
     }
@@ -102,10 +100,8 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
-    // Quantization is not wired into the tiered index yet. Reject it here rather than let it
-    // through: the primary index would be built from these params and quantize its storage, while
-    // NewBFParams does not carry quantType, so the frontend would stay unquantized and the two
-    // would disagree on the stored blob layout.
+    // The brute-force frontend is not quantized, so an SQ8 primary index would use an incompatible
+    // stored-vector layout.
     if (params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE) {
         return nullptr;
     }
@@ -248,8 +244,7 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 size_t EstimateElementSize(const TieredIndexParams *params) {
-    // Deliberately not validated here, unlike EstimateInitialSize above: see the note in
-    // HNSWFactory::EstimateElementSize on why this function has no error channel.
+    // Match HNSW's element estimator, which leaves validation to NewIndex.
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);

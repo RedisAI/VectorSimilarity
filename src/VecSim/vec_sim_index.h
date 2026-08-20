@@ -47,11 +47,8 @@ struct AbstractIndexInitParams {
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
-    bool isDisk; // Whether the index stores vectors on disk
-    // Whether stored vectors are quantized. A quantized index's blobs, both stored and query, carry
-    // metadata the distance kernels read, so a caller's raw dim-by-type vector is not a usable
-    // query blob for it.
-    bool isQuantized;
+    bool isDisk;      // Whether the index stores vectors on disk
+    bool isQuantized; // Whether the index uses quantized storage.
     void *logCtx;
     size_t inputBlobSize;
 };

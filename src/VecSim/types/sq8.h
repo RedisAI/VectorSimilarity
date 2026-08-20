@@ -47,9 +47,7 @@ struct sq8 {
                ((WithNorm && Metric == VecSimMetric_IP) ? 1 : 0);
     }
 
-    // Size of a stored SQ8 blob: one byte per dimension, followed by FP32 metadata. Single source
-    // of truth for the storage layout: every caller that sizes or allocates a stored blob must use
-    // this, so the layout cannot drift between the preprocessor and the index factories.
+    // Stored layout: one quantized byte per dimension, followed by metric-specific FP32 metadata.
     template <VecSimMetric Metric, bool WithNorm = false>
     static constexpr size_t storage_bytes_count(size_t dim) {
         return dim * sizeof(value_type) +

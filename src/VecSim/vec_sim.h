@@ -84,15 +84,10 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @param label the label of the vector in the index.
  * @param blob binary representation of the second vector. Blob size should match the index data
  * type and dimension, and pre-normalized if needed.
- * @return The distance (according to the index's distance metric) between `blob` and the vector
- * with label  label`.
- * NOT SUPPORTED for a quantized index (HNSWParams::quantType != VecSimQuant_NONE), which always
- * returns INVALID_SCORE here, for every label. The quantized kernels read query metadata appended
- * past the raw vector, which a blob matching the documented type and dimension does not carry, so
- * honouring the contract above would read past the caller's buffer. Note that INVALID_SCORE is the
- * same NaN returned when the label is absent, so a caller cannot distinguish the two: check
- * quantType rather than inferring it from the result. Obtaining a real distance needs a prepared
- * query, which has no public API yet.
+ * @return The distance between `blob` and the vector with `label`, or INVALID_SCORE if the label is
+ * absent or the index is quantized.
+ * @note Quantized kernels require a prepared query that this API does not create. Callers must
+ * check the index's `quantType` setting to distinguish this case from a missing label.
  */
 double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, const void *blob);
 
