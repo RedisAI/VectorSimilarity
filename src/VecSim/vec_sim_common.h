@@ -84,7 +84,18 @@ typedef enum {
 } VecSimBool;
 
 // Distance metric
-typedef enum { VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine } VecSimMetric;
+typedef enum {
+    VecSimMetric_L2,
+    VecSimMetric_IP,
+    VecSimMetric_Cosine,
+    VecSimMetric_CosineSimilarity
+} VecSimMetric;
+
+// Returns true for any metric whose internal execution path uses cosine distance,
+// regardless of how scores are presented at the API boundary.
+static inline bool VecSimMetric_IsCosineFamily(VecSimMetric metric) {
+    return metric == VecSimMetric_Cosine || metric == VecSimMetric_CosineSimilarity;
+}
 
 typedef size_t labelType;
 typedef unsigned int idType;
