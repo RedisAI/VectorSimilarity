@@ -141,9 +141,16 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv.*)")
 	# NEON half-precision support
 	if (CXX_NEON_HP AND CXX_ARMV8A)
 		message("Building with NEON+HP")
-		set_source_files_properties(functions/NEON_HP.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+fp16fml")
+		set_source_files_properties(functions/NEON_HP.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+fp16")
 		list(APPEND OPTIMIZATIONS functions/NEON_HP.cpp)
   endif()
+
+	# NEON FHM (FEAT_FHM / asimdfhm) support
+	if (CXX_NEON_FHM AND CXX_ARMV8A)
+		message("Building with NEON+FHM")
+		set_source_files_properties(functions/NEON_FHM.cpp PROPERTIES COMPILE_FLAGS "-march=armv8.2-a+fp16fml")
+		list(APPEND OPTIMIZATIONS functions/NEON_FHM.cpp)
+	endif()
 
 	# NEON bfloat16 support
 	if (CXX_NEON_BF16)
