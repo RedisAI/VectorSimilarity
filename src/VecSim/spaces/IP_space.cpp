@@ -77,7 +77,7 @@ dist_func_t<float> IP_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes
             *alignment = 16 * sizeof(uint8_t);
         return Choose_SQ8_FP32_IP_implementation_AVX512F_BW_VL_VNNI(dim);
@@ -146,7 +146,7 @@ dist_func_t<float> Cosine_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignm
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes
             *alignment = 16 * sizeof(uint8_t);
         return Choose_SQ8_FP32_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
@@ -375,7 +375,8 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment,
 #ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     // AVX512 VNNI SQ8_SQ8 uses 64-element chunks; residual handling is in 32-byte sub-chunks.
-    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vl &&
+        features.avx512vnni) {
         if (dim % 32 == 0) // align to 256 bits when there is no offsetting residual
             *alignment = 32 * sizeof(uint8_t);
         return Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
@@ -427,7 +428,8 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
 #ifdef CPU_FEATURES_ARCH_X86_64
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     // AVX512 VNNI SQ8_SQ8 uses 64-element chunks; residual handling is in 32-byte sub-chunks.
-    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vnni) {
+    if (dim >= 64 && features.avx512f && features.avx512bw && features.avx512vl &&
+        features.avx512vnni) {
         if (dim % 32 == 0) // align to 256 bits when there is no offsetting residual
             *alignment = 32 * sizeof(uint8_t);
         return Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);

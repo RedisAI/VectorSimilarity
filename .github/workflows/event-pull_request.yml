@@ -70,6 +70,10 @@ jobs:
     uses: ./.github/workflows/codeql-analysis.yml
     secrets: inherit
 
+  spaces-isa-baseline:
+    uses: ./.github/workflows/spaces-isa-baseline.yml
+    secrets: inherit
+
   spellcheck:
     runs-on: ubuntu-latest
     steps:
@@ -88,6 +92,7 @@ jobs:
       - sanitizer
       - coverage
       - codeql-analysis
+      - spaces-isa-baseline
       - spellcheck
     runs-on: ubuntu-latest
     if: ${{ !cancelled() }}

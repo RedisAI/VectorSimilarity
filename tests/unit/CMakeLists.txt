@@ -28,7 +28,7 @@ if(FP64_TESTS)
 	add_definitions(-DFP64_TESTS)
 endif()
 
-if (CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(arm64)|(ARM64)|(armv8)|(armv9)")
 	include(${root}/cmake/aarch64InstructionFlags.cmake)
 else()
 	include(${root}/cmake/x86_64InstructionFlags.cmake)

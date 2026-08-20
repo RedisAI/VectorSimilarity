@@ -2356,7 +2356,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_L2SqrTest) {
     float baseline = SQ8_FP32_L2Sqr(v2_compressed.data(), v1_orig.data(), dim);
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2482,7 +2483,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_InnerProductTest) {
 
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2633,7 +2635,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_CosineTest) {
 
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2745,7 +2748,8 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceCosine) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
@@ -2846,7 +2850,8 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceL2) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
@@ -2955,7 +2960,8 @@ TEST(SQ8_FP32_EdgeCases, CosineSymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v2_quantized.data(), v1_fp32.data(), dim);
@@ -3022,7 +3028,8 @@ TEST(SQ8_FP32_EdgeCases, CosineZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_nonzero_quantized.data(), v_zero.data(), dim);
@@ -3102,7 +3109,8 @@ TEST(SQ8_FP32_EdgeCases, CosineConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_query.data(), dim);
@@ -3182,7 +3190,8 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v2_quantized.data(), v1.data(), dim);
@@ -3925,7 +3934,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -4008,7 +4018,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -4091,7 +4102,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -4170,7 +4182,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
@@ -4242,7 +4255,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineSymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4310,7 +4324,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -4382,7 +4397,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -4463,7 +4479,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4532,7 +4549,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
@@ -4604,7 +4622,8 @@ TEST(SQ8_SQ8_EdgeCases, L2SymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float l2_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4672,7 +4691,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -4743,7 +4763,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -4817,7 +4838,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4915,3 +4937,143 @@ TEST_F(SpacesTest, SQ8_SQ8_DispatcherAlignmentHints) {
     check("Cosine", &spaces::Cosine_SQ8_SQ8_GetDistFunc);
 }
 #endif // CPU_FEATURES_ARCH_X86_64
+
+// Enforce the pure-bitfield layout assumption that spaces::intersectWithDetectedFeatures (see
+// spaces/spaces.h) relies on: the platform's cpu_features Features struct must be composed
+// entirely of `int <name> : 1;` bitfields with no other members, so a byte-wise AND over the
+// struct's object representation is equivalent to a per-feature logical AND. We do not hand-list
+// the fields, since that would rot the moment cpu_features adds one; instead we walk every enum
+// value via cpu_features' own enum-value reader and compare it against the field-wise AND. If
+// cpu_features ever adds a non-bitfield member, the byte-wise AND diverges from this field-wise
+// truth and the test below fails.
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST_F(SpacesTest, CpuFeatureIntersectionX86) {
+    auto detected = getCpuOptimizationFeatures();
+
+    // An all-detected mask ANDed with a mask that clears one feature yields that feature cleared.
+    auto clears_one = detected;
+    clears_one.sse = 0;
+    auto cleared_result = intersectWithDetectedFeatures(clears_one, detected);
+    ASSERT_EQ(cpu_features::GetX86FeaturesEnumValue(&cleared_result, cpu_features::X86_SSE), 0);
+
+    // This is the hole being closed: build a detected set that (synthetically) lacks a feature,
+    // and an override that claims it anyway. The intersection must keep it clear regardless.
+    auto lacks_avx512f = detected;
+    lacks_avx512f.avx512f = 0;
+    auto claims_avx512f = lacks_avx512f;
+    claims_avx512f.avx512f = 1;
+    auto claimed_result = intersectWithDetectedFeatures(claims_avx512f, lacks_avx512f);
+    ASSERT_EQ(cpu_features::GetX86FeaturesEnumValue(&claimed_result, cpu_features::X86_AVX512F), 0);
+
+    // General correctness for both scenarios above: every feature in the intersection must equal
+    // the logical AND of the two masks it was built from.
+    // GetX86FeaturesEnumValue returns the raw `int <name> : 1;` field, which for a set signed
+    // 1-bit field reads back as -1 (sign-extended), not 1. Compare as bool so the sign
+    // representation of "set" does not matter, only whether the bit is set.
+    for (int i = 0; i < cpu_features::X86_LAST_; i++) {
+        auto value = static_cast<cpu_features::X86FeaturesEnum>(i);
+        bool expected_cleared = cpu_features::GetX86FeaturesEnumValue(&clears_one, value) &&
+                                cpu_features::GetX86FeaturesEnumValue(&detected, value);
+        ASSERT_EQ(static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&cleared_result, value)),
+                  expected_cleared)
+            << "feature " << cpu_features::GetX86FeaturesEnumName(value);
+
+        bool expected_claimed = cpu_features::GetX86FeaturesEnumValue(&claims_avx512f, value) &&
+                                cpu_features::GetX86FeaturesEnumValue(&lacks_avx512f, value);
+        ASSERT_EQ(static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&claimed_result, value)),
+                  expected_claimed)
+            << "feature " << cpu_features::GetX86FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_X86_64
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+TEST_F(SpacesTest, CpuFeatureIntersectionAarch64) {
+    auto detected = getCpuOptimizationFeatures();
+
+    // An all-detected mask ANDed with a mask that clears one feature yields that feature cleared.
+    auto clears_one = detected;
+    clears_one.asimd = 0;
+    auto cleared_result = intersectWithDetectedFeatures(clears_one, detected);
+    ASSERT_EQ(
+        cpu_features::GetAarch64FeaturesEnumValue(&cleared_result, cpu_features::AARCH64_ASIMD), 0);
+
+    // This is the hole being closed: build a detected set that (synthetically) lacks a feature,
+    // and an override that claims it anyway. The intersection must keep it clear regardless.
+    auto lacks_sve = detected;
+    lacks_sve.sve = 0;
+    auto claims_sve = lacks_sve;
+    claims_sve.sve = 1;
+    auto claimed_result = intersectWithDetectedFeatures(claims_sve, lacks_sve);
+    ASSERT_EQ(cpu_features::GetAarch64FeaturesEnumValue(&claimed_result, cpu_features::AARCH64_SVE),
+              0);
+
+    // General correctness for both scenarios above: every feature in the intersection must equal
+    // the logical AND of the two masks it was built from.
+    // GetAarch64FeaturesEnumValue returns the raw `int <name> : 1;` field, which for a set signed
+    // 1-bit field reads back as -1 (sign-extended), not 1. Compare as bool so the sign
+    // representation of "set" does not matter, only whether the bit is set.
+    for (int i = 0; i < cpu_features::AARCH64_LAST_; i++) {
+        auto value = static_cast<cpu_features::Aarch64FeaturesEnum>(i);
+        bool expected_cleared = cpu_features::GetAarch64FeaturesEnumValue(&clears_one, value) &&
+                                cpu_features::GetAarch64FeaturesEnumValue(&detected, value);
+        ASSERT_EQ(
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&cleared_result, value)),
+            expected_cleared)
+            << "feature " << cpu_features::GetAarch64FeaturesEnumName(value);
+
+        bool expected_claimed = cpu_features::GetAarch64FeaturesEnumValue(&claims_sve, value) &&
+                                cpu_features::GetAarch64FeaturesEnumValue(&lacks_sve, value);
+        ASSERT_EQ(
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&claimed_result, value)),
+            expected_claimed)
+            << "feature " << cpu_features::GetAarch64FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_AARCH64
+
+// The CpuFeatureIntersection* tests above call intersectWithDetectedFeatures() directly; they do
+// not exercise getCpuOptimizationFeatures(&mask), which is the actual entry point every real
+// caller (and every chooser in spaces.cpp) goes through, and the function whose behavior this
+// series of fixes changed. Cover that entry point here: a mask claiming every feature still
+// cannot make the result report a feature the live hardware does not have, since
+// getCpuOptimizationFeatures() always intersects the passed-in mask with a fresh read of the
+// real detected features, not with whatever the caller believes is detected.
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST_F(SpacesTest, GetCpuOptimizationFeaturesAppliesMaskX86) {
+    auto detected = getCpuOptimizationFeatures();
+
+    auto all_claimed = detected;
+    std::memset(&all_claimed, 0xFF, sizeof(all_claimed));
+
+    auto result = getCpuOptimizationFeatures(&all_claimed);
+    for (int i = 0; i < cpu_features::X86_LAST_; i++) {
+        auto value = static_cast<cpu_features::X86FeaturesEnum>(i);
+        bool detected_bit =
+            static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&detected, value));
+        bool result_bit = static_cast<bool>(cpu_features::GetX86FeaturesEnumValue(&result, value));
+        ASSERT_EQ(result_bit, detected_bit)
+            << "feature " << cpu_features::GetX86FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_X86_64
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+TEST_F(SpacesTest, GetCpuOptimizationFeaturesAppliesMaskAarch64) {
+    auto detected = getCpuOptimizationFeatures();
+
+    auto all_claimed = detected;
+    std::memset(&all_claimed, 0xFF, sizeof(all_claimed));
+
+    auto result = getCpuOptimizationFeatures(&all_claimed);
+    for (int i = 0; i < cpu_features::AARCH64_LAST_; i++) {
+        auto value = static_cast<cpu_features::Aarch64FeaturesEnum>(i);
+        bool detected_bit =
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&detected, value));
+        bool result_bit =
+            static_cast<bool>(cpu_features::GetAarch64FeaturesEnumValue(&result, value));
+        ASSERT_EQ(result_bit, detected_bit)
+            << "feature " << cpu_features::GetAarch64FeaturesEnumName(value);
+    }
+}
+#endif // CPU_FEATURES_ARCH_AARCH64

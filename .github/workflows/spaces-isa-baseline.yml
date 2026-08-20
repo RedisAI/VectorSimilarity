@@ -1,0 +1,77 @@
+name: spaces ISA baseline guard
+
+# These jobs assert negatives: that configuring with an ISA-raising flag injected through CXXFLAGS
+# makes CMake fail, because src/VecSim/spaces/CMakeLists.txt rejects it. They are kept separate
+# from the main build jobs, since a green run here proves nothing about the build itself, only that
+# each rejection still fires. Every case below was a real bypass at some point in review, so a case
+# that stops failing is a regression, not a cleanup opportunity.
+
+on: [workflow_call, workflow_dispatch]
+
+jobs:
+  reject-isa-override:
+    name: "configure must fail: CXXFLAGS=${{ matrix.flag }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # A native baseline is unknown at build time, so it can raise the fallback's ISA above
+          # any deployment CPU.
+          - flag: -march=native
+          - flag: -mtune=native
+          - flag: -mcpu=native
+          # An explicit feature flag is NOT cancelled by a later -march= baseline: measured on
+          # gcc 13, "-mavx2 ... -march=x86-64" still emitted hundreds of AVX instructions into the
+          # scalar fallback.
+          - flag: -mavx2
+          - flag: -mavx512f
+          - flag: -mfma
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: assert configure fails on an inherited ${{ matrix.flag }}
+        env:
+          CXXFLAGS: ${{ matrix.flag }}
+        run: |
+          set +e
+          output=$(cmake -S . -B build-reject -DVECSIM_BUILD_TESTS=OFF 2>&1)
+          status=$?
+          echo "$output"
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Expected the configure to fail because of the inherited ${{ matrix.flag }}, but it succeeded."
+            exit 1
+          fi
+          if ! echo "$output" | grep -q -- "Refusing to configure"; then
+            echo "Configure failed, but not with the expected rejection message."
+            exit 1
+          fi
+
+  accept-explicit-baseline:
+    name: "configure must succeed and warn: CXXFLAGS=-march=x86-64-v2"
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: assert an explicit non-native baseline still configures
+        env:
+          CXXFLAGS: -march=x86-64-v2
+        run: |
+          set +e
+          output=$(cmake -S . -B build-accept -DVECSIM_BUILD_TESTS=OFF 2>&1)
+          status=$?
+          echo "$output"
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "A consumer declaring a legitimate deployment floor must still be able to build."
+            exit 1
+          fi
+          if ! echo "$output" | grep -qi "baseline"; then
+            echo "Expected a warning naming the baseline, so the difference is not silent."
+            exit 1
+          fi
