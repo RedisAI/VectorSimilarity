@@ -1888,18 +1888,18 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // Delete 2, expect to create two repair job pending from 0 and 1. Also, expect that swap
-    // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
-    // pending repair job for the "new" 0 - for deleting the old 1->2, while the second job for
-    // deleting the old 0->2 is invalid and reduced from the pending repair jobs counter.
+    // Delete 2. Only the 1->2 edge is left to repair: 0 was taken out of the graph when its own
+    // repair jobs completed, so it no longer points to 2 and no 0->2 job is created. Also, expect
+    // that swap job for 0 will be executed, so that 2 and 0 are swapped - the single pending job is
+    // then 1->0 (originally 1->2).
     EXPECT_EQ(tiered_index->deleteVector(2), 1);
     EXPECT_EQ(tiered_index->indexSize(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
 
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
-    // The first repair job should remove 1->0 (originally was 1->2).
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    // The repair job should remove 1->0 (originally was 1->2).
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
@@ -1908,34 +1908,15 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
               0);
     mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // The second repair job is invalid due to the removal of (the original) 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
-              invalid_jobs_counter++);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
-    // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
-    // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
-    // get id 0, and then the new 0 should have no pending repair jobs.
+    // Delete 1. The only other element left (the "new" 0, which is the old 2) is deleted and was
+    // already taken out of the graph, so nothing points to 1 and no u->1 job is created.
+    // Its swap job is therefore ready right away, and the swap and removal of the previous 0 is
+    // triggered - so that 1 gets id 0.
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // The repair job is invalid due to the removal of (the previous) 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
-              invalid_jobs_counter);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
@@ -1947,6 +1928,80 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->indexSize(), 0);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+}
+
+// Covers the invalidation of a pending repair job whose node is disposed of by a swap job. A repair
+// job is denoted below as the edge it removes: u->v is the job that repairs u's connections after
+// its neighbour v was deleted.
+// A deleted element is taken out of the graph as soon as the jobs of *its own* deletion are done,
+// so for a job on it to still be pending when it is disposed of, that job has to belong to
+// *another* element's deletion: 0 is deleted first, then 1 is deleted while 0 still points to it
+// (registering a 0->1 job), and only then the 1->0 and 2->0 jobs complete and 0 is swapped out.
+TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Threshold of 1, so that a ready swap job is executed at the first opportunity.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
+
+    // Insert 3 vectors directly into HNSW, expect to have a fully connected graph.
+    for (size_t i = 0; i < 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+
+    // Delete 0 - a u->0 job is created for every (u, level) pair that points to it, that is 1->0
+    // and 2->0. Note that the number of jobs depends on the levels the elements got (and that jobs
+    // of the same (u, level) are merged), so the counters are compared to each other rather than to
+    // fixed values below.
+    EXPECT_EQ(tiered_index->deleteVector(0), 1);
+    ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+    ASSERT_GT(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
+
+    // Delete 1 before those jobs run. 0 is deleted but still connected (its own repairs are
+    // pending), so a 0->1 job is created here and stays pending.
+    EXPECT_EQ(tiered_index->deleteVector(1), 1);
+    ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
+
+    // Execute the 1->0 and 2->0 jobs, so that 0 has no pending repair job left and is taken out of
+    // the graph, making its swap job ready. The 0->1 job, which belongs to 1's swap job, is still
+    // queued.
+    while (tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load() > 0) {
+        ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
+    ASSERT_EQ(tiered_index->invalidJobs.size(), 0);
+    int pending_for_1 = tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load();
+    ASSERT_GT(pending_for_1, 0);
+
+    // Dispose of 0. The pending 0->1 job has to be invalidated, and 1's swap job should stop
+    // waiting for it.
+    tiered_index->runGC();
+    EXPECT_EQ(tiered_index->indexSize(), 2);
+    EXPECT_EQ(tiered_index->invalidJobs.size(), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(),
+              pending_for_1 - 1);
+
+    // Drain the remaining jobs: the invalidated 0->1 job is disposed of without being executed, and
+    // the 2->1 job (whose node id was renamed by the swap above) completes 1's repairs - so 1 is
+    // taken out of the graph as well.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    EXPECT_EQ(tiered_index->invalidJobs.size(), 0);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 0);
+
+    // Disposing of 1 as well leaves a single element in the index, with a valid graph.
+    tiered_index->runGC();
+    EXPECT_EQ(tiered_index->indexSize(), 1);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+    auto state = tiered_index->getHNSWIndex()->checkIntegrity();
+    EXPECT_EQ(state.valid_state, true);
+    EXPECT_EQ(state.connections_to_repair, 0);
 }
 
 // A set of lambdas that determine whether a vector should be inserted to the

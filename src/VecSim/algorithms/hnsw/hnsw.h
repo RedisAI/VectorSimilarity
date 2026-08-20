@@ -205,7 +205,7 @@ protected:
                        idType id) const;
     void emplaceToHeap(vecsim_stl::abstract_priority_queue<DistType, labelType> &heap,
                        DistType dist, idType id) const;
-    void removeAndSwap(idType internalId);
+    void swapWithLast(idType removedId);
 
     size_t getVectorRelativeIndex(idType id) const { return id % this->blockSize; }
 
@@ -279,6 +279,24 @@ public:
     void unmarkInProcess(idType internalId);
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
     void removeAndSwapMarkDeletedElement(idType internalId);
+    void removeFromGraph(idType internalId);
+    // Whether `level_data` holds a link to `id`.
+    static bool hasLink(const ElementLevelData &level_data, idType id) {
+        for (size_t i = 0; i < level_data.getNumLinks(); i++) {
+            if (level_data.getLinkAtPos(i) == id) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // Take a marked-deleted element out of the graph entirely: drop every edge going out of it and
+    // every edge coming into it, at every level, keeping the bookkeeping of the other side
+    // consistent. To be called once all the repair jobs created for its deletion are done and
+    // before its swap job disposes of it, so that from that point no element refers to it and it
+    // refers to no element.
+    // Takes the per-element links locks (one at a time), so holding the main index guard for shared
+    // ownership is enough.
+    void isolateDeletedElement(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
     const ElementMetaData *getMetaDataAddress(idType internal_id) const {
@@ -1644,20 +1662,92 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
  */
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
+void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
+    assert(isMarkedDeleted(internalId) && "Only a marked-deleted element may be isolated");
+    auto element = getGraphDataByInternalId(internalId);
+    for (size_t level = 0; level <= element->toplevel; level++) {
+        // Collect the elements this one shares an edge with at this level, in either direction. No
+        // edge can be added to a deleted element, so this set only shrinks from here on (a repair
+        // job of another element may still remove an edge concurrently).
+        lockNodeLinks(internalId);
+        ElementLevelData &level_data = getElementLevelData(element, level);
+        auto others = level_data.copyLinks();
+        others.insert(others.end(), level_data.getIncomingEdges().begin(),
+                      level_data.getIncomingEdges().end());
+        unlockNodeLinks(internalId);
+
+        for (idType other_id : others) {
+            // Remove both sides of the edge as one atomic step, holding the two elements' locks in
+            // ascending id order (as every other multi-lock site here does, to avoid deadlocks).
+            // Doing it mutually keeps the "an edge is recorded on exactly one side" invariant true
+            // at every observable point, which is what lets `mutuallyRemoveNeighborAtPos` tell a
+            // bidirectional edge from a unidirectional one by the record alone.
+            idType first = std::min(internalId, other_id);
+            idType second = std::max(internalId, other_id);
+            lockNodeLinks(first);
+            lockNodeLinks(second);
+
+            ElementLevelData &other = getElementLevelData(other_id, level);
+            bool points_to_other = hasLink(level_data, other_id);
+            bool other_points_here = hasLink(other, internalId);
+
+            if (points_to_other && other_points_here) {
+                // Bidirectional, so neither side recorded it as an incoming edge - just drop both
+                // links. Only two deleted elements can still point at each other at this stage:
+                // neither of them gets a repair job for the other's deletion.
+                assert(isMarkedDeleted(other_id) &&
+                       "a live element still points to a fully repaired deleted element");
+                level_data.removeLink(other_id);
+                other.removeLink(internalId);
+            } else if (points_to_other) {
+                // Unidirectional out - the other side recorded it as an incoming edge.
+                level_data.removeLink(other_id);
+                bool res = other.removeIncomingUnidirectionalEdgeIfExists(internalId);
+                (void)res;
+                assert(res && "The edge should be in the incoming unidirectional edges");
+            } else if (other_points_here) {
+                // Unidirectional in - recorded as an incoming edge here. As above, at this stage it
+                // can only come from another deleted element.
+                assert(isMarkedDeleted(other_id) &&
+                       "a live element still points to a fully repaired deleted element");
+                other.removeLink(internalId);
+                bool res = level_data.removeIncomingUnidirectionalEdgeIfExists(other_id);
+                (void)res;
+                assert(res && "The edge should be in the incoming unidirectional edges");
+            }
+            // Else the edge is already gone - a repair job of another element got to it first.
+
+            unlockNodeLinks(second);
+            unlockNodeLinks(first);
+        }
+
+#ifdef BUILD_TESTS
+        // Sanity check - every edge of this element at this level was taken out above.
+        lockNodeLinks(internalId);
+        assert(level_data.getNumLinks() == 0 && level_data.getIncomingEdges().empty() &&
+               "the element should have no edge left at this level");
+        unlockNodeLinks(internalId);
+#endif
+    }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeFromGraph(idType internalId) {
     // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
     // upon marking it as deleted.
     assert(entrypointNode != internalId);
     auto element = getGraphDataByInternalId(internalId);
 
-    // Remove the deleted id form the relevant incoming edges sets in which it appears.
+    // Remove the deleted id form the relevant incoming edges sets in which it appears. For an
+    // asynchronously deleted element there is nothing to walk here: `isolateDeletedElement` already
+    // took all of its edges out when its last repair job completed.
     for (size_t level = 0; level <= element->toplevel; level++) {
         ElementLevelData &cur_level = getElementLevelData(element, level);
         for (size_t i = 0; i < cur_level.getNumLinks(); i++) {
             ElementLevelData &neighbour = getElementLevelData(cur_level.getLinkAtPos(i), level);
-            // Note that in case of in-place delete, we might have not accounted for this edge in
+            // Note that in case of in-place delete, we might have not accounted for this edge
             // in the unidirectional edges, since there is no point in keeping it there temporarily
-            // (we know we will get here and remove this deleted id permanently).
+            // . (We know we will get here and remove this deleted id permanently.)
             // However, upon asynchronous delete, this should always succeed since we do update
             // the incoming edges in the mutual update even for deleted elements.
             bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
@@ -1673,16 +1763,19 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
     // We can say now that the element has removed completely from index.
     --curElementCount;
+}
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::swapWithLast(idType removedId) {
     // Get the last element's metadata and data.
-    // If we are deleting the last element, we already destroyed it's metadata.
+    // If we are deleting the last element, we already destroyed its metadata.
     auto *last_element_data = getDataByInternalId(curElementCount);
     DataBlock &last_gd_block = graphDataBlocks.back();
     auto last_element = (ElementGraphData *)last_gd_block.removeAndFetchLastElement();
 
     // Swap the last id with the deleted one, and invalidate the last id data.
-    if (curElementCount != internalId) {
-        SwapLastIdWithDeletedId(internalId, last_element, last_element_data);
+    if (curElementCount != removedId) {
+        SwapLastIdWithDeletedId(removedId, last_element, last_element_data);
     }
 
     // If we need to free a complete block and there is at least one block between the
@@ -1693,7 +1786,8 @@ void HNSWIndex<DataType, DistType>::removeAndSwap(idType internalId) {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType internalId) {
-    removeAndSwap(internalId);
+    removeFromGraph(internalId);
+    swapWithLast(internalId);
     // element is permanently removed from the index, it is no longer counted as marked deleted.
     --numMarkedDeleted;
 }
@@ -1756,7 +1850,8 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
     }
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
-    removeAndSwap(element_internal_id);
+    removeFromGraph(element_internal_id);
+    swapWithLast(element_internal_id);
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded

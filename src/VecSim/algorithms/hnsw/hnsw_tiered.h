@@ -104,7 +104,8 @@ private:
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper. Main HNSW
     // lock is assumed to be held exclusive here.
-    void executeSwapJob(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
+    void fixJobsAfterSwap(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
+    void invalidateRepairJobs(idType deleted_id);
 
     // Execute the ready swap jobs, run no more than 'maxSwapsToRun' jobs (run all of them for -1).
     void executeReadySwapJobs(size_t maxSwapsToRun = -1);
@@ -127,6 +128,12 @@ private:
     // and creating the appropriate repair jobs for the effected connections. This should be called
     // while *HNSW shared lock is held* (shared locked).
     int deleteLabelFromHNSW(labelType label);
+
+    // Take a deleted element out of the graph once the last repair job created for its deletion is
+    // done - no edge in or out of it is left, so the swap job that disposes of it later only has to
+    // reclaim its slot. Called in the repair context, while the main index guard is held for shared
+    // ownership and `idToRepairJobsGuard` is not held.
+    void isolateRepairedElement(idType deleted_id);
 
     // Insert a single vector to HNSW. This can be called in both write modes - insert async and
     // in-place. For the async mode, we have to release the flat index guard that is held for shared
@@ -283,23 +290,11 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job)
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::executeSwapJob(idType deleted_id,
-                                                         vecsim_stl::vector<idType> &idsToRemove) {
-    // Get the id that was last and was had been swapped with the job's deleted id.
+void TieredHNSWIndex<DataType, DistType>::fixJobsAfterSwap(
+    idType deleted_id, vecsim_stl::vector<idType> &idsToRemove) {
+    // Get the id that was last and had been swapped with the job's deleted id.
     idType prev_last_id = this->getHNSWIndex()->indexSize();
 
-    // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
-    if (idToRepairJobs.find(deleted_id) != idToRepairJobs.end()) {
-        for (auto &job_it : idToRepairJobs.at(deleted_id)) {
-            job_it->node_id = this->setAndSaveInvalidJob(job_it);
-            for (auto &swap_job_it : job_it->associatedSwapJobs) {
-                if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
-                    readySwapJobs++;
-                }
-            }
-        }
-        idToRepairJobs.erase(deleted_id);
-    }
     // Swap the ids in the pending jobs for the current last id (if exist).
     if (idToRepairJobs.find(prev_last_id) != idToRepairJobs.end()) {
         for (auto &job_it : idToRepairJobs.at(prev_last_id)) {
@@ -325,8 +320,31 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(idType deleted_id,
 }
 
 template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::invalidateRepairJobs(idType deleted_id) {
+    // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
+    if (idToRepairJobs.find(deleted_id) == idToRepairJobs.end()) {
+        return;
+    }
+
+    for (auto &job_it : idToRepairJobs.at(deleted_id)) {
+        job_it->node_id = this->setAndSaveInvalidJob(job_it);
+        for (auto &swap_job_it : job_it->associatedSwapJobs) {
+            if (swap_job_it->atomicDecreasePendingJobsNum() == 0) {
+                readySwapJobs++;
+            }
+        }
+    }
+    idToRepairJobs.erase(deleted_id);
+}
+
+template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
     return dynamic_cast<HNSWIndex<DataType, DistType> *>(this->backendIndex);
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::isolateRepairedElement(idType deleted_id) {
+    this->getHNSWIndex()->isolateDeletedElement(deleted_id);
 }
 
 template <typename DataType, typename DistType>
@@ -342,10 +360,12 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
     idsToRemove.reserve(idToSwapJob.size());
     for (auto &it : idToSwapJob) {
         auto *swap_job = it.second;
+        // Swap job is ready for execution - execute and delete it.
         if (swap_job->pending_repair_jobs_counter.load() == 0) {
-            // Swap job is ready for execution - execute and delete it.
-            this->getHNSWIndex()->removeAndSwapMarkDeletedElement(swap_job->deleted_id);
-            this->executeSwapJob(swap_job->deleted_id, idsToRemove);
+            auto deleted_id = swap_job->deleted_id;
+            this->getHNSWIndex()->removeAndSwapMarkDeletedElement(deleted_id);
+            this->invalidateRepairJobs(deleted_id);
+            this->fixJobsAfterSwap(deleted_id, idsToRemove);
             delete swap_job;
         }
         if (maxJobsToRun > 0 && idsToRemove.size() >= maxJobsToRun) {
@@ -414,6 +434,13 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
             readySwapJobs++;
         }
         this->idToRepairJobsGuard.unlock();
+
+        if (incomingEdges.size() == 0) {
+            // No repair job will ever run for this element, so this is already the point at which
+            // it can be taken out of the graph (outside the repair jobs guard, as isolating takes
+            // the per-element links locks).
+            this->isolateRepairedElement(id);
+        }
 
         this->submitJobs(repair_jobs);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
@@ -533,7 +560,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
         // Get the id in every iteration, since the ids can be swapped in every iteration.
         idType id = hnsw_index->getElementIds(label).at(id_ind);
         hnsw_index->removeVectorInPlace(id);
-        this->executeSwapJob(id, idsToRemove);
+        this->invalidateRepairJobs(id);
+        this->fixJobsAfterSwap(id, idsToRemove);
     }
     hnsw_index->removeLabel(label);
     for (idType id : idsToRemove) {
@@ -639,14 +667,29 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
         *it = repair_jobs.back();
         repair_jobs.pop_back();
     }
+    this->idToRepairJobsGuard.unlock();
+
+    hnsw_index->repairNodeConnections(job->node_id, job->level);
+
+    // Account for this job only now that its repair has actually been performed. Decreasing the
+    // counter beforehand would let a swap job be seen as ready, and its element isolated, while
+    // an element still points to it from a repair that has not run yet.
+    vecsim_stl::vector<idType> fully_repaired_ids(this->allocator);
+    this->idToRepairJobsGuard.lock();
     for (auto &it : job->associatedSwapJobs) {
         if (it->atomicDecreasePendingJobsNum() == 0) {
             readySwapJobs++;
+            fully_repaired_ids.push_back(it->deleted_id);
         }
     }
     this->idToRepairJobsGuard.unlock();
 
-    hnsw_index->repairNodeConnections(job->node_id, job->level);
+    // These deleted elements have no pending repair job left, so nothing points to them anymore.
+    // Take them out of the graph entirely, leaving no edge in or out for the swap job to deal with.
+    // Done outside the repair jobs guard, as isolating takes the per-element links locks.
+    for (idType deleted_id : fully_repaired_ids) {
+        this->isolateRepairedElement(deleted_id);
+    }
 
     this->mainIndexGuard.unlock_shared();
 }
