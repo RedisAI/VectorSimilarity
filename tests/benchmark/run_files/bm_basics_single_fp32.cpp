@@ -24,6 +24,7 @@ const char *BM_VecSimGeneral::test_queries_file =
 #define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Single)
 #define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Async, Single)
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, Single)
+#define BM_RELABEL_LABEL            CONCAT_WITH_UNDERSCORE_ARCH(RelabelLabel, Single)
 
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, BF), fp32_index_t, BruteForceIndex_Single, float,
                     float, INDEX_BF)
