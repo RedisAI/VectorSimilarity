@@ -85,9 +85,8 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @param blob binary representation of the second vector. Blob size should match the index data
  * type and dimension, and pre-normalized if needed.
  * @return The distance between `blob` and the vector with `label`, or INVALID_SCORE if the label is
- * absent or the index is quantized.
- * @note Quantized kernels require a prepared query that this API does not create. Callers must
- * check the index's `quantType` setting to distinguish this case from a missing label.
+ * absent.
+ * @note Quantized indexes allocate and preprocess a temporary query blob on each call.
  */
 double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, const void *blob);
 

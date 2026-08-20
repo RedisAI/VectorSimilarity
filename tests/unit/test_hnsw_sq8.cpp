@@ -90,7 +90,7 @@ protected:
     void search_empty_index_test();
     void test_override();
     void test_range_query();
-    void test_get_distance(VecSimMetric metric);
+    void test_get_distance(VecSimMetric metric, bool multi);
     void test_batch_iterator_basic();
 
     VecSimIndex *index = nullptr;
@@ -319,28 +319,27 @@ void HNSWSQ8Test<index_type_t>::test_range_query() {
 TYPED_TEST(HNSWSQ8Test, RangeQuery) { this->test_range_query(); }
 
 template <typename index_type_t>
-void HNSWSQ8Test<index_type_t>::test_get_distance(VecSimMetric metric) {
+void HNSWSQ8Test<index_type_t>::test_get_distance(VecSimMetric metric, bool multi) {
     HNSWParams params = {.dim = 4, .metric = metric, .initialCapacity = 1};
+    params.multi = multi;
     SetUp(params);
 
     ASSERT_EQ(GenerateAndAddVector(0, 0.25f, 0.25f), 1);
+    if (multi) {
+        ASSERT_EQ(GenerateAndAddVector(0, -2.0f, 0.25f), 1);
+    }
     data_t query[4];
     GenerateVector(query, 0.5f, 0.25f);
 
-    // SQ8 distance kernels require the index's preprocessed query format.
-    auto *hnsw_index = CastToHNSW();
-    auto processed_query = hnsw_index->preprocessQuery(query);
     const double expected = metric == VecSimMetric_L2 ? 0.25 : -1.5;
-    EXPECT_NEAR(
-        hnsw_index->calcDistanceForQuery(hnsw_index->getDataByInternalId(0), processed_query.get()),
-        expected, 1e-5);
-
-    // The public raw-vector API cannot supply SQ8 query metadata and returns INVALID_SCORE.
-    EXPECT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 0, query)));
+    EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(index, 0, query), expected, 1e-5);
+    EXPECT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query)));
 }
 
-TYPED_TEST(HNSWSQ8Test, GetDistanceL2) { this->test_get_distance(VecSimMetric_L2); }
-TYPED_TEST(HNSWSQ8Test, GetDistanceIP) { this->test_get_distance(VecSimMetric_IP); }
+TYPED_TEST(HNSWSQ8Test, GetDistanceL2) { this->test_get_distance(VecSimMetric_L2, false); }
+TYPED_TEST(HNSWSQ8Test, GetDistanceIP) { this->test_get_distance(VecSimMetric_IP, false); }
+TYPED_TEST(HNSWSQ8Test, GetDistanceMultiL2) { this->test_get_distance(VecSimMetric_L2, true); }
+TYPED_TEST(HNSWSQ8Test, GetDistanceMultiIP) { this->test_get_distance(VecSimMetric_IP, true); }
 
 // Batch iteration
 

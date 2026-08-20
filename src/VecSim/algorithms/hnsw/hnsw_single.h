@@ -88,9 +88,9 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
-        // Raw queries lack the metadata required by quantized distance kernels.
         if (this->isQuantized) {
-            return INVALID_SCORE;
+            auto processed_query = this->preprocessQuery(vector_data);
+            return getDistanceFromInternal(label, processed_query.get());
         }
         return getDistanceFromInternal(label, vector_data);
     }
