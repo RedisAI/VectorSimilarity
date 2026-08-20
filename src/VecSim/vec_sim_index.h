@@ -47,7 +47,8 @@ struct AbstractIndexInitParams {
     VecSimMetric metric;
     size_t blockSize;
     bool multi;
-    bool isDisk; // Whether the index stores vectors on disk
+    bool isDisk;      // Whether the index stores vectors on disk
+    bool isQuantized; // Whether the index uses quantized storage.
     void *logCtx;
     size_t inputBlobSize;
 };
@@ -82,6 +83,7 @@ protected:
     mutable VecSearchMode lastMode; // The last search mode in RediSearch (used for debug/testing).
     bool isMulti;                   // Determines if the index should multi-index or not.
     bool isDisk;                    // Whether the index stores vectors on disk.
+    bool isQuantized;               // Whether stored vectors are quantized.
     void *logCallbackCtx;           // Context for the log callback.
     RawDataContainer *vectors;      // The raw vectors data container.
 private:
@@ -125,8 +127,8 @@ public:
         : VecSimIndexInterface(params.allocator), dim(params.dim), vecType(params.vecType),
           metric(params.metric),
           blockSize(params.blockSize ? params.blockSize : DEFAULT_BLOCK_SIZE), lastMode(EMPTY_MODE),
-          isMulti(params.multi), isDisk(params.isDisk), logCallbackCtx(params.logCtx),
-          indexCalculator(components.indexCalculator),
+          isMulti(params.multi), isDisk(params.isDisk), isQuantized(params.isQuantized),
+          logCallbackCtx(params.logCtx), indexCalculator(components.indexCalculator),
           storedDistanceDispatch(
               components.indexCalculator
                   ? components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToStored)
