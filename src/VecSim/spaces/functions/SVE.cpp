@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "SVE.h"
+#include "VecSim/spaces/functions/residual_dispatch.h"
 
 #include "VecSim/spaces/L2/L2_SVE_FP32.h"
 #include "VecSim/spaces/IP/IP_SVE_FP32.h"
@@ -33,133 +34,150 @@
 
 namespace spaces {
 
-#include "implementation_chooser.h"
-
 dist_func_t<float> Choose_FP32_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_InnerProductSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return FP32_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 dist_func_t<float> Choose_FP32_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP32_L2SqrSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return FP32_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_FP16_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP16_InnerProduct_SVE, dim, svcnth);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcnth(), []<bool partial_chunk, size_t additional_steps>() {
+            return FP16_InnerProduct_SVE<partial_chunk, additional_steps>;
+        });
 }
 dist_func_t<float> Choose_FP16_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP16_L2Sqr_SVE, dim, svcnth);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcnth(), []<bool partial_chunk, size_t additional_steps>() {
+            return FP16_L2Sqr_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<double> Choose_FP64_IP_implementation_SVE(size_t dim) {
-    dist_func_t<double> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP64_InnerProductSIMD_SVE, dim, svcntd);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<double>>(
+        dim, svcntd(), []<bool partial_chunk, size_t additional_steps>() {
+            return FP64_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 dist_func_t<double> Choose_FP64_L2_implementation_SVE(size_t dim) {
-    dist_func_t<double> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, FP64_L2SqrSIMD_SVE, dim, svcntd);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<double>>(
+        dim, svcntd(), []<bool partial_chunk, size_t additional_steps>() {
+            return FP64_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_INT8_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, INT8_L2SqrSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return INT8_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_INT8_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, INT8_InnerProductSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return INT8_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_INT8_Cosine_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, INT8_CosineSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return INT8_CosineSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_UINT8_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_L2SqrSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return UINT8_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_UINT8_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_InnerProductSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return UINT8_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_UINT8_Cosine_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, UINT8_CosineSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return UINT8_CosineSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_FP32_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP32_InnerProductSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_FP32_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP32_CosineSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_FP32_CosineSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_FP32_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP32_L2SqrSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_FP32_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_FP16_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP16_InnerProductSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_FP16_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP16_CosineSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_FP16_CosineSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_FP16_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP16_L2SqrSIMD_SVE, dim, svcntw);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntw(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_FP16_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 // Note: Use svcntb for uint8 elements (not svcntw which is for 32-bit elements)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_InnerProductSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_SQ8_InnerProductSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_CosineSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_SQ8_CosineSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
 
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_SVE(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_SQ8_L2SqrSIMD_SVE, dim, svcntb);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcntb(), []<bool partial_chunk, size_t additional_steps>() {
+            return SQ8_SQ8_L2SqrSIMD_SVE<partial_chunk, additional_steps>;
+        });
 }
-
-#include "implementation_chooser_cleanup.h"
 
 } // namespace spaces

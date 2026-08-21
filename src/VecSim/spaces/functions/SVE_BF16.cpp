@@ -7,25 +7,24 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "SVE_BF16.h"
+#include "VecSim/spaces/functions/residual_dispatch.h"
 
 #include "VecSim/spaces/IP/IP_SVE_BF16.h"
 #include "VecSim/spaces/L2/L2_SVE_BF16.h"
 
 namespace spaces {
 
-#include "implementation_chooser.h"
-
 dist_func_t<float> Choose_BF16_IP_implementation_SVE_BF16(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, BF16_InnerProduct_SVE, dim, svcnth);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcnth(), []<bool partial_chunk, size_t additional_steps>() {
+            return BF16_InnerProduct_SVE<partial_chunk, additional_steps>;
+        });
 }
 dist_func_t<float> Choose_BF16_L2_implementation_SVE_BF16(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, BF16_L2Sqr_SVE, dim, svcnth);
-    return ret_dist_func;
+    return dispatch_by_sve_residual<dist_func_t<float>>(
+        dim, svcnth(), []<bool partial_chunk, size_t additional_steps>() {
+            return BF16_L2Sqr_SVE<partial_chunk, additional_steps>;
+        });
 }
-
-#include "implementation_chooser_cleanup.h"
 
 } // namespace spaces
