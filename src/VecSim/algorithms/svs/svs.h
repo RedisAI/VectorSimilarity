@@ -93,10 +93,12 @@ protected:
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
     using graph_type = typename graph_builder_t::graph_type;
 
+    // The concurrent index mirrors the upstream template signature and member surface, so
+    // the only change needed here is the namespace.
     using impl_type = std::conditional_t<
         isMulti,
-        svs::index::vamana::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
-        svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
+        svs::concurrent::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
+        svs::concurrent::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
 
     bool forcePreprocessing;
 
