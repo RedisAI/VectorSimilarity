@@ -10,10 +10,20 @@
 #pragma once
 #include "VecSim/algorithms/svs/svs_utils.h"
 #include "svs/extensions/vamana/scalar.h"
+// Tells SQDataset that the concurrent SegmentedBlocked tag is a blocked allocator, so
+// that resize()/compact() are not constrained away. Without it a scalar-quantized
+// concurrent index fails to compile the moment the index grows.
+#include "svs/concurrent/extensions/scalar.h"
 
 #if HAVE_SVS_LVQ
 #include SVS_LVQ_HEADER
 #include SVS_LEANVEC_HEADER
+// The same treatment for the LVQ and LeanVec datasets, each of which keeps its own private
+// copy of the blocked-allocator trait. LeanVec additionally picks the allocator for its inner
+// datasets through that trait, and its blocked branch hardcodes svs::data::Blocked -- so
+// without this the inner storage would quietly lose the grow-stable guarantee.
+#include "svs/concurrent/extensions/lvq.h"
+#include "svs/concurrent/extensions/leanvec.h"
 #endif // HAVE_SVS_LVQ
 
 // Scalar Quantization traits for SVS
@@ -21,7 +31,7 @@ template <typename DataType>
 struct SVSStorageTraits<DataType, 1, 0, false> {
     using element_type = std::int8_t;
     using allocator_type = svs_details::SVSAllocator<element_type>;
-    using blocked_type = svs::data::Blocked<svs::AllocatorHandle<element_type>>;
+    using blocked_type = svs::concurrent::SegmentedBlocked<svs::AllocatorHandle<element_type>>;
     using index_storage_type =
         svs::quantization::scalar::SQDataset<element_type, svs::Dynamic, blocked_type>;
 
@@ -32,7 +42,7 @@ struct SVSStorageTraits<DataType, 1, 0, false> {
         // SVS block size is a power of two, so we can use it directly
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
         allocator_type data_allocator{std::move(allocator)};
-        return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+        return svs_details::make_segmented_blocked_allocator_handle({svs_bs}, data_allocator);
     }
 
     static constexpr VecSimSvsQuantBits get_compression_mode() { return VecSimSvsQuant_Scalar; }
@@ -89,7 +99,7 @@ template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
                         std::enable_if_t<(QuantBits > 1)>> {
     using allocator_type = svs_details::SVSAllocator<std::byte>;
-    using blocked_type = svs::data::Blocked<svs::AllocatorHandle<std::byte>>;
+    using blocked_type = svs::concurrent::SegmentedBlocked<svs::AllocatorHandle<std::byte>>;
     using strategy_type = typename svs_details::LVQSelector<QuantBits>::strategy;
     using index_storage_type =
         svs::quantization::lvq::LVQDataset<QuantBits, ResidualBits, svs::Dynamic, strategy_type,
@@ -117,7 +127,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
         // SVS block size is a power of two, so we can use it directly
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
         allocator_type data_allocator{std::move(allocator)};
-        return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+        return svs_details::make_segmented_blocked_allocator_handle({svs_bs}, data_allocator);
     }
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
@@ -163,7 +173,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, false,
 template <typename DataType, size_t QuantBits, size_t ResidualBits>
 struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
     using allocator_type = svs_details::SVSAllocator<std::byte>;
-    using blocked_type = svs::data::Blocked<svs::AllocatorHandle<std::byte>>;
+    using blocked_type = svs::concurrent::SegmentedBlocked<svs::AllocatorHandle<std::byte>>;
     using index_storage_type = svs::leanvec::LeanDataset<svs::leanvec::UsingLVQ<QuantBits>,
                                                          svs::leanvec::UsingLVQ<ResidualBits>,
                                                          svs::Dynamic, svs::Dynamic, blocked_type>;
@@ -193,7 +203,7 @@ struct SVSStorageTraits<DataType, QuantBits, ResidualBits, true> {
         // SVS block size is a power of two, so we can use it directly
         auto svs_bs = svs_details::SVSBlockSize(block_size, element_size(dim));
         allocator_type data_allocator{std::move(allocator)};
-        return svs::make_blocked_allocator_handle({svs_bs}, data_allocator);
+        return svs_details::make_segmented_blocked_allocator_handle({svs_bs}, data_allocator);
     }
 
     template <svs::data::ImmutableMemoryDataset Dataset, svs::threads::ThreadPool Pool>
