@@ -47,6 +47,28 @@ dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX2(size_t dim) {
     return ret_dist_func;
 }
 
+// Kernel<>::make() for this tier. These sit inside the region where CHOOSE_IMPLEMENTATION is
+// defined (implementation_chooser.h above, cleanup below) and in the only translation unit compiled
+// with this tier's flags. The kernel headers pull in intrinsics, so none of this may move to a
+// header that a baseline translation unit includes.
+dist_func_t<float> Kernel<Metric::L2, DataType::SQ8_FP32, Tier::AVX2>::make(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_L2SqrSIMD16_AVX2);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Kernel<Metric::IP, DataType::SQ8_FP32, Tier::AVX2>::make(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_InnerProductSIMD16_AVX2);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Kernel<Metric::Cosine, DataType::SQ8_FP32, Tier::AVX2>::make(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_CosineSIMD16_AVX2);
+    return ret_dist_func;
+}
+
 #include "implementation_chooser_cleanup.h"
 
 } // namespace spaces

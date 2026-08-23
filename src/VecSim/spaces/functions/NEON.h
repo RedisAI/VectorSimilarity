@@ -9,6 +9,7 @@
 #pragma once
 
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/kernel.h"
 
 namespace spaces {
 
@@ -34,5 +35,11 @@ dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_NEON(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_NEON(size_t dim);
+
+// What this tier provides, one row per (metric, type). Values taken from the legacy
+//            metric  type      tier  step  policy  align_mod  align_bytes  min_dim
+VECSIM_KERNEL(L2, SQ8_FP32, NEON, 16, FixedModulus, 0, 0, 1)
+VECSIM_KERNEL(IP, SQ8_FP32, NEON, 16, FixedModulus, 0, 0, 1)
+VECSIM_KERNEL(Cosine, SQ8_FP32, NEON, 16, FixedModulus, 0, 0, 1)
 
 } // namespace spaces
