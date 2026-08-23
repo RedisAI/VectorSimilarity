@@ -944,19 +944,24 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
     this->lockMainIndexGuard();
 
     auto *hnsw_index = this->getHNSWIndex();
-    // Reject if the target is taken anywhere, so that a partially applied move is impossible: a
-    // free target in all three homes means none of the updates below can collide.
+    // A label can live in any subset of its three homes, so both questions are asked of all of
+    // them: it is present if any home holds it, and the target is free only if none does. Reject if
+    // the target is taken anywhere, so that a partially applied move is impossible - a free target
+    // in all three homes means none of the updates below can collide.
+    const bool source_exists =
+        this->frontendIndex->isLabelExists(old_label) ||
+        this->labelToInsertJobs.find(old_label) != this->labelToInsertJobs.end() ||
+        hnsw_index->isLabelExists(old_label);
     const bool target_taken =
         this->frontendIndex->isLabelExists(new_label) ||
         this->labelToInsertJobs.find(new_label) != this->labelToInsertJobs.end() ||
         hnsw_index->isLabelExists(new_label);
-    // The label can live in any subset of the three homes, so the move succeeds if it happened in
-    // at least one of them. Each home is asked only once it reported holding the label, and the
-    // check above ruled out every other rejection - the target is free everywhere, and the labels
-    // differ - so while both guards are held a home that is asked can only answer OK. The asserts
-    // below state that; a refusal would mean the state changed underneath us.
-    bool moved = false;
-    if (!target_taken) {
+
+    // Each home is asked to move the label only once it reported holding it, and the checks above
+    // ruled out every other rejection - the label is present, the target is free everywhere, and
+    // the labels differ - so while both guards are held a home that is asked can only answer OK.
+    // The asserts below state that; a refusal would mean the state changed underneath us.
+    if (source_exists && !target_taken) {
         if (this->frontendIndex->isLabelExists(old_label)) {
             const VecSimRelabelCode flat_ret =
                 this->frontendIndex->relabelVector(old_label, new_label);
@@ -964,7 +969,7 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
             assert(flat_ret == VecSimRelabel_OK &&
                    "the flat buffer just reported holding this label");
 #endif
-            moved |= flat_ret == VecSimRelabel_OK;
+            UNUSED(flat_ret);
         }
 
         // Re-key the pending insert jobs *and* rewrite each job's own copy of the label. Both must
@@ -979,7 +984,6 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
                 job->label = new_label;
             }
             this->labelToInsertJobs.emplace(new_label, std::move(jobs));
-            moved = true;
         }
 
         // `relabelVector` takes the HNSW index data guard internally, which is the same
@@ -989,17 +993,22 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
 #ifdef BUILD_TESTS
             assert(hnsw_ret == VecSimRelabel_OK && "HNSW just reported holding this label");
 #endif
-            moved |= hnsw_ret == VecSimRelabel_OK;
+            UNUSED(hnsw_ret);
         }
     }
 
     this->unlockMainIndexGuard();
     this->flatIndexGuard.unlock();
 
+    // An absent source outranks an occupied target: a caller that resolves `NewLabelTaken` by
+    // freeing the target would otherwise drop an unrelated vector for a move with nothing to move.
+    if (!source_exists) {
+        return VecSimRelabel_OldLabelMissing;
+    }
     if (target_taken) {
         return VecSimRelabel_NewLabelTaken;
     }
-    return moved ? VecSimRelabel_OK : VecSimRelabel_OldLabelMissing;
+    return VecSimRelabel_OK;
 }
 
 // `getDistanceFrom` returns the minimum distance between the given blob and the vector with the

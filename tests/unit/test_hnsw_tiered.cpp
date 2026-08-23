@@ -4757,6 +4757,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorRejects) {
               VecSimRelabel_NewLabelTaken); // target lives in flat + jobs
     ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 1), VecSimRelabel_SameLabel);
     ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), VecSimRelabel_OldLabelMissing);
+    // An absent source outranks an occupied target: a caller that resolves the conflict by
+    // freeing the target must not be sent down that path for a move with nothing to move.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 1), VecSimRelabel_OldLabelMissing);
 
     // Every rejection left both tiers and the job map untouched.
     ASSERT_TRUE(hnsw_index->isLabelExists(1));

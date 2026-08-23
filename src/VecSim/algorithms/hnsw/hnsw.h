@@ -502,15 +502,17 @@ VecSimRelabelCode HNSWIndex<DataType, DistType>::relabelVector(labelType old_lab
     }
     std::unique_lock<std::shared_mutex> index_data_lock(indexDataGuard);
 
-    if (isLabelExists(new_label)) {
-        return VecSimRelabel_NewLabelTaken;
-    }
-    // Elements that were marked deleted are already out of the label lookup, so they are reported
-    // as absent here and are left alone - their `idToMetaData` label is still needed by the
-    // pending swap/repair jobs that reference their id.
+    // An absent source is reported before an occupied target, so that a caller which resolves
+    // `NewLabelTaken` by freeing the target is never told to do so for a move that has nothing to
+    // move. Elements that were marked deleted are already out of the label lookup, so they are
+    // reported as absent here and are left alone - their `idToMetaData` label is still needed by
+    // the pending swap/repair jobs that reference their id.
     auto ids = getElementIds(old_label);
     if (ids.empty()) {
         return VecSimRelabel_OldLabelMissing;
+    }
+    if (isLabelExists(new_label)) {
+        return VecSimRelabel_NewLabelTaken;
     }
 
     removeLabel(old_label);

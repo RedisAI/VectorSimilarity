@@ -1388,6 +1388,9 @@ TYPED_TEST(BruteForceMultiTest, relabelVectorRejects) {
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 1), VecSimRelabel_NewLabelTaken);
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 0), VecSimRelabel_SameLabel);
+    // An absent source outranks an occupied target: a caller that resolves the conflict by
+    // freeing the target must not be sent down that path for a move with nothing to move.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 1), VecSimRelabel_OldLabelMissing);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
     ASSERT_EQ(index->indexLabelCount(), 2);
