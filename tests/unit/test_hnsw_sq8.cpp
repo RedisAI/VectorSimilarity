@@ -18,6 +18,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <random>
 #include <type_traits>
 
@@ -435,7 +437,18 @@ TYPED_TEST(HNSWSQ8Test, RejectsSerialization) {
     ASSERT_EQ(this->GenerateAndAddVector(0, 0.25f, 0.25f), 1);
 
     const auto file_name = std::string(getenv("ROOT")) + "/tests/unit/sq8_should_not_be_written";
+    const std::string existing_contents = "existing snapshot";
+    {
+        std::ofstream output(file_name, std::ios::binary);
+        output.write(existing_contents.data(), existing_contents.size());
+    }
+
     EXPECT_THROW(this->CastToHNSW()->saveIndex(file_name), std::runtime_error);
+
+    std::ifstream input(file_name, std::ios::binary);
+    const std::string saved_contents{std::istreambuf_iterator<char>(input),
+                                     std::istreambuf_iterator<char>()};
+    EXPECT_EQ(saved_contents, existing_contents);
     std::remove(file_name.c_str());
 }
 

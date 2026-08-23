@@ -40,15 +40,17 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
+void HNSWIndex<DataType, DistType>::validateSave() const {
     // V4 does not store quantization settings, and its loader always creates unquantized
-    // components. Reject the save rather than write a file the loader would misread. This check
-    // currently runs after the destination is opened and truncated; move it before opening the file
-    // when adding quantized serialization.
+    // components. Reject the save rather than write a file the loader would misread.
     if (this->isQuantized) {
         throw std::runtime_error(
             "Cannot save index: serialization of quantized indexes is not supported");
     }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::saveIndexIMP(std::ofstream &output) {
     this->saveIndexFields(output);
     this->saveGraph(output);
 }
