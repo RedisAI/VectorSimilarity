@@ -151,7 +151,7 @@ TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {
     this->index = VecSimIndex_New(&vecsim_params);
     EXPECT_EQ(this->index, nullptr);
 
-    EXPECT_THROW(EstimateInitialSize(params), std::invalid_argument);
+    EXPECT_EQ(VecSimIndex_EstimateInitialSize(&vecsim_params), SIZE_MAX);
 }
 
 // Size estimation
@@ -386,8 +386,7 @@ TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
         VecSimParams params = CreateParams(hnsw_params);
 
         EXPECT_EQ(VecSimIndex_New(&params), nullptr) << "data type " << type;
-        EXPECT_THROW(EstimateInitialSize(hnsw_params), std::invalid_argument)
-            << "data type " << type;
+        EXPECT_EQ(EstimateInitialSize(hnsw_params), SIZE_MAX) << "data type " << type;
     }
 }
 
@@ -401,7 +400,7 @@ TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
     VecSimParams params = CreateParams(hnsw_params);
 
     EXPECT_EQ(VecSimIndex_New(&params), nullptr);
-    EXPECT_THROW(EstimateInitialSize(hnsw_params), std::invalid_argument);
+    EXPECT_EQ(EstimateInitialSize(hnsw_params), SIZE_MAX);
 }
 
 // Mean-centering a FLOAT16 L2 query can lose precision or overflow when it is narrowed back to
@@ -416,7 +415,7 @@ TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
                      .quantParams = mean.data()};
     VecSimParams l2_params = CreateParams(l2);
     EXPECT_EQ(VecSimIndex_New(&l2_params), nullptr);
-    EXPECT_THROW(EstimateInitialSize(l2), std::invalid_argument);
+    EXPECT_EQ(EstimateInitialSize(l2), SIZE_MAX);
 
     HNSWParams ip = {.type = VecSimType_FLOAT16,
                      .dim = 4,
@@ -427,7 +426,7 @@ TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
     VecSimIndex *ip_index = VecSimIndex_New(&ip_params);
     ASSERT_NE(ip_index, nullptr);
     VecSimIndex_Free(ip_index);
-    EXPECT_NO_THROW(EstimateInitialSize(ip));
+    EXPECT_NE(EstimateInitialSize(ip), SIZE_MAX);
 }
 
 // V4 cannot encode the quantization settings needed to reload an SQ8 index.
@@ -489,5 +488,5 @@ TEST(HNSWSQ8TieredTest, RejectsQuantizedTieredIndex) {
     VecSimParams params = CreateParams(tiered_params);
 
     EXPECT_EQ(VecSimIndex_New(&params), nullptr);
-    EXPECT_THROW(EstimateInitialSize(tiered_params), std::invalid_argument);
+    EXPECT_EQ(EstimateInitialSize(tiered_params), SIZE_MAX);
 }

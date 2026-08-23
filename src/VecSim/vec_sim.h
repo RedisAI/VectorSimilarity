@@ -31,7 +31,7 @@ VecSimIndex *VecSimIndex_New(const VecSimParams *params);
  * @brief Estimates the size of an empty index according to the parameters.
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
- * @return Estimated index size.
+ * @return Estimated index size, or SIZE_MAX if the parameters are invalid or unsupported.
  */
 size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
 

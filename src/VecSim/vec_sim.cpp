@@ -215,7 +215,11 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 }
 
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
-    return VecSimFactory::EstimateInitialSize(params);
+    try {
+        return VecSimFactory::EstimateInitialSize(params);
+    } catch (...) {
+        return SIZE_MAX;
+    }
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label) {
