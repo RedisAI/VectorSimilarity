@@ -3474,7 +3474,7 @@ TEST(SVSTest, relabelVectorUnsupported) {
     GenerateAndAddVector<float>(index, dim, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_Unsupported);
     // The rejected call left the index untouched.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 

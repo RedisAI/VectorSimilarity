@@ -81,15 +81,16 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * while the vector did not, as a cheap replacement for delete-then-add.
  *
  * The move is rejected, leaving the index untouched, if `old_label` does not exist, if `new_label`
- * is already in use, or if the labels are equal. Not all index types support this; unsupported
- * types report 0.
+ * is already in use, or if the labels are equal - each with its own code. Not all index types
+ * support this; those report `VecSimRelabel_Unsupported`, which a caller has to serve by delete +
+ * insert rather than treat as a no-op.
  *
  * @param index the index holding the vector(s).
  * @param old_label the label currently holding the vector(s).
  * @param new_label the label to move them to.
- * @return 1 if the label was moved, 0 otherwise.
+ * @return `VecSimRelabel_OK` if the label was moved, otherwise the reason it was not.
  */
-int VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
+VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
 
 /**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that

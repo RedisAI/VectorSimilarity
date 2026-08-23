@@ -1692,7 +1692,7 @@ TYPED_TEST(BruteForceTest, relabelVector) {
     // A relabel must not move the stored data, so the distance from the label's own vector stays 0.
     ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, old_label, query), 0);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), VecSimRelabel_OK);
 
     // Nothing was added or removed, and the vector now answers to the new label only.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -1721,9 +1721,9 @@ TYPED_TEST(BruteForceTest, relabelVectorRejects) {
 
     // A missing source, an occupied target and a no-op move are all rejected without modifying
     // the index.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n);

@@ -1645,7 +1645,7 @@ TYPED_TEST(HNSWMultiTest, relabelVectorMulti) {
     auto ids_before = hnsw_index->getElementIds(0);
     ASSERT_EQ(ids_before.size(), per_label);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), VecSimRelabel_OK);
 
     // Every id under the label moves together, keeping its order, and the untouched label is
     // unaffected.
@@ -1666,7 +1666,7 @@ TYPED_TEST(HNSWMultiTest, relabelVectorMulti) {
     runTopKSearchTest(index, query, 1, verify_res);
 
     // Moving onto an occupied label is rejected without disturbing either label.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 100, 1), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 100, 1), VecSimRelabel_NewLabelTaken);
     ASSERT_EQ(hnsw_index->getElementIds(100).size(), per_label);
     ASSERT_EQ(hnsw_index->getElementIds(1).size(), per_label);
 

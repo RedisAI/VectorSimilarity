@@ -4605,7 +4605,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorFlatOnly) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
     const idType flat_id = tiered_index->labelToInsertJobs.at(7)[0]->id;
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
 
     // The flat tier moved, and so did both halves of the job bookkeeping: the map key and the
     // job's own copy of the label. A half-applied move would make the worker below either index
@@ -4658,7 +4658,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorBothTiers) {
     ASSERT_EQ(frontend_index->indexSize(), 1);
     ASSERT_EQ(hnsw_index->indexSize(), 1);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
 
     // Both tiers must move - an implementation treating them as mutually exclusive would leave one
     // stale copy behind under the old label.
@@ -4667,6 +4667,69 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorBothTiers) {
     ASSERT_TRUE(hnsw_index->isLabelExists(70));
     ASSERT_FALSE(hnsw_index->isLabelExists(7));
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->label, 70);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// The multi case is where a label has more than one id in each of its three homes, so a move that
+// handles only the first id of a label - or only one home - still looks right in the single-value
+// tests. Assert on the whole id set of every home instead.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorMulti) {
+    size_t dim = 4;
+    size_t per_label = 3;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Label 7 gets `per_label` vectors in the flat buffer (each with a pending insert job) and
+    // `per_label` more directly in HNSW, reproducing the ingestion window for every copy. Label 8
+    // is an untouched neighbour with copies of its own, so a move that is too broad shows up too.
+    TEST_DATA_T vector[dim];
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, i);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 8, i + 100);
+        GenerateVector<TEST_DATA_T>(vector, dim, i + 10);
+        hnsw_index->addVector(vector, 7);
+    }
+    ASSERT_EQ(frontend_index->indexSize(), per_label * 2);
+    ASSERT_EQ(hnsw_index->indexSize(), per_label);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), per_label);
+    auto hnsw_ids_before = hnsw_index->getElementIds(7);
+    ASSERT_EQ(hnsw_ids_before.size(), per_label);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+
+    // Nothing was added or dropped along the way.
+    ASSERT_EQ(frontend_index->indexSize(), per_label * 2);
+    ASSERT_EQ(hnsw_index->indexSize(), per_label);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
+
+    // Every home moved, and moved *all* of its ids.
+    ASSERT_TRUE(frontend_index->isLabelExists(70));
+    ASSERT_FALSE(frontend_index->isLabelExists(7));
+    ASSERT_TRUE(hnsw_index->isLabelExists(70));
+    ASSERT_FALSE(hnsw_index->isLabelExists(7));
+    ASSERT_EQ(hnsw_index->getElementIds(70), hnsw_ids_before);
+    for (idType id : hnsw_ids_before) {
+        ASSERT_EQ(hnsw_index->getExternalLabel(id), 70);
+    }
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(7), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70).size(), per_label);
+    for (HNSWInsertJob *job : tiered_index->labelToInsertJobs.at(70)) {
+        ASSERT_EQ(job->label, 70);
+    }
+
+    // The neighbouring label kept all of its own copies.
+    ASSERT_TRUE(frontend_index->isLabelExists(8));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(8).size(), per_label);
+
+    // The vectors are still searchable, now reported under the new label.
+    GenerateVector<TEST_DATA_T>(vector, dim, 0);
+    auto verify_res = [&](size_t label, double score, size_t rank) { ASSERT_EQ(label, 70); };
+    runTopKSearchTest(tiered_index, vector, 1, verify_res);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
@@ -4688,10 +4751,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorRejects) {
     ASSERT_EQ(hnsw_index->indexSize(), 1);
     ASSERT_EQ(frontend_index->indexSize(), 1);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 2, 1), 0);   // target lives in HNSW
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2), 0);   // target lives in flat + jobs
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 1), 0);   // no-op
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), 0); // source absent
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 2, 1),
+              VecSimRelabel_NewLabelTaken); // target lives in HNSW
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2),
+              VecSimRelabel_NewLabelTaken); // target lives in flat + jobs
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 1), VecSimRelabel_SameLabel);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), VecSimRelabel_OldLabelMissing);
 
     // Every rejection left both tiers and the job map untouched.
     ASSERT_TRUE(hnsw_index->isLabelExists(1));
@@ -4732,10 +4797,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
     for (size_t i = 0; i < n; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
         if (i > 0) {
-            relabeled += tiered_index->relabelVector(i - 1, i - 1 + relabel_offset);
+            relabeled +=
+                tiered_index->relabelVector(i - 1, i - 1 + relabel_offset) == VecSimRelabel_OK;
         }
     }
-    relabeled += tiered_index->relabelVector(n - 1, n - 1 + relabel_offset);
+    relabeled += tiered_index->relabelVector(n - 1, n - 1 + relabel_offset) == VecSimRelabel_OK;
 
     mock_thread_pool.thread_pool_join();
 

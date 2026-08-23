@@ -2390,7 +2390,7 @@ TYPED_TEST(HNSWTest, relabelVector) {
     GenerateVector<TEST_DATA_T>(query, dim, old_label);
     const double dist_before = hnsw_index->getDistanceFrom_Unsafe(old_label, query);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), VecSimRelabel_OK);
 
     // Nothing was added or removed.
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
@@ -2430,9 +2430,9 @@ TYPED_TEST(HNSWTest, relabelVectorRejects) {
 
     // A missing source, an occupied target and a no-op move are all rejected, and none of them may
     // leave the index in a modified state.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), n);
@@ -2459,12 +2459,12 @@ TYPED_TEST(HNSWTest, relabelVectorMarkedDeleted) {
 
     // A marked-deleted element is out of the label lookup, so it is reported as absent and left
     // alone - its `idToMetaData` label is still needed by the swap/repair jobs holding its id.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), VecSimRelabel_OldLabelMissing);
     ASSERT_EQ(hnsw_index->getExternalLabel(deleted_ids[0]), 0);
     ASSERT_FALSE(hnsw_index->isLabelExists(100));
 
     // A live label in the same index still relabels fine.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 101), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 101), VecSimRelabel_OK);
     ASSERT_TRUE(hnsw_index->isLabelExists(101));
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 

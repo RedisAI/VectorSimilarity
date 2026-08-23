@@ -287,7 +287,8 @@ void BM_VecSimBasics<index_type_t>::RelabelLabel(benchmark::State &st) {
     size_t attempted = 0;
     size_t moved = 0;
     for (auto _ : st) {
-        moved += VecSimIndex_RelabelVector(index, attempted, target_base + attempted);
+        moved += VecSimIndex_RelabelVector(index, attempted, target_base + attempted) ==
+                 VecSimRelabel_OK;
         attempted++;
     }
 

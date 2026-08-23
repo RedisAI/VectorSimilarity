@@ -230,7 +230,8 @@ extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
     return index->deleteVector(label);
 }
 
-extern "C" int VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label) {
+extern "C" VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label,
+                                                       size_t new_label) {
     return index->relabelVector(old_label, new_label);
 }
 

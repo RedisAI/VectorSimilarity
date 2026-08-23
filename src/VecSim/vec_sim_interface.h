@@ -63,19 +63,23 @@ public:
      * alternative to delete-then-add for callers whose external id changed while the vector
      * itself did not.
      *
-     * The operation is rejected (returns 0, index left untouched) if `old_label` is not present,
-     * if `new_label` is already taken, or if the two labels are equal. Rejecting rather than
+     * The operation is rejected - index left untouched - if `old_label` is not present, if
+     * `new_label` is already taken, or if the two labels are equal. Rejecting rather than
      * overwriting keeps the caller in control: overwriting `new_label` would silently drop a
-     * vector, and unlike `addVector` there is no replacement data to justify it.
+     * vector, and unlike `addVector` there is no replacement data to justify it. Each rejection has
+     * its own code, so a caller can tell a conflict it may resolve from an index type that will
+     * never relabel and has to be served by delete + insert instead.
      *
-     * The default implementation reports "unsupported" so that index types which delegate label
-     * management to an external library are not forced to implement it.
+     * The default implementation reports `VecSimRelabel_Unsupported` so that index types which
+     * delegate label management to an external library are not forced to implement it.
      *
      * @param old_label the label currently holding the vector(s).
      * @param new_label the label to move them to.
-     * @return 1 if the label was moved, 0 otherwise.
+     * @return `VecSimRelabel_OK` if the label was moved, otherwise the reason it was not.
      */
-    virtual int relabelVector(labelType old_label, labelType new_label) { return 0; }
+    virtual VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) {
+        return VecSimRelabel_Unsupported;
+    }
 
     /**
      * @brief Calculate the distance of a vector from an index to a vector.

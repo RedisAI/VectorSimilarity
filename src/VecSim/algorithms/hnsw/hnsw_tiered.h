@@ -213,7 +213,7 @@ public:
 
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
-    int relabelVector(labelType old_label, labelType new_label) override;
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
         return this->getHNSWIndex()->getNumMarkedDeleted();
     }
@@ -934,25 +934,37 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
  * `label` field can be unaligned and its store is not atomic.
  */
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::relabelVector(labelType old_label, labelType new_label) {
+VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType old_label,
+                                                                     labelType new_label) {
     if (old_label == new_label) {
-        return 0;
+        return VecSimRelabel_SameLabel;
     }
 
     this->flatIndexGuard.lock();
     this->lockMainIndexGuard();
 
     auto *hnsw_index = this->getHNSWIndex();
-    int ret = 0;
     // Reject if the target is taken anywhere, so that a partially applied move is impossible: a
     // free target in all three homes means none of the updates below can collide.
     const bool target_taken =
         this->frontendIndex->isLabelExists(new_label) ||
         this->labelToInsertJobs.find(new_label) != this->labelToInsertJobs.end() ||
         hnsw_index->isLabelExists(new_label);
+    // The label can live in any subset of the three homes, so the move succeeds if it happened in
+    // at least one of them. Each home is asked only once it reported holding the label, and the
+    // check above ruled out every other rejection - the target is free everywhere, and the labels
+    // differ - so while both guards are held a home that is asked can only answer OK. The asserts
+    // below state that; a refusal would mean the state changed underneath us.
+    bool moved = false;
     if (!target_taken) {
         if (this->frontendIndex->isLabelExists(old_label)) {
-            ret |= this->frontendIndex->relabelVector(old_label, new_label);
+            const VecSimRelabelCode flat_ret =
+                this->frontendIndex->relabelVector(old_label, new_label);
+#ifdef BUILD_TESTS
+            assert(flat_ret == VecSimRelabel_OK &&
+                   "the flat buffer just reported holding this label");
+#endif
+            moved |= flat_ret == VecSimRelabel_OK;
         }
 
         // Re-key the pending insert jobs *and* rewrite each job's own copy of the label. Both must
@@ -967,16 +979,27 @@ int TieredHNSWIndex<DataType, DistType>::relabelVector(labelType old_label, labe
                 job->label = new_label;
             }
             this->labelToInsertJobs.emplace(new_label, std::move(jobs));
+            moved = true;
         }
 
         // `relabelVector` takes the HNSW index data guard internally, which is the same
         // main-guard-then-data-guard order that `insertVectorToHNSW` uses.
-        ret |= hnsw_index->relabelVector(old_label, new_label);
+        if (hnsw_index->isLabelExists(old_label)) {
+            const VecSimRelabelCode hnsw_ret = hnsw_index->relabelVector(old_label, new_label);
+#ifdef BUILD_TESTS
+            assert(hnsw_ret == VecSimRelabel_OK && "HNSW just reported holding this label");
+#endif
+            moved |= hnsw_ret == VecSimRelabel_OK;
+        }
     }
 
     this->unlockMainIndexGuard();
     this->flatIndexGuard.unlock();
-    return ret;
+
+    if (target_taken) {
+        return VecSimRelabel_NewLabelTaken;
+    }
+    return moved ? VecSimRelabel_OK : VecSimRelabel_OldLabelMissing;
 }
 
 // `getDistanceFrom` returns the minimum distance between the given blob and the vector with the

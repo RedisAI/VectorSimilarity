@@ -323,7 +323,7 @@ public:
     // element was marked deleted is *not* considered to exist, matching `getElementIds`.
     virtual bool isLabelExists(labelType label) = 0;
 
-    int relabelVector(labelType old_label, labelType new_label) override;
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
 
 #ifdef BUILD_TESTS
     void fitMemory() override {
@@ -495,21 +495,22 @@ void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
  * consistent with the main-guard-then-data-guard order used by `insertVectorToHNSW`.
  */
 template <typename DataType, typename DistType>
-int HNSWIndex<DataType, DistType>::relabelVector(labelType old_label, labelType new_label) {
+VecSimRelabelCode HNSWIndex<DataType, DistType>::relabelVector(labelType old_label,
+                                                               labelType new_label) {
     if (old_label == new_label) {
-        return 0;
+        return VecSimRelabel_SameLabel;
     }
     std::unique_lock<std::shared_mutex> index_data_lock(indexDataGuard);
 
     if (isLabelExists(new_label)) {
-        return 0;
+        return VecSimRelabel_NewLabelTaken;
     }
     // Elements that were marked deleted are already out of the label lookup, so they are reported
     // as absent here and are left alone - their `idToMetaData` label is still needed by the
     // pending swap/repair jobs that reference their id.
     auto ids = getElementIds(old_label);
     if (ids.empty()) {
-        return 0;
+        return VecSimRelabel_OldLabelMissing;
     }
 
     removeLabel(old_label);
@@ -519,7 +520,7 @@ int HNSWIndex<DataType, DistType>::relabelVector(labelType old_label, labelType 
         idToMetaData[id].label = new_label;
         setVectorId(new_label, id);
     }
-    return 1;
+    return VecSimRelabel_OK;
 }
 
 template <typename DataType, typename DistType>

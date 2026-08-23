@@ -1343,7 +1343,7 @@ TYPED_TEST(BruteForceMultiTest, relabelVector) {
     bf_index->getDataByLabel(0, before);
     ASSERT_EQ(before.size(), per_label);
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), VecSimRelabel_OK);
 
     // Every vector under the label moves together, keeping its data and order, and the untouched
     // label is unaffected.
@@ -1385,9 +1385,9 @@ TYPED_TEST(BruteForceMultiTest, relabelVectorRejects) {
     // A missing source, an occupied target and a no-op move are all rejected. In a multi index an
     // accepted move onto an occupied label would silently merge two labels' vectors, so this is the
     // case that matters most here.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 1), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 0), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 1), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 0), VecSimRelabel_SameLabel);
 
     ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
     ASSERT_EQ(index->indexLabelCount(), 2);
