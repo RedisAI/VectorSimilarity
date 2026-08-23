@@ -62,7 +62,7 @@ public:
      * @param blob binary representation of the second vector. Blob size should match the index data
      * type and dimension, and pre-normalized if needed.
      * @return The distance (according to the index's distance metric) between `blob` and the vector
-     * with id `id`.
+     * with id `id`. Quantized indexes preprocess `blob` before calculating the distance.
      */
     virtual double getDistanceFrom_Unsafe(labelType id, const void *blob) const = 0;
 

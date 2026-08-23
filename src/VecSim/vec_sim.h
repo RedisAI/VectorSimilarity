@@ -31,7 +31,7 @@ VecSimIndex *VecSimIndex_New(const VecSimParams *params);
  * @brief Estimates the size of an empty index according to the parameters.
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
- * @return Estimated index size.
+ * @return Estimated index size, or SIZE_MAX if the parameters are invalid or unsupported.
  */
 size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
 
@@ -84,8 +84,9 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @param label the label of the vector in the index.
  * @param blob binary representation of the second vector. Blob size should match the index data
  * type and dimension, and pre-normalized if needed.
- * @return The distance (according to the index's distance metric) between `blob` and the vector
- * with label  label`.
+ * @return The distance between `blob` and the vector with `label`, or INVALID_SCORE if the label is
+ * absent.
+ * @note Quantized indexes allocate and preprocess a temporary query blob on each call.
  */
 double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, const void *blob);
 

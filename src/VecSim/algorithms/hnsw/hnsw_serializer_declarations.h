@@ -27,6 +27,7 @@ void restoreGraph(std::ifstream &input, HNSWSerializer::EncodingVersion version)
 
 private:
 // Functions for index saving.
+void validateSave() const override;
 void saveIndexFields(std::ofstream &output) const override;
 
 void saveGraph(std::ofstream &output) const;

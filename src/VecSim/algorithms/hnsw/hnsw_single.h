@@ -88,6 +88,10 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
+        if (this->isQuantized) {
+            auto processed_query = this->preprocessQuery(vector_data);
+            return getDistanceFromInternal(label, processed_query.get());
+        }
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }

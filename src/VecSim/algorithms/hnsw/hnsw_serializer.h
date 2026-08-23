@@ -37,5 +37,6 @@ protected:
     EncodingVersion m_version;
 
 private:
+    virtual void validateSave() const = 0;
     void saveIndexFields(std::ofstream &output) const = 0;
 };
