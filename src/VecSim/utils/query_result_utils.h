@@ -11,15 +11,18 @@
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
 
-#define VECSIM_EPSILON (1e-6)
-
-inline bool double_eq(double a, double b) { return fabs(a - b) < VECSIM_EPSILON; }
-
-// Compare two results by score, and if the scores are equal, by id.
+// Compare two results by score, and if the scores are equal, by id. The score comparison must be
+// exact: merge_results() walks lists that are ordered by exact score, and any tolerance here makes
+// this comparator disagree with that order, which breaks the merge's duplicate detection.
 inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
                                              const VecSimQueryResultContainer::iterator res2) {
-    return !double_eq(res1->score, res2->score) ? (res1->score > res2->score ? 1 : -1)
-                                                : (int)(res1->id - res2->id);
+    if (res1->score != res2->score) {
+        return res1->score > res2->score ? 1 : -1;
+    }
+    if (res1->id == res2->id) {
+        return 0;
+    }
+    return res1->id > res2->id ? 1 : -1;
 }
 
 // Append the current result to the merged results, after verifying that it did not added yet (if
@@ -93,7 +96,9 @@ std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
 // Use withSet=false if you can guarantee that shared ids between the two lists
 // will also have identical scores. In this case, any duplicates will naturally align
 // at the front of both lists during the merge, so they can be removed without explicitly
-// tracking seen ids — enabling a more efficient merge.
+// tracking seen ids — enabling a more efficient merge. Note that "identical" means bit-identical:
+// a shared id whose two scores merely round to the same value does not align, so a backend that
+// scores a vector differently than the frontend does (a compressed one, say) needs withSet=true.
 template <bool withSet>
 VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *second,
                                      size_t limit) {

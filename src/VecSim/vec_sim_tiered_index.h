@@ -101,10 +101,9 @@ protected:
 public:
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
-    // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
-    // two lists will also have identical scores. In this case, any duplicates will naturally align
-    // at the front of both lists during the merge, so they can be removed without explicitly
-    // tracking seen ids — enabling a more efficient merge.
+    // For both topK and range, see merge_results() for when withSet=false is sound. It holds for a
+    // frontend/backend merge only while the two indexes score a given vector identically, which a
+    // compressed backend does not - see TieredSVSIndex, which overrides both to pass withSet=true.
     template <bool WithSet>
     VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
                                    VecSimQueryParams *queryParams) const;
