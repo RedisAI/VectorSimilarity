@@ -1,0 +1,90 @@
+/*
+ * Copyright (c) 2006-Present, Redis Ltd.
+ * All rights reserved.
+ *
+ * Licensed under your choice of the Redis Source Available License 2.0
+ * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
+ * GNU Affero General Public License v3 (AGPLv3).
+ */
+
+// Feature-token table: one row per CPU feature, one physical line per row. A feature token is the
+// only thing a tier in isa_tiers.def is allowed to name.
+//
+// Each row carries everything needed to derive a tier's compiler flags from its token list alone,
+// and to state that tier's runtime predicate in the same vocabulary. Those stay separate axes on
+// purpose: this library is built on one machine and run on another, so what the compiler was
+// allowed to emit and what the running CPU implements are different questions. A flag fragment
+// expands to a compiler-defined bundle that differs between gcc and clang for the same -march
+// string, so a runtime predicate is never derived from flags.
+//
+// Columns:
+//   token          the name tiers use, unique across both architectures
+//   arch           X86 or ARM; a tier may only name tokens of its own architecture
+//   flag fragment  what this token contributes to the compile command. x86 unions the -m options;
+//                  ARM appends "+feature" suffixes to one -march level, since ARM -march strings
+//                  are monolithic
+//   min level      lowest -march level admitting this fragment, or "-" on x86 where there is none.
+//                  A tier's -march is the highest level in its token closure
+//   feature field  the cpu_features struct field naming the runtime bit. This column, and only
+//                  this column, feeds the runtime predicate
+//
+// There is deliberately no per-feature CXX_* probe column. The authoritative build gate is a
+// whole-tier try_compile of the tier's real source under its complete derived flags, which subsumes
+// per-flag probing and also catches a flag that passes alone but fails in the real combination.
+
+//       token          arch  flag fragment      min level    feature field
+FEATURE( SSE,           X86,  "-msse",           -,           sse          )
+FEATURE( SSE3,          X86,  "-msse3",          -,           sse3         )
+FEATURE( SSE4_1,        X86,  "-msse4.1",        -,           sse4_1       )
+FEATURE( AVX,           X86,  "-mavx",           -,           avx          )
+FEATURE( AVX2,          X86,  "-mavx2",          -,           avx2         )
+FEATURE( FMA3,          X86,  "-mfma",           -,           fma3         )
+FEATURE( F16C,          X86,  "-mf16c",          -,           f16c         )
+FEATURE( AVX512F,       X86,  "-mavx512f",       -,           avx512f      )
+FEATURE( AVX512BW,      X86,  "-mavx512bw",      -,           avx512bw     )
+FEATURE( AVX512VL,      X86,  "-mavx512vl",      -,           avx512vl     )
+FEATURE( AVX512VNNI,    X86,  "-mavx512vnni",    -,           avx512vnni   )
+FEATURE( AVX512VBMI2,   X86,  "-mavx512vbmi2",   -,           avx512vbmi2  )
+FEATURE( AVX512BF16,    X86,  "-mavx512bf16",    -,           avx512_bf16  )
+FEATURE( AVX512FP16,    X86,  "-mavx512fp16",    -,           avx512_fp16  )
+
+FEATURE( ASIMD,         ARM,  "",                armv8-a,     asimd        )
+FEATURE( FPHP,          ARM,  "+fp16",           armv8.2-a,   fphp         )
+FEATURE( ASIMDHP,       ARM,  "+fp16",           armv8.2-a,   asimdhp      )
+FEATURE( ASIMDFHM,      ARM,  "+fp16fml",        armv8.2-a,   asimdfhm     )
+FEATURE( ASIMDDP,       ARM,  "+dotprod",        armv8.2-a,   asimddp      )
+FEATURE( BF16,          ARM,  "+bf16",           armv8.2-a,   bf16         )
+FEATURE( SVE,           ARM,  "+sve",            armv8-a,     sve          )
+FEATURE( SVE2,          ARM,  "+sve2",           armv9-a,     sve2         )
+FEATURE( SVEBF16,       ARM,  "+bf16",           armv8.2-a,   svebf16      )
+
+// Three distinct relations, spelled distinctly. A bare "implies" would conflate them, and they
+// answer different questions: which CPU masks are possible, what a flag fragment forces the
+// compiler to assume, and what raising the -march level forces.
+
+// ARCH_IMPLIES: if the left bit is set on a CPU then the right one is too. Used ONLY to enumerate
+// the CPU masks worth testing, never to shorten a runtime predicate.
+ARCH_IMPLIES(   AVX2,        AVX             )
+ARCH_IMPLIES(   AVX512BW,    AVX512F         )
+ARCH_IMPLIES(   AVX512VL,    AVX512F         )
+ARCH_IMPLIES(   AVX512VNNI,  AVX512F         )
+ARCH_IMPLIES(   AVX512VBMI2, AVX512BW        )
+ARCH_IMPLIES(   AVX512BF16,  AVX512F         )
+ARCH_IMPLIES(   AVX512FP16,  AVX512F         )
+ARCH_IMPLIES(   SSE4_1,      SSE3            )
+ARCH_IMPLIES(   SSE3,        SSE             )
+ARCH_IMPLIES(   ASIMDFHM,    ASIMDHP         )
+ARCH_IMPLIES(   ASIMDHP,     FPHP            )
+ARCH_IMPLIES(   SVE2,        SVE             )
+ARCH_IMPLIES(   SVEBF16,     SVE             )
+
+// FLAG_ENABLES: passing the left fragment makes the compiler assume the right capabilities,
+// whatever the tier asked for. This is why a predicate cannot be derived from flags. F16C is
+// VEX-encoded, so -mf16c forces AVX state, and "+fp16" is one fragment covering two HWCAPs.
+FLAG_ENABLES(   F16C,        AVX             )
+FLAG_ENABLES(   "+fp16",     ASIMDHP+FPHP    )
+FLAG_ENABLES(   "+bf16",     BF16+SVEBF16    )
+
+// LEVEL_REQUIRES: what raising the -march level itself forces, independent of any +fragment.
+LEVEL_REQUIRES( armv8.1-a,   ATOMICS+CRC32+QRDMX )
+LEVEL_REQUIRES( armv8.2-a,   ATOMICS+CRC32+QRDMX )

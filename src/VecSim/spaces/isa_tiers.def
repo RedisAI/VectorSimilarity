@@ -1,0 +1,72 @@
+/*
+ * Copyright (c) 2006-Present, Redis Ltd.
+ * All rights reserved.
+ *
+ * Licensed under your choice of the Redis Source Available License 2.0
+ * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
+ * GNU Affero General Public License v3 (AGPLv3).
+ */
+
+// Tier table: one row per SIMD tier, one physical line per row. Every token named here must exist
+// in isa_features.def and belong to the same architecture as the tier.
+//
+// Columns:
+//   tier         the tier's name in C++, as TierInfo<Tier> and VECSIM_BUILT_<TIER>
+//   arch         X86 or ARM
+//   stem         file stem under spaces/functions/, so <stem>.cpp and <stem>.h. Deliberately the
+//                file stem and not the tier name, because the two differ today (tier
+//                AVX512_F_BW_VL_VNNI lives in AVX512F_BW_VL_VNNI.cpp) and renaming files is not
+//                this refactor's job
+//   priority     higher wins when several tiers are eligible. Values are spaced by 10 so a tier can
+//                be inserted between two others without renumbering the table
+//   FLAGS_FROM   tokens whose flag fragments build the compile command
+//   GUARANTEES   tokens whose feature fields build the runtime predicate
+//
+// FLAGS_FROM and GUARANTEES are separate columns rather than one list, and this is the crux of the
+// whole design. A flag fragment expands to a compiler-defined bundle, so compiling with a flag does
+// not tell you which bits the deployment CPU must have. Two live bugs came from conflating them: a
+// tier compiled at +fp16fml but dispatched on asimdhp alone emitted FMLAL into a path reachable on
+// cores without FEAT_FHM, and six AVX512 VNNI dispatch sites omitted avx512vl while the tier was
+// compiled with -mavx512vl. Where the columns differ, the difference is load-bearing and commented.
+
+//    tier                 arch stem                prio   FLAGS_FROM                                 GUARANTEES
+TIER( AVX512BF16_VL,       X86, AVX512BF16_VL,      100,  (AVX512BF16, AVX512VL),                    (AVX512BF16, AVX512VL) )
+TIER( AVX512FP16_VL,       X86, AVX512FP16_VL,       95,  (AVX512FP16, AVX512VL),                    (AVX512FP16, AVX512VL) )
+TIER( AVX512_BW_VBMI2,     X86, AVX512BW_VBMI2,      90,  (AVX512BW, AVX512VBMI2),                   (AVX512BW, AVX512VBMI2) )
+// GUARANTEES lists AVX512VL because the tier is compiled with -mavx512vl and may therefore contain
+// VL-encoded instructions. Six of the twelve legacy dispatch sites omitted that bit.
+TIER( AVX512_F_BW_VL_VNNI, X86, AVX512F_BW_VL_VNNI,  85,  (AVX512F, AVX512BW, AVX512VL, AVX512VNNI), (AVX512F, AVX512BW, AVX512VL, AVX512VNNI) )
+TIER( AVX512F,             X86, AVX512F,             80,  (AVX512F),                                 (AVX512F) )
+// AVX2_F16C, AVX2_FMA_F16C and SSE4_F16C are separate tiers rather than variants of AVX2, AVX2_FMA
+// and SSE4, because each is its own translation unit with its own flags and its own predicate. They
+// carry the SQ8-to-FP16 kernels, which need vcvtph2ps and so need F16C, while the plain AVX2 and
+// SSE4 tiers carry the SQ8-to-FP32 kernels that do not. Legacy code expressed this as one shared
+// OPT_F16C guard wrapped around three differently-predicated branches.
+TIER( AVX2_FMA_F16C,       X86, AVX2_FMA_F16C,       70,  (AVX2, FMA3, F16C),                        (AVX2, FMA3, F16C) )
+TIER( AVX2_FMA,            X86, AVX2_FMA,            65,  (AVX2, FMA3),                              (AVX2, FMA3) )
+TIER( AVX2_F16C,           X86, AVX2_F16C,           60,  (AVX2, F16C),                              (AVX2, F16C) )
+TIER( AVX2,                X86, AVX2,                55,  (AVX2),                                    (AVX2) )
+// Compiled "-mf16c -mfma -mavx" and dispatched on f16c && fma3 && avx, so here the two columns
+// agree. Worth stating because -mf16c is VEX-encoded and forces AVX state, so a tier naming only
+// F16C would still be handed AVX by the compiler; this tier asks for all three explicitly.
+TIER( F16C,                X86, F16C,                50,  (F16C, FMA3, AVX),                         (F16C, FMA3, AVX) )
+TIER( AVX,                 X86, AVX,                 45,  (AVX),                                     (AVX) )
+// Compiled "-msse4.1 -mavx -mf16c" and dispatched on sse4_1 && f16c && avx. The AVX bit is in the
+// predicate because the flag put AVX-state instructions in reach, not because the kernels asked
+// for SSE4 plus AVX: this is FLAG_ENABLES(F16C, AVX) showing up in a real predicate.
+TIER( SSE4_F16C,           X86, SSE4_F16C,           40,  (SSE4_1, AVX, F16C),                       (SSE4_1, F16C, AVX) )
+TIER( SSE4,                X86, SSE4,                35,  (SSE4_1),                                  (SSE4_1) )
+TIER( SSE3,                X86, SSE3,                30,  (SSE3),                                    (SSE3) )
+TIER( SSE,                 X86, SSE,                 25,  (SSE),                                     (SSE) )
+
+TIER( SVE2,                ARM, SVE2,               100,  (SVE2),                                    (SVE2) )
+TIER( SVE_BF16,            ARM, SVE_BF16,            95,  (SVE, BF16),                               (SVE, SVEBF16) )
+TIER( SVE,                 ARM, SVE,                 90,  (SVE),                                     (SVE) )
+TIER( NEON_BF16,           ARM, NEON_BF16,           80,  (BF16),                                    (BF16) )
+// The tier that motivated splitting these columns. It is compiled at +fp16fml, so gcc contracts a
+// widening convert plus FMA into FMLAL anywhere in the translation unit, and FEAT_FHM is optional in
+// armv8.2-a. Dispatching it on asimdhp alone was a SIGILL on any core without FEAT_FHM.
+TIER( NEON_FHM,            ARM, NEON_FHM,            75,  (ASIMDFHM),                                (ASIMDHP, ASIMDFHM) )
+TIER( NEON_HP,             ARM, NEON_HP,             70,  (ASIMDHP),                                 (ASIMDHP) )
+TIER( NEON_DOTPROD,        ARM, NEON_DOTPROD,        65,  (ASIMDDP),                                 (ASIMDDP) )
+TIER( NEON,                ARM, NEON,                60,  (ASIMD),                                   (ASIMD) )
