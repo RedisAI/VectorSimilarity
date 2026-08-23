@@ -304,6 +304,94 @@ if (SPACES_ARCH_FAMILY STREQUAL "aarch64")
 	endif()
 endif()
 
+# ---------------------------------------------------------------------------------------------
+# Manifest layer.
+#
+# The tier blocks above are still the ones that compile the tier translation units. This block adds
+# the manifest-derived view of the same facts, so the two can be compared, and exposes what the C++
+# dispatch layer needs: a 0-or-1 availability macro per tier and a generated umbrella header.
+#
+# The comparison is the point. While both descriptions exist, drift between them would be silent, so
+# every tier the blocks above compiled has its legacy COMPILE_FLAGS read back and asserted equal to
+# what the manifest derives. Nothing is duplicated by hand: the legacy side is read from the source
+# property that the build will actually use. When the last legacy chooser goes, the blocks above go
+# with it and this becomes the only description.
+include(${root}/cmake/vecsim_manifest.cmake)
+include(${root}/cmake/tier_probe.cmake)
+
+vecsim_load_manifests(
+	"${CMAKE_CURRENT_SOURCE_DIR}/isa_features.def"
+	"${CMAKE_CURRENT_SOURCE_DIR}/isa_tiers.def")
+
+# Availability is exposed on an internal interface target rather than as directory-scope
+# definitions, so the library and the tests see the same values and consumers of the installed
+# library see none of them. Directory scope was how OPT_* silently vanished from tests/unit once a
+# definition moved.
+add_library(vecsim_spaces_manifest INTERFACE)
+
+set(_manifest_arch "")
+if(SPACES_ARCH_FAMILY STREQUAL "x86_64")
+	set(_manifest_arch "X86")
+elseif(SPACES_ARCH_FAMILY STREQUAL "aarch64")
+	set(_manifest_arch "ARM")
+endif()
+
+set(_manifest_tier_includes "")
+foreach(_tier IN LISTS VECSIM_TIERS)
+	set(_tier_arch "${VECSIM_TIER_${_tier}_ARCH}")
+	set(_tier_stem "${VECSIM_TIER_${_tier}_STEM}")
+
+	if(NOT "${_tier_arch}" STREQUAL "${_manifest_arch}")
+		# A tier for the other architecture is not a failure and not a candidate. Define it as
+		# unavailable so if constexpr sees a value for every tier on every build.
+		target_compile_definitions(vecsim_spaces_manifest INTERFACE VECSIM_BUILT_${_tier}=0)
+		continue()
+	endif()
+
+	vecsim_tier_flags(_tier_flags "${_tier}")
+
+	# Did the legacy block above compile this tier, and with which flags?
+	get_source_file_property(_legacy_flags "functions/${_tier_stem}.cpp" COMPILE_FLAGS)
+	if(_legacy_flags)
+		# Normalise whitespace only: some legacy strings carry double spaces.
+		string(REGEX REPLACE "[ \t]+" " " _legacy_norm "${_legacy_flags}")
+		string(STRIP "${_legacy_norm}" _legacy_norm)
+		if(NOT "${_legacy_norm}" STREQUAL "${_tier_flags}")
+			message(FATAL_ERROR
+				"vecsim manifest: tier ${_tier} would be compiled with '${_legacy_norm}' by the "
+				"legacy block but the manifest derives '${_tier_flags}'. One of the two is wrong. "
+				"While both descriptions exist they must agree exactly, or the manifest is not "
+				"describing the build.")
+		endif()
+	endif()
+
+	# Buildability, asked the only way that answers the real question: can this toolchain carry
+	# this tier's own translation unit through to an object under this tier's own flags?
+	vecsim_tier_compiles(_tier_ok
+		SOURCE "functions/${_tier_stem}.cpp"
+		FLAGS "${_tier_flags}"
+		NAME "${_tier}")
+
+	if(_tier_ok)
+		target_compile_definitions(vecsim_spaces_manifest INTERFACE VECSIM_BUILT_${_tier}=1)
+		string(APPEND _manifest_tier_includes
+			"#include \"VecSim/spaces/functions/${_tier_stem}.h\"\n")
+	else()
+		target_compile_definitions(vecsim_spaces_manifest INTERFACE VECSIM_BUILT_${_tier}=0)
+		message(STATUS "Manifest: tier ${_tier} is unavailable on this toolchain")
+	endif()
+endforeach()
+
+# The umbrella is generated rather than hand-maintained, because a TIER() expansion cannot emit an
+# #include and a hand-synchronised list would need a checker to prove it matches the manifest. A
+# generated one cannot disagree with its source.
+file(GENERATE
+	OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/VecSim/spaces/functions/all_tiers.h"
+	CONTENT "// Generated from isa_tiers.def at configure time. Do not edit.\n\n#pragma once\n\n${_manifest_tier_includes}")
+target_include_directories(vecsim_spaces_manifest INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+# ---------------------------------------------------------------------------------------------
+
 # Here we are compiling the space selectors with the relevant optimization flag.
 add_library(VectorSimilaritySpaces
 	L2_space.cpp
@@ -313,7 +401,8 @@ add_library(VectorSimilaritySpaces
 	computer/preprocessor_container.cpp
 )
 
-target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features)
+target_link_libraries(VectorSimilaritySpaces VectorSimilaritySpaces_no_optimization cpu_features
+	vecsim_spaces_manifest)
 
 if(NOT SPACES_BASELINE_ARCH_FLAG STREQUAL "")
 	# Appended at target level (PRIVATE, so it does not propagate to consumers linking this
