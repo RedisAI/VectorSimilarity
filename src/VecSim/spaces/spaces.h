@@ -99,13 +99,19 @@ static inline FeaturesType intersectWithDetectedFeatures(const FeaturesType &ove
     return result;
 }
 
+// The CPU feature set for the architecture being built, at namespace scope so callers other than
+// getCpuOptimizationFeatures() can name the type without repeating the architecture selection.
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+using FeaturesType = cpu_features::Aarch64Features;
+#else
+using FeaturesType = cpu_features::X86Features; // Fallback
+#endif
+
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
-    using FeaturesType = cpu_features::Aarch64Features;
     constexpr auto getFeatures = cpu_features::GetAarch64Info;
 #else
-    using FeaturesType = cpu_features::X86Features; // Fallback
     constexpr auto getFeatures = cpu_features::GetX86Info;
 #endif
     const FeaturesType detected = getFeatures().features;

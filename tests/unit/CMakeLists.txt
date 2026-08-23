@@ -53,7 +53,10 @@ target_link_libraries(test_hnsw PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_hnsw_parallel PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_allocator PUBLIC gtest VectorSimilarity)
-target_link_libraries(test_spaces PUBLIC gtest VectorSimilarity)
+# test_spaces includes spaces/tier_info.h, which needs the manifest's VECSIM_BUILT_<TIER>
+# definitions and the generated umbrella's include path. Those live on an internal interface
+# target on purpose, so they reach the library and the tests but not consumers.
+target_link_libraries(test_spaces PUBLIC gtest VectorSimilarity vecsim_spaces_manifest)
 target_link_libraries(test_common PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_components PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_types PUBLIC gtest VectorSimilarity)

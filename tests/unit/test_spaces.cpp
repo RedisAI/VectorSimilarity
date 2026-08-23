@@ -24,6 +24,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/tier_info.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/spaces/functions/AVX512F.h"
@@ -1612,6 +1613,77 @@ TEST(FP16SpacesTest, LargeValuesDoNotOverflowTheAccumulator) {
         ASSERT_TRUE(std::isfinite(ip)) << "IP accumulator overflowed at dim " << dim;
         ASSERT_NEAR(ip, expected_ip, std::abs(expected_ip) * 1e-6f) << "IP at dim " << dim;
     }
+}
+
+// TierInfo reads two columns of isa_tiers.def that must never be conflated: FLAGS_FROM, which
+// builds the compile command, and GUARANTEES, which builds the runtime predicate. A flag fragment
+// expands to a compiler-defined bundle, so a predicate derived from flags can claim support the
+// hardware does not have. These tests pin the separation on the real manifest rows where the two
+// columns differ, rather than on a synthetic tier, so they also document why those rows differ.
+TEST(TierInfoTest, SupportedFoldsGuaranteesNotFlags) {
+    spaces::FeaturesType f;
+    std::memset(&f, 0, sizeof(f));
+
+#if defined(CPU_FEATURES_ARCH_AARCH64)
+    // NEON_FHM: FLAGS_FROM is (ASIMDFHM), GUARANTEES is (ASIMDHP, ASIMDFHM). The tier is compiled
+    // at +fp16fml, and FEAT_FHM is optional in armv8.2-a, so a core can have FP16 without FHM.
+    // Deriving the predicate from the flags would accept asimdfhm alone and execute FMLAL on a core
+    // that lacks it.
+    f.asimdfhm = 1;
+    f.asimdhp = 0;
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::NEON_FHM>::supported(f))
+        << "asimdfhm alone must not select NEON_FHM: GUARANTEES also requires asimdhp";
+    f.asimdhp = 1;
+    EXPECT_TRUE(spaces::TierInfo<spaces::Tier::NEON_FHM>::supported(f));
+
+    // A tier of the other architecture is never supported, whatever the mask says.
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::AVX2>::supported(f));
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::AVX2>::compiled);
+#else
+    // SSE4_F16C: compiled "-msse4.1 -mavx -mf16c" and predicated on sse4_1 && f16c && avx, because
+    // -mf16c is VEX-encoded and puts AVX-state instructions in reach.
+    f.sse4_1 = 1;
+    f.f16c = 1;
+    f.avx = 0;
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::SSE4_F16C>::supported(f))
+        << "sse4_1 and f16c without avx must not select a tier compiled with -mavx";
+    f.avx = 1;
+    EXPECT_TRUE(spaces::TierInfo<spaces::Tier::SSE4_F16C>::supported(f));
+
+    // The VNNI tier is compiled with -mavx512vl, so avx512vl belongs in its predicate. Six legacy
+    // dispatch sites omitted it.
+    std::memset(&f, 0, sizeof(f));
+    f.avx512f = 1;
+    f.avx512bw = 1;
+    f.avx512vnni = 1;
+    f.avx512vl = 0;
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::AVX512_F_BW_VL_VNNI>::supported(f));
+    f.avx512vl = 1;
+    EXPECT_TRUE(spaces::TierInfo<spaces::Tier::AVX512_F_BW_VL_VNNI>::supported(f));
+
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::NEON>::supported(f));
+    EXPECT_FALSE(spaces::TierInfo<spaces::Tier::NEON>::compiled);
+#endif
+}
+
+// Availability is defined for every tier on every build, not only for the ones that compiled, so
+// `if constexpr (TierInfo<T>::compiled)` is well formed for all of them. A positive-only macro
+// would make that expression fail to compile for the tiers it matters most for.
+TEST(TierInfoTest, EveryTierHasAnAvailabilityValue) {
+    constexpr bool all_defined = spaces::TierInfo<spaces::Tier::AVX2>::compiled ||
+                                 !spaces::TierInfo<spaces::Tier::AVX2>::compiled;
+    EXPECT_TRUE(all_defined);
+    // On this build exactly one architecture's tiers can be compiled.
+    EXPECT_EQ(spaces::TierInfo<spaces::Tier::NEON>::arch_of, spaces::Arch::ARM);
+    EXPECT_EQ(spaces::TierInfo<spaces::Tier::AVX2>::arch_of, spaces::Arch::X86);
+    if (spaces::TierInfo<spaces::Tier::NEON>::compiled) {
+        EXPECT_FALSE(spaces::TierInfo<spaces::Tier::AVX2>::compiled);
+    }
+    // Priorities order the tiers within an architecture.
+    EXPECT_GT(spaces::TierInfo<spaces::Tier::AVX2>::priority_of,
+              spaces::TierInfo<spaces::Tier::SSE4>::priority_of);
+    EXPECT_GT(spaces::TierInfo<spaces::Tier::SVE2>::priority_of,
+              spaces::TierInfo<spaces::Tier::NEON>::priority_of);
 }
 
 class INT8SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
