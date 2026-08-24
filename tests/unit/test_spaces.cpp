@@ -686,15 +686,10 @@ TEST_F(SpacesTest, FP16NativeDispatcherDimensionCap) {
 #if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_VL)
     if (optimization.avx512_fp16 && optimization.avx512vl) {
         const size_t ip_cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
-        const size_t l2_cap = spaces::FP16_MAX_UNIT_L2_SIMD_DIM;
         ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap, &alignment, &optimization),
                   Choose_FP16_IP_implementation_AVX512FP16_VL(ip_cap));
-        ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap, &alignment, &optimization),
-                  Choose_FP16_L2_implementation_AVX512FP16_VL(l2_cap));
         ASSERT_NE(IP_FP16_GetDistFunc(ip_cap + 1, &alignment, &optimization),
                   Choose_FP16_IP_implementation_AVX512FP16_VL(ip_cap + 1));
-        ASSERT_NE(L2_FP16_GetDistFunc(l2_cap + 1, &alignment, &optimization),
-                  Choose_FP16_L2_implementation_AVX512FP16_VL(l2_cap + 1));
     }
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
     const size_t ip_cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
@@ -731,6 +726,39 @@ TEST_F(SpacesTest, FP16NativeDispatcherDimensionCap) {
     ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap + 1, &alignment, &optimization), FP16_L2Sqr);
 #endif
 }
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_VL) && defined(OPT_AVX512F)
+TEST_F(SpacesTest, FP16L2PublicDispatchSkipsNativeArithmetic) {
+    cpu_features::X86Features optimization{};
+    optimization.avx512_fp16 = optimization.avx512vl = optimization.avx512f = true;
+
+    constexpr size_t dim = 128;
+    auto l2 = L2_FP16_GetDistFunc(dim, nullptr, &optimization);
+    ASSERT_EQ(l2, Choose_FP16_L2_implementation_AVX512F(dim));
+    ASSERT_NE(l2, Choose_FP16_L2_implementation_AVX512FP16_VL(dim));
+}
+
+TEST_F(SpacesTest, FP16L2PublicDispatchMatchesScalar) {
+    const auto optimization = getCpuOptimizationFeatures();
+    if (!optimization.avx512_fp16 || !optimization.avx512vl || !optimization.avx512f) {
+        GTEST_SKIP() << "AVX512FP16+VL and AVX512F are unavailable";
+    }
+
+    constexpr size_t dim = 128;
+    const float16 zero = vecsim_types::FP32_to_FP16(0.0f);
+    const float16 one = vecsim_types::FP32_to_FP16(1.0f);
+    const float16 small = vecsim_types::FP32_to_FP16(1.0f / 64.0f);
+    std::vector<float16> v1(dim, small);
+    std::vector<float16> v2(dim, zero);
+    for (size_t i = 0; i < dim / 2; i++) {
+        v1[i] = one;
+    }
+
+    auto l2 = L2_FP16_GetDistFunc(dim, nullptr, &optimization);
+    ASSERT_EQ(l2, Choose_FP16_L2_implementation_AVX512F(dim));
+    ASSERT_FLOAT_EQ(l2(v1.data(), v2.data(), dim), FP16_L2Sqr(v1.data(), v2.data(), dim));
+}
+#endif
 
 // The cap is evaluated once by the dispatcher. The selected distance function therefore has no
 // added hot-path instructions, while high-dimensional unit-bounded inputs avoid a native-fp16
@@ -1501,16 +1529,9 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
 INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
                          testing::Range(8UL, 32 * 2UL + 1));
 
-/** Since we are handling floats, the order of summation affect on the final result.
- * This is very significant when the entries are half precision floats, since the accumulated
- * error is much higher than in single precision floats.
- * In the following tests the error between the naive calculation to SIMD optimization function
- * is allowed to be up to 1%. If we wanted to be accurate, we could have done the baseline
- * calculations accumulating the results in a SIMD size vector and reduce the final result to float,
- * but this is too complicated for the scope of this test.
- * Special attention should be given to the implementation of the SIMD reduce function for float16,
- * that has different logic than the float32 and float64 reduce functions.
- * For more info, refer to intel's intrinsics guide.
+/** Native-fp16 SIMD tiers deliberately keep their hot loops in half precision for throughput.
+ * Compare them with the scalar fp32 contract over the stored fp16 values and allow up to 1% error
+ * for the different arithmetic width and summation order.
  */
 #if defined(OPT_AVX512_FP16_VL) || defined(CPU_FEATURES_ARCH_AARCH64)
 class FP16SpacesOptimizationTestAdvanced : public testing::TestWithParam<size_t> {};
@@ -1523,12 +1544,7 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
     std::mt19937 gen(42);
     std::uniform_real_distribution<> dis(-0.99, 0.99);
 
-#if defined(CPU_FEATURES_ARCH_AARCH64) && defined(__GNUC__) && (__GNUC__ < 13)
-    // https://github.com/pytorch/executorch/issues/6844
-    __fp16 baseline = 0;
-#else
-    _Float16 baseline = 0;
-#endif
+    float baseline = 0;
 
     for (size_t i = 0; i < dim; i++) {
         float val1 = (dis(gen));
@@ -1536,9 +1552,9 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16InnerProductTestAdv) {
         v1[i] = vecsim_types::FP32_to_FP16((val1));
         v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-        baseline += static_cast<decltype(baseline)>(val1) * static_cast<decltype(baseline)>(val2);
+        baseline += vecsim_types::FP16_to_FP32(v1[i]) * vecsim_types::FP16_to_FP32(v2[i]);
     }
-    baseline = decltype(baseline)(1) - baseline;
+    baseline = 1.0f - baseline;
 
     auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
         size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
@@ -1628,34 +1644,25 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
         std::mt19937 gen(42);
         std::uniform_real_distribution<float> dis(-0.99f, 0.99f);
 
-        _Float16 baseline = 0;
+        float baseline = 0;
         for (size_t i = 0; i < dim; i++) {
             float val1 = (dis(gen));
             float val2 = (dis(gen));
             v1[i] = vecsim_types::FP32_to_FP16((val1));
             v2[i] = vecsim_types::FP32_to_FP16((val2));
 
-            _Float16 diff = static_cast<_Float16>(val1) - static_cast<_Float16>(val2);
+            float diff = vecsim_types::FP16_to_FP32(v1[i]) - vecsim_types::FP16_to_FP32(v2[i]);
             baseline += diff * diff;
         }
 
-        auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
-            size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
-            return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float16) : 0;
-        };
-
         dist_func_t<float> arch_opt_func;
-        unsigned char alignment = 0;
-        arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512FP16_VL(dim))
-            << "Unexpected distance function chosen for dim " << dim;
+        arch_opt_func = Choose_FP16_L2_implementation_AVX512FP16_VL(dim);
         float dist = arch_opt_func(v1, v2, dim);
         float f_baseline = baseline;
         float error = std::abs((dist / f_baseline) - 1);
         // Alow 1% error
         ASSERT_LE(error, 0.01) << "AVX512 with dim " << dim << ", baseline: " << f_baseline
                                << ", dist: " << dist;
-        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
     }
 }
 #endif

@@ -386,19 +386,9 @@ dist_func_t<float> L2_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
 #endif // CPU_FEATURES_ARCH_AARCH64
 
 #if defined(CPU_FEATURES_ARCH_X86_64)
-    // Each tier has a minimal dimension implied by its residual handling: the AVX512FP16_VL
-    // kernel loads full 512-bit blocks (32 elements), the AVX512F kernel loads full 256-bit
-    // blocks (16 elements), and the F16C kernel loads full 128-bit blocks (8 elements).
-#ifdef OPT_AVX512_FP16_VL
-    // More details about the dimension limitation can be found in this PR's description:
-    // https://github.com/RedisAI/VectorSimilarity/pull/477
-    if (dim >= 32 && dim <= spaces::FP16_MAX_UNIT_L2_SIMD_DIM && features.avx512_fp16 &&
-        features.avx512vl) {
-        if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
-            *alignment = 32 * sizeof(float16); // handles 32 floats
-        return Choose_FP16_L2_implementation_AVX512FP16_VL(dim);
-    }
-#endif
+    // Native AVX512FP16 arithmetic rounds the subtraction and each FMA to fp16. Prefer the existing
+    // fp32-accumulating AVX512F tier for scalar-compatible public L2 results; the native chooser
+    // remains available to explicit callers and benchmarks.
 #ifdef OPT_AVX512F
     if (dim >= 16 && features.avx512f) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
