@@ -34,6 +34,13 @@ TIER_PREFIXES = ("NEON", "SVE", "AVX", "SSE", "F16C")
 # excluded by name rather than by weakening the check.
 TIER_NEUTRAL = ("vecsim_types",)
 
+# Toolchain bookkeeping that can be emitted into every translation unit. These are not
+# executable kernel code and cannot select a body built for the wrong ISA.
+TOOLCHAIN_SYMBOLS = {
+    "___asan_globals_registered",
+    "DW.ref.__gxx_personality_v0",
+}
+
 
 def tier_symbols(archive):
     """Map each tier object in the archive to its set of defined external symbols."""
@@ -50,7 +57,8 @@ def tier_symbols(archive):
             continue
         if current and len(line.split()) == 3:
             symbol = line.split()[2]
-            if not any(ns in symbol for ns in TIER_NEUTRAL):
+            if (symbol not in TOOLCHAIN_SYMBOLS and
+                    not any(ns in symbol for ns in TIER_NEUTRAL)):
                 tiers[current].add(symbol)
     return tiers
 
