@@ -65,6 +65,16 @@ static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
     std::numeric_limits<int32_t>::max() /
     (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
 
+// Native-fp16 accumulation is a throughput optimization, not an exact implementation for every
+// finite fp16 value: no positive dimension can provide that guarantee because one product may
+// already overflow. Preserve that fast path for ordinary embedding dimensions, but stop selecting
+// it once even unit-bounded components can produce a mathematical result beyond fp16's largest
+// finite value (65,504). IP contributes at most 1 per component; for L2, two values in [-1, 1]
+// differ by at most 2 and therefore contribute at most 4. The chooser pays this check once when an
+// index is created; the native accumulation/reduction loops pay no additional instructions.
+static constexpr size_t FP16_MAX_UNIT_IP_SIMD_DIM = 65504;
+static constexpr size_t FP16_MAX_UNIT_L2_SIMD_DIM = FP16_MAX_UNIT_IP_SIMD_DIM / 4;
+
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
