@@ -7,26 +7,21 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "NEON_BF16.h"
+#include "VecSim/spaces/functions/residual_dispatch.h"
 
 #include "VecSim/spaces/L2/L2_NEON_BF16.h"
 #include "VecSim/spaces/IP/IP_NEON_BF16.h"
 
 namespace spaces {
 
-#include "implementation_chooser.h"
-
 dist_func_t<float> Choose_BF16_L2_implementation_NEON_BF16(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, BF16_L2Sqr_NEON);
-    return ret_dist_func;
+    return dispatch_by_residual<dist_func_t<float>, 32>(
+        dim, []<size_t N>() { return BF16_L2Sqr_NEON<N>; });
 }
 
 dist_func_t<float> Choose_BF16_IP_implementation_NEON_BF16(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, BF16_InnerProduct_NEON);
-    return ret_dist_func;
+    return dispatch_by_residual<dist_func_t<float>, 32>(
+        dim, []<size_t N>() { return BF16_InnerProduct_NEON<N>; });
 }
-
-#include "implementation_chooser_cleanup.h"
 
 } // namespace spaces

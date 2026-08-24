@@ -7,26 +7,21 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "F16C.h"
+#include "VecSim/spaces/functions/residual_dispatch.h"
 
 #include "VecSim/spaces/IP/IP_F16C_FP16.h"
 #include "VecSim/spaces/L2/L2_F16C_FP16.h"
 
 namespace spaces {
 
-#include "implementation_chooser.h"
-
 dist_func_t<float> Choose_FP16_IP_implementation_F16C(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD32_F16C);
-    return ret_dist_func;
+    return dispatch_by_residual<dist_func_t<float>, 32>(
+        dim, []<size_t N>() { return FP16_InnerProductSIMD32_F16C<N>; });
 }
 
 dist_func_t<float> Choose_FP16_L2_implementation_F16C(size_t dim) {
-    dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_L2SqrSIMD32_F16C);
-    return ret_dist_func;
+    return dispatch_by_residual<dist_func_t<float>, 32>(
+        dim, []<size_t N>() { return FP16_L2SqrSIMD32_F16C<N>; });
 }
-
-#include "implementation_chooser_cleanup.h"
 
 } // namespace spaces
