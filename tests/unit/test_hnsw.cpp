@@ -2368,3 +2368,108 @@ TYPED_TEST(HNSWTest, FitMemoryTest) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWTest, relabelVector) {
+    size_t dim = 4;
+    size_t n = 10;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Capture the state that a relabel must preserve: the internal id, and the distance from a
+    // query, which together prove that neither the stored data nor the graph position moved.
+    const labelType old_label = 3;
+    const labelType new_label = 100;
+    auto ids_before = hnsw_index->getElementIds(old_label);
+    ASSERT_EQ(ids_before.size(), 1);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, old_label);
+    const double dist_before = hnsw_index->getDistanceFrom_Unsafe(old_label, query);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), VecSimRelabel_OK);
+
+    // Nothing was added or removed.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The old label is gone, the new one holds the very same element.
+    ASSERT_FALSE(hnsw_index->isLabelExists(old_label));
+    ASSERT_TRUE(hnsw_index->isLabelExists(new_label));
+    ASSERT_EQ(hnsw_index->getElementIds(new_label), ids_before);
+    ASSERT_EQ(hnsw_index->getExternalLabel(ids_before[0]), new_label);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(new_label, query), dist_before);
+    ASSERT_TRUE(std::isnan(hnsw_index->getDistanceFrom_Unsafe(old_label, query)));
+
+    // The element is still reachable by search, under the new label and with an unchanged score.
+    // This also guards against clobbering the element's flags with IN_PROCESS, which would make a
+    // live element invisible to queries.
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, new_label);
+        ASSERT_EQ(score, dist_before);
+    };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, relabelVectorRejects) {
+    size_t dim = 4;
+    size_t n = 5;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // A missing source, an occupied target and a no-op move are all rejected, and none of them may
+    // leave the index in a modified state.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
+    // An absent source outranks an occupied target: a caller that resolves the conflict by
+    // freeing the target must not be sent down that path for a move with nothing to move.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 1), VecSimRelabel_OldLabelMissing);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_TRUE(hnsw_index->isLabelExists(i));
+    }
+    ASSERT_FALSE(hnsw_index->isLabelExists(100));
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, relabelVectorMarkedDeleted) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
+
+    auto deleted_ids = hnsw_index->markDelete(0);
+    ASSERT_EQ(deleted_ids.size(), 1);
+
+    // A marked-deleted element is out of the label lookup, so it is reported as absent and left
+    // alone - its `idToMetaData` label is still needed by the swap/repair jobs holding its id.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(hnsw_index->getExternalLabel(deleted_ids[0]), 0);
+    ASSERT_FALSE(hnsw_index->isLabelExists(100));
+
+    // A live label in the same index still relabels fine.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 101), VecSimRelabel_OK);
+    ASSERT_TRUE(hnsw_index->isLabelExists(101));
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    VecSimIndex_Free(index);
+}

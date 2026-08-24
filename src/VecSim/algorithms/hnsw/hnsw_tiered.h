@@ -213,6 +213,7 @@ public:
 
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
         return this->getHNSWIndex()->getNumMarkedDeleted();
     }
@@ -913,6 +914,101 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     }
 
     return num_deleted_vectors;
+}
+
+/**
+ * Move a label across every place the tiered index records one. Unlike add/delete this needs no
+ * jobs and no vector data movement - the swap/repair machinery is keyed purely on internal ids, so
+ * it is unaffected.
+ *
+ * A label can legitimately live in *both* tiers at once: `executeInsertJob` inserts into HNSW
+ * before removing the vector from the flat buffer, so all four updates below are independently
+ * guarded by their own existence check rather than treated as mutually exclusive.
+ *
+ * Locking: `flatIndexGuard` exclusively (it guards the flat buffer's lookups, `labelToInsertJobs`
+ * and - per the note in `executeInsertJob` - the job fields themselves), then the main index guard
+ * exclusively. That is the flat-then-main order used by `insertVectorToHNSW` and `topKQueryImp`,
+ * so it cannot deadlock against them; repair and swap jobs only ever take the main guard.
+ * The main guard must be *exclusive* rather than shared: query threads read
+ * `getExternalLabel` under a shared main guard, and `ElementMetaData` is byte-packed, so its
+ * `label` field can be unaligned and its store is not atomic.
+ */
+template <typename DataType, typename DistType>
+VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType old_label,
+                                                                     labelType new_label) {
+    if (old_label == new_label) {
+        return VecSimRelabel_SameLabel;
+    }
+
+    this->flatIndexGuard.lock();
+    this->lockMainIndexGuard();
+
+    auto *hnsw_index = this->getHNSWIndex();
+    // A label can live in any subset of its three homes, so both questions are asked of all of
+    // them: it is present if any home holds it, and the target is free only if none does. Reject if
+    // the target is taken anywhere, so that a partially applied move is impossible - a free target
+    // in all three homes means none of the updates below can collide.
+    const bool source_exists =
+        this->frontendIndex->isLabelExists(old_label) ||
+        this->labelToInsertJobs.find(old_label) != this->labelToInsertJobs.end() ||
+        hnsw_index->isLabelExists(old_label);
+    const bool target_taken =
+        this->frontendIndex->isLabelExists(new_label) ||
+        this->labelToInsertJobs.find(new_label) != this->labelToInsertJobs.end() ||
+        hnsw_index->isLabelExists(new_label);
+
+    // Each home is asked to move the label only once it reported holding it, and the checks above
+    // ruled out every other rejection - the label is present, the target is free everywhere, and
+    // the labels differ - so while both guards are held a home that is asked can only answer OK.
+    // The asserts below state that; a refusal would mean the state changed underneath us.
+    if (source_exists && !target_taken) {
+        if (this->frontendIndex->isLabelExists(old_label)) {
+            const VecSimRelabelCode flat_ret =
+                this->frontendIndex->relabelVector(old_label, new_label);
+#ifdef BUILD_TESTS
+            assert(flat_ret == VecSimRelabel_OK &&
+                   "the flat buffer just reported holding this label");
+#endif
+            UNUSED(flat_ret);
+        }
+
+        // Re-key the pending insert jobs *and* rewrite each job's own copy of the label. Both must
+        // move together: `executeInsertJob` indexes into HNSW under `job->label` and then looks the
+        // job up with `labelToInsertJobs.at(job->label)`, so a half-applied move either indexes the
+        // vector under the stale label or throws out of the worker thread.
+        auto jobs_it = this->labelToInsertJobs.find(old_label);
+        if (jobs_it != this->labelToInsertJobs.end()) {
+            auto jobs = std::move(jobs_it->second);
+            this->labelToInsertJobs.erase(jobs_it);
+            for (HNSWInsertJob *job : jobs) {
+                job->label = new_label;
+            }
+            this->labelToInsertJobs.emplace(new_label, std::move(jobs));
+        }
+
+        // `relabelVector` takes the HNSW index data guard internally, which is the same
+        // main-guard-then-data-guard order that `insertVectorToHNSW` uses.
+        if (hnsw_index->isLabelExists(old_label)) {
+            const VecSimRelabelCode hnsw_ret = hnsw_index->relabelVector(old_label, new_label);
+#ifdef BUILD_TESTS
+            assert(hnsw_ret == VecSimRelabel_OK && "HNSW just reported holding this label");
+#endif
+            UNUSED(hnsw_ret);
+        }
+    }
+
+    this->unlockMainIndexGuard();
+    this->flatIndexGuard.unlock();
+
+    // An absent source outranks an occupied target: a caller that resolves `NewLabelTaken` by
+    // freeing the target would otherwise drop an unrelated vector for a move with nothing to move.
+    if (!source_exists) {
+        return VecSimRelabel_OldLabelMissing;
+    }
+    if (target_taken) {
+        return VecSimRelabel_NewLabelTaken;
+    }
+    return VecSimRelabel_OK;
 }
 
 // `getDistanceFrom` returns the minimum distance between the given blob and the vector with the

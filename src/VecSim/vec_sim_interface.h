@@ -55,6 +55,33 @@ public:
     virtual int deleteVector(labelType label) = 0;
 
     /**
+     * @brief Move the vector(s) stored under `old_label` to `new_label`, without touching the
+     * stored vector data or the index structure.
+     *
+     * Only the label bookkeeping changes, so this is O(1) per stored vector: no distance
+     * computations, no graph mutation, and no invalidation of internal ids. It is the cheap
+     * alternative to delete-then-add for callers whose external id changed while the vector
+     * itself did not.
+     *
+     * The operation is rejected - index left untouched - if `old_label` is not present, if
+     * `new_label` is already taken, or if the two labels are equal. Rejecting rather than
+     * overwriting keeps the caller in control: overwriting `new_label` would silently drop a
+     * vector, and unlike `addVector` there is no replacement data to justify it. Each rejection has
+     * its own code, so a caller can tell a conflict it may resolve from an index type that will
+     * never relabel and has to be served by delete + insert instead.
+     *
+     * The default implementation reports `VecSimRelabel_Unsupported` so that index types which
+     * delegate label management to an external library are not forced to implement it.
+     *
+     * @param old_label the label currently holding the vector(s).
+     * @param new_label the label to move them to.
+     * @return `VecSimRelabel_OK` if the label was moved, otherwise the reason it was not.
+     */
+    virtual VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) {
+        return VecSimRelabel_Unsupported;
+    }
+
+    /**
      * @brief Calculate the distance of a vector from an index to a vector.
      * @param index the index from which the first vector is located, and that defines the distance
      * metric.

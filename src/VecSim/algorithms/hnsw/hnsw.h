@@ -319,6 +319,12 @@ public:
     // Remove label from the index.
     virtual int removeLabel(labelType label) = 0;
 
+    // Check whether a label currently maps to at least one element. Note that a label whose
+    // element was marked deleted is *not* considered to exist, matching `getElementIds`.
+    virtual bool isLabelExists(labelType label) = 0;
+
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
+
 #ifdef BUILD_TESTS
     void fitMemory() override {
         if (maxElements > 0) {
@@ -476,6 +482,47 @@ void HNSWIndex<DataType, DistType>::unmarkInProcess(idType internalId) {
     // Atomically unset the IN_PROCESS mark flag (note that other parallel threads may set the flags
     // at the same time (for marking the element with IN_PROCCESS flag).
     unmarkAs<IN_PROCESS>(internalId);
+}
+
+/**
+ * Move every element stored under `old_label` to `new_label`. The graph is keyed purely on internal
+ * ids - links, entry point and levels never mention a label - so this only has to fix the two
+ * places a label is kept: `idToMetaData[id].label` (id -> label, read by `getExternalLabel` on
+ * every query result) and the derived class's label -> id lookup.
+ *
+ * Takes `indexDataGuard` exclusively, like `markDelete`, since both containers it mutates are
+ * guarded by it. A tiered index calling this while holding its main index guard exclusively is
+ * consistent with the main-guard-then-data-guard order used by `insertVectorToHNSW`.
+ */
+template <typename DataType, typename DistType>
+VecSimRelabelCode HNSWIndex<DataType, DistType>::relabelVector(labelType old_label,
+                                                               labelType new_label) {
+    if (old_label == new_label) {
+        return VecSimRelabel_SameLabel;
+    }
+    std::unique_lock<std::shared_mutex> index_data_lock(indexDataGuard);
+
+    // An absent source is reported before an occupied target, so that a caller which resolves
+    // `NewLabelTaken` by freeing the target is never told to do so for a move that has nothing to
+    // move. Elements that were marked deleted are already out of the label lookup, so they are
+    // reported as absent here and are left alone - their `idToMetaData` label is still needed by
+    // the pending swap/repair jobs that reference their id.
+    auto ids = getElementIds(old_label);
+    if (ids.empty()) {
+        return VecSimRelabel_OldLabelMissing;
+    }
+    if (isLabelExists(new_label)) {
+        return VecSimRelabel_NewLabelTaken;
+    }
+
+    removeLabel(old_label);
+    for (idType id : ids) {
+        // Assign the label field rather than the whole struct: `ElementMetaData`'s constructor
+        // resets `flags` to IN_PROCESS, which would hide a live element from queries.
+        idToMetaData[id].label = new_label;
+        setVectorId(new_label, id);
+    }
+    return VecSimRelabel_OK;
 }
 
 template <typename DataType, typename DistType>

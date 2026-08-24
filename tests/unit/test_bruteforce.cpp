@@ -1674,3 +1674,70 @@ TYPED_TEST(BruteForceTest, FitMemoryTest) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(BruteForceTest, relabelVector) {
+    size_t dim = 4;
+    size_t n = 10;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    const labelType old_label = 3;
+    const labelType new_label = 100;
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, old_label);
+    // A relabel must not move the stored data, so the distance from the label's own vector stays 0.
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, old_label, query), 0);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), VecSimRelabel_OK);
+
+    // Nothing was added or removed, and the vector now answers to the new label only.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, new_label, query), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, old_label, query)));
+
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, new_label);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(BruteForceTest, relabelVectorRejects) {
+    size_t dim = 4;
+    size_t n = 5;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // A missing source, an occupied target and a no-op move are all rejected without modifying
+    // the index.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
+    // An absent source outranks an occupied target: a caller that resolves the conflict by
+    // freeing the target must not be sent down that path for a move with nothing to move.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 1), VecSimRelabel_OldLabelMissing);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T v[dim];
+        GenerateVector<TEST_DATA_T>(v, dim, i);
+        ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, i, v), 0) << "label " << i << " moved";
+    }
+    TEST_DATA_T probe[dim];
+    GenerateVector<TEST_DATA_T>(probe, dim, 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 100, probe)));
+
+    VecSimIndex_Free(index);
+}
