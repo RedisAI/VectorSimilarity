@@ -119,6 +119,55 @@ def get_ground_truth_results(dist_func, query, vectors, k):
 
     return results, keys
 
+# Native-fp16 SIMD kernels intentionally perform arithmetic in half precision. Their unit tests
+# bound the resulting error at 1%, so flow tests must validate score/order stability within the
+# same contract instead of assuming scalar-fp32-identical distances on every runner CPU.
+FLOAT16_NATIVE_RTOL = 1e-2
+
+
+def get_distances_by_label(dist_func, query, vectors):
+    distances = {}
+    for label, vector in vectors:
+        distance = dist_func(query, vector)
+        distances[label] = min(distance, distances.get(label, distance))
+    return distances
+
+
+def assert_float16_l2_scores(labels, distances, exact_distances):
+    for label, distance in zip(labels, distances):
+        assert math.isclose(float(distance), exact_distances[int(label)],
+                            rel_tol=FLOAT16_NATIVE_RTOL, abs_tol=0)
+
+
+def assert_float16_l2_knn(labels, distances, exact_distances, k):
+    assert len(labels) == k
+    returned = set(map(int, labels))
+    assert len(returned) == k
+
+    cutoff = sorted(exact_distances.values())[k - 1]
+    mandatory = {label for label, distance in exact_distances.items()
+                 if distance < cutoff * (1 - FLOAT16_NATIVE_RTOL)}
+    allowed = {label for label, distance in exact_distances.items()
+               if distance <= cutoff * (1 + FLOAT16_NATIVE_RTOL)}
+    assert mandatory.issubset(returned)
+    assert returned.issubset(allowed)
+    assert_float16_l2_scores(labels, distances, exact_distances)
+
+
+def assert_float16_l2_range(labels, distances, exact_distances, radius, require_inner=True):
+    returned = set(map(int, labels))
+    assert len(returned) == len(labels)
+
+    inner = {label for label, distance in exact_distances.items()
+             if distance <= radius * (1 - FLOAT16_NATIVE_RTOL)}
+    allowed = {label for label, distance in exact_distances.items()
+               if distance <= radius * (1 + FLOAT16_NATIVE_RTOL)}
+    if require_inner:
+        assert inner.issubset(returned)
+    assert returned.issubset(allowed)
+    assert_float16_l2_scores(labels, distances, exact_distances)
+
+
 def fp32_expand_and_calc_cosine_dist(a, b):
     # stupid numpy doesn't make any intermediate conversions when handling small types
     # so we might get overflow. We need to convert to float32 ourselves.

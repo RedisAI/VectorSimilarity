@@ -686,10 +686,15 @@ TEST_F(SpacesTest, FP16NativeDispatcherDimensionCap) {
 #if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_VL)
     if (optimization.avx512_fp16 && optimization.avx512vl) {
         const size_t ip_cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
+        const size_t l2_cap = spaces::FP16_MAX_UNIT_L2_SIMD_DIM;
         ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap, &alignment, &optimization),
                   Choose_FP16_IP_implementation_AVX512FP16_VL(ip_cap));
+        ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap, &alignment, &optimization),
+                  Choose_FP16_L2_implementation_AVX512FP16_VL(l2_cap));
         ASSERT_NE(IP_FP16_GetDistFunc(ip_cap + 1, &alignment, &optimization),
                   Choose_FP16_IP_implementation_AVX512FP16_VL(ip_cap + 1));
+        ASSERT_NE(L2_FP16_GetDistFunc(l2_cap + 1, &alignment, &optimization),
+                  Choose_FP16_L2_implementation_AVX512FP16_VL(l2_cap + 1));
     }
 #elif defined(CPU_FEATURES_ARCH_AARCH64)
     const size_t ip_cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
@@ -726,39 +731,6 @@ TEST_F(SpacesTest, FP16NativeDispatcherDimensionCap) {
     ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap + 1, &alignment, &optimization), FP16_L2Sqr);
 #endif
 }
-
-#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_VL) && defined(OPT_AVX512F)
-TEST_F(SpacesTest, FP16L2PublicDispatchSkipsNativeArithmetic) {
-    cpu_features::X86Features optimization{};
-    optimization.avx512_fp16 = optimization.avx512vl = optimization.avx512f = true;
-
-    constexpr size_t dim = 128;
-    auto l2 = L2_FP16_GetDistFunc(dim, nullptr, &optimization);
-    ASSERT_EQ(l2, Choose_FP16_L2_implementation_AVX512F(dim));
-    ASSERT_NE(l2, Choose_FP16_L2_implementation_AVX512FP16_VL(dim));
-}
-
-TEST_F(SpacesTest, FP16L2PublicDispatchMatchesScalar) {
-    const auto optimization = getCpuOptimizationFeatures();
-    if (!optimization.avx512_fp16 || !optimization.avx512vl || !optimization.avx512f) {
-        GTEST_SKIP() << "AVX512FP16+VL and AVX512F are unavailable";
-    }
-
-    constexpr size_t dim = 128;
-    const float16 zero = vecsim_types::FP32_to_FP16(0.0f);
-    const float16 one = vecsim_types::FP32_to_FP16(1.0f);
-    const float16 small = vecsim_types::FP32_to_FP16(1.0f / 64.0f);
-    std::vector<float16> v1(dim, small);
-    std::vector<float16> v2(dim, zero);
-    for (size_t i = 0; i < dim / 2; i++) {
-        v1[i] = one;
-    }
-
-    auto l2 = L2_FP16_GetDistFunc(dim, nullptr, &optimization);
-    ASSERT_EQ(l2, Choose_FP16_L2_implementation_AVX512F(dim));
-    ASSERT_FLOAT_EQ(l2(v1.data(), v2.data(), dim), FP16_L2Sqr(v1.data(), v2.data(), dim));
-}
-#endif
 
 // The cap is evaluated once by the dispatcher. The selected distance function therefore has no
 // added hot-path instructions, while high-dimensional unit-bounded inputs avoid a native-fp16
