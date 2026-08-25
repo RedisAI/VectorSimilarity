@@ -11,6 +11,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_debug.h"
 #include "VecSim/query_result_definitions.h"
+#include "VecSim/utils/query_result_utils.h"
 #include "VecSim/utils/updatable_heap.h"
 #include "VecSim/utils/vec_utils.h"
 #include "unit_test_utils.h"
@@ -882,6 +883,46 @@ TEST(CommonAPITest, SearchDifferentScores) {
     // Use the largest score as the range to include all vectors
     double range = expected_results_by_score.back().second;
     runRangeTieredIndexSearchTest<true>(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
+}
+
+TEST(CommonAPITest, MergeResultListsWithCrossTierDedup) {
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
+    const size_t large_id = std::numeric_limits<size_t>::max() - 1;
+    const std::vector<VecSimQueryResult> first = {
+        {.id = 10, .score = 0.1},       {.id = 42, .score = 0.4}, {.id = 50, .score = 0.5},
+        {.id = large_id, .score = 0.7}, {.id = 99, .score = 0.8}, {.id = 70, .score = 1.0},
+    };
+    const std::vector<VecSimQueryResult> second = {
+        {.id = 42, .score = 0.2},       {.id = 20, .score = 0.3}, {.id = 50, .score = 0.5},
+        {.id = large_id, .score = 0.6}, {.id = 99, .score = 0.9},
+    };
+    const std::vector<VecSimQueryResult> expected = {
+        {.id = 10, .score = 0.1}, {.id = 42, .score = 0.2},       {.id = 20, .score = 0.3},
+        {.id = 50, .score = 0.5}, {.id = large_id, .score = 0.6}, {.id = 99, .score = 0.8},
+        {.id = 70, .score = 1.0},
+    };
+
+    auto make_reply = [&](const auto &input) {
+        auto *reply = new VecSimQueryReply(allocator);
+        reply->results.insert(reply->results.end(), input.begin(), input.end());
+        return reply;
+    };
+
+    // Exercise both branches that select the smaller input. The result must keep whichever
+    // occurrence appears first in exact (score, id) order and continue past skipped duplicates to
+    // fill the requested number of unique results.
+    for (bool reverse_inputs : {false, true}) {
+        auto *first_reply = make_reply(reverse_inputs ? second : first);
+        auto *second_reply = make_reply(reverse_inputs ? first : second);
+        auto *merged = merge_result_lists<true>(first_reply, second_reply, expected.size());
+
+        ASSERT_EQ(merged->results.size(), expected.size());
+        for (size_t i = 0; i < expected.size(); ++i) {
+            EXPECT_EQ(merged->results[i].id, expected[i].id) << "result index " << i;
+            EXPECT_DOUBLE_EQ(merged->results[i].score, expected[i].score) << "result index " << i;
+        }
+        VecSimQueryReply_Free(merged);
+    }
 }
 
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {

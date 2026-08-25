@@ -11,6 +11,10 @@
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
 
+#include <cassert>
+#include <cstdint>
+#include <limits>
+
 // Compare two results by score, and if the scores are equal, by id. The score comparison must be
 // exact: merge_results() walks lists that are ordered by exact score, and any tolerance here makes
 // this comparator disagree with that order, which breaks the merge's duplicate detection.
@@ -24,6 +28,91 @@ inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::i
     }
     return res1->id > res2->id ? 1 : -1;
 }
+
+// One-shot tier merges only need to track IDs that occur in the smaller input: an ID absent from
+// that input cannot be a cross-tier duplicate. Keeping the emitted bit in the same open-addressed
+// slot avoids the allocation and cache cost of inserting every output into a node-based set.
+class CrossTierIdTracker {
+    enum class State : uint8_t { Empty, NotEmitted, Emitted };
+
+    struct Slot {
+        size_t id = 0;
+        State state = State::Empty;
+    };
+
+    vecsim_stl::vector<Slot> slots;
+    size_t mask = 0;
+
+    static size_t hashId(size_t id) {
+        if constexpr (sizeof(size_t) == sizeof(uint64_t)) {
+            uint64_t value = id;
+            value ^= value >> 30;
+            value *= UINT64_C(0xbf58476d1ce4e5b9);
+            value ^= value >> 27;
+            value *= UINT64_C(0x94d049bb133111eb);
+            value ^= value >> 31;
+            return value;
+        } else {
+            uint32_t value = id;
+            value ^= value >> 16;
+            value *= UINT32_C(0x7feb352d);
+            value ^= value >> 15;
+            value *= UINT32_C(0x846ca68b);
+            value ^= value >> 16;
+            return value;
+        }
+    }
+
+    Slot *find(size_t id) {
+        if (slots.empty()) {
+            return nullptr;
+        }
+        size_t position = hashId(id) & mask;
+        while (slots[position].state != State::Empty) {
+            if (slots[position].id == id) {
+                return &slots[position];
+            }
+            position = (position + 1) & mask;
+        }
+        return nullptr;
+    }
+
+public:
+    explicit CrossTierIdTracker(const VecSimQueryResultContainer &smaller)
+        : slots(smaller.getAllocator()) {
+        if (smaller.empty()) {
+            return;
+        }
+
+        assert(smaller.size() <= std::numeric_limits<size_t>::max() / 4);
+        size_t capacity = 2;
+        while (capacity < smaller.size() * 2) {
+            capacity *= 2;
+        }
+        slots.resize(capacity);
+        mask = capacity - 1;
+
+        for (const auto &result : smaller) {
+            size_t position = hashId(result.id) & mask;
+            while (slots[position].state != State::Empty && slots[position].id != result.id) {
+                position = (position + 1) & mask;
+            }
+            slots[position] = {.id = result.id, .state = State::NotEmitted};
+        }
+    }
+
+    bool shouldEmit(size_t id) {
+        auto *slot = find(id);
+        if (slot == nullptr) {
+            return true;
+        }
+        if (slot->state == State::Emitted) {
+            return false;
+        }
+        slot->state = State::Emitted;
+        return true;
+    }
+};
 
 // Append the current result to the merged results, after verifying that it did not added yet (if
 // verification is needed). Also update the set, limit and the current result.
@@ -92,6 +181,51 @@ std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
     return {cur_first - first.begin(), cur_second - second.begin()};
 }
 
+// Each index query returns at most one result per label, so duplicates in a one-shot tier merge can
+// only occur across the inputs. Batch iterators cannot use this optimization because they also need
+// to remember labels returned by earlier calls.
+inline std::pair<size_t, size_t>
+merge_results_with_cross_tier_dedup(VecSimQueryResultContainer &results,
+                                    VecSimQueryResultContainer &first,
+                                    VecSimQueryResultContainer &second, size_t limit) {
+    results.reserve(std::min(limit, first.size() + second.size()));
+    const auto &smaller = first.size() <= second.size() ? first : second;
+    CrossTierIdTracker tracker(smaller);
+    auto cur_first = first.begin();
+    auto cur_second = second.begin();
+
+    auto maybe_append = [&](auto &current) {
+        if (tracker.shouldEmit(current->id)) {
+            results.push_back(*current);
+            limit--;
+        }
+        current++;
+    };
+
+    while (limit && cur_first != first.end() && cur_second != second.end()) {
+        int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
+        if (cmp > 0) {
+            maybe_append(cur_second);
+        } else if (cmp < 0) {
+            maybe_append(cur_first);
+        } else {
+            results.push_back(*cur_first);
+            cur_first++;
+            cur_second++;
+            limit--;
+        }
+    }
+
+    while (limit && cur_first != first.end()) {
+        maybe_append(cur_first);
+    }
+    while (limit && cur_second != second.end()) {
+        maybe_append(cur_second);
+    }
+
+    return {cur_first - first.begin(), cur_second - second.begin()};
+}
+
 // Assumes that the arrays are sorted by score firstly and by id secondarily.
 // Use withSet=false if you can guarantee that shared ids between the two lists
 // will also have identical scores. In this case, any duplicates will naturally align
@@ -104,7 +238,12 @@ VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *
                                      size_t limit) {
 
     auto mergedResults = new VecSimQueryReply(first->results.getAllocator());
-    merge_results<withSet>(mergedResults->results, first->results, second->results, limit);
+    if constexpr (withSet) {
+        merge_results_with_cross_tier_dedup(mergedResults->results, first->results, second->results,
+                                            limit);
+    } else {
+        merge_results<false>(mergedResults->results, first->results, second->results, limit);
+    }
 
     VecSimQueryReply_Free(first);
     VecSimQueryReply_Free(second);
