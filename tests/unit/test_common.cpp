@@ -927,7 +927,7 @@ TEST(CommonAPITest, MergeResultListsWithCrossTierDedup) {
     for (bool reverse_inputs : {false, true}) {
         auto *first_reply = make_reply(reverse_inputs ? second : first);
         auto *second_reply = make_reply(reverse_inputs ? first : second);
-        auto *merged = merge_result_lists<true>(first_reply, second_reply, expected.size());
+        auto *merged = merge_result_lists(first_reply, second_reply, expected.size());
 
         ASSERT_EQ(merged->results.size(), expected.size());
         for (size_t i = 0; i < expected.size(); ++i) {

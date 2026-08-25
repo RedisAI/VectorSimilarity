@@ -101,14 +101,9 @@ protected:
 public:
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
-    // For both topK and range, see merge_results() for when withSet=false is sound. It holds for a
-    // frontend/backend merge only while the two indexes score a given vector identically, which a
-    // compressed backend does not - see TieredSVSIndex, which overrides both to pass withSet=true.
-    template <bool WithSet>
     VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
                                    VecSimQueryParams *queryParams) const;
 
-    template <bool WithSet>
     VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
                                     VecSimQueryParams *queryParams,
                                     VecSimQueryReply_Order order) const;
@@ -166,7 +161,6 @@ public:
 };
 
 template <typename DataType, typename DistType>
-template <bool withSet>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
@@ -213,14 +207,14 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
             return main_results;
         }
 
-        return merge_result_lists<withSet>(main_results, flat_results, k);
+        return merge_result_lists(main_results, flat_results, k);
     }
 }
 template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    return this->topKQueryImp<true>(queryBlob, k, queryParams);
+    return this->topKQueryImp(queryBlob, k, queryParams);
 }
 
 template <typename DataType, typename DistType>
@@ -228,11 +222,10 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    return this->rangeQueryImp<true>(queryBlob, radius, queryParams, order);
+    return this->rangeQueryImp(queryBlob, radius, queryParams, order);
 }
 
 template <typename DataType, typename DistType>
-template <bool withSet>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
@@ -285,7 +278,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
             auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryReply *ret = merge_result_lists<withSet>(main_results, flat_results, -1);
+            VecSimQueryReply *ret = merge_result_lists(main_results, flat_results, -1);
             // Restore the return code and return.
             ret->code = code;
             return ret;
@@ -293,7 +286,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         } else { // BY_ID
             // Notice that we don't modify the return code of the main index in any step.
             concat_results(main_results, flat_results);
-            filter_results_by_id<withSet>(main_results);
+            filter_results_by_id(main_results);
             return main_results;
         }
     }
