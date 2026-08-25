@@ -220,14 +220,7 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
-    } else {
-        // Calling with withSet=false for optimized performance, assuming that shared IDs across
-        // lists also have identical scores — in which case duplicates are implicitly avoided by the
-        // merge logic.
-        return this->topKQueryImp<false>(queryBlob, k, queryParams);
-    }
+    return this->topKQueryImp<true>(queryBlob, k, queryParams);
 }
 
 template <typename DataType, typename DistType>
@@ -235,15 +228,7 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->rangeQueryImp<true>(queryBlob, radius, queryParams,
-                                         order); // Multi-value index
-    } else {
-        // Calling with withSet=false for optimized performance, assuming that shared IDs across
-        // lists also have identical scores — in which case duplicates are implicitly avoided by the
-        // merge logic.
-        return this->rangeQueryImp<false>(queryBlob, radius, queryParams, order);
-    }
+    return this->rangeQueryImp<true>(queryBlob, radius, queryParams, order);
 }
 
 template <typename DataType, typename DistType>

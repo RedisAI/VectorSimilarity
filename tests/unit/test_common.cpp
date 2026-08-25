@@ -871,18 +871,31 @@ TEST(CommonAPITest, SearchDifferentScores) {
     // Verify results ordered by increasing score (distance).
     double prev_score = 0; // all scores are positive
     auto verify_by_score = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(res_index, expected_results_by_score.size());
         ASSERT_LT(prev_score, score); // prev_score < score
         prev_score = score;
         ASSERT_EQ(id, expected_results_by_score[res_index].first);
         ASSERT_EQ(score, expected_results_by_score[res_index].second);
     };
 
-    runTopKTieredIndexSearchTest<true>(tiered_index, query_0, k, verify_by_score, nullptr);
+    runTopKSearchTest(tiered_index, query_0, k, verify_by_score);
     // Reset score tracking for range query
     prev_score = 0;
     // Use the largest score as the range to include all vectors
     double range = expected_results_by_score.back().second;
-    runRangeTieredIndexSearchTest<true>(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
+    runRangeQueryTest(tiered_index, query_0, range, verify_by_score, k, BY_SCORE);
+
+    std::vector<ResultPair> expected_results_by_id = expected_results_by_score;
+    std::sort(expected_results_by_id.begin(), expected_results_by_id.end());
+    size_t prev_id = 0;
+    auto verify_by_id = [&](size_t id, double score, size_t res_index) {
+        ASSERT_LT(res_index, expected_results_by_id.size());
+        ASSERT_LT(prev_id, id);
+        prev_id = id;
+        ASSERT_EQ(id, expected_results_by_id[res_index].first);
+        ASSERT_EQ(score, expected_results_by_id[res_index].second);
+    };
+    runRangeQueryTest(tiered_index, query_0, range, verify_by_id, k, BY_ID);
 }
 
 TEST(CommonAPITest, MergeResultListsWithCrossTierDedup) {
