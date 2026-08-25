@@ -2356,7 +2356,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_L2SqrTest) {
     float baseline = SQ8_FP32_L2Sqr(v2_compressed.data(), v1_orig.data(), dim);
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2482,7 +2483,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_InnerProductTest) {
 
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2633,7 +2635,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_CosineTest) {
 
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2745,7 +2748,8 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceCosine) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
@@ -2846,7 +2850,8 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceL2) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
@@ -2955,7 +2960,8 @@ TEST(SQ8_FP32_EdgeCases, CosineSymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v2_quantized.data(), v1_fp32.data(), dim);
@@ -3022,7 +3028,8 @@ TEST(SQ8_FP32_EdgeCases, CosineZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_nonzero_quantized.data(), v_zero.data(), dim);
@@ -3102,7 +3109,8 @@ TEST(SQ8_FP32_EdgeCases, CosineConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_query.data(), dim);
@@ -3182,7 +3190,8 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v2_quantized.data(), v1.data(), dim);
@@ -3925,7 +3934,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -4008,7 +4018,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -4091,7 +4102,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -4170,7 +4182,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
@@ -4242,7 +4255,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineSymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4310,7 +4324,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -4382,7 +4397,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -4463,7 +4479,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4532,7 +4549,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
@@ -4604,7 +4622,8 @@ TEST(SQ8_SQ8_EdgeCases, L2SymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float l2_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4672,7 +4691,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -4743,7 +4763,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -4817,7 +4838,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -4846,7 +4868,7 @@ TEST_F(SpacesTest, SQ8_FP32_DispatcherAlignmentHints) {
                      spaces::dist_func_t<float> (*get)(size_t, unsigned char *, const void *)) {
         auto opt = features;
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-        if (opt.avx512f && opt.avx512bw && opt.avx512vnni) {
+        if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
             unsigned char alignment = 0;
             (void)get(dim, &alignment, &opt);
             ASSERT_EQ(alignment, 16u) << kind << ": AVX512 SQ8_FP32 hint should be 16";
@@ -4897,7 +4919,7 @@ TEST_F(SpacesTest, SQ8_SQ8_DispatcherAlignmentHints) {
                      spaces::dist_func_t<float> (*get)(size_t, unsigned char *, const void *)) {
         auto opt = features;
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-        if (opt.avx512f && opt.avx512bw && opt.avx512vnni) {
+        if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
             unsigned char alignment = 0;
             (void)get(dim, &alignment, &opt);
             ASSERT_EQ(alignment, 32u) << kind << ": AVX512 SQ8_SQ8 hint should be 32";
