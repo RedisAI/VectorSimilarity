@@ -22,7 +22,7 @@ static void InnerProductStep(float16 *&pVect1, float16 *&pVect2, __m512h &sum) {
     pVect2 += 32;
 }
 
-template <unsigned short residual> // 0..31
+template <unsigned short residual> // 0..63
 float FP16_InnerProductSIMD32_AVX512FP16_VL(const void *pVect1v, const void *pVect2v,
                                             size_t dimension) {
     auto *pVect1 = (float16 *)pVect1v;
@@ -30,22 +30,30 @@ float FP16_InnerProductSIMD32_AVX512FP16_VL(const void *pVect1v, const void *pVe
 
     const float16 *pEnd1 = pVect1 + dimension;
 
-    __m512h sum = _mm512_setzero_ph();
+    // Two accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
+    __m512h sum0 = _mm512_setzero_ph();
+    __m512h sum1 = _mm512_setzero_ph();
 
-    if constexpr (residual) {
-        constexpr __mmask32 mask = (1LU << residual) - 1;
+    if constexpr (residual % 32) {
+        constexpr __mmask32 mask = (1LU << (residual % 32)) - 1;
         __m512h v1 = _mm512_loadu_ph(pVect1);
-        pVect1 += residual;
+        pVect1 += residual % 32;
         __m512h v2 = _mm512_loadu_ph(pVect2);
-        pVect2 += residual;
-        sum = _mm512_maskz_mul_ph(mask, v1, v2);
+        pVect2 += residual % 32;
+        sum0 = _mm512_maskz_mul_ph(mask, v1, v2);
     }
 
-    // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
-    do {
-        InnerProductStep(pVect1, pVect2, sum);
-    } while (pVect1 < pEnd1);
+    if constexpr (residual >= 32) {
+        InnerProductStep(pVect1, pVect2, sum1);
+    }
 
+    // We dealt with the residual part. We are left with some multiple of 64 16-bit floats.
+    while (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+    }
+
+    const __m512h sum = _mm512_add_ph(sum0, sum1);
     const _Float16 reduced = _mm512_reduce_add_ph(sum);
     // Subtract in fp32 so distances close to 1.0 are not rounded back to fp16.
     return 1.0f - static_cast<float>(reduced);
