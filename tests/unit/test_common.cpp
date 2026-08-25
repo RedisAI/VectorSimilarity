@@ -936,6 +936,42 @@ TEST(CommonAPITest, MergeResultListsWithCrossTierDedup) {
         }
         VecSimQueryReply_Free(merged);
     }
+
+    // Returning at most one result cannot emit a duplicate, even when the same ID has different
+    // scores in the two inputs. The exact merge order must still retain the better score.
+    const std::vector<VecSimQueryResult> one_result_first = {
+        {.id = 42, .score = 0.2},
+        {.id = 10, .score = 0.8},
+    };
+    const std::vector<VecSimQueryResult> one_result_second = {
+        {.id = 42, .score = 0.7},
+        {.id = 20, .score = 0.9},
+    };
+    for (bool reverse_inputs : {false, true}) {
+        auto *first_reply = make_reply(reverse_inputs ? one_result_second : one_result_first);
+        auto *second_reply = make_reply(reverse_inputs ? one_result_first : one_result_second);
+        auto *merged = merge_result_lists(first_reply, second_reply, 1);
+
+        ASSERT_EQ(merged->results.size(), 1);
+        EXPECT_EQ(merged->results[0].id, 42);
+        EXPECT_DOUBLE_EQ(merged->results[0].score, 0.2);
+        VecSimQueryReply_Free(merged);
+    }
+
+    // With only one source, there cannot be a cross-tier duplicate.
+    for (bool empty_first : {false, true}) {
+        const std::vector<VecSimQueryResult> empty;
+        auto *first_reply = make_reply(empty_first ? empty : first);
+        auto *second_reply = make_reply(empty_first ? first : empty);
+        auto *merged = merge_result_lists(first_reply, second_reply, first.size());
+
+        ASSERT_EQ(merged->results.size(), first.size());
+        for (size_t i = 0; i < first.size(); ++i) {
+            EXPECT_EQ(merged->results[i].id, first[i].id) << "result index " << i;
+            EXPECT_DOUBLE_EQ(merged->results[i].score, first[i].score) << "result index " << i;
+        }
+        VecSimQueryReply_Free(merged);
+    }
 }
 
 class CommonTypeMetricTests : public testing::TestWithParam<std::tuple<VecSimType, VecSimMetric>> {

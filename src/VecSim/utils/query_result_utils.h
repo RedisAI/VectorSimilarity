@@ -161,8 +161,13 @@ merge_results_with_cross_tier_dedup(VecSimQueryResultContainer &results,
 inline VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *second,
                                             size_t limit) {
     auto mergedResults = new VecSimQueryReply(first->results.getAllocator());
-    merge_results_with_cross_tier_dedup(mergedResults->results, first->results, second->results,
-                                        limit);
+    if (limit <= 1 || first->results.empty() || second->results.empty()) {
+        // At most one result or only one source means a cross-tier duplicate cannot be emitted.
+        merge_results<false>(mergedResults->results, first->results, second->results, limit);
+    } else {
+        merge_results_with_cross_tier_dedup(mergedResults->results, first->results, second->results,
+                                            limit);
+    }
 
     VecSimQueryReply_Free(first);
     VecSimQueryReply_Free(second);
