@@ -20,8 +20,4 @@ dist_func_t<float> Choose_SQ8_FP16_IP_implementation_NEON_HP(size_t dim);
 dist_func_t<float> Choose_SQ8_FP16_L2_implementation_NEON_HP(size_t dim);
 dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_NEON_HP(size_t dim);
 
-dist_func_t<float> Choose_SQ8_FP16_IP_implementation_NEON_FHM(size_t dim);
-dist_func_t<float> Choose_SQ8_FP16_L2_implementation_NEON_FHM(size_t dim);
-dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(size_t dim);
-
 } // namespace spaces

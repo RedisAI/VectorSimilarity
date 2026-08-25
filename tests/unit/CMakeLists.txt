@@ -84,3 +84,14 @@ gtest_discover_tests(test_uint8 TEST_PREFIX UINT8UNIT_)
 gtest_discover_tests(test_index_test_utils)
 # SVS Tiered tests are slow in debug mode, so we set a longer timeout
 gtest_discover_tests(test_svs PROPERTIES TIMEOUT 3000)
+
+# Guard the per-tier SIMD objects against sharing externally visible symbols, which would let
+# link order decide which -march a kernel body was built for. See check_tier_linkage.py.
+find_program(PYTHON3_FOR_TESTS NAMES python3 python)
+if(PYTHON3_FOR_TESTS)
+	add_test(NAME tier_linkage
+		COMMAND ${PYTHON3_FOR_TESTS} ${CMAKE_CURRENT_SOURCE_DIR}/check_tier_linkage.py
+			$<TARGET_FILE:VectorSimilaritySpaces>)
+else()
+	message(WARNING "python3 not found, skipping the tier_linkage test")
+endif()

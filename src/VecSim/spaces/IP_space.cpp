@@ -29,6 +29,7 @@
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
+#include "VecSim/spaces/functions/NEON_FHM.h"
 #include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
@@ -241,10 +242,12 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_SQ8_FP16_IP_implementation_SVE(dim);
     }
 #endif
-#ifdef OPT_NEON_HP
-    if (features.asimdfhm) {
+#ifdef OPT_NEON_FHM
+    if (features.asimdhp && features.asimdfhm) {
         return Choose_SQ8_FP16_IP_implementation_NEON_FHM(dim);
     }
+#endif
+#ifdef OPT_NEON_HP
     if (features.asimdhp) {
         return Choose_SQ8_FP16_IP_implementation_NEON_HP(dim);
     }
@@ -313,10 +316,12 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
         return Choose_SQ8_FP16_Cosine_implementation_SVE(dim);
     }
 #endif
-#ifdef OPT_NEON_HP
-    if (features.asimdfhm) {
+#ifdef OPT_NEON_FHM
+    if (features.asimdhp && features.asimdfhm) {
         return Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(dim);
     }
+#endif
+#ifdef OPT_NEON_HP
     if (features.asimdhp) {
         return Choose_SQ8_FP16_Cosine_implementation_NEON_HP(dim);
     }

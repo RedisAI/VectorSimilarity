@@ -10,6 +10,12 @@
 
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 static inline void InnerProductStep(float *&pVect1, float *&pVect2, size_t &offset,
                                     svfloat32_t &sum, const size_t chunk) {
     svfloat32_t v1 = svld1_f32(svptrue_b32(), pVect1 + offset);
@@ -77,3 +83,4 @@ float FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
     float result = svaddv_f32(svptrue_b32(), sum_all);
     return 1.0f - result;
 }
+} // namespace
