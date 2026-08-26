@@ -135,6 +135,25 @@ void HNSWSQ8Test<index_type_t>::create_index_test() {
     EXPECT_EQ(index->basicInfo().algo, VecSimAlgo_HNSWLIB);
 }
 
+// A quantized element is smaller than its elements would be -- one byte per dimension plus
+// metadata, against `dim * sizeof(DataType)` -- so reading it as values would run past the
+// element (into the next one, or past the block for the last) and reinterpret the compression
+// as floats. `getDataByLabel` reports nothing instead, which callers read as "cannot tell".
+TYPED_TEST(HNSWSQ8Test, getDataByLabelReportsNothingForQuantizedStorage) {
+    HNSWParams params = {.dim = 40, .M = 16, .efConstruction = 200};
+    this->SetUp(params);
+    ASSERT_EQ(this->GenerateAndAddVector(0, 0.5f, 1.0f), 1);
+
+    auto *hnsw_index = this->CastToHNSW();
+    ASSERT_NE(hnsw_index, nullptr);
+    ASSERT_LT(hnsw_index->getStoredDataSize(), this->dim * sizeof(TEST_DATA_T))
+        << "premise: SQ8 stores less than the elements occupy";
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    hnsw_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+}
+
 TYPED_TEST(HNSWSQ8Test, CreateIndex) { this->create_index_test(); }
 
 TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {

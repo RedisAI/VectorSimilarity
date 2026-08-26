@@ -41,6 +41,13 @@ public:
     deleteVectorAndGetUpdatedIds(labelType label) override;
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
+        // A quantized index stores fewer bytes than the elements occupy (SQ8 keeps one byte per
+        // dimension plus metadata), so copying `dim * sizeof(DataType)` would read past the
+        // element and reinterpret the compression as values. Nothing here dequantizes, so the
+        // honest answer is none: per the contract an empty output reads as "cannot tell".
+        if (this->getStoredDataSize() < this->dim * sizeof(DataType)) {
+            return;
+        }
         auto ids = labelToIdsLookup.find(label);
         if (ids == labelToIdsLookup.end()) {
             return;

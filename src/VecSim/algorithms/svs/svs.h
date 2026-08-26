@@ -799,14 +799,22 @@ public:
             return vectors_output;
         }
     }
-    void getDataByLabel(
-        labelType label,
-        std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
-        assert(false && "Not implemented");
-    }
-
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
+
+    /**
+     * SVS keeps vectors in the SVS library's own form -- quantized, and for LeanVec reduced --
+     * and does not hand them back, so this appends nothing. Per the contract on
+     * `VecSimIndexAbstract::getDataByLabel` an empty output reads as "cannot tell", which is
+     * the answer a caller needs; a comparison against what this index stores is not available.
+     *
+     * Defined unconditionally, and not left to a default: a tiered SVS index reaches this
+     * through `VecSimTieredIndex::getDataByLabel` as soon as a vector has been ingested, so a
+     * definition that exists only in test builds is a definition that aborts exactly there.
+     */
+    void getDataByLabel(
+        labelType label,
+        std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {}
 };
 
 #ifdef BUILD_TESTS
