@@ -68,10 +68,13 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
+#endif
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
-
         auto ids = labelLookup.find(label);
+        if (ids == labelLookup.end()) {
+            return;
+        }
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
@@ -82,6 +85,7 @@ public:
         }
     }
 
+#ifdef BUILD_TESTS
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         std::vector<std::vector<char>> vectors_output;
         auto ids = labelLookup.find(label);

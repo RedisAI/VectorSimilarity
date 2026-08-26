@@ -39,11 +39,12 @@ public:
     }
     std::unordered_map<idType, std::pair<idType, labelType>>
     deleteVectorAndGetUpdatedIds(labelType label) override;
-#ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
-
         auto ids = labelToIdsLookup.find(label);
+        if (ids == labelToIdsLookup.end()) {
+            return;
+        }
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
@@ -53,6 +54,8 @@ public:
             vectors_output.push_back(vec);
         }
     }
+
+#ifdef BUILD_TESTS
 
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         std::vector<std::vector<char>> vectors_output;
