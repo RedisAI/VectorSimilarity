@@ -80,25 +80,3 @@
         }                                                                                          \
         out = __ret_dist_func;                                                                     \
     } while (0)
-
-#define CHOOSE_SVE_IMPLEMENTATION_8(out, base_func, dim, chunk_getter)                             \
-    do {                                                                                           \
-        decltype(out) __ret_dist_func;                                                             \
-        size_t chunk = chunk_getter();                                                             \
-        bool partial_chunk = dim % chunk;                                                          \
-        /* Assuming `base_func` has its main loop for 8 steps */                                   \
-        unsigned char additional_steps = (dim / chunk) % 8;                                        \
-        switch (additional_steps) {                                                                \
-            SVE_CASE(base_func, 0);                                                                \
-            SVE_CASE(base_func, 1);                                                                \
-            SVE_CASE(base_func, 2);                                                                \
-            SVE_CASE(base_func, 3);                                                                \
-            SVE_CASE(base_func, 4);                                                                \
-            SVE_CASE(base_func, 5);                                                                \
-            SVE_CASE(base_func, 6);                                                                \
-            SVE_CASE(base_func, 7);                                                                \
-        default:                                                                                   \
-            __builtin_unreachable();                                                               \
-        }                                                                                          \
-        out = __ret_dist_func;                                                                     \
-    } while (0)

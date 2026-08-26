@@ -17,7 +17,7 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP16_IP_implementation_AVX512FP16_VL(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, FP16_InnerProductSIMD32_AVX512FP16_VL);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP16_InnerProductSIMD32_AVX512FP16_VL);
     return ret_dist_func;
 }
 
