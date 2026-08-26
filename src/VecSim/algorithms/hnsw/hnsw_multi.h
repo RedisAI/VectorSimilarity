@@ -71,6 +71,10 @@ public:
 #endif
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
+        // See the single-value implementation: the guard is the accessor's to take, because
+        // `indexDataGuard` -- not the main lock -- is what ingest and `markDelete` hold while
+        // mutating `labelLookup` and the data blocks.
+        std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
         auto ids = labelLookup.find(label);
         if (ids == labelLookup.end()) {
             return;

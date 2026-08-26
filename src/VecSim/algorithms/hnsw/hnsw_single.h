@@ -47,6 +47,10 @@ public:
 #endif
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
+        // `labelLookup` and the data blocks are mutated under `indexDataGuard` by callers that
+        // hold no more than a shared main lock -- tiered ingest and `markDelete` both do -- so
+        // reading them needs this guard, not the caller's. Same reason `getLabelsSet` takes it.
+        std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
         auto it = labelLookup.find(label);
         if (it == labelLookup.end()) {
             return;

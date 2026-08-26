@@ -121,8 +121,14 @@ public:
      * Contract on `VecSimIndexAbstract::getDataByLabel`. A label lives in the flat buffer until
      * an ingest job moves it to the backend, so both tiers are asked -- reading only the backend
      * would report nothing for every vector written recently enough to still be buffered, which
-     * is exactly when a document is most likely to be updated again. The guards are the ones
-     * `relabelVector` takes, in the same order.
+     * is exactly when a document is most likely to be updated again.
+     *
+     * The guards taken here are the ones `relabelVector` takes, in the same order, and they cover
+     * tier selection and the frontend read. They are deliberately not the whole story: the
+     * backend's own data guard is taken by its `getDataByLabel`, because a shared main lock does
+     * not exclude an ingest that mutates under `indexDataGuard`. Same division as
+     * `computeUnifiedIndexLabelsSetUnsafe`, which holds the outer locks and lets `getLabelsSet`
+     * take the inner one.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
         this->flatIndexGuard.lock_shared();
