@@ -118,30 +118,37 @@ public:
     /**
      * @brief Get the vector elements stored under a label, in insertion order.
      *
-     * Contract on `VecSimIndexAbstract::getDataByLabel`. A label lives in the flat buffer until
-     * an ingest job moves it to the backend, so both tiers are asked -- reading only the backend
-     * would report nothing for every vector written recently enough to still be buffered, which
-     * is exactly when a document is most likely to be updated again.
+     * Contract on `VecSimIndexAbstract::getDataByLabel`, with two caveats a tiered index cannot
+     * avoid, both of which only ever make an equality-testing caller answer "different":
      *
-     * The guards taken here are the ones `relabelVector` takes, in the same order, and they cover
-     * tier selection and the frontend read. They are deliberately not the whole story: the
-     * backend's own data guard is taken by its `getDataByLabel`, because a shared main lock does
-     * not exclude an ingest that mutates under `indexDataGuard`. Same division as
+     * - The vectors are the buffer's followed by the backend's, which for a multi-value label
+     *   split across the tiers is not insertion order.
+     * - An ingest job inserts into the backend before removing from the buffer, so a vector
+     *   caught inside that window is reported by both tiers and appears twice.
+     *
+     * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
+     * buffer is the whole answer, but a multi-value label's vectors are routinely split across
+     * the tiers while an ingest is pending, so there the backend is read as well. Reading only
+     * the backend, as this used to, reports nothing for a vector written recently enough to
+     * still be buffered -- which is exactly when a document is most likely to be written again.
+     *
+     * `flatIndexGuard` is held across both reads, in the order `relabelVector` and
+     * `acquireSharedLocks` take: it cannot prevent a duplicate, but it does stop the buffer's
+     * copy being removed between them. The backend's own data guard is deliberately not taken
+     * here -- its `getDataByLabel` takes it, because a shared main lock does not exclude an
+     * ingest mutating under `indexDataGuard`. Same division as
      * `computeUnifiedIndexLabelsSetUnsafe`, which holds the outer locks and lets `getLabelsSet`
      * take the inner one.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
         this->flatIndexGuard.lock_shared();
-        if (this->frontendIndex->isLabelExists(label)) {
-            this->frontendIndex->getDataByLabel(label, vectors_output);
-            this->flatIndexGuard.unlock_shared();
-            return;
+        this->frontendIndex->getDataByLabel(label, vectors_output);
+        if (this->backendIndex->isMultiValue() || vectors_output.empty()) {
+            this->mainIndexGuard.lock_shared();
+            this->backendIndex->getDataByLabel(label, vectors_output);
+            this->mainIndexGuard.unlock_shared();
         }
         this->flatIndexGuard.unlock_shared();
-
-        this->mainIndexGuard.lock_shared();
-        this->backendIndex->getDataByLabel(label, vectors_output);
-        this->mainIndexGuard.unlock_shared();
     }
 
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,

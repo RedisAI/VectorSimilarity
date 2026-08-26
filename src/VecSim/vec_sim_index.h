@@ -330,6 +330,9 @@ public:
     /**
      * @brief Get the vector elements stored under a given label, in insertion order.
      *
+     * A tiered index cannot honour the ordering across its tiers; see
+     * `VecSimTieredIndex::getDataByLabel`.
+     *
      * Appends nothing when the label is absent, so the output size doubles as the answer to
      * whether the index holds it.
      *
