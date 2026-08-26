@@ -115,6 +115,29 @@ public:
                                     VecSimQueryReply_Order order) const;
 
 public:
+    /**
+     * @brief Get the vector elements stored under a label, in insertion order.
+     *
+     * Contract on `VecSimIndexAbstract::getDataByLabel`. A label lives in the flat buffer until
+     * an ingest job moves it to the backend, so both tiers are asked -- reading only the backend
+     * would report nothing for every vector written recently enough to still be buffered, which
+     * is exactly when a document is most likely to be updated again. The guards are the ones
+     * `relabelVector` takes, in the same order.
+     */
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
+        this->flatIndexGuard.lock_shared();
+        if (this->frontendIndex->isLabelExists(label)) {
+            this->frontendIndex->getDataByLabel(label, vectors_output);
+            this->flatIndexGuard.unlock_shared();
+            return;
+        }
+        this->flatIndexGuard.unlock_shared();
+
+        this->mainIndexGuard.lock_shared();
+        this->backendIndex->getDataByLabel(label, vectors_output);
+        this->mainIndexGuard.unlock_shared();
+    }
+
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
                       TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
