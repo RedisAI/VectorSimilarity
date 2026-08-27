@@ -486,6 +486,51 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     }
 }
 
+// A multi-value label's vectors are routinely split across the tiers while an ingest job is
+// pending, so reading one tier reports a subset. Nothing else covers the tiered wrapper's
+// `getDataByLabel` -- the other uses in this file all call a tier directly.
+TYPED_TEST(HNSWTieredIndexTestBasic, getDataByLabelSpansBothTiers) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    TEST_DATA_T first[dim];
+    TEST_DATA_T second[dim];
+    GenerateVector<TEST_DATA_T>(first, dim, 1);
+    GenerateVector<TEST_DATA_T>(second, dim, 2);
+
+    // Two vectors under one label, with only the first ingested: one vector per tier.
+    VecSimIndex_AddVector(tiered_index, first, 0);
+    mock_thread_pool.thread_iteration();
+    VecSimIndex_AddVector(tiered_index, second, 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 2) << "a tier was not read; the label's vectors are split across them";
+    // Buffer first, then backend: `second` is the buffered one.
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), second, dim));
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[1].data(), first, dim));
+
+    // Once everything is ingested the backend alone holds both.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    stored.clear();
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 2);
+
+    // An absent label yields nothing rather than throwing, which is what lets the output size
+    // stand in for "does the index hold this label".
+    stored.clear();
+    tiered_index->getDataByLabel(12345, stored);
+    ASSERT_TRUE(stored.empty());
+}
+
 TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
