@@ -18,6 +18,11 @@
 
 #include <shared_mutex>
 
+#if HAVE_SVS
+// For the SVS special case in getDataByLabel; remove with it.
+#include "VecSim/algorithms/svs/svs.h"
+#endif
+
 #define TIERED_LOG this->backendIndex->log
 
 /**
@@ -118,7 +123,8 @@ public:
     /**
      * @brief Get the vector elements stored under a label, in insertion order.
      *
-     * Contract on `VecSimIndexAbstract::getDataByLabel`, with two caveats a tiered index cannot
+     * Contract on `VecSimIndexAbstract::getDataByLabel`, including that `vectors_output` arrives
+     * empty, with two caveats a tiered index cannot
      * avoid, both of which only ever make an equality-testing caller answer "different":
      *
      * - The vectors are the buffer's followed by the backend's, which for a multi-value label
@@ -141,9 +147,28 @@ public:
      * take the inner one.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
+#ifdef BUILD_TESTS
+        // The base contract asks for an empty output. A caller reusing a vector would otherwise
+        // get this label's vectors appended to the previous label's, with nothing to notice it by.
+        assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
+#endif
+
+        bool backend_can_report = true;
+#if HAVE_SVS
+        // TODO: remove once SVSIndex::getDataByLabel reports real data. Until then the backend
+        // read below is guaranteed to append nothing, and reaching it means waiting on
+        // `mainIndexGuard` -- behind an SVS batch update, potentially for a while -- to be told
+        // so. The type test is deliberately explicit: it is a special case, not architecture.
+        backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
+#endif
+
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        const size_t before_flat = vectors_output.size();
         this->frontendIndex->getDataByLabel(label, vectors_output);
-        if (this->backendIndex->isMultiValue() || vectors_output.empty()) {
+        // Whether the buffer held it, measured rather than read off emptiness, so the tier
+        // decision does not depend on an assertion that only exists in test builds.
+        if (backend_can_report &&
+            (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat)) {
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
             this->backendIndex->getDataByLabel(label, vectors_output);
         }

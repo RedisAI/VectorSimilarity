@@ -802,19 +802,15 @@ public:
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 
-    /**
-     * SVS keeps vectors in the SVS library's own form -- quantized, and for LeanVec reduced --
-     * and does not hand them back, so this appends nothing. Per the contract on
-     * `VecSimIndexAbstract::getDataByLabel` an empty output reads as "cannot tell", which is
-     * the answer a caller needs; a comparison against what this index stores is not available.
-     *
-     * Defined unconditionally, and not left to a default: a tiered SVS index reaches this
-     * through `VecSimTieredIndex::getDataByLabel` as soon as a vector has been ingested, so a
-     * definition that exists only in test builds is a definition that aborts exactly there.
-     */
+    // TODO: when this reports real data, remove the SVSIndexBase check in
+    // VecSimTieredIndex::getDataByLabel, which currently skips the backend read for SVS entirely.
     void getDataByLabel(
         labelType label,
         std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
+        this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
+                  "getDataByLabel: not implemented for SVS, reporting no stored vectors for "
+                  "label %zu",
+                  static_cast<size_t>(label));
     }
 };
 
