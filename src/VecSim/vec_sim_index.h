@@ -226,7 +226,6 @@ public:
     inline size_t getDim() const { return dim; }
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
     inline bool isMultiValue() const { return isMulti; }
-    inline bool isIndexQuantized() const { return isQuantized; }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getStoredDataSize() const { return storedDataSize; }

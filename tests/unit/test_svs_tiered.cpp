@@ -487,6 +487,36 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
 }
 
+// The tiered read reports nothing when the backend cannot report, and does not fall back to the
+// flat buffer. SVS has no per-label read of its stored vectors (MOD-17706), and the buffer alone
+// would be a partial answer for a multi-value label split across the tiers -- a caller cannot tell
+// a subset from the whole, so nothing is the only honest answer.
+//
+// The vector is deliberately left in the flat buffer, where the frontend *could* have answered:
+// that is what makes this test fail if the SVS check is removed or the fallback reinstated.
+TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelReportsNothingForSvsBackend) {
+    const size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Thresholds far above the single vector added below, so nothing is ingested and the label
+    // stays in the flat buffer.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 100, 100);
+    ASSERT_INDEX(tiered_index);
+
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 0);
+    VecSimIndex_AddVector(tiered_index, vector, 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1)
+        << "premise: the label is in the flat buffer, which could have reported it";
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty())
+        << "an SVS backend cannot report, so the tiered read reports nothing";
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
     // Regression for the original crash: shrink after the update job reserved threads,
     // but before the SVS update uses them. The update must still complete safely.
