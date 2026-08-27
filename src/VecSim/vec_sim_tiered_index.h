@@ -141,14 +141,12 @@ public:
      * take the inner one.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
-        this->flatIndexGuard.lock_shared();
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         this->frontendIndex->getDataByLabel(label, vectors_output);
         if (this->backendIndex->isMultiValue() || vectors_output.empty()) {
-            this->mainIndexGuard.lock_shared();
+            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
             this->backendIndex->getDataByLabel(label, vectors_output);
-            this->mainIndexGuard.unlock_shared();
         }
-        this->flatIndexGuard.unlock_shared();
     }
 
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
