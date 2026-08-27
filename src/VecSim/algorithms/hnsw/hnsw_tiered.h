@@ -259,7 +259,6 @@ public:
         return res;
     }
 
-
 #ifdef BUILD_TESTS
     size_t indexMetaDataCapacity() const override {
         return this->backendIndex->indexMetaDataCapacity() +
@@ -1247,5 +1246,3 @@ VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
     info.algo = VecSimAlgo_HNSWLIB;
     return info;
 }
-
-

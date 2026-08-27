@@ -814,7 +814,8 @@ public:
      */
     void getDataByLabel(
         labelType label,
-        std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {}
+        std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
+    }
 };
 
 #ifdef BUILD_TESTS
