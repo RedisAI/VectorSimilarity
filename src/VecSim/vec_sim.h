@@ -73,6 +73,26 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
 
 /**
+ * @brief Move the vector(s) stored under `old_label` to `new_label`, leaving the stored vector data
+ * and the index structure untouched.
+ *
+ * Only label bookkeeping is rewritten, so this costs O(1) per stored vector - no distance
+ * computations and, for HNSW, no graph mutation. Intended for callers whose external id changed
+ * while the vector did not, as a cheap replacement for delete-then-add.
+ *
+ * The move is rejected, leaving the index untouched, if `old_label` does not exist, if `new_label`
+ * is already in use, or if the labels are equal - each with its own code. Not all index types
+ * support this; those report `VecSimRelabel_Unsupported`, which a caller has to serve by delete +
+ * insert rather than treat as a no-op.
+ *
+ * @param index the index holding the vector(s).
+ * @param old_label the label currently holding the vector(s).
+ * @param new_label the label to move them to.
+ * @return `VecSimRelabel_OK` if the label was moved, otherwise the reason it was not.
+ */
+VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
+
+/**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
  * the vector fits the index - its type and dimension are the same as the index's, and if the
  * index's distance metric is cosine, the vector is already normalized.

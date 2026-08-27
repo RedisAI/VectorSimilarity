@@ -29,6 +29,7 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType labelType) override;
     int deleteVectorById(labelType label, idType id) override;
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
     inline size_t indexLabelCount() const override { return this->labelToIdsLookup.size(); }
 
@@ -229,6 +230,31 @@ int BruteForceIndex_Multi<DataType, DistType>::deleteVectorById(labelType label,
     }
     assert(false && "id to delete was not found under the given label");
     return 0;
+}
+
+template <typename DataType, typename DistType>
+VecSimRelabelCode BruteForceIndex_Multi<DataType, DistType>::relabelVector(labelType old_label,
+                                                                           labelType new_label) {
+    if (old_label == new_label) {
+        return VecSimRelabel_SameLabel;
+    }
+    auto old_it = labelToIdsLookup.find(old_label);
+    if (old_it == labelToIdsLookup.end()) {
+        return VecSimRelabel_OldLabelMissing;
+    }
+    if (labelToIdsLookup.find(new_label) != labelToIdsLookup.end()) {
+        return VecSimRelabel_NewLabelTaken;
+    }
+
+    // Every id under the label moves, so the whole id vector is re-keyed as-is.
+    auto ids = std::move(old_it->second);
+    labelToIdsLookup.erase(old_it);
+    for (idType id : ids) {
+        // Keep the id->label direction in sync; `topKQuery` reports results through it.
+        this->setVectorLabel(id, new_label);
+    }
+    labelToIdsLookup.emplace(new_label, std::move(ids));
+    return VecSimRelabel_OK;
 }
 
 template <typename DataType, typename DistType>

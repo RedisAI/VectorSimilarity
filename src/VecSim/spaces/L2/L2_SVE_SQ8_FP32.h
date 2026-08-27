@@ -12,6 +12,12 @@
 #include "VecSim/types/sq8.h"
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 using sq8 = vecsim_types::sq8;
 
 /*
@@ -46,3 +52,4 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return x_sum_sq + y_sum_sq - 2.0f * ip;
 }
+} // namespace

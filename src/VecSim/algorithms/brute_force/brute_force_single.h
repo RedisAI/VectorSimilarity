@@ -27,6 +27,7 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     int deleteVector(labelType label) override;
     int deleteVectorById(labelType label, idType id) override;
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override;
 
     std::unique_ptr<vecsim_stl::abstract_results_container>
@@ -205,6 +206,28 @@ BruteForceIndex_Single<DataType, DistType>::deleteVectorAndGetUpdatedIds(labelTy
 template <typename DataType, typename DistType>
 int BruteForceIndex_Single<DataType, DistType>::deleteVectorById(labelType label, idType id) {
     return deleteVector(label);
+}
+
+template <typename DataType, typename DistType>
+VecSimRelabelCode BruteForceIndex_Single<DataType, DistType>::relabelVector(labelType old_label,
+                                                                            labelType new_label) {
+    if (old_label == new_label) {
+        return VecSimRelabel_SameLabel;
+    }
+    auto old_it = labelToIdLookup.find(old_label);
+    if (old_it == labelToIdLookup.end()) {
+        return VecSimRelabel_OldLabelMissing;
+    }
+    if (labelToIdLookup.find(new_label) != labelToIdLookup.end()) {
+        return VecSimRelabel_NewLabelTaken;
+    }
+
+    const idType id = old_it->second;
+    labelToIdLookup.erase(old_it);
+    labelToIdLookup.emplace(new_label, id);
+    // Keep the id->label direction in sync; `topKQuery` reports results through it.
+    this->setVectorLabel(id, new_label);
+    return VecSimRelabel_OK;
 }
 
 template <typename DataType, typename DistType>

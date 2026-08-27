@@ -105,8 +105,10 @@ bool neon_hp_supported = arm_opt.asimdhp;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_HP, 16, neon_hp_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_HP, 16,
                                  neon_hp_supported);
+#endif
 
-bool neon_fhm_supported = arm_opt.asimdfhm;
+#ifdef OPT_NEON_FHM
+bool neon_fhm_supported = arm_opt.asimdhp && arm_opt.asimdfhm;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_FHM, 16,
                                 neon_fhm_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP16, SQ8_FP16, NEON_FHM, 16,

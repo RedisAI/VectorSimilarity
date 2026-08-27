@@ -130,6 +130,18 @@ typedef enum {
     VecSimDebugCommandCode_MultiNotSupported
 } VecSimDebugCommandCode;
 
+// Outcome of `relabelVector`. The rejections are reported separately because a caller acts on them
+// differently: `OldLabelMissing` and `SameLabel` mean there is nothing to do, `NewLabelTaken` is a
+// caller-side conflict to resolve, and `Unsupported` says this index type never relabels - so the
+// caller has to fall back to delete + insert rather than treat it as a no-op.
+typedef enum {
+    VecSimRelabel_OK = VecSim_OK,  // for returning VecSim_OK as an enum value
+    VecSimRelabel_OldLabelMissing, // `old_label` is not in the index
+    VecSimRelabel_NewLabelTaken,   // `new_label` is already in the index
+    VecSimRelabel_SameLabel,       // `old_label` and `new_label` are equal
+    VecSimRelabel_Unsupported      // this index type does not implement relabeling
+} VecSimRelabelCode;
+
 typedef struct AsyncJob AsyncJob; // forward declaration.
 
 // Write async/sync mode
