@@ -153,16 +153,17 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        bool backend_can_report = true;
+        // A quantized backend cannot report its stored vectors as values -- the stored form is
+        // compression plus metadata, and nothing here dequantizes -- so it would append nothing.
+        bool backend_can_report = !this->backendIndex->isIndexQuantized();
 #if HAVE_SVS
         // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
-        // means deleting this block, the `backend_can_report` flag, and its term in the condition
-        // below, plus the guarded include of svs.h -- after which the plain condition does the
-        // right thing for every backend.
+        // means deleting this block and the guarded include of svs.h -- the flag above stays, for
+        // the quantized case.
         //
-        // Until then the backend read is guaranteed to append nothing, and reaching it means
-        // waiting on `mainIndexGuard` -- behind an SVS batch update, potentially for a while --
-        // to be told so.
+        // Until then nothing is read at all for an SVS backend, for the same reason as a quantized
+        // one: the buffer alone would be a partial answer. Skipping the reads also avoids waiting
+        // on `mainIndexGuard` behind an SVS batch update to be told nothing.
         //
         // Here rather than as an override in TieredSVSIndex because this method is not virtual:
         // `VecSimTieredIndex` derives from `VecSimIndexInterface`, which does not declare it, and
@@ -170,18 +171,19 @@ public:
         // that), so a derived override would simply not be found. The type test is deliberately
         // explicit rather than dressed up as a capability: it is a special case, not
         // architecture.
-        backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
+        backend_can_report =
+            backend_can_report && dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
 #endif
-
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        const size_t before_flat = vectors_output.size();
-        this->frontendIndex->getDataByLabel(label, vectors_output);
-        // Whether the buffer held it, measured rather than read off emptiness, so the tier
-        // decision does not depend on an assertion that only exists in test builds.
-        if (backend_can_report &&
-            (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat)) {
-            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-            this->backendIndex->getDataByLabel(label, vectors_output);
+        if (backend_can_report) {
+            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+            const size_t before_flat = vectors_output.size();
+            this->frontendIndex->getDataByLabel(label, vectors_output);
+            // Whether the buffer held it, measured rather than read off emptiness, so the tier
+            // decision does not depend on an assertion that only exists in test builds.
+            if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
+                std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+                this->backendIndex->getDataByLabel(label, vectors_output);
+            }
         }
     }
 
