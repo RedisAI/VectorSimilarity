@@ -64,7 +64,7 @@ public:
             // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like
             // the norm
             memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
-            vectors_output.push_back(vec);
+            vectors_output.push_back(std::move(vec));
         }
     }
 
