@@ -345,9 +345,10 @@ public:
      * normalized under cosine, for instance — and not the blob originally handed to
      * addVector.
      *
-     * Nothing here dequantizes. An index whose stored form is smaller than its elements (SQ8
-     * keeps one byte per dimension plus metadata) therefore appends nothing rather than
-     * reinterpreting the compression as values, which reads as "cannot tell".
+     * Nothing here dequantizes. A quantized index therefore appends nothing rather than
+     * reinterpreting compression and metadata as values, which reads as "cannot tell". The test
+     * is the index's own `isQuantized`, not a size comparison: an SQ8 element is smaller than the
+     * raw elements only above a certain dimension, and larger below it.
      *
      * @param label The label to retrieve vector(s) elements for
      * @param vectors_output Empty vector to be filled with vector(s)

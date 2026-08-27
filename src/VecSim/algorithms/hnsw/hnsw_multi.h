@@ -74,11 +74,16 @@ public:
         // See the single-value implementation: the guard is the accessor's to take, because
         // `indexDataGuard` -- not the main lock -- is what ingest and `markDelete` hold while
         // mutating `labelLookup` and the data blocks.
-        // A quantized index stores fewer bytes than the elements occupy (SQ8 keeps one byte per
-        // dimension plus metadata), so copying `dim * sizeof(DataType)` would read past the
-        // element and reinterpret the compression as values. Nothing here dequantizes, so the
-        // honest answer is none: per the contract an empty output reads as "cannot tell".
-        if (this->getStoredDataSize() < this->dim * sizeof(DataType)) {
+        // A quantized element is not the elements: SQ8 keeps one byte per dimension plus FP32
+        // metadata, so copying `dim * sizeof(DataType)` out of it would reinterpret compression
+        // and metadata as values. Nothing here dequantizes, so the honest answer is none -- per
+        // the contract an empty output reads as "cannot tell".
+        //
+        // Asking the index rather than comparing sizes: the quantized element is only *smaller*
+        // than the raw elements above a certain dimension. At dim 4 with FP32/L2 it is larger
+        // (4 + 4*4 = 20 bytes against 16), so a size test concludes "not quantized" exactly where
+        // it matters most.
+        if (this->isQuantized) {
             return;
         }
         std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
