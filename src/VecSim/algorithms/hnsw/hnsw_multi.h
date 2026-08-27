@@ -118,9 +118,16 @@ public:
     int addVector(const void *vector_data, labelType label) override;
     vecsim_stl::vector<idType> markDelete(labelType label) override;
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
+        if (this->isQuantized) {
+            auto processed_query = this->preprocessQuery(vector_data);
+            return getDistanceFromInternal(label, processed_query.get());
+        }
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    bool isLabelExists(labelType label) override {
+        return labelLookup.find(label) != labelLookup.end();
+    }
 };
 
 /**
@@ -153,7 +160,7 @@ double HNSWIndex_Multi<DataType, DistType>::getDistanceFromInternal(labelType la
 
     // Iterate over the ids and find the minimum distance.
     for (auto id : IDs) {
-        DistType d = this->calcDistance(this->getDataByInternalId(id), vector_data);
+        DistType d = this->calcDistanceForQuery(this->getDataByInternalId(id), vector_data);
         dist = std::fmin(dist, d);
     }
 

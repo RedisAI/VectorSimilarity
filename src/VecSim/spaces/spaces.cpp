@@ -130,6 +130,21 @@ dist_func_t<float> GetDistFunc<vecsim_types::sq8, float, float>(VecSimMetric met
 }
 
 template <>
+dist_func_t<float>
+GetDistFunc<vecsim_types::sq8, float, vecsim_types::float16>(VecSimMetric metric, size_t dim,
+                                                             unsigned char *alignment) {
+    switch (metric) {
+    case VecSimMetric_Cosine:
+        return Cosine_SQ8_FP16_GetDistFunc(dim, alignment);
+    case VecSimMetric_IP:
+        return IP_SQ8_FP16_GetDistFunc(dim, alignment);
+    case VecSimMetric_L2:
+        return L2_SQ8_FP16_GetDistFunc(dim, alignment);
+    }
+    throw std::invalid_argument("Invalid metric");
+}
+
+template <>
 normalizeVector_f<float> GetNormalizeFunc<float>(void) {
     return normalizeVector_imp<float>;
 }

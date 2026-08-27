@@ -9,6 +9,12 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 // Aligned step using svptrue_b8()
 inline void L2SquareStep(const uint8_t *&pVect1, const uint8_t *&pVect2, size_t &offset,
                          svuint32_t &sum, const size_t chunk) {
@@ -87,3 +93,4 @@ float UINT8_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimen
     svuint32_t sum_all = svadd_u32_x(all, sum0, sum2);
     return svaddv_u32(svptrue_b32(), sum_all);
 }
+} // namespace

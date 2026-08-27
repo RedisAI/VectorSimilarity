@@ -69,6 +69,13 @@ typedef enum {
     VecSimType_INT64
 } VecSimType;
 
+// Quantization schemes supported by HNSW.
+typedef enum {
+    VecSimQuant_NONE = 0, // No quantization (default).
+    // 8-bit scalar quantization with optional mean centering.
+    VecSimQuant_SQ8 = 1,
+} VecSimQuantType;
+
 // Algorithm type/library.
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
 
@@ -124,6 +131,18 @@ typedef enum {
     VecSimDebugCommandCode_MultiNotSupported
 } VecSimDebugCommandCode;
 
+// Outcome of `relabelVector`. The rejections are reported separately because a caller acts on them
+// differently: `OldLabelMissing` and `SameLabel` mean there is nothing to do, `NewLabelTaken` is a
+// caller-side conflict to resolve, and `Unsupported` says this index type never relabels - so the
+// caller has to fall back to delete + insert rather than treat it as a no-op.
+typedef enum {
+    VecSimRelabel_OK = VecSim_OK,  // for returning VecSim_OK as an enum value
+    VecSimRelabel_OldLabelMissing, // `old_label` is not in the index
+    VecSimRelabel_NewLabelTaken,   // `new_label` is already in the index
+    VecSimRelabel_SameLabel,       // `old_label` and `new_label` are equal
+    VecSimRelabel_Unsupported      // this index type does not implement relabeling
+} VecSimRelabelCode;
+
 typedef struct AsyncJob AsyncJob; // forward declaration.
 
 // Write async/sync mode
@@ -157,6 +176,9 @@ typedef struct {
     size_t efConstruction;
     size_t efRuntime;
     double epsilon;
+    VecSimQuantType quantType; // Defaults to VecSimQuant_NONE.
+    // SQ8 mean vector (float[dim]); NULL disables mean centering. Copied during construction.
+    const void *quantParams;
 } HNSWParams;
 
 typedef struct {
@@ -195,7 +217,9 @@ typedef struct {
     size_t prune_to;                 // Amount that candidates will be pruned.
     VecSimOptionMode use_search_history; // Either the contents of the search buffer can be used or
                                          // the entire search history.
-    size_t num_threads;                  // Maximum number of threads in threadpool.
+    size_t num_threads;                  // DEPRECATED: ignored. Thread pool size is controlled
+                                         // globally via VecSim_UpdateThreadPoolSize(). Setting
+                                         // this field has no effect and will emit a warning log.
     size_t search_window_size;           // Search window size to use during search.
     size_t search_buffer_capacity;       // Search buffer capacity to use during search.
     size_t leanvec_dim;                  // Leanvec dimension to use when LeanVec is enabled.
@@ -256,7 +280,8 @@ typedef struct {
     void *storage; // Opaque pointer to disk storage
     const char *indexName;
     size_t indexNameLen;
-    bool rerank; // Whether to enable reranking for disk-based HNSW
+    uint32_t userData; // Embedder-defined; forwarded to the storage layer, never read by VecSim.
+    bool rerank;       // Whether to enable reranking for disk-based HNSW
 } VecSimDiskContext;
 
 typedef struct {
@@ -356,7 +381,10 @@ typedef struct {
  * production without worrying about performance
  */
 typedef struct {
-    size_t memory;
+    size_t memory;                // Memory tracked by the index's own allocator. Does NOT include
+                                  // process-wide allocations such as the shared SVS thread pool;
+                                  // those are reported via VecSim_GetSharedMemory() so callers
+                                  // that aggregate across indexes don't double-count them.
     size_t numberOfMarkedDeleted; // The number of vectors that are marked as deleted (HNSW/tiered
                                   // only).
     size_t directHNSWInsertions;  // Count of vectors inserted directly into HNSW by main thread

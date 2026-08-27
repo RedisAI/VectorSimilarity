@@ -16,18 +16,18 @@ namespace spaces {
 // FMA optimized implementations
 dist_func_t<float> Choose_SQ8_FP32_IP_implementation_AVX2_FMA(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_InnerProductSIMD16_AVX2_FMA);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_InnerProductSIMD16_AVX2_FMA);
     return ret_dist_func;
 }
 
 dist_func_t<float> Choose_SQ8_FP32_Cosine_implementation_AVX2_FMA(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_CosineSIMD16_AVX2_FMA);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_CosineSIMD16_AVX2_FMA);
     return ret_dist_func;
 }
 dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX2_FMA(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP32_L2SqrSIMD16_AVX2_FMA);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_L2SqrSIMD16_AVX2_FMA);
     return ret_dist_func;
 }
 

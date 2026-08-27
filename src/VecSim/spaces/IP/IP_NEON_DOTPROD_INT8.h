@@ -26,8 +26,9 @@ __attribute__((always_inline)) static inline void InnerProductStep(int8_t *&pVec
     pVect2 += 16;
 }
 
+// static: the plain NEON header defines this name too, with a different body.
 template <unsigned char residual> // 0..63
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     int8_t *pVect1 = (int8_t *)pVect1v;
     int8_t *pVect2 = (int8_t *)pVect2v;
 
@@ -113,9 +114,7 @@ float INT8_InnerProductSIMD16_NEON_DOTPROD(const void *pVect1v, const void *pVec
 template <unsigned char residual> // 0..63
 float INT8_CosineSIMD_NEON_DOTPROD(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = INT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
-    float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
-    float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
 }

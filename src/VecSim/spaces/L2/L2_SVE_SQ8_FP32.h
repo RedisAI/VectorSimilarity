@@ -12,6 +12,12 @@
 #include "VecSim/types/sq8.h"
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 using sq8 = vecsim_types::sq8;
 
 /*
@@ -37,8 +43,8 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
 
     // Get precomputed sum of squares from storage blob (pVect1v is SQ8 storage)
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float x_sum_sq = params[sq8::SUM_SQUARES];
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Get precomputed sum of squares from query blob (pVect2v is FP32 query)
     const float y_sum_sq = static_cast<const float *>(pVect2v)[dimension + sq8::SUM_SQUARES_QUERY];
@@ -46,3 +52,4 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return x_sum_sq + y_sum_sq - 2.0f * ip;
 }
+} // namespace

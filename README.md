@@ -88,7 +88,7 @@ The tables below detail the supported SIMD instruction sets (CPU flags) used for
 ## Build
 For building you will need:
 1. Python 3 as `python` (either by creating a virtual environment or setting your system python to point to the right python distribution)
-2. gcc >= 10
+2. gcc >= 11
 3. cmake version >= 3.10. (To build the `python bindings` you will need cmake < 3.26 due to `pybind11` policy version handling).
 
 To build the main library and unit tests in one command run

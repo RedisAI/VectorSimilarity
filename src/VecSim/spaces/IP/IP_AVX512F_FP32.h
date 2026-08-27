@@ -16,30 +16,41 @@ static inline void InnerProductStep(float *&pVect1, float *&pVect2, __m512 &sum5
     sum512 = _mm512_fmadd_ps(v1, v2, sum512);
 }
 
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float FP32_InnerProductSIMD16_AVX512(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float *pVect1 = (float *)pVect1v;
     float *pVect2 = (float *)pVect2v;
 
     const float *pEnd1 = pVect1 + dimension;
 
-    __m512 sum512 = _mm512_setzero_ps();
+    // Two accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
+    __m512 sum0 = _mm512_setzero_ps();
+    __m512 sum1 = _mm512_setzero_ps();
 
-    // Deal with remainder first. `dim` is more than 16, so we have at least one 16-float block,
-    // so mask loading is guaranteed to be safe
-    if constexpr (residual) {
-        __mmask16 constexpr mask = (1 << residual) - 1;
+    // Deal with the sub-16 remainder first. AVX-512 masked loads suppress faults on masked-out
+    // lanes, so this is safe for any dimension.
+    if constexpr (residual % 16) {
+        __mmask16 constexpr mask = (1 << (residual % 16)) - 1;
         __m512 v1 = _mm512_maskz_loadu_ps(mask, pVect1);
-        pVect1 += residual;
+        pVect1 += residual % 16;
         __m512 v2 = _mm512_maskz_loadu_ps(mask, pVect2);
-        pVect2 += residual;
-        sum512 = _mm512_mul_ps(v1, v2);
+        pVect2 += residual % 16;
+        sum0 = _mm512_mul_ps(v1, v2);
     }
 
-    // We dealt with the residual part. We are left with some multiple of 16 floats.
-    do {
-        InnerProductStep(pVect1, pVect2, sum512);
-    } while (pVect1 < pEnd1);
+    // Handle the remaining full 16-float block of the residual (compile-time resolved).
+    if constexpr (residual >= 16) {
+        InnerProductStep(pVect1, pVect2, sum1);
+    }
 
+    // We dealt with the residual part. We are left with some multiple of 32 floats.
+    // In each iteration we calculate 32 floats = 2 chunks of 512 bits. The loop may run zero
+    // times (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+    }
+
+    __m512 sum512 = _mm512_add_ps(sum0, sum1);
     return 1.0f - _mm512_reduce_add_ps(sum512);
 }

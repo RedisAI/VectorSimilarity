@@ -30,6 +30,7 @@ HNSWSerializer::EncodingVersion HNSWSerializer::ReadVersion(std::ifstream &input
 }
 
 void HNSWSerializer::saveIndex(const std::string &location) {
+    validateSave();
     EncodingVersion version = EncodingVersion::V4;
     std::ofstream output(location, std::ios::binary);
     writeBinaryPOD(output, version);

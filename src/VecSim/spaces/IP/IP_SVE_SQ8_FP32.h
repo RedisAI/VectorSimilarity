@@ -11,6 +11,12 @@
 #include "VecSim/types/sq8.h"
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 using sq8 = vecsim_types::sq8;
 /*
  * Optimized asymmetric SQ8 inner product using algebraic identity:
@@ -120,9 +126,9 @@ float SQ8_FP32_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v
     float quantized_dot = svaddv_f32(pg, sum);
 
     // Get quantization parameters from stored vector (after quantized data)
-    const float *params1 = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float min_val = params1[sq8::MIN_VAL];
-    const float delta = params1[sq8::DELTA];
+    const auto *params1 = pVect1 + dimension;
+    const float min_val = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
 
     // Get precomputed y_sum from query blob (stored after the dim floats)
     const float y_sum = pVect2[dimension + sq8::SUM_QUERY];
@@ -143,3 +149,4 @@ float SQ8_FP32_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t d
     return SQ8_FP32_InnerProductSIMD_SVE<partial_chunk, additional_steps>(pVect1v, pVect2v,
                                                                           dimension);
 }
+} // namespace

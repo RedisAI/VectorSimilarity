@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <cmath>
+#include <cstring>
 #include <exception>
 #include <thread>
 
@@ -185,16 +186,25 @@ void compareSVSInfo(svsInfoStruct info1, svsInfoStruct info2);
 
 void validateSVSIndexAttributesInfo(svsInfoStruct info, SVSParams params);
 
-void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+// When called with a C API iterator (VecSimIndex_DebugInfoIterator), pass the
+// default expect_shared_memory=true so the SHARED_MEMORY field is accounted for.
+// Pass false when comparing nested sub-iterators built by the C++ debugInfoIterator()
+// method directly (e.g. inside compareTieredIndexInfoToIterator).
+void compareFlatIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_shared_memory = true);
 
-void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+void compareHNSWIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                    bool expect_shared_memory = true);
 
 void compareTieredIndexInfoToIterator(VecSimIndexDebugInfo info,
                                       VecSimIndexDebugInfo frontendIndexInfo,
                                       VecSimIndexDebugInfo backendIndexInfo,
                                       VecSimDebugInfoIterator *infoIterator);
 
-void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter);
+#if HAVE_SVS
+void compareSVSIndexInfoToIterator(VecSimIndexDebugInfo info, VecSimDebugInfoIterator *infoIter,
+                                   bool expect_shared_memory = true);
+#endif
 
 void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
@@ -240,22 +250,31 @@ inline void ComputeSQ8Quantization(const float *original_blob, size_t dim, uint8
     float diff = max_val - min_val;
     float delta = (diff == 0.0f) ? 1.0f : diff / 255.0f;
 
-    // Calculate quantized values, sum and sum_squares
-    float sum = 0.0f;
-    float sum_squares = 0.0f;
+    // Quantize, accumulating the bytes as exact integers, then derive the sums over the
+    // reconstruction min + delta * a[i], which is what the kernel algebra is written in terms of.
+    // See QuantPreprocessor::quantize.
+    // 64-bit for the squares: 255^2 * dim passes UINT32_MAX just above dim 66051, and a
+    // wrapped counter would corrupt the stored norm rather than round it. Mirrors
+    // QuantPreprocessor::quantize.
+    uint32_t q_sum = 0;
+    uint64_t q_sum_squares = 0;
     for (size_t i = 0; i < dim; i++) {
         float normalized = (original_blob[i] - min_val) / delta;
-        output[i] = static_cast<uint8_t>(std::round(normalized));
-        sum += original_blob[i];
-        sum_squares += original_blob[i] * original_blob[i];
+        const uint32_t q = static_cast<uint8_t>(std::round(normalized));
+        output[i] = static_cast<uint8_t>(q);
+        q_sum += q;
+        q_sum_squares += q * q;
     }
 
-    // Store metadata: min_val, delta, sum, sum_squares
-    float *metadata = reinterpret_cast<float *>(output + dim);
-    metadata[sq8::MIN_VAL] = min_val;
-    metadata[sq8::DELTA] = delta;
-    metadata[sq8::SUM] = sum;
-    metadata[sq8::SUM_SQUARES] = sum_squares;
+    const double d_min = min_val, d_delta = delta, d_dim = static_cast<double>(dim);
+    const float sum = static_cast<float>(d_dim * d_min + d_delta * q_sum);
+    const float sum_squares = static_cast<float>(
+        d_dim * d_min * d_min + 2.0 * d_min * d_delta * q_sum + d_delta * d_delta * q_sum_squares);
+
+    // Store metadata: min_val, delta, sum, sum_squares. Use memcpy because the metadata region
+    // (output + dim) is not guaranteed to be 4-byte aligned for arbitrary dim values.
+    const float metadata[4] = {min_val, delta, sum, sum_squares};
+    std::memcpy(output + dim, metadata, sizeof(metadata));
 }
 
 // TODO: Move all test_utils to this namespace

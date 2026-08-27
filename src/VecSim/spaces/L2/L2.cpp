@@ -11,7 +11,7 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
-#include <cstring>
+#include "VecSim/utils/alignment.h"
 #include <iostream>
 
 using bfloat16 = vecsim_types::bfloat16;
@@ -31,14 +31,43 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
     // Get the raw inner product using the common implementation
     const float ip = SQ8_FP32_InnerProduct_Impl(pVect1v, pVect2v, dimension);
 
-    // Get precomputed sum of squares from storage blob (pVect1 is SQ8)
+    // Storage metadata follows a byte payload and is not necessarily float-aligned.
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float x_sum_sq = params[sq8::SUM_SQUARES];
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Get precomputed sum of squares from query blob (pVect2 is FP32)
     const auto *pVect2 = static_cast<const float *>(pVect2v);
     const float y_sum_sq = pVect2[dimension + sq8::SUM_SQUARES_QUERY];
+
+    // L2² = ||x||² + ||y||² - 2*IP(x, y)
+    return x_sum_sq + y_sum_sq - 2.0f * ip;
+}
+
+/*
+ * Optimized asymmetric SQ8-FP16 L2 squared distance using algebraic identity:
+ *   ||x - y||² = Σx_i² - 2*IP(x, y) + Σy_i²
+ *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
+ *   where IP(x, y) = min * y_sum + delta * Σ(q_i * y_i) and FP16 query values are widened
+ *   to FP32 inside SQ8_FP16_InnerProduct_Impl.
+ *
+ * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
+ * pVect2 is query (FP16):  [float16 values (dim)] [y_sum] [y_sum_squares]
+ */
+float SQ8_FP16_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    // Get the raw inner product using the common implementation
+    const float ip = SQ8_FP16_InnerProduct_Impl(pVect1v, pVect2v, dimension);
+
+    // Get precomputed sum of squares from the storage and query blobs. The metadata sits at
+    // byte offsets that are not guaranteed 4-byte aligned for odd `dimension`, so use
+    // load_unaligned to avoid alignment UB.
+    const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+    const auto *pVect2 = static_cast<const float16 *>(pVect2v);
+    const auto *query_meta_bytes = reinterpret_cast<const uint8_t *>(pVect2 + dimension);
+    const float y_sum_sq =
+        load_unaligned<float>(query_meta_bytes + sq8::SUM_SQUARES_QUERY * sizeof(float));
 
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return x_sum_sq + y_sum_sq - 2.0f * ip;
@@ -104,11 +133,11 @@ float FP16_L2Sqr(const void *pVect1, const void *pVect2, size_t dimension) {
 }
 
 // Return type for the L2 functions.
-// The type should be able to hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`.
-// To support dimension up to 2^16, we need the difference between the type and int_elem_t to be at
-// least 2 bytes. We assert that in the implementation.
+// The type must hold `dimension * MAX_VAL(int_elem_t) * MAX_VAL(int_elem_t)`. For uint8 that
+// is 65025 * dimension, which overflows a 32-bit int from dimension 33,026, and this is the
+// kernel the chooser falls back to above that dimension, so UINT8_L2Sqr must be exact there.
 template <typename int_elem_t>
-using ret_t = std::conditional_t<sizeof(int_elem_t) == 1, int, long long>;
+using ret_t = long long;
 
 // Difference type for the L2 functions.
 // The type should be able to hold `MIN_VAL(int_elem_t)-MAX_VAL(int_elem_t)`, and should be signed
@@ -160,9 +189,9 @@ float SQ8_SQ8_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) 
     // Get precomputed sum of squares from both vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
     const float sum_sq_1 =
-        *reinterpret_cast<const float *>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
     const float sum_sq_2 =
-        *reinterpret_cast<const float *>(pVect2 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVect2 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Use the common inner product implementation
     const float ip = SQ8_SQ8_InnerProduct_Impl(pVect1v, pVect2v, dimension);

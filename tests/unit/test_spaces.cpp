@@ -7,9 +7,13 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <array>
+#include <cstdint>
+#include <cstring>
 #include <utility>
 #include <random>
 #include <cmath>
+#include <limits>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -29,13 +33,17 @@
 #include "VecSim/spaces/functions/AVX512FP16_VL.h"
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
+#include "VecSim/spaces/functions/AVX2_F16C.h"
 #include "VecSim/spaces/functions/AVX2_FMA.h"
+#include "VecSim/spaces/functions/AVX2_FMA_F16C.h"
 #include "VecSim/spaces/functions/SSE3.h"
 #include "VecSim/spaces/functions/SSE4.h"
+#include "VecSim/spaces/functions/SSE4_F16C.h"
 #include "VecSim/spaces/functions/F16C.h"
 #include "VecSim/spaces/functions/NEON.h"
 #include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/NEON_HP.h"
+#include "VecSim/spaces/functions/NEON_FHM.h"
 #include "VecSim/spaces/functions/NEON_BF16.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE_BF16.h"
@@ -286,8 +294,10 @@ TEST_F(SpacesTest, int8_Cosine_no_optimization_func_test) {
     test_utils::populate_int8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     float dist = INT8_Cosine((const void *)v1, (const void *)v2, dim);
     ASSERT_NEAR(dist, 0.0, 0.000001);
@@ -303,8 +313,10 @@ TEST_F(SpacesTest, uint8_Cosine_no_optimization_func_test) {
     test_utils::populate_uint8_vec(v2, dim, 123);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     float dist = UINT8_Cosine((const void *)v1, (const void *)v2, dim);
     ASSERT_NEAR(dist, 0.0, 0.000001);
@@ -361,6 +373,163 @@ TEST_F(SpacesTest, SQ8_FP32_l2sqr_no_optimization_func_test) {
     ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP32_L2Sqr failed to match expected distance";
 }
 
+TEST_F(SpacesTest, SQ8_FP32_odd_dim_unaligned_metadata_test) {
+    for (const size_t dim : {1UL, 5UL, 7UL, 15UL}) {
+        const size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+        std::vector<float> query(query_size);
+        test_utils::populate_sq8_fp32_query(query.data(), dim, false, 1234);
+
+        const size_t storage_size =
+            dim + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+        std::vector<uint8_t> allocation(storage_size + alignof(float));
+        auto *storage = allocation.data();
+        while (reinterpret_cast<std::uintptr_t>(storage) % alignof(float) != 0) {
+            ++storage;
+        }
+        test_utils::populate_float_vec_to_sq8_with_metadata(storage, dim, false, 5678);
+
+        const auto *metadata = storage + dim;
+        ASSERT_NE(reinterpret_cast<std::uintptr_t>(metadata) % alignof(float), 0u);
+
+        const float expected_ip =
+            test_utils::SQ8_FP32_NotOptimized_InnerProduct(storage, query.data(), dim);
+        const float expected_l2 =
+            test_utils::SQ8_FP32_NotOptimized_L2Sqr(storage, query.data(), dim);
+
+        EXPECT_NEAR(SQ8_FP32_InnerProduct(storage, query.data(), dim), expected_ip, 0.01)
+            << "scalar IP with dim " << dim;
+        EXPECT_NEAR(SQ8_FP32_L2Sqr(storage, query.data(), dim), expected_l2, 0.01)
+            << "scalar L2 with dim " << dim;
+        EXPECT_NEAR(IP_SQ8_FP32_GetDistFunc(dim, nullptr)(storage, query.data(), dim), expected_ip,
+                    0.01)
+            << "dispatched IP with dim " << dim;
+        EXPECT_NEAR(L2_SQ8_FP32_GetDistFunc(dim, nullptr)(storage, query.data(), dim), expected_l2,
+                    0.01)
+            << "dispatched L2 with dim " << dim;
+    }
+}
+
+/* ======================== Tests SQ8-FP16 ========================= */
+
+TEST_F(SpacesTest, SQ8_FP16_ip_no_optimization_norm_func_test) {
+    size_t dim = 5;
+
+    // Create V1 fp16 query with precomputed sum and sum_squares
+    // Query layout: [float16 values (dim)] [sum (float)] [sum_squares (float)]
+    // Allocate as std::vector<float16> so v1_query.data() is alignof(float16)-aligned, as
+    // required by the SQ8_FP16 production kernels' typed float16* loads. Add extra float16
+    // slots to cover the trailing FP32 metadata bytes.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    // Create V2 as SQ8 quantized vector with different seed
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+
+    float dist = SQ8_FP16_InnerProduct((const void *)v2_compressed.data(),
+                                       (const void *)v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_InnerProduct failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_cosine_no_optimization_norm_func_test) {
+    size_t dim = 5;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_Cosine(v2_compressed.data(), v1_query.data(), dim);
+
+    float dist =
+        SQ8_FP16_Cosine((const void *)v2_compressed.data(), (const void *)v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_Cosine failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_l2sqr_no_optimization_func_test) {
+    size_t dim = 5;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+
+    float dist =
+        SQ8_FP16_L2Sqr((const void *)v2_compressed.data(), (const void *)v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01) << "SQ8_FP16_L2Sqr failed to match expected distance";
+}
+
+TEST_F(SpacesTest, SQ8_FP16_l2sqr_odd_dim_unaligned_metadata_test) {
+    constexpr size_t dim = 5;
+    constexpr size_t storage_bytes =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    static_assert(sizeof(float) % sizeof(float16) == 0);
+    constexpr size_t query_values_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * sizeof(float) / sizeof(float16);
+
+    alignas(float) std::array<uint8_t, storage_bytes> storage{};
+    alignas(float) std::array<float16, query_values_count> query{};
+
+    for (size_t i = 0; i < dim; i++) {
+        storage[i] = static_cast<uint8_t>(i + 1);
+    }
+
+    auto store_float = [](uint8_t *dst, float value) { std::memcpy(dst, &value, sizeof(value)); };
+
+    constexpr float min_val = 0.0f;
+    constexpr float delta = 1.0f;
+    constexpr float storage_sum = 15.0f;
+    constexpr float storage_sum_squares = 55.0f;
+    uint8_t *storage_meta = storage.data() + dim;
+    store_float(storage_meta + sq8::MIN_VAL * sizeof(float), min_val);
+    store_float(storage_meta + sq8::DELTA * sizeof(float), delta);
+    store_float(storage_meta + sq8::SUM * sizeof(float), storage_sum);
+    store_float(storage_meta + sq8::SUM_SQUARES * sizeof(float), storage_sum_squares);
+
+    for (size_t i = 0; i < dim; i++) {
+        query[i] = vecsim_types::FP32_to_FP16(static_cast<float>(i + 2));
+    }
+
+    constexpr float query_sum = 20.0f;
+    constexpr float query_sum_squares = 90.0f;
+    uint8_t *query_meta = reinterpret_cast<uint8_t *>(query.data() + dim);
+    store_float(query_meta + sq8::SUM_QUERY * sizeof(float), query_sum);
+    store_float(query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float), query_sum_squares);
+
+    const auto *storage_sum_squares_addr = storage_meta + sq8::SUM_SQUARES * sizeof(float);
+    const auto *query_sum_squares_addr = query_meta + sq8::SUM_SQUARES_QUERY * sizeof(float);
+    ASSERT_NE(reinterpret_cast<std::uintptr_t>(storage_sum_squares_addr) % alignof(float), 0u);
+    ASSERT_NE(reinterpret_cast<std::uintptr_t>(query_sum_squares_addr) % alignof(float), 0u);
+
+    const float dist = SQ8_FP16_L2Sqr(storage.data(), query.data(), dim);
+
+    ASSERT_FLOAT_EQ(dist, 5.0f);
+}
+
 /* ======================== Test Getters ======================== */
 
 TEST_F(SpacesTest, GetDistFuncInvalidMetricFP32) {
@@ -405,6 +574,12 @@ TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFloat) {
                                                          10, nullptr)),
                  std::invalid_argument);
 }
+TEST_F(SpacesTest, GetDistFuncInvalidMetricSQ8ToFP16) {
+    // SQ8 storage with FP16 query (asymmetric)
+    EXPECT_THROW((spaces::GetDistFunc<sq8, float, float16>((VecSimMetric)(VecSimMetric_Cosine + 1),
+                                                           10, nullptr)),
+                 std::invalid_argument);
+}
 
 // Positive tests for GetDistFunc - verify correct function is returned
 TEST_F(SpacesTest, GetDistFuncSQ8Symmetric) {
@@ -429,46 +604,69 @@ TEST_F(SpacesTest, GetDistFuncSQ8Asymmetric) {
     ASSERT_EQ(cosine_func, Cosine_SQ8_FP32_GetDistFunc(dim, nullptr));
 }
 
+TEST_F(SpacesTest, GetDistFuncSQ8FP16Asymmetric) {
+    // SQ8 storage with FP16 query (asymmetric) - should return SQ8_FP16 functions.
+    // Per-ISA dispatcher walk coverage lives in the SQ8_FP16 SpacesOptimizationTest below.
+    size_t dim = 128;
+    auto l2_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_L2, dim, nullptr);
+    auto ip_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_IP, dim, nullptr);
+    auto cosine_func = spaces::GetDistFunc<sq8, float, float16>(VecSimMetric_Cosine, dim, nullptr);
+    ASSERT_EQ(l2_func, L2_SQ8_FP16_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(ip_func, IP_SQ8_FP16_GetDistFunc(dim, nullptr));
+    ASSERT_EQ(cosine_func, Cosine_SQ8_FP16_GetDistFunc(dim, nullptr));
+
+    // dim < 16 takes the scalar early-return in every SQ8_FP16 dispatcher (no SIMD tier).
+    size_t small_dim = 8;
+    ASSERT_EQ(L2_SQ8_FP16_GetDistFunc(small_dim, nullptr), SQ8_FP16_L2Sqr);
+    ASSERT_EQ(IP_SQ8_FP16_GetDistFunc(small_dim, nullptr), SQ8_FP16_InnerProduct);
+    ASSERT_EQ(Cosine_SQ8_FP16_GetDistFunc(small_dim, nullptr), SQ8_FP16_Cosine);
+}
+
 #ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_SSE
+// Regression test for MOD-16730: the FP32 L2 SSE kernel's residual % 4 == 3 path used
+// _mm_loadr_ps (movaps), which faults on non-16-byte-aligned addresses. Vectors are not
+// guaranteed such alignment: VecSimAllocator::allocate() returns malloc + 8 (allocation
+// header), and the dispatcher sets no alignment hint when dim % 4 != 0. This test feeds the
+// kernel buffers at that exact placement (16-aligned base + 8).
+TEST_F(SpacesTest, FP32_L2Sqr_SSE_misaligned_residual3) {
+    constexpr size_t dim = 19; // dim % 16 == 3 -> residual 3 path
+    alignas(16) static char raw1[16 + dim * sizeof(float)];
+    alignas(16) static char raw2[16 + dim * sizeof(float)];
+    float *v1 = reinterpret_cast<float *>(raw1 + 8); // address == 8 (mod 16)
+    float *v2 = reinterpret_cast<float *>(raw2 + 8);
+    for (size_t i = 0; i < dim; i++) {
+        v1[i] = float(i);
+        v2[i] = float(i) + 1.5f;
+    }
+    float baseline = FP32_L2Sqr(v1, v2, dim);
+    dist_func_t<float> arch_opt_func = spaces::Choose_FP32_L2_implementation_SSE(dim);
+    ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim));
+}
+#endif // OPT_SSE
+
 TEST_F(SpacesTest, smallDimChooser) {
-    // Verify that small dimensions gets the no optimization function.
+    // Verify that dimensions below each type's SIMD threshold get the no optimization function.
+    // FP64 is optimized from dim >= 4.
+    for (size_t dim = 1; dim < 4; dim++) {
+        ASSERT_EQ(L2_FP64_GetDistFunc(dim), FP64_L2Sqr);
+        ASSERT_EQ(IP_FP64_GetDistFunc(dim), FP64_InnerProduct);
+    }
+    // FP32 and FP16 are optimized from dim >= 8 (FP16 only on machines with F16C; for
+    // 8 <= dim < 32 the chosen FP16 function depends on the available features, so we only
+    // assert the range that is naive regardless of features).
     for (size_t dim = 1; dim < 8; dim++) {
         ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
-        ASSERT_EQ(L2_FP64_GetDistFunc(dim), FP64_L2Sqr);
-        ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
-        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
-        ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
-        ASSERT_EQ(L2_UINT8_GetDistFunc(dim), UINT8_L2Sqr);
         ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
-        ASSERT_EQ(IP_FP64_GetDistFunc(dim), FP64_InnerProduct);
-        ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
-        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
-        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
-        ASSERT_EQ(IP_UINT8_GetDistFunc(dim), UINT8_InnerProduct);
-        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
-        ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
-    }
-    for (size_t dim = 8; dim < 16; dim++) {
-        ASSERT_EQ(L2_FP32_GetDistFunc(dim), FP32_L2Sqr);
-        ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
         ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
-        ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
-        ASSERT_EQ(L2_UINT8_GetDistFunc(dim), UINT8_L2Sqr);
-        ASSERT_EQ(IP_FP32_GetDistFunc(dim), FP32_InnerProduct);
-        ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
         ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
-        ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
-        ASSERT_EQ(IP_UINT8_GetDistFunc(dim), UINT8_InnerProduct);
-        ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
-        ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
-    for (size_t dim = 16; dim < 32; dim++) {
+    // BF16, INT8 and UINT8 are optimized from dim >= 32.
+    for (size_t dim = 1; dim < 32; dim++) {
         ASSERT_EQ(L2_BF16_GetDistFunc(dim), BF16_L2Sqr_LittleEndian);
-        ASSERT_EQ(L2_FP16_GetDistFunc(dim), FP16_L2Sqr);
         ASSERT_EQ(L2_INT8_GetDistFunc(dim), INT8_L2Sqr);
         ASSERT_EQ(L2_UINT8_GetDistFunc(dim), UINT8_L2Sqr);
         ASSERT_EQ(IP_BF16_GetDistFunc(dim), BF16_InnerProduct_LittleEndian);
-        ASSERT_EQ(IP_FP16_GetDistFunc(dim), FP16_InnerProduct);
         ASSERT_EQ(IP_INT8_GetDistFunc(dim), INT8_InnerProduct);
         ASSERT_EQ(IP_UINT8_GetDistFunc(dim), UINT8_InnerProduct);
         ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
@@ -679,7 +877,7 @@ TEST_P(FP32SpacesOptimizationTest, FP32InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP32OptFuncs, FP32SpacesOptimizationTest,
-                         testing::Range(16UL, 16 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 class FP64SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -874,7 +1072,7 @@ TEST_P(FP64SpacesOptimizationTest, FP64InnerProductTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP64OptFuncs, FP64SpacesOptimizationTest,
-                         testing::Range(8UL, 8 * 2UL + 1));
+                         testing::Range(4UL, 16 * 2UL + 1));
 
 class BF16SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -1078,15 +1276,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16InnerProductTest) {
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
-    if (optimization.avx512f) {
+    // The AVX512F FP16 tier requires at least 16 elements; below that the dispatcher falls
+    // through to the next tier.
+    if (optimization.avx512f && dim >= 16) {
         unsigned char alignment = 0;
         arch_opt_func = IP_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_IP_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
-        optimization.avx512f = 0;
     }
+    optimization.avx512f = 0;
 #endif
 #ifdef OPT_F16C
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
@@ -1135,15 +1335,17 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
     // Turn off advanced fp16 flags. They will be tested in the next test.
     optimization.avx512_fp16 = optimization.avx512vl = 0;
 #ifdef OPT_AVX512F
-    if (optimization.avx512f) {
+    // The AVX512F FP16 tier requires at least 16 elements; below that the dispatcher falls
+    // through to the next tier.
+    if (optimization.avx512f && dim >= 16) {
         unsigned char alignment = 0;
         arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_EQ(baseline, arch_opt_func(v1, v2, dim)) << "AVX512 with dim " << dim;
         ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
-        optimization.avx512f = 0;
     }
+    optimization.avx512f = 0;
 #endif
 #ifdef OPT_F16C
     if (optimization.f16c && optimization.fma3 && optimization.avx) {
@@ -1201,7 +1403,7 @@ TEST_P(FP16SpacesOptimizationTest, FP16L2SqrTest) {
 }
 
 INSTANTIATE_TEST_SUITE_P(FP16OptFuncs, FP16SpacesOptimizationTest,
-                         testing::Range(32UL, 32 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 /** Since we are handling floats, the order of summation affect on the final result.
  * This is very significant when the entries are half precision floats, since the accumulated
@@ -1570,8 +1772,10 @@ TEST_P(INT8SpacesOptimizationTest, INT8CosineTest) {
     test_utils::populate_int8_vec(v2, dim, 1234);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     dist_func_t<float> arch_opt_func;
     float baseline = INT8_Cosine(v1, v2, dim);
@@ -1825,8 +2029,10 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8CosineTest) {
     test_utils::populate_uint8_vec(v2, dim, 1234);
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     dist_func_t<float> arch_opt_func;
     float baseline = UINT8_Cosine(v1, v2, dim);
@@ -1919,8 +2125,10 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
     }
 
     // write the norm at the end of the vector
-    *(float *)(v1 + dim) = test_utils::integral_compute_norm(v1, dim);
-    *(float *)(v2 + dim) = test_utils::integral_compute_norm(v2, dim);
+    const float norm_v1 = test_utils::integral_compute_norm(v1, dim);
+    const float norm_v2 = test_utils::integral_compute_norm(v2, dim);
+    std::memcpy(v1 + dim, &norm_v1, sizeof(norm_v1));
+    std::memcpy(v2 + dim, &norm_v2, sizeof(norm_v2));
 
     float baseline_l2 = UINT8_L2Sqr(v1, v2, dim);
     float baseline_ip = UINT8_InnerProduct(v1, v2, dim);
@@ -1977,8 +2185,148 @@ TEST_P(UINT8SpacesOptimizationTest, UINT8_full_range_test) {
 #endif
 }
 
+// Worst-case bytes: all-255 against all-0 is the largest possible L2 total and all-255 against
+// itself the largest possible IP and cosine total, both 255 * 255 * dim. At
+// spaces::UINT8_MAX_EXACT_SIMD_DIM that is the largest total the kernels' 32-bit accumulators hold,
+// and one dimension later it passes INT32_MAX, which is what the dispatcher cap exists to keep out.
+// Tiers are called directly so a host with SVE still exercises its NEON kernels.
+TEST_P(UINT8SpacesOptimizationTest, UINT8_max_value_test) {
+    auto optimization = getCpuOptimizationFeatures();
+    const size_t dim = GetParam();
+
+    std::vector<uint8_t> v1(dim + sizeof(float), 255);
+    std::vector<uint8_t> v2(dim + sizeof(float), 0);
+
+    // write the norm at the end of the vector
+    const float norm_v1 = test_utils::integral_compute_norm(v1.data(), dim);
+    std::memcpy(v1.data() + dim, &norm_v1, sizeof(norm_v1));
+
+    float baseline_l2 = UINT8_L2Sqr(v1.data(), v2.data(), dim);
+    float baseline_ip = UINT8_InnerProduct(v1.data(), v1.data(), dim);
+    float baseline_cosine = UINT8_Cosine(v1.data(), v1.data(), dim);
+
+    // NEON and SVE compute 1.0f - float(sum), while the scalar and AVX512 kernels subtract in
+    // integers and convert once. Both are exact in integers, which is what the cap protects, but
+    // the two forms can land one float ULP apart at these totals: dimension 32,960 against all-255
+    // bytes is such a case, 128 apart at a magnitude of 2.1e9. So IP is compared within one ULP,
+    // while L2 and cosine, which convert the total and do no further integer arithmetic, are exact.
+    const float ip_ulp =
+        std::nextafterf(std::fabs(baseline_ip), std::numeric_limits<float>::infinity()) -
+        std::fabs(baseline_ip);
+
+    dist_func_t<float> arch_opt_func;
+
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        arch_opt_func = Choose_UINT8_L2_implementation_SVE2(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 SVE2 with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_SVE2(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP SVE2 with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_SVE2(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine SVE2 with dim " << dim;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        arch_opt_func = Choose_UINT8_L2_implementation_SVE(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_SVE(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP SVE with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_SVE(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine SVE with dim " << dim;
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (optimization.asimddp) {
+        arch_opt_func = Choose_UINT8_L2_implementation_NEON_DOTPROD(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 NEON_DOTPROD with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_NEON_DOTPROD(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP NEON_DOTPROD with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_NEON_DOTPROD(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine NEON_DOTPROD with dim " << dim;
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        arch_opt_func = Choose_UINT8_L2_implementation_NEON(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 NEON with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_NEON(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP NEON with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_NEON(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine NEON with dim " << dim;
+    }
+#endif
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
+        arch_opt_func = Choose_UINT8_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+        ASSERT_EQ(baseline_l2, arch_opt_func(v1.data(), v2.data(), dim))
+            << "L2 AVX512 with dim " << dim;
+        arch_opt_func = Choose_UINT8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+        ASSERT_NEAR(baseline_ip, arch_opt_func(v1.data(), v1.data(), dim), ip_ulp)
+            << "IP AVX512 with dim " << dim;
+        arch_opt_func = Choose_UINT8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim);
+        ASSERT_EQ(baseline_cosine, arch_opt_func(v1.data(), v1.data(), dim))
+            << "Cosine AVX512 with dim " << dim;
+    }
+#endif
+}
+
 INSTANTIATE_TEST_SUITE_P(UINT8OptFuncs, UINT8SpacesOptimizationTest,
                          testing::Range(32UL, 64 * 2UL + 1));
+
+// Dimensions just below spaces::UINT8_MAX_EXACT_SIMD_DIM, where the accumulated total is nearly all
+// a 32-bit accumulator holds. 33,025 is the cap itself and the others are residual-bearing, so each
+// tier is exercised at its own tail handling there. The [32, 128] range above cannot reach this:
+// its totals are four orders of magnitude smaller.
+INSTANTIATE_TEST_SUITE_P(UINT8OptFuncsNearCap, UINT8SpacesOptimizationTest,
+                         testing::Values(32960UL, 32993UL, 33023UL, 33024UL, 33025UL));
+
+// The dispatcher cap. Above spaces::UINT8_MAX_EXACT_SIMD_DIM every uint8 and SQ8_SQ8 chooser must
+// hand back its scalar kernel, whose ret_t is long long and so stays exact. The SQ8_SQ8 kernels
+// call the shared uint8 helper directly and never pass through a uint8 chooser, so they carry the
+// same guard. That the SIMD kernels are still handed out at the cap is covered by
+// UINT8OptFuncsNearCap above.
+TEST_F(SpacesTest, UINT8_DispatcherCapFallback) {
+    constexpr size_t cap = spaces::UINT8_MAX_EXACT_SIMD_DIM;
+    constexpr size_t above = cap + 1;
+    constexpr uint64_t max_term = 255ULL * 255ULL;
+    constexpr uint64_t int32_max = std::numeric_limits<int32_t>::max();
+    auto optimization = getCpuOptimizationFeatures();
+    unsigned char alignment = 0;
+
+    // The cap must sit exactly where a signed 32-bit total runs out, so pin it arithmetically
+    // rather than trusting the constant.
+    ASSERT_LE(max_term * cap, int32_max);
+    ASSERT_GT(max_term * above, int32_max);
+
+    ASSERT_EQ(L2_UINT8_GetDistFunc(above, &alignment, &optimization), UINT8_L2Sqr);
+    ASSERT_EQ(IP_UINT8_GetDistFunc(above, &alignment, &optimization), UINT8_InnerProduct);
+    ASSERT_EQ(Cosine_UINT8_GetDistFunc(above, &alignment, &optimization), UINT8_Cosine);
+    ASSERT_EQ(L2_SQ8_SQ8_GetDistFunc(above, &alignment, &optimization), SQ8_SQ8_L2Sqr);
+    ASSERT_EQ(IP_SQ8_SQ8_GetDistFunc(above, &alignment, &optimization), SQ8_SQ8_InnerProduct);
+    ASSERT_EQ(Cosine_SQ8_SQ8_GetDistFunc(above, &alignment, &optimization), SQ8_SQ8_Cosine);
+
+    // And the scalar kernels must be exact where they take over, which is what makes the fallback
+    // safe rather than merely different.
+    std::vector<uint8_t> v1(above + sizeof(float), 255);
+    std::vector<uint8_t> v2(above + sizeof(float), 0);
+    const int64_t total = static_cast<int64_t>(max_term * above);
+    ASSERT_EQ(static_cast<float>(total), UINT8_L2Sqr(v1.data(), v2.data(), above));
+    ASSERT_EQ(static_cast<float>(1 - total), UINT8_InnerProduct(v1.data(), v1.data(), above));
+}
 
 class SQ8_FP32_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
@@ -2008,7 +2356,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_L2SqrTest) {
     float baseline = SQ8_FP32_L2Sqr(v2_compressed.data(), v1_orig.data(), dim);
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2134,7 +2483,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_InnerProductTest) {
 
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2223,7 +2573,7 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_InnerProductTest) {
 
 // Instantiate the test suite with dimensions to test
 INSTANTIATE_TEST_SUITE_P(SQ8_FP32_Test, SQ8_FP32_SpacesOptimizationTest,
-                         testing::Range(16UL, 16 * 2UL + 1));
+                         testing::Range(8UL, 32 * 2UL + 1));
 
 TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_CosineTest) {
     auto optimization = getCpuOptimizationFeatures();
@@ -2285,7 +2635,8 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_CosineTest) {
 
 // Test different optimizations based on CPU features
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -2397,12 +2748,40 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceCosine) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
         optimization.avx512f = 0;
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.sse4_1 = 0;
     }
 #endif
 
@@ -2471,12 +2850,40 @@ TEST(SQ8_FP32_EdgeCases, SelfDistanceL2) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
         ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
         optimization.avx512f = 0;
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1) {
+        unsigned char alignment = 0;
+        auto arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
+        float result = arch_opt_func(v_quantized.data(), v_orig.data(), dim);
+        ASSERT_NEAR(result, baseline, 0.01f) << "Optimized self-distance should match baseline";
+        optimization.sse4_1 = 0;
     }
 #endif
 
@@ -2553,7 +2960,8 @@ TEST(SQ8_FP32_EdgeCases, CosineSymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v2_quantized.data(), v1_fp32.data(), dim);
@@ -2620,7 +3028,8 @@ TEST(SQ8_FP32_EdgeCases, CosineZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_nonzero_quantized.data(), v_zero.data(), dim);
@@ -2700,7 +3109,8 @@ TEST(SQ8_FP32_EdgeCases, CosineConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_query.data(), dim);
@@ -2780,7 +3190,8 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v2_quantized.data(), v1.data(), dim);
@@ -2794,6 +3205,574 @@ TEST(SQ8_FP32_EdgeCases, CosineExtremeValuesTest) {
     float result = arch_opt_func(v2_quantized.data(), v1.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values Cosine should match baseline";
+}
+
+/* ======================== Tests SQ8_FP16 (parameterized) ========================= */
+
+// Parameterized tests that verify the scalar SQ8_FP16 kernels against the not-optimized
+// baseline across multiple dimensions, including odd dimensions and SIMD-boundary residues.
+// The SIMD-tier dispatcher coverage lives in SQ8_FP16_SpacesOptimizationTest below; this
+// suite intentionally exercises the scalar reference directly to keep it as a fixed baseline
+// the SIMD tiers are compared against.
+class SQ8_FP16_NoOptimizationSpacesTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_L2SqrTest) {
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+    float dist = SQ8_FP16_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01f) << "SQ8_FP16_L2Sqr mismatch for dim " << dim;
+}
+
+TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_InnerProductTest) {
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+    float dist = SQ8_FP16_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01f) << "SQ8_FP16_InnerProduct mismatch for dim " << dim;
+}
+
+TEST_P(SQ8_FP16_NoOptimizationSpacesTest, SQ8_FP16_CosineTest) {
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    float baseline =
+        test_utils::SQ8_FP16_NotOptimized_Cosine(v2_compressed.data(), v1_query.data(), dim);
+    float dist = SQ8_FP16_Cosine(v2_compressed.data(), v1_query.data(), dim);
+
+    ASSERT_NEAR(dist, baseline, 0.01f) << "SQ8_FP16_Cosine mismatch for dim " << dim;
+}
+
+// Cover small dims, odd dims, SIMD-boundary residues for upcoming AVX2 / AVX512 / SVE / NEON
+// register widths (8/16/32/64 elements per register for SQ8 storage).
+INSTANTIATE_TEST_SUITE_P(SQ8_FP16_NoOpt, SQ8_FP16_NoOptimizationSpacesTest,
+                         testing::Values(1, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 47, 48, 49, 63, 64,
+                                         65, 127, 128));
+
+/* ======================== SQ8_FP16 SIMD optimisation tests ========================= */
+
+// Walks down the x86 ISA tiers (AVX-512 → AVX2+FMA → AVX2 → SSE4 → scalar) and asserts
+// that {IP,Cosine,L2}_SQ8_FP16_GetDistFunc returns the expected Choose_* symbol and that
+// its output matches the scalar baseline within 0.01.
+class SQ8_FP16_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_L2SqrTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, false, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, false, 5678);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_FP16_L2Sqr(v2_compressed.data(), v1_query.data(), dim);
+
+#ifdef OPT_AVX512F
+    if (optimization.avx512f) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX512F(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three — matches the dispatcher layout in L2_space.cpp.
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX2_FMA(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2+FMA with dim " << dim;
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_AVX2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2 with dim " << dim;
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_SSE4(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SSE4 with dim " << dim;
+        optimization.sse4_1 = 0;
+    }
+#endif
+#endif // OPT_F16C
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_FHM
+    if (optimization.asimdhp && optimization.asimdfhm) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_NEON_FHM(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_FHM with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_FHM with dim " << dim;
+        optimization.asimdfhm = 0;
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_L2_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
+#endif // CPU_FEATURES_ARCH_AARCH64
+
+    unsigned char alignment = 0;
+    arch_opt_func = L2_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_FP16_L2Sqr)
+        << "Unexpected scalar fallback function for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+        << "Scalar fallback with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_FP16_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
+
+#ifdef OPT_AVX512F
+    if (optimization.avx512f) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX512F(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three — matches the dispatcher layout in IP_space.cpp.
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX2_FMA(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2+FMA with dim " << dim;
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2 with dim " << dim;
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_SSE4(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SSE4 with dim " << dim;
+        optimization.sse4_1 = 0;
+    }
+#endif
+#endif // OPT_F16C
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_FHM
+    if (optimization.asimdhp && optimization.asimdfhm) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_NEON_FHM(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_FHM with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_FHM with dim " << dim;
+        optimization.asimdfhm = 0;
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
+#endif // CPU_FEATURES_ARCH_AARCH64
+
+    unsigned char alignment = 0;
+    arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_FP16_InnerProduct)
+        << "Unexpected scalar fallback function for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+        << "Scalar fallback with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
+    auto optimization = getCpuOptimizationFeatures();
+    size_t dim = GetParam();
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v1_query(query_count);
+    test_utils::populate_sq8_fp16_query(v1_query.data(), dim, true, 1234);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v2_compressed(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v2_compressed.data(), dim, true, 5678);
+
+    dist_func_t<float> arch_opt_func;
+    float baseline = SQ8_FP16_Cosine(v2_compressed.data(), v1_query.data(), dim);
+
+#ifdef OPT_AVX512F
+    if (optimization.avx512f) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX512F(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX512 with dim " << dim;
+        optimization.avx512f = 0;
+    }
+#endif
+    // F16C is required by every non-AVX-512 SQ8↔FP16 tier (vcvtph2ps), so the guard is hoisted
+    // around all three — matches the dispatcher layout in IP_space.cpp.
+#ifdef OPT_F16C
+#ifdef OPT_AVX2_FMA
+    if (optimization.avx2 && optimization.fma3 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX2_FMA(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2+FMA with dim " << dim;
+        optimization.fma3 = 0;
+    }
+#endif
+#ifdef OPT_AVX2
+    if (optimization.avx2 && optimization.f16c) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "AVX2 with dim " << dim;
+        optimization.avx2 = 0;
+    }
+#endif
+#ifdef OPT_SSE4
+    if (optimization.sse4_1 && optimization.f16c && optimization.avx) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_SSE4(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SSE4 with dim " << dim;
+        optimization.sse4_1 = 0;
+    }
+#endif
+#endif // OPT_F16C
+
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_SVE2(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SVE2 with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE2 with dim " << dim;
+        optimization.sve2 = 0;
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_SVE(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "SVE with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment SVE with dim " << dim;
+        optimization.sve = 0;
+    }
+#endif
+#ifdef OPT_NEON_FHM
+    if (optimization.asimdhp && optimization.asimdfhm) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_NEON_FHM(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_FHM with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_FHM with dim " << dim;
+        optimization.asimdfhm = 0;
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_NEON_HP(dim))
+            << "Unexpected distance function chosen for dim " << dim;
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+            << "NEON_HP with dim " << dim;
+        ASSERT_EQ(alignment, 0) << "No alignment NEON_HP with dim " << dim;
+        optimization.asimdhp = 0;
+    }
+#endif
+#endif // CPU_FEATURES_ARCH_AARCH64
+
+    unsigned char alignment = 0;
+    arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+    ASSERT_EQ(arch_opt_func, SQ8_FP16_Cosine)
+        << "Unexpected scalar fallback function for dim " << dim;
+    ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
+        << "Scalar fallback with dim " << dim;
+    ASSERT_EQ(alignment, 0) << "No optimization with dim " << dim;
+}
+
+// Dim range [16, 32] covers every residual class for the 16-element chunk used by every tier.
+INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD, SQ8_FP16_SpacesOptimizationTest,
+                         testing::Range(16UL, 16 * 2UL + 1));
+
+// Higher dimensions surface multi-iteration loop bugs (pointer stride, do-while termination
+// off-by-one) that the [16, 32] range does not exercise because the AVX-512 inner loop runs at
+// most twice in that range. 48 and 112 specifically hit the AVX-512 three-chunk tail
+// (remaining == 48, i.e. (dim / 16) % 4 == 3): 48 with zero main-loop iterations, 112 with one.
+INSTANTIATE_TEST_SUITE_P(SQ8_FP16_SIMD_HighDim, SQ8_FP16_SpacesOptimizationTest,
+                         testing::Values(48UL, 64UL, 112UL, 128UL, 256UL, 512UL, 1024UL));
+
+/* ======================== Tests SQ8_FP16 (edge cases) ========================= */
+
+// Zero FP16 query against a non-zero SQ8 storage. IP must be exactly 1.0 (1 - 0),
+// L2² must equal Σ dequantized². Math correctness on adversarial inputs is verified
+// against the scalar reference; SIMD tier coverage with branchless kernels is provided
+// separately by SQ8_FP16_SpacesOptimizationTest.
+TEST(SQ8_FP16_EdgeCases, ZeroQueryTest) {
+    size_t dim = 64;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_zero_query(query_count, float16{0});
+    // Metadata bits are zero (sum = 0, sum_squares = 0); FP16 zero is bit-pattern 0.
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_nonzero_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_nonzero_quantized.data(), dim, false,
+                                                        1234);
+
+    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_nonzero_quantized.data(),
+                                                                       v_zero_query.data(), dim);
+    float ip = SQ8_FP16_InnerProduct(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Zero-query SQ8_FP16_InnerProduct mismatch";
+    ASSERT_NEAR(ip, 1.0f, 0.01f) << "Zero-query IP must equal 1.0 (1 - 0)";
+
+    float l2_baseline = test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_nonzero_quantized.data(),
+                                                                v_zero_query.data(), dim);
+    float l2 = SQ8_FP16_L2Sqr(v_nonzero_quantized.data(), v_zero_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Zero-query SQ8_FP16_L2Sqr mismatch";
+}
+
+// Constant SQ8 storage (all values identical => delta = 0). Storage quantizer sets delta to 1.0
+// to avoid div-by-zero, so verify the kernels still match the dequantization baseline.
+TEST(SQ8_FP16_EdgeCases, ConstantStorageTest) {
+    size_t dim = 64;
+
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_query(query_count);
+    test_utils::populate_sq8_fp16_query(v_query.data(), dim, false, 4321);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_const_quantized(quantized_size);
+    std::vector<float> v_const(dim, 0.5f);
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v_const.data(), dim,
+                                                        v_const_quantized.data());
+
+    float ip_baseline = test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_const_quantized.data(),
+                                                                       v_query.data(), dim);
+    float ip = SQ8_FP16_InnerProduct(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Constant-storage SQ8_FP16_InnerProduct mismatch";
+
+    float l2_baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
+    float l2 = SQ8_FP16_L2Sqr(v_const_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Constant-storage SQ8_FP16_L2Sqr mismatch";
+}
+
+// Mixed-sign FP16 query (alternating positive/negative values) verifies sign handling
+// in the FP16->FP32 widening path and in the algebraic identity used by the kernels.
+TEST(SQ8_FP16_EdgeCases, MixedSignQueryTest) {
+    size_t dim = 64;
+
+    // Build an alternating +0.75 / -0.75 FP16 query manually so we don't depend on RNG sign mix.
+    // Allocated as std::vector<float16> so v_query.data() is alignof(float16)-aligned for
+    // the SQ8_FP16 production kernel.
+    size_t query_count =
+        dim + sq8::query_metadata_count<VecSimMetric_L2>() * (sizeof(float) / sizeof(float16));
+    std::vector<float16> v_query(query_count);
+    for (size_t i = 0; i < dim; i++) {
+        v_query[i] = vecsim_types::FP32_to_FP16((i % 2 == 0) ? 0.75f : -0.75f);
+    }
+    test_utils::preprocess_sq8_fp16_query(v_query.data(), dim);
+
+    size_t quantized_size =
+        dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
+    std::vector<uint8_t> v_quantized(quantized_size);
+    test_utils::populate_float_vec_to_sq8_with_metadata(v_quantized.data(), dim, false, 9876);
+
+    float ip_baseline =
+        test_utils::SQ8_FP16_NotOptimized_InnerProduct(v_quantized.data(), v_query.data(), dim);
+    float ip = SQ8_FP16_InnerProduct(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(ip, ip_baseline, 0.01f) << "Mixed-sign SQ8_FP16_InnerProduct mismatch";
+
+    float cos_baseline =
+        test_utils::SQ8_FP16_NotOptimized_Cosine(v_quantized.data(), v_query.data(), dim);
+    float cos = SQ8_FP16_Cosine(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(cos, cos_baseline, 0.01f) << "Mixed-sign SQ8_FP16_Cosine mismatch";
+
+    float l2_baseline =
+        test_utils::SQ8_FP16_NotOptimized_L2Sqr(v_quantized.data(), v_query.data(), dim);
+    float l2 = SQ8_FP16_L2Sqr(v_quantized.data(), v_query.data(), dim);
+    ASSERT_NEAR(l2, l2_baseline, 0.01f) << "Mixed-sign SQ8_FP16_L2Sqr mismatch";
 }
 
 /* ======================== Tests SQ8_SQ8 ========================= */
@@ -2955,7 +3934,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_InnerProductTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -3038,7 +4018,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_CosineTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -3121,7 +4102,8 @@ TEST_P(SQ8_SQ8_SpacesOptimizationTest, SQ8_SQ8_L2SqrTest) {
 #endif
 
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         ASSERT_EQ(arch_opt_func, Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(dim))
@@ -3200,7 +4182,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceCosine) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
@@ -3272,7 +4255,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineSymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float cos_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -3340,7 +4324,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -3412,7 +4397,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -3493,7 +4479,8 @@ TEST(SQ8_SQ8_EdgeCases, CosineExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = Cosine_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -3562,7 +4549,8 @@ TEST(SQ8_SQ8_EdgeCases, SelfDistanceL2) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_quantized.data(), v_quantized.data(), dim);
@@ -3634,7 +4622,8 @@ TEST(SQ8_SQ8_EdgeCases, L2SymmetryTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float l2_12 = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -3702,7 +4691,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ZeroVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_zero_quantized.data(), v_nonzero_quantized.data(), dim);
@@ -3773,7 +4763,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ConstantVectorTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v_const_quantized.data(), v_random_quantized.data(), dim);
@@ -3847,7 +4838,8 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     }
 #endif
 #ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vnni) {
+    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512vnni) {
         unsigned char alignment = 0;
         auto arch_opt_func = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, &optimization);
         float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
@@ -3860,4 +4852,239 @@ TEST(SQ8_SQ8_EdgeCases, L2ExtremeValuesTest) {
     float result = arch_opt_func(v1_quantized.data(), v2_quantized.data(), dim);
 
     ASSERT_NEAR(result, baseline, 0.01f) << "Extreme values L2 should match baseline";
+}
+
+// Assert the exact alignment-hint values published by the SQ8 distance dispatchers.
+// The hint refers to the SQ8 (first / storage) operand per the GetDistFunc contract documented
+// in spaces/spaces.h. These tests guard against silent regressions of the per-kernel hints used
+// by the preprocessor pipeline to align the storage blob.
+#ifdef CPU_FEATURES_ARCH_X86_64
+TEST_F(SpacesTest, SQ8_FP32_DispatcherAlignmentHints) {
+    // dim divisible by 16 (and therefore 8 and 4) so every x86 path sets a non-zero hint.
+    constexpr size_t dim = 64;
+    auto features = getCpuOptimizationFeatures();
+
+    auto check = [&](const char *kind,
+                     spaces::dist_func_t<float> (*get)(size_t, unsigned char *, const void *)) {
+        auto opt = features;
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 16u) << kind << ": AVX512 SQ8_FP32 hint should be 16";
+            opt.avx512f = 0;
+        }
+#endif
+#ifdef OPT_AVX2_FMA
+        if (opt.avx2 && opt.fma3) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 8u) << kind << ": AVX2_FMA SQ8_FP32 hint should be 8";
+            opt.fma3 = 0;
+        }
+#endif
+#ifdef OPT_AVX2
+        if (opt.avx2) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 8u) << kind << ": AVX2 SQ8_FP32 hint should be 8";
+            opt.avx2 = 0;
+        }
+#endif
+#ifdef OPT_SSE4
+        if (opt.sse4_1) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 4u) << kind << ": SSE4 SQ8_FP32 hint should be 4";
+            opt.sse4_1 = 0;
+        }
+#endif
+        // No-optimization path must leave the hint at 0.
+        unsigned char alignment = 0;
+        (void)get(dim, &alignment, &opt);
+        ASSERT_EQ(alignment, 0u) << kind << ": no-optimization hint should be 0";
+    };
+
+    check("IP", &spaces::IP_SQ8_FP32_GetDistFunc);
+    check("L2", &spaces::L2_SQ8_FP32_GetDistFunc);
+    check("Cosine", &spaces::Cosine_SQ8_FP32_GetDistFunc);
+}
+
+TEST_F(SpacesTest, SQ8_SQ8_DispatcherAlignmentHints) {
+    // dim divisible by 32 so the AVX512 SQ8_SQ8 path sets the hint (otherwise it stays at 0).
+    constexpr size_t dim = 64;
+    auto features = getCpuOptimizationFeatures();
+
+    auto check = [&](const char *kind,
+                     spaces::dist_func_t<float> (*get)(size_t, unsigned char *, const void *)) {
+        auto opt = features;
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+        if (opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni) {
+            unsigned char alignment = 0;
+            (void)get(dim, &alignment, &opt);
+            ASSERT_EQ(alignment, 32u) << kind << ": AVX512 SQ8_SQ8 hint should be 32";
+            opt.avx512f = 0;
+        }
+#endif
+        // No-optimization path must leave the hint at 0.
+        unsigned char alignment = 0;
+        (void)get(dim, &alignment, &opt);
+        ASSERT_EQ(alignment, 0u) << kind << ": no-optimization hint should be 0";
+    };
+
+    check("IP", &spaces::IP_SQ8_SQ8_GetDistFunc);
+    check("L2", &spaces::L2_SQ8_SQ8_GetDistFunc);
+    check("Cosine", &spaces::Cosine_SQ8_SQ8_GetDistFunc);
+}
+#endif // CPU_FEATURES_ARCH_X86_64
+
+namespace {
+// The stored sum_squares is ||x_r||^2 by construction, so read it rather than recomputing.
+float sq8_norm_sq(const std::vector<uint8_t> &blob, size_t dim) {
+    return load_unaligned<float>(blob.data() + dim + sq8::SUM_SQUARES * sizeof(float));
+}
+
+std::vector<uint8_t> sq8_quantize_l2(const std::vector<float> &v) {
+    const size_t dim = v.size();
+    std::vector<uint8_t> blob(dim * sizeof(uint8_t) + 4 * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(v.data(), dim, blob.data());
+    return blob;
+}
+} // namespace
+
+namespace {
+// The reconstruction the kernels compute distances over: x_r[i] = min + delta * a[i]. Reference
+// values are accumulated in double so the comparison is against the algebra, not against another
+// FP32 implementation with the same rounding.
+double ReferenceL2SqrOverReconstruction(const uint8_t *a, const uint8_t *b, size_t dim) {
+    const float min_a = load_unaligned<float>(a + dim + sq8::MIN_VAL * sizeof(float));
+    const float delta_a = load_unaligned<float>(a + dim + sq8::DELTA * sizeof(float));
+    const float min_b = load_unaligned<float>(b + dim + sq8::MIN_VAL * sizeof(float));
+    const float delta_b = load_unaligned<float>(b + dim + sq8::DELTA * sizeof(float));
+    double acc = 0.0;
+    for (size_t i = 0; i < dim; i++) {
+        const double d = (static_cast<double>(min_a) + static_cast<double>(delta_a) * a[i]) -
+                         (static_cast<double>(min_b) + static_cast<double>(delta_b) * b[i]);
+        acc += d * d;
+    }
+    return acc;
+}
+} // namespace
+
+// The stored sums describe the reconstruction, not the input. Summing the input instead left a
+// systematic mismatch of about 0.4% of ||x||^2, which is larger than the distance between two
+// near-duplicate vectors, so L2 came back negative: at dim 128 the reconstruction distance is
+// 2.93e-04 and the kernels returned -1.49e-01. Near-duplicates are the case that exposes it,
+// because the true distance is small enough for the mismatch to dominate.
+TEST_F(SpacesTest, SQ8_SQ8_L2_is_non_negative_and_matches_reconstruction) {
+    std::mt19937 gen(20260820);
+    std::uniform_real_distribution<float> value_gen(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> nudge_gen(-1e-3f, 1e-3f);
+
+    for (const size_t dim : {4UL, 15UL, 64UL, 128UL, 512UL}) {
+        std::vector<float> x(dim), y(dim);
+        for (size_t i = 0; i < dim; i++) {
+            x[i] = value_gen(gen);
+            y[i] = x[i] + nudge_gen(gen);
+        }
+        const std::vector<uint8_t> qx = sq8_quantize_l2(x);
+        const std::vector<uint8_t> qy = sq8_quantize_l2(y);
+
+        const double expected = ReferenceL2SqrOverReconstruction(qx.data(), qy.data(), dim);
+
+        // The error floor is FP32 cancellation in sum_sq_x + sum_sq_y - 2*IP, so it scales with the
+        // norms, not with the distance. A flat bound is thousands of times the distance it guards
+        // at small dimensions, which would let a kernel returning zero pass.
+        const float tol = 8.0f * std::numeric_limits<float>::epsilon() *
+                          (sq8_norm_sq(qx, dim) + sq8_norm_sq(qy, dim));
+        unsigned char alignment = 0;
+        auto dispatched = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+
+        for (const auto &probe :
+             {std::make_pair("scalar", SQ8_SQ8_L2Sqr), std::make_pair("dispatched", dispatched)}) {
+            const float got = probe.second(qx.data(), qy.data(), dim);
+            // Bounded by the noise floor, not by zero: this change does not make the result
+            // provably non-negative. The two sides of the subtraction are computed by different
+            // routes, and a blob against itself lands just below zero at dim 512.
+            EXPECT_GE(got, -tol) << probe.first << " negative beyond the noise floor, dim " << dim;
+            EXPECT_NEAR(got, expected, tol)
+                << probe.first << " does not match the reconstruction, dim " << dim;
+        }
+    }
+}
+
+// The asymmetric path is how the defect reached production unnoticed: its tests run dimensions 1,
+// 5, 7 and 15 against an absolute tolerance of 0.01, and 0.4% of ||x||^2 at dim 5 is about 0.007,
+// which fits underneath. Storage is quantized and the query is not, so this checks
+// sum(x_r^2) + sum(y^2) - 2*sum(x_r*y) against a double reference over the same two sides.
+TEST_F(SpacesTest, SQ8_FP32_L2_matches_reconstruction_against_float_query) {
+    std::mt19937 gen(20260822);
+    std::uniform_real_distribution<float> value_gen(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> nudge_gen(-1e-3f, 1e-3f);
+
+    for (const size_t dim : {5UL, 15UL, 64UL, 128UL, 512UL}) {
+        std::vector<float> x(dim), y(dim);
+        for (size_t i = 0; i < dim; i++) {
+            x[i] = value_gen(gen);
+            y[i] = x[i] + nudge_gen(gen); // near-duplicate: small true distance exposes the offset
+        }
+        const std::vector<uint8_t> qx = sq8_quantize_l2(x);
+
+        // The query carries its own sum of squares, over the query itself, since it is not
+        // quantized. Reference is the distance between the reconstruction and that query.
+        std::vector<float> query(dim + 2, 0.0f);
+        double ref = 0.0, y_sum_sq = 0.0;
+        const float min_x = load_unaligned<float>(qx.data() + dim + sq8::MIN_VAL * sizeof(float));
+        const float delta_x = load_unaligned<float>(qx.data() + dim + sq8::DELTA * sizeof(float));
+        for (size_t i = 0; i < dim; i++) {
+            query[i] = y[i];
+            y_sum_sq += static_cast<double>(y[i]) * y[i];
+            const double d = (static_cast<double>(min_x) + static_cast<double>(delta_x) * qx[i]) -
+                             static_cast<double>(y[i]);
+            ref += d * d;
+        }
+        // Both query slots matter: the asymmetric inner product is
+        // min*sum(y) + delta*sum(a[i]*y[i]), so zeroing SUM_QUERY silently drops the min*sum(y)
+        // term. Fill them the way the production query preprocessor does.
+        test_utils::preprocess_sq8_fp32_query(query.data(), dim);
+
+        const float tol = 8.0f * std::numeric_limits<float>::epsilon() *
+                          (sq8_norm_sq(qx, dim) + static_cast<float>(y_sum_sq));
+        unsigned char alignment = 0;
+        auto dispatched = L2_SQ8_FP32_GetDistFunc(dim, &alignment, nullptr);
+        for (const auto &probe :
+             {std::make_pair("scalar", SQ8_FP32_L2Sqr), std::make_pair("dispatched", dispatched)}) {
+            // storage first, query second, as the other asymmetric tests call it.
+            const float got = probe.second(qx.data(), query.data(), dim);
+            EXPECT_GE(got, -tol) << probe.first << " negative beyond the noise floor, dim " << dim;
+            EXPECT_NEAR(got, ref, tol)
+                << probe.first << " does not match the reconstruction, dim " << dim;
+        }
+    }
+}
+
+// A blob against itself. Exact zero is not claimed here: the two sides of
+// sum_sq_x + sum_sq_y - 2*IP are computed by different routes and round differently, so this pins
+// the magnitude rather than the bit pattern.
+TEST_F(SpacesTest, SQ8_SQ8_L2_self_distance_is_near_zero) {
+    std::mt19937 gen(20260821);
+    std::uniform_real_distribution<float> value_gen(-3.0f, 5.0f);
+
+    for (const size_t dim : {3UL, 8UL, 64UL, 512UL}) {
+        std::vector<float> x(dim);
+        double norm_sq = 0.0;
+        for (size_t i = 0; i < dim; i++) {
+            x[i] = value_gen(gen);
+            norm_sq += static_cast<double>(x[i]) * x[i];
+        }
+        const std::vector<uint8_t> q = sq8_quantize_l2(x);
+        const float tol = static_cast<float>(1e-5 * norm_sq);
+
+        EXPECT_NEAR(SQ8_SQ8_L2Sqr(q.data(), q.data(), dim), 0.0f, tol)
+            << "scalar kernel, dim " << dim;
+        unsigned char alignment = 0;
+        auto dispatched = L2_SQ8_SQ8_GetDistFunc(dim, &alignment, nullptr);
+        EXPECT_NEAR(dispatched(q.data(), q.data(), dim), 0.0f, tol)
+            << "dispatched kernel, dim " << dim;
+    }
 }

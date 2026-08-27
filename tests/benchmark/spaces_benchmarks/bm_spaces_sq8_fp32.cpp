@@ -15,8 +15,8 @@ class BM_VecSimSpaces_SQ8_FP32 : public benchmark::Fixture {
 protected:
     std::mt19937 rng;
     size_t dim;
-    float *v1;
-    uint8_t *v2;
+    uint8_t *v1;
+    float *v2;
 
 public:
     BM_VecSimSpaces_SQ8_FP32() { rng.seed(47); }
@@ -24,17 +24,17 @@ public:
 
     void SetUp(const ::benchmark::State &state) {
         dim = state.range(0);
-        size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
-        v1 = new float[query_size];
-        test_utils::populate_sq8_fp32_query(v1, dim, true, 123);
         size_t quantized_size =
             dim * sizeof(uint8_t) + sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float);
-        v2 = new uint8_t[quantized_size];
-        test_utils::populate_float_vec_to_sq8_with_metadata(v2, dim, true, 1234);
+        v1 = new uint8_t[quantized_size];
+        test_utils::populate_float_vec_to_sq8_with_metadata(v1, dim, true, 1234);
+        size_t query_size = dim + sq8::query_metadata_count<VecSimMetric_L2>();
+        v2 = new float[query_size];
+        test_utils::populate_sq8_fp32_query(v2, dim, true, 123);
     }
     void TearDown(const ::benchmark::State &state) {
-        delete v1;
-        delete v2;
+        delete[] v1;
+        delete[] v2;
     }
 };
 

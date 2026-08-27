@@ -73,9 +73,9 @@ protected:
 };
 
 /** Thread Management Strategy:
- * - addVector(): Requires numThreads == 1
- * - addVectors(): Allows any numThreads value, but prohibits n=1 with numThreads>1
- * - Callers are responsible for setting appropriate thread counts
+ * - addVector(): Requires parallelism == 1
+ * - addVectors(): Allows any parallelism value, but prohibits n=1 with parallelism>1
+ * - Callers are responsible for setting appropriate parallelism
  **/
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
           size_t ResidualBits, bool IsLeanVec>
@@ -275,12 +275,12 @@ protected:
         }
     }
 
-    // Assuming numThreads was updated to reflect the number of available threads before this
+    // Assuming parallelism was updated to reflect the number of available threads before this
     // function was called.
-    // This function assumes that the caller has already set numThreads to the appropriate value
+    // This function assumes that the caller has already set parallelism to the appropriate value
     // for the operation.
-    // Important NOTE: For single vector operations (n=1), numThreads should be 1.
-    // For bulk operations (n>1), numThreads should reflect the number of available threads.
+    // Important NOTE: For single vector operations (n=1), parallelism should be 1.
+    // For bulk operations (n>1), parallelism should reflect the number of available threads.
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
             return 0;
@@ -410,9 +410,13 @@ public:
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{std::max(size_t{SVS_VAMANA_DEFAULT_NUM_THREADS}, params.num_threads)},
-          impl_{nullptr} {
+          threadpool_{this->allocator, this->logCallbackCtx}, impl_{nullptr} {
         logger_ = makeLogger();
+        if (params.num_threads != 0) {
+            this->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                      "SVSParams.num_threads is deprecated and ignored. "
+                      "Thread pool size is controlled globally via VecSim_UpdateThreadPoolSize().");
+        }
     }
 
     ~SVSIndex() = default;
@@ -516,8 +520,14 @@ public:
 
     VecSimDebugInfoIterator *debugInfoIterator() const override {
         VecSimIndexDebugInfo info = this->debugInfo();
-        // For readability. Update this number when needed.
-        size_t numberOfInfoFields = 23;
+        // Capacity hint: 26 = 25 fields added below (1 ALGORITHM + 9 from
+        // addCommonInfoToIterator + 15 SVS-specific) + 1 for the SHARED_MEMORY field
+        // that the C API wrapper VecSimIndex_DebugInfoIterator appends after this
+        // method returns. Reserving the extra slot avoids a reallocation on the
+        // top-level path; when nested in a tiered BACKEND_INDEX the C API does not
+        // append it, so the hint over-reserves by one (harmless).
+        // Update this number when fields are added or removed.
+        size_t numberOfInfoFields = 26;
         VecSimDebugInfoIterator *infoIterator =
             new VecSimDebugInfoIterator(numberOfInfoFields, this->allocator);
 
@@ -609,7 +619,7 @@ public:
 
     int addVector(const void *vector_data, labelType label) override {
         // Enforce single-threaded execution for single vector operations to ensure optimal
-        // performance and consistent behavior. Callers must set numThreads=1 before calling this
+        // performance and consistent behavior. Callers must set parallelism=1 before calling this
         // method.
         assert(getParallelism() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
@@ -638,10 +648,10 @@ public:
         }
     }
 
-    size_t getParallelism() const override { return threadpool_.size(); }
-    void setParallelism(size_t parallelism) override { threadpool_.resize(parallelism); }
+    size_t getParallelism() const override { return threadpool_.getParallelism(); }
+    void setParallelism(size_t parallelism) override { threadpool_.setParallelism(parallelism); }
 
-    size_t getPoolSize() const override { return threadpool_.capacity(); }
+    size_t getPoolSize() const override { return threadpool_.poolSize(); }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
 

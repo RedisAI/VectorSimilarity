@@ -15,6 +15,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/vec_sim_adhoc_bf_ctx.h"
 #include "VecSim/types/bfloat16.h"
+#include "VecSim/algorithms/svs/svs_utils.h"
 #include <cassert>
 #include "memory.h"
 
@@ -33,6 +34,18 @@ extern "C" void VecSim_SetLogCallbackFunction(logCallbackFunction callback) {
 }
 
 extern "C" void VecSim_SetWriteMode(VecSimWriteMode mode) { VecSimIndex::setWriteMode(mode); }
+
+extern "C" void VecSim_UpdateThreadPoolSize(size_t new_size) {
+    if (new_size == 0) {
+        VecSimIndex::setWriteMode(VecSim_WriteInPlace);
+    } else {
+        VecSimIndex::setWriteMode(VecSim_WriteAsync);
+    }
+    // Resize the shared SVS pool. Clamped to a minimum of 1. OS threads are spawned
+    // lazily on first SVS index creation; once an index exists this resizes the
+    // shared pool immediately (cooperating with the deferred-shrink protocol).
+    VecSimSVSThreadPool::resize(new_size);
+}
 
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams,
@@ -150,6 +163,32 @@ static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRaw
     return VecSimParamResolver_OK;
 }
 
+// Zero-initialize qparams and explicitly set fields whose "absent" state is not
+// representable by all-zeros (e.g. tristate enums where 0 maps to a valid value).
+static void _InitQueryParams(VecSimQueryParams *qparams, VecSimAlgo index_type, bool is_disk) {
+    memset(qparams, 0, sizeof(VecSimQueryParams));
+    if (index_type == VecSimAlgo_HNSWLIB && is_disk) {
+        qparams->hnswDiskRuntimeParams.shouldRerank = VecSimBool_UNSET;
+    }
+}
+
+static VecSimResolveCode _ResolveParams_Rerank(VecSimAlgo index_type, bool is_disk,
+                                               VecSimRawParam rparam, VecSimQueryParams *qparams) {
+    // RERANK is valid only for disk-based HNSW indexes.
+    if (index_type != VecSimAlgo_HNSWLIB || !is_disk) {
+        return VecSimParamResolverErr_UnknownParam;
+    }
+    if (qparams->hnswDiskRuntimeParams.shouldRerank != VecSimBool_UNSET) {
+        return VecSimParamResolverErr_AlreadySet;
+    }
+    VecSimBool bool_val;
+    if (validate_vecsim_tristate_bool_param(rparam, &bool_val) != VecSimParamResolver_OK) {
+        return VecSimParamResolverErr_BadValue;
+    }
+    qparams->hnswDiskRuntimeParams.shouldRerank = bool_val;
+    return VecSimParamResolver_OK;
+}
+
 static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
                                                      VecSimQueryParams *qparams,
                                                      VecsimQueryType query_type) {
@@ -176,7 +215,11 @@ extern "C" VecSimIndex *VecSimIndex_New(const VecSimParams *params) {
 }
 
 extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
-    return VecSimFactory::EstimateInitialSize(params);
+    try {
+        return VecSimFactory::EstimateInitialSize(params);
+    } catch (...) {
+        return SIZE_MAX;
+    }
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label) {
@@ -185,6 +228,11 @@ extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_
 
 extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
     return index->deleteVector(label);
+}
+
+extern "C" VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label,
+                                                       size_t new_label) {
+    return index->relabelVector(old_label, new_label);
 }
 
 extern "C" double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label,
@@ -235,9 +283,11 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     if (!qparams || (!rparams && (paramNum != 0))) {
         return VecSimParamResolverErr_NullParam;
     }
-    VecSimAlgo index_type = index->basicInfo().algo;
+    VecSimIndexBasicInfo info = index->basicInfo();
+    VecSimAlgo index_type = info.algo;
+    bool is_disk = info.isDisk;
 
-    bzero(qparams, sizeof(VecSimQueryParams));
+    _InitQueryParams(qparams, index_type, is_disk);
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
         if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
@@ -247,6 +297,11 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::EPSILON_STRING)) {
             if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type)) !=
+                VecSimParamResolver_OK) {
+                return res;
+            }
+        } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_RERANK_STRING)) {
+            if ((res = _ResolveParams_Rerank(index_type, is_disk, rparams[i], qparams)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
@@ -333,7 +388,20 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
-    return index->debugInfoIterator();
+    VecSimDebugInfoIterator *infoIterator = index->debugInfoIterator();
+    // Append the process-wide shared memory total. This field is not emitted by
+    // any algorithm's own debugInfoIterator(); it is injected here at the C API
+    // boundary so that every caller (regardless of algorithm) can account for
+    // memory not tied to any single index without special-casing SVS internals.
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_MEMORY_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = VecSim_GetSharedMemory()}}});
+    return infoIterator;
+}
+
+extern "C" size_t VecSim_GetSharedMemory(void) {
+    return VecSimSVSThreadPool::getSharedAllocationSize();
 }
 
 extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {

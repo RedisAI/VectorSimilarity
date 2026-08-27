@@ -11,6 +11,12 @@
 #include "VecSim/spaces/IP/IP_SVE_SQ8_SQ8.h"
 #include "VecSim/types/sq8.h"
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 using sq8 = vecsim_types::sq8;
 
 /**
@@ -38,10 +44,11 @@ float SQ8_SQ8_L2SqrSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dimen
     // Get precomputed sum of squares from both vectors
     // Layout: [uint8_t values (dim)] [min_val] [delta] [sum] [sum_of_squares]
     const float sum_sq_1 =
-        *reinterpret_cast<const float *>(pVec1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVec1 + dimension + sq8::SUM_SQUARES * sizeof(float));
     const float sum_sq_2 =
-        *reinterpret_cast<const float *>(pVec2 + dimension + sq8::SUM_SQUARES * sizeof(float));
+        load_unaligned<float>(pVec2 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // L2² = ||x||² + ||y||² - 2*IP(x, y)
     return sum_sq_1 + sum_sq_2 - 2.0f * ip;
 }
+} // namespace
