@@ -44,9 +44,9 @@ struct SVSIndexBase
     virtual void consolidate(const std::vector<labelType>& labels) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
-    virtual size_t getNumThreads() const = 0;
-    virtual void setNumThreads(size_t numThreads) = 0;
-    virtual size_t getThreadPoolCapacity() const = 0;
+    virtual size_t getParallelism() const = 0;
+    virtual void setParallelism(size_t parallelism) = 0;
+    virtual size_t getPoolSize() const = 0;
     virtual bool isCompressed() const = 0;
     virtual bool ready() const = 0;
 
@@ -504,8 +504,8 @@ public:
                           .maxCandidatePoolSize = this->buildParams.max_candidate_pool_size,
                           .pruneTo = this->buildParams.prune_to,
                           .useSearchHistory = this->buildParams.use_full_search_history,
-                          .numThreads = this->getThreadPoolCapacity(),
-                          .lastReservedThreads = this->getNumThreads(),
+                          .numThreads = this->getPoolSize(),
+                          .lastReservedThreads = this->getParallelism(),
                           .numberOfMarkedDeletedNodes = this->num_marked_deleted,
                           .searchWindowSize = this->search_window_size,
                           .searchBufferCapacity = this->search_buffer_capacity,
@@ -611,14 +611,14 @@ public:
         // Enforce single-threaded execution for single vector operations to ensure optimal
         // performance and consistent behavior. Callers must set numThreads=1 before calling this
         // method.
-        assert(getNumThreads() == 1 && "Can't use more than one thread to insert a single vector");
+        assert(getParallelism() == 1 && "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vector_data, &label, 1);
     }
 
     int addVectors(const void *vectors_data, const labelType *labels, size_t n) override {
         // Prevent misuse: single vector operations should use addVector(), not addVectors() with
         // n=1 This ensures proper thread management and API contract enforcement.
-        assert(!(n == 1 && getNumThreads() > 1) &&
+        assert(!(n == 1 && getParallelism() > 1) &&
                "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vectors_data, labels, n);
     }
@@ -638,10 +638,10 @@ public:
         }
     }
 
-    size_t getNumThreads() const override { return threadpool_.size(); }
-    void setNumThreads(size_t numThreads) override { threadpool_.resize(numThreads); }
+    size_t getParallelism() const override { return threadpool_.size(); }
+    void setParallelism(size_t parallelism) override { threadpool_.resize(parallelism); }
 
-    size_t getThreadPoolCapacity() const override { return threadpool_.capacity(); }
+    size_t getPoolSize() const override { return threadpool_.capacity(); }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
 

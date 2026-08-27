@@ -115,7 +115,7 @@ private:
             tiered_params.primaryIndexParams->algoParams.svsParams.num_threads;
         size_t num_threads =
             params_threadpool_size ? params_threadpool_size : mock_thread_pool.thread_pool_size;
-        tiered_index->GetSVSIndex()->setNumThreads(num_threads);
+        tiered_index->GetSVSIndex()->setParallelism(num_threads);
         test_utils::verifyNumThreads(tiered_index, num_threads, num_threads,
                                      std::string("CreateTieredSVSIndex"));
 
