@@ -2242,8 +2242,8 @@ protected:
     }
     void verifyNumThreads(TieredSVSIndex<data_t> *tiered_index, size_t expected_num_threads,
                           size_t expected_capcity) {
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getNumThreads(), expected_num_threads);
-        ASSERT_EQ(tiered_index->GetSVSIndex()->getThreadPoolCapacity(), expected_capcity);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getParallelism(), expected_num_threads);
+        ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), expected_capcity);
     }
 
     TieredSVSIndex<data_t> *CreateTieredSVSIndex(const TieredIndexParams &tiered_params,
@@ -2258,7 +2258,7 @@ protected:
 
         // Set number of available threads to 1 unless specified otherwise,
         // so we can insert one vector at a time directly to svs.
-        tiered_index->GetSVSIndex()->setNumThreads(num_available_threads);
+        tiered_index->GetSVSIndex()->setParallelism(num_available_threads);
         size_t params_threadpool_size =
             tiered_params.primaryIndexParams->algoParams.svsParams.num_threads;
         size_t expected_capacity =
