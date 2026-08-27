@@ -19,7 +19,7 @@
 #include <shared_mutex>
 
 #if HAVE_SVS
-// For the SVS special case in getDataByLabel; remove with it.
+// For the SVS special case in getDataByLabel; remove with it (MOD-17706).
 #include "VecSim/algorithms/svs/svs.h"
 #endif
 
@@ -155,10 +155,21 @@ public:
 
         bool backend_can_report = true;
 #if HAVE_SVS
-        // TODO: remove once SVSIndex::getDataByLabel reports real data. Until then the backend
-        // read below is guaranteed to append nothing, and reaching it means waiting on
-        // `mainIndexGuard` -- behind an SVS batch update, potentially for a while -- to be told
-        // so. The type test is deliberately explicit: it is a special case, not architecture.
+        // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
+        // means deleting this block, the `backend_can_report` flag, and its term in the condition
+        // below, plus the guarded include of svs.h -- after which the plain condition does the
+        // right thing for every backend.
+        //
+        // Until then the backend read is guaranteed to append nothing, and reaching it means
+        // waiting on `mainIndexGuard` -- behind an SVS batch update, potentially for a while --
+        // to be told so.
+        //
+        // Here rather than as an override in TieredSVSIndex because this method is not virtual:
+        // `VecSimTieredIndex` derives from `VecSimIndexInterface`, which does not declare it, and
+        // callers reach it through a `VecSimTieredIndex *` (RediSearch dynamic_casts to exactly
+        // that), so a derived override would simply not be found. The type test is deliberately
+        // explicit rather than dressed up as a capability: it is a special case, not
+        // architecture.
         backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
 #endif
 

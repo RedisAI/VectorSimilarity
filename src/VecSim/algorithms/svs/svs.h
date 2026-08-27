@@ -802,8 +802,26 @@ public:
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 
-    // TODO: when this reports real data, remove the SVSIndexBase check in
-    // VecSimTieredIndex::getDataByLabel, which currently skips the backend read for SVS entirely.
+    // TODO(MOD-17706): implement, and remove the SVSIndexBase check in
+    // VecSimTieredIndex::getDataByLabel that currently skips the backend read for SVS entirely.
+    //
+    // What it has to produce: the vectors stored under `label`, in the form the base contract
+    // describes -- the *stored* elements, i.e. after whatever preprocessing an insert applied --
+    // appending nothing when the label is absent, so the output size answers "is it held".
+    //
+    // Why it is empty today: SVS keeps vectors in the SVS library's own layout, quantized and for
+    // LeanVec dimensionality-reduced, and this wrapper has no per-label read of them.
+    //
+    // One rule to carry over from the HNSW implementations: report nothing rather than an
+    // approximation. They refuse when `isQuantized`, because a caller comparing a new value
+    // against the stored one byte for byte would read a dequantized reconstruction as a
+    // difference -- or worse, as a match. An SVS index that is quantized should answer the same
+    // way; only an unquantized one can answer truthfully.
+    //
+    // What it unblocks: the no-change-set path in RediSearch (`VectorIndex_HoldsVectors`), which
+    // is what serves JSON writes and background scans. Note that alone is not enough to make an
+    // SVS-backed vector field relabel -- `relabelVector` is also unimplemented for SVS, and both
+    // are needed.
     void getDataByLabel(
         labelType label,
         std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
