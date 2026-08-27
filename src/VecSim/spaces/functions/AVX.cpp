@@ -20,7 +20,7 @@ namespace spaces {
 
 dist_func_t<float> Choose_FP32_IP_implementation_AVX(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_InnerProductSIMD16_AVX);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP32_InnerProductSIMD16_AVX);
     return ret_dist_func;
 }
 
@@ -32,7 +32,7 @@ dist_func_t<double> Choose_FP64_IP_implementation_AVX(size_t dim) {
 
 dist_func_t<float> Choose_FP32_L2_implementation_AVX(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, FP32_L2SqrSIMD16_AVX);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, FP32_L2SqrSIMD16_AVX);
     return ret_dist_func;
 }
 

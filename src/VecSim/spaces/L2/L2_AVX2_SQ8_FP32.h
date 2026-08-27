@@ -28,15 +28,15 @@ using sq8 = vecsim_types::sq8;
  */
 
 // pVect1v = SQ8 storage, pVect2v = FP32 query
-template <unsigned char residual> // 0..15
+template <unsigned char residual> // 0..31
 float SQ8_FP32_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t dimension) {
     // Get the raw inner product using the common SIMD implementation
     const float ip = SQ8_FP32_InnerProductImp_AVX2<residual>(pVect1v, pVect2v, dimension);
 
     // Get precomputed sum of squares from storage blob (pVect1v is SQ8 storage)
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const float *params = reinterpret_cast<const float *>(pVect1 + dimension);
-    const float x_sum_sq = params[sq8::SUM_SQUARES];
+    const float x_sum_sq =
+        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
 
     // Get precomputed sum of squares from query blob (pVect2v is FP32 query)
     const float y_sum_sq = static_cast<const float *>(pVect2v)[dimension + sq8::SUM_SQUARES_QUERY];

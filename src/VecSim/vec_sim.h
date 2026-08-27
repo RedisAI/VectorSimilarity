@@ -31,7 +31,7 @@ VecSimIndex *VecSimIndex_New(const VecSimParams *params);
  * @brief Estimates the size of an empty index according to the parameters.
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
- * @return Estimated index size.
+ * @return Estimated index size, or SIZE_MAX if the parameters are invalid or unsupported.
  */
 size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
 
@@ -73,6 +73,26 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
 
 /**
+ * @brief Move the vector(s) stored under `old_label` to `new_label`, leaving the stored vector data
+ * and the index structure untouched.
+ *
+ * Only label bookkeeping is rewritten, so this costs O(1) per stored vector - no distance
+ * computations and, for HNSW, no graph mutation. Intended for callers whose external id changed
+ * while the vector did not, as a cheap replacement for delete-then-add.
+ *
+ * The move is rejected, leaving the index untouched, if `old_label` does not exist, if `new_label`
+ * is already in use, or if the labels are equal - each with its own code. Not all index types
+ * support this; those report `VecSimRelabel_Unsupported`, which a caller has to serve by delete +
+ * insert rather than treat as a no-op.
+ *
+ * @param index the index holding the vector(s).
+ * @param old_label the label currently holding the vector(s).
+ * @param new_label the label to move them to.
+ * @return `VecSimRelabel_OK` if the label was moved, otherwise the reason it was not.
+ */
+VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
+
+/**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
  * the vector fits the index - its type and dimension are the same as the index's, and if the
  * index's distance metric is cosine, the vector is already normalized.
@@ -84,8 +104,9 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @param label the label of the vector in the index.
  * @param blob binary representation of the second vector. Blob size should match the index data
  * type and dimension, and pre-normalized if needed.
- * @return The distance (according to the index's distance metric) between `blob` and the vector
- * with label  label`.
+ * @return The distance between `blob` and the vector with `label`, or INVALID_SCORE if the label is
+ * absent.
+ * @note Quantized indexes allocate and preprocess a temporary query blob on each call.
  */
 double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, const void *blob);
 
@@ -311,6 +332,24 @@ void VecSim_SetTestLogContext(const char *test_name, const char *test_type);
  * @param mode VecSimWriteMode the mode in which we add/remove vectors (async or in-place).
  */
 void VecSim_SetWriteMode(VecSimWriteMode mode);
+
+/**
+ * @brief Update the shared SVS thread pool size and set the write mode accordingly.
+ * If new_size == 0, sets write mode to in-place (no background threads).
+ * If new_size > 0, sets write mode to async and resizes the shared thread pool.
+ * @note Should be called from the main thread only.
+ *
+ * @param new_size the new thread pool size (0 = in-place mode, >0 = async mode).
+ */
+void VecSim_UpdateThreadPoolSize(size_t new_size);
+
+/**
+ * @brief Return the total bytes of process-wide VecSim allocations that are NOT tied to any
+ *        single index (e.g. the shared SVS thread-pool allocation).
+ *        This does NOT include per-index memory; use VecSimIndex_Info() for per-index accounting.
+ * @return Process-wide shared VecSim allocation size in bytes.
+ */
+size_t VecSim_GetSharedMemory(void);
 
 #ifdef __cplusplus
 }

@@ -755,6 +755,59 @@ TEST(CommonAPITest, NormalizeUint8) {
     ASSERT_FLOAT_EQ(norm, 1.0);
 }
 
+// The norm the cosine preprocessor writes goes through IntegralType_ComputeNorm, which accumulated
+// into a signed int. Each uint8 element contributes up to 255*255 = 65,025, so the total passes
+// INT32_MAX from dimension 33,026: at 65,537 the norm came back NaN, and at 66,052 it came back
+// 252.99 instead of about 65,536.49. Every stored vector and every query for a uint8 cosine index
+// takes this path, so a wrong norm reaches the distance kernels before they run, and no amount of
+// exactness inside the kernels can repair it.
+//
+// This went unnoticed because the kernel tests append the norm by hand, so no test
+// exercised this path at all.
+TEST(CommonAPITest, NormalizeUint8LargeDimension) {
+    // 33,025 is the last dimension whose worst case fits a signed int; the rest are past it.
+    for (const size_t dim : {size_t{33025}, size_t{33026}, size_t{65537}, size_t{66052}}) {
+        std::vector<uint8_t> v(dim + sizeof(float), 255);
+
+        VecSim_Normalize(v.data(), dim, VecSimType_UINT8);
+
+        float res_norm;
+        memcpy(&res_norm, v.data() + dim, sizeof(res_norm));
+        const double expected = std::sqrt(255.0 * 255.0 * static_cast<double>(dim));
+
+        ASSERT_TRUE(std::isfinite(res_norm)) << "norm is not finite at dim " << dim;
+        ASSERT_GT(res_norm, 0.0f) << "norm is not positive at dim " << dim;
+        EXPECT_NEAR(res_norm, expected, expected * 1e-5)
+            << "norm at dim " << dim << " is " << res_norm << ", expected about " << expected;
+    }
+}
+
+// The same path as an index sees it: store an all-255 vector in a uint8 cosine brute force index at
+// a dimension past the old overflow point and query it with itself. Cosine self-distance must be
+// about zero, which is impossible if either the stored or the query norm is NaN or wildly wrong.
+TEST(CommonAPITest, Uint8CosineSelfDistanceAtLargeDimension) {
+    constexpr size_t dim = 65537;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_Cosine};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_UINT8);
+    ASSERT_NE(index, nullptr);
+
+    std::vector<uint8_t> v(dim + sizeof(float), 255);
+    VecSimIndex_AddVector(index, v.data(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    auto *res = VecSimIndex_TopKQuery(index, v.data(), 1, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(res), 1);
+    auto *it = VecSimQueryReply_GetIterator(res);
+    auto *item = VecSimQueryReply_IteratorNext(it);
+    ASSERT_NE(item, nullptr);
+    const double score = VecSimQueryResult_GetScore(item);
+    EXPECT_TRUE(std::isfinite(score)) << "cosine self-distance is not finite: " << score;
+    EXPECT_NEAR(score, 0.0, 1e-5) << "cosine self-distance should be about zero, got " << score;
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(res);
+    VecSimIndex_Free(index);
+}
+
 /**
  * This test verifies that a tiered index correctly returns the closest vectors when querying data
  * distributed across both the flat and the backend indices, specifically when duplicate labels

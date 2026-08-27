@@ -12,6 +12,12 @@
 #include "VecSim/types/sq8.h"
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 using sq8 = vecsim_types::sq8;
 
 /**
@@ -48,15 +54,15 @@ float SQ8_SQ8_InnerProductSIMD_SVE_IMP(const void *pVec1v, const void *pVec2v, s
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v);
     const uint8_t *pVec2 = static_cast<const uint8_t *>(pVec2v);
 
-    const float *params1 = reinterpret_cast<const float *>(pVec1 + dimension);
-    const float min1 = params1[sq8::MIN_VAL];
-    const float delta1 = params1[sq8::DELTA];
-    const float sum1 = params1[sq8::SUM]; // Precomputed sum of original float elements
+    const auto *params1 = pVec1 + dimension;
+    const float min1 = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta1 = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
+    const float sum1 = load_unaligned<float>(params1 + sq8::SUM * sizeof(float));
 
-    const float *params2 = reinterpret_cast<const float *>(pVec2 + dimension);
-    const float min2 = params2[sq8::MIN_VAL];
-    const float delta2 = params2[sq8::DELTA];
-    const float sum2 = params2[sq8::SUM]; // Precomputed sum of original float elements
+    const auto *params2 = pVec2 + dimension;
+    const float min2 = load_unaligned<float>(params2 + sq8::MIN_VAL * sizeof(float));
+    const float delta2 = load_unaligned<float>(params2 + sq8::DELTA * sizeof(float));
+    const float sum2 = load_unaligned<float>(params2 + sq8::SUM * sizeof(float));
 
     // Apply algebraic formula with float conversion only at the end:
     // IP = min1*sum2 + min2*sum1 + δ1*δ2 * Σ(q1*q2) - dim*min1*min2
@@ -79,3 +85,4 @@ float SQ8_SQ8_CosineSIMD_SVE(const void *pVec1v, const void *pVec2v, size_t dime
     // Assume vectors are normalized.
     return SQ8_SQ8_InnerProductSIMD_SVE<partial_chunk, additional_steps>(pVec1v, pVec2v, dimension);
 }
+} // namespace

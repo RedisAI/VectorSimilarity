@@ -66,6 +66,11 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
+    // Keep size estimation consistent with NewIndex, which rejects quantized tiered indexes.
+    if (hnsw_params.quantType != VecSimQuant_NONE) {
+        throw std::invalid_argument("Quantization is not supported for tiered HNSW indexes");
+    }
+
     // Add size estimation of VecSimTieredIndex sub indexes.
     // Normalization is done by the frontend index.
     size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true);
@@ -95,6 +100,12 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
+    // The brute-force frontend is not quantized, so an SQ8 primary index would use an incompatible
+    // stored-vector layout.
+    if (params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE) {
+        return nullptr;
+    }
+
     // Tiered index that contains HNSW index as primary index
     VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
     if (type == VecSimType_FLOAT32) {
@@ -233,6 +244,7 @@ size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 size_t EstimateElementSize(const TieredIndexParams *params) {
+    // Match HNSW's element estimator, which leaves validation to NewIndex.
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         est = HNSWFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.hnswParams);

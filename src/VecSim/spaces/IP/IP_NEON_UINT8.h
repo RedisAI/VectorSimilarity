@@ -34,8 +34,9 @@ InnerProductStep(uint8_t *&pVect1, uint8_t *&pVect2, uint32x4_t &sum) {
     pVect2 += 16;
 }
 
+// static: the DOTPROD header defines this name too, with a different body.
 template <unsigned char residual> // 0..63
-float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static float UINT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     uint8_t *pVect1 = (uint8_t *)pVect1v;
     uint8_t *pVect2 = (uint8_t *)pVect2v;
 
@@ -119,9 +120,7 @@ float UINT8_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, si
 template <unsigned char residual> // 0..63
 float UINT8_CosineSIMD_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = UINT8_InnerProductImp<residual>(pVect1v, pVect2v, dimension);
-    float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect1v) + dimension);
-    float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const uint8_t *>(pVect2v) + dimension);
+    const float norm_v1 = load_unaligned<float>(static_cast<const uint8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const uint8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
 }

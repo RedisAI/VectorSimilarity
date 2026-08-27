@@ -1888,18 +1888,18 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // Delete 2, expect to create two repair job pending from 0 and 1. Also, expect that swap
-    // job for 0 will be executed, so that 2 and 0 are swapped. Then, we should have only 1
-    // pending repair job for the "new" 0 - for deleting the old 1->2, while the second job for
-    // deleting the old 0->2 is invalid and reduced from the pending repair jobs counter.
+    // Delete 2. Only the 1->2 edge is left to repair: 0 was taken out of the graph when its own
+    // repair jobs completed, so it no longer points to 2 and no 0->2 job is created. Also, expect
+    // that swap job for 0 will be executed, so that 2 and 0 are swapped - the single pending job is
+    // then 1->0 (originally 1->2).
     EXPECT_EQ(tiered_index->deleteVector(2), 1);
     EXPECT_EQ(tiered_index->indexSize(), 2);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
 
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 2);
-    // The first repair job should remove 1->0 (originally was 1->2).
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    // The repair job should remove 1->0 (originally was 1->2).
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
@@ -1908,34 +1908,15 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
               0);
     mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // The second repair job is invalid due to the removal of (the original) 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
-              invalid_jobs_counter++);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
-    // Delete 1, that should still have 0->1 edge that should be repaired. This should cause
-    // the swap and removal of 0 (that has no more pending jobs at that point) - so that 1 would
-    // get id 0, and then the new 0 should have no pending repair jobs.
+    // Delete 1. The only other element left (the "new" 0, which is the old 2) is deleted and was
+    // already taken out of the graph, so nothing points to 1 and no u->1 job is created.
+    // Its swap job is therefore ready right away, and the swap and removal of the previous 0 is
+    // triggered - so that 1 gets id 0.
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
     EXPECT_EQ(tiered_index->idToSwapJob.size(), 1);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
     EXPECT_EQ(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
-    // The repair job is invalid due to the removal of (the previous) 0.
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(mock_thread_pool.jobQ.front().job->isValid, false);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
-              invalid_jobs_counter);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)
-                  ->associatedSwapJobs[0]
-                  ->deleted_id,
-              0);
-    mock_thread_pool.thread_iteration();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 1);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 1);
@@ -1947,6 +1928,80 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
     EXPECT_EQ(tiered_index->indexSize(), 0);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+}
+
+// Covers the invalidation of a pending repair job whose node is disposed of by a swap job. A repair
+// job is denoted below as the edge it removes: u->v is the job that repairs u's connections after
+// its neighbour v was deleted.
+// A deleted element is taken out of the graph as soon as the jobs of *its own* deletion are done,
+// so for a job on it to still be pending when it is disposed of, that job has to belong to
+// *another* element's deletion: 0 is deleted first, then 1 is deleted while 0 still points to it
+// (registering a 0->1 job), and only then the 1->0 and 2->0 jobs complete and 0 is swapped out.
+TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Threshold of 1, so that a ready swap job is executed at the first opportunity.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
+
+    // Insert 3 vectors directly into HNSW, expect to have a fully connected graph.
+    for (size_t i = 0; i < 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, i, i);
+    }
+
+    // Delete 0 - a u->0 job is created for every (u, level) pair that points to it, that is 1->0
+    // and 2->0. Note that the number of jobs depends on the levels the elements got (and that jobs
+    // of the same (u, level) are merged), so the counters are compared to each other rather than to
+    // fixed values below.
+    EXPECT_EQ(tiered_index->deleteVector(0), 1);
+    ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+    ASSERT_GT(tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load(), 0);
+
+    // Delete 1 before those jobs run. 0 is deleted but still connected (its own repairs are
+    // pending), so a 0->1 job is created here and stays pending.
+    EXPECT_EQ(tiered_index->deleteVector(1), 1);
+    ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
+
+    // Execute the 1->0 and 2->0 jobs, so that 0 has no pending repair job left and is taken out of
+    // the graph, making its swap job ready. The 0->1 job, which belongs to 1's swap job, is still
+    // queued.
+    while (tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load() > 0) {
+        ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
+    ASSERT_EQ(tiered_index->invalidJobs.size(), 0);
+    int pending_for_1 = tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load();
+    ASSERT_GT(pending_for_1, 0);
+
+    // Dispose of 0. The pending 0->1 job has to be invalidated, and 1's swap job should stop
+    // waiting for it.
+    tiered_index->runGC();
+    EXPECT_EQ(tiered_index->indexSize(), 2);
+    EXPECT_EQ(tiered_index->invalidJobs.size(), 1);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(),
+              pending_for_1 - 1);
+
+    // Drain the remaining jobs: the invalidated 0->1 job is disposed of without being executed, and
+    // the 2->1 job (whose node id was renamed by the swap above) completes 1's repairs - so 1 is
+    // taken out of the graph as well.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    EXPECT_EQ(tiered_index->invalidJobs.size(), 0);
+    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 0);
+
+    // Disposing of 1 as well leaves a single element in the index, with a valid graph.
+    tiered_index->runGC();
+    EXPECT_EQ(tiered_index->indexSize(), 1);
+    EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);
+    auto state = tiered_index->getHNSWIndex()->checkIntegrity();
+    EXPECT_EQ(state.valid_state, true);
+    EXPECT_EQ(state.connections_to_repair, 0);
 }
 
 // A set of lambdas that determine whether a vector should be inserted to the
@@ -2758,7 +2813,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           backendIndexInfo.commonInfo.memory +
                                           frontendIndexInfo.commonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
     EXPECT_EQ(info.tieredInfo.bufferLimit, 1000);
     EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.pendingSwapJobsThreshold, 1);
     // Verify new tiered-specific stats
@@ -2789,7 +2844,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     // Vector is in flat buffer, no direct insertions yet
     EXPECT_EQ(stats.flatBufferSize, 1);
     EXPECT_EQ(stats.directHNSWInsertions, 0);
@@ -2808,7 +2863,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
     // Vector moved from flat buffer to HNSW by background thread
     EXPECT_EQ(stats.flatBufferSize, 0);
     EXPECT_EQ(stats.directHNSWInsertions, 0);
@@ -2828,7 +2883,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                               info.tieredInfo.backendCommonInfo.memory +
                                               info.tieredInfo.frontendCommonInfo.memory);
         EXPECT_EQ(info.commonInfo.memory, stats.memory);
-        EXPECT_EQ(info.tieredInfo.backgroundIndexing, true);
+        EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_TRUE);
     }
 
     VecSimIndex_DeleteVector(tiered_index, 1);
@@ -2845,7 +2900,7 @@ TYPED_TEST(HNSWTieredIndexTest, testInfo) {
                                           info.tieredInfo.backendCommonInfo.memory +
                                           info.tieredInfo.frontendCommonInfo.memory);
     EXPECT_EQ(info.commonInfo.memory, stats.memory);
-    EXPECT_EQ(info.tieredInfo.backgroundIndexing, false);
+    EXPECT_EQ(info.tieredInfo.backgroundIndexing, VecSimBool_FALSE);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, testDirectHNSWInsertionsStats) {
@@ -2936,7 +2991,9 @@ TYPED_TEST(HNSWTieredIndexTest, testInfoIterator) {
     VecSimIndexDebugInfo frontendIndexInfo = tiered_index->frontendIndex->debugInfo();
     VecSimIndexDebugInfo backendIndexInfo = tiered_index->backendIndex->debugInfo();
 
-    VecSimDebugInfoIterator *infoIterator = tiered_index->debugInfoIterator();
+    // Use the C API wrapper (as RediSearch does) so the process-wide SHARED_MEMORY
+    // field is appended at the top level — compareTieredIndexInfoToIterator expects it.
+    VecSimDebugInfoIterator *infoIterator = VecSimIndex_DebugInfoIterator(tiered_index);
     compareTieredIndexInfoToIterator(info, frontendIndexInfo, backendIndexInfo, infoIterator);
 
     VecSimDebugInfoIterator_Free(infoIterator);
@@ -4246,33 +4303,29 @@ public:
 
     void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
                     size_t &storage_blob_size, size_t &query_blob_size,
-                    unsigned char alignment) const override {
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
         // This assert makes sure the current use of the preprocessor is valid,
         // i.e., both blobs are of the same size.
         // In order to use different sizes, the preprocessor should be modified.
         assert(storage_blob_size == query_blob_size);
-        preprocess(original_blob, storage_blob, query_blob, storage_blob_size, alignment);
-    }
-
-    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
-                    size_t &input_blob_size, unsigned char alignment) const override {
 
         // One blob was already allocated by a previous preprocessor(s) that process both blobs the
         // same. The blobs are pointing to the same memory, we need to allocate another memory slot
         // to split them.
         if ((storage_blob == query_blob) && (query_blob != nullptr)) {
-            storage_blob = this->allocator->allocate(input_blob_size);
-            memcpy(storage_blob, query_blob, input_blob_size);
+            storage_blob = this->allocator->allocate(storage_blob_size);
+            memcpy(storage_blob, query_blob, storage_blob_size);
         }
 
         // Either both are nullptr or they are pointing to different memory slots. Both cases are
         // handled by the designated functions.
-        this->preprocessForStorage(original_blob, storage_blob, input_blob_size);
-        this->preprocessQuery(original_blob, query_blob, input_blob_size, alignment);
+        this->preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                   storage_alignment);
+        this->preprocessQuery(original_blob, query_blob, query_blob_size, query_alignment);
     }
 
-    void preprocessForStorage(const void *original_blob, void *&blob,
-                              size_t &input_blob_size) const override {
+    void preprocessForStorage(const void *original_blob, void *&blob, size_t &input_blob_size,
+                              unsigned char storage_alignment) const override {
         // If the blob was not allocated yet, allocate it.
         if (blob == nullptr) {
             blob = this->allocator->allocate(input_blob_size);
@@ -4332,7 +4385,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
     // a preprocessor container that is able to hold a preprocessor array.
     constexpr size_t n_preprocessors = 1;
     auto multiPPContainer = new (allocator)
-        MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getAlignment());
+        MultiPreprocessorsContainer<TEST_DATA_T, 1>(allocator, hnsw_index->getStorageAlignment());
     auto pp_double_value = new (allocator) PreprocessorDoubleValue<TEST_DATA_T>(allocator, dim);
     ASSERT_EQ(multiPPContainer->addPreprocessor(pp_double_value), 0);
 
@@ -4384,7 +4437,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
                 expected_score = frontend_index->calcDistance(normalized_query, normalized_vec);
             }
             if (label == 1) { // the result in the hnsw index
-                expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+                expected_score =
+                    hnsw_index->calcDistanceForQuery(norm_double_vec, norm_double_query);
             }
             ASSERT_EQ(score, expected_score) << "label: " << label;
         };
@@ -4410,7 +4464,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWWithPreprocessor) {
         // Both vector were processed by the hnsw preprocessor, as well as the query.
         // The score should be the distance from the doubled query to the doubled vector.
         auto verify_res = [&](size_t label, double score, size_t result_rank) {
-            double expected_score = hnsw_index->calcDistance(norm_double_query, norm_double_vec);
+            double expected_score =
+                hnsw_index->calcDistanceForQuery(norm_double_vec, norm_double_query);
             ASSERT_EQ(score, expected_score) << "label: " << label;
         };
 
@@ -4531,4 +4586,251 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
               hnsw_index->indexMetaDataCapacity() +
                   tiered_index->frontendIndex->indexMetaDataCapacity());
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorFlatOnly) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // The vector lands in the flat buffer with a pending insert job; nothing is in HNSW yet.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
+    const idType flat_id = tiered_index->labelToInsertJobs.at(7)[0]->id;
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+
+    // The flat tier moved, and so did both halves of the job bookkeeping: the map key and the
+    // job's own copy of the label. A half-applied move would make the worker below either index
+    // the vector under the stale label or throw out of `labelToInsertJobs.at`.
+    ASSERT_TRUE(frontend_index->isLabelExists(70));
+    ASSERT_FALSE(frontend_index->isLabelExists(7));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(7), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->label, 70);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->id, flat_id);
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 1);
+
+    // Draining the job must ingest the vector into HNSW under the *new* label and clear the flat
+    // tier, exactly as it would have for a label that was never moved.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_TRUE(hnsw_index->isLabelExists(70));
+    ASSERT_FALSE(hnsw_index->isLabelExists(7));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(70), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 70);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(tiered_index, query, 1, verify_res);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorBothTiers) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Reproduce the ingestion window: `executeInsertJob` inserts into HNSW *before* removing the
+    // vector from the flat buffer, so a label is legitimately live in both tiers at once. Build
+    // that state directly so the test is deterministic.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+
+    // Both tiers must move - an implementation treating them as mutually exclusive would leave one
+    // stale copy behind under the old label.
+    ASSERT_TRUE(frontend_index->isLabelExists(70));
+    ASSERT_FALSE(frontend_index->isLabelExists(7));
+    ASSERT_TRUE(hnsw_index->isLabelExists(70));
+    ASSERT_FALSE(hnsw_index->isLabelExists(7));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70)[0]->label, 70);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// The multi case is where a label has more than one id in each of its three homes, so a move that
+// handles only the first id of a label - or only one home - still looks right in the single-value
+// tests. Assert on the whole id set of every home instead.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorMulti) {
+    size_t dim = 4;
+    size_t per_label = 3;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Label 7 gets `per_label` vectors in the flat buffer (each with a pending insert job) and
+    // `per_label` more directly in HNSW, reproducing the ingestion window for every copy. Label 8
+    // is an untouched neighbour with copies of its own, so a move that is too broad shows up too.
+    TEST_DATA_T vector[dim];
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, i);
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 8, i + 100);
+        GenerateVector<TEST_DATA_T>(vector, dim, i + 10);
+        hnsw_index->addVector(vector, 7);
+    }
+    ASSERT_EQ(frontend_index->indexSize(), per_label * 2);
+    ASSERT_EQ(hnsw_index->indexSize(), per_label);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), per_label);
+    auto hnsw_ids_before = hnsw_index->getElementIds(7);
+    ASSERT_EQ(hnsw_ids_before.size(), per_label);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+
+    // Nothing was added or dropped along the way.
+    ASSERT_EQ(frontend_index->indexSize(), per_label * 2);
+    ASSERT_EQ(hnsw_index->indexSize(), per_label);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
+
+    // Every home moved, and moved *all* of its ids.
+    ASSERT_TRUE(frontend_index->isLabelExists(70));
+    ASSERT_FALSE(frontend_index->isLabelExists(7));
+    ASSERT_TRUE(hnsw_index->isLabelExists(70));
+    ASSERT_FALSE(hnsw_index->isLabelExists(7));
+    ASSERT_EQ(hnsw_index->getElementIds(70), hnsw_ids_before);
+    for (idType id : hnsw_ids_before) {
+        ASSERT_EQ(hnsw_index->getExternalLabel(id), 70);
+    }
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(7), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70).size(), per_label);
+    for (HNSWInsertJob *job : tiered_index->labelToInsertJobs.at(70)) {
+        ASSERT_EQ(job->label, 70);
+    }
+
+    // The neighbouring label kept all of its own copies.
+    ASSERT_TRUE(frontend_index->isLabelExists(8));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(8).size(), per_label);
+
+    // The vectors are still searchable, now reported under the new label.
+    GenerateVector<TEST_DATA_T>(vector, dim, 0);
+    auto verify_res = [&](size_t label, double score, size_t rank) { ASSERT_EQ(label, 70); };
+    runTopKSearchTest(tiered_index, vector, 1, verify_res);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorRejects) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Label 1 is ingested into HNSW, label 2 stays pending in the flat buffer. The target of a
+    // relabel must be free in *both* tiers and in the pending-job map.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration();
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 2);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 2, 1),
+              VecSimRelabel_NewLabelTaken); // target lives in HNSW
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2),
+              VecSimRelabel_NewLabelTaken); // target lives in flat + jobs
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 1), VecSimRelabel_SameLabel);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), VecSimRelabel_OldLabelMissing);
+    // An absent source outranks an occupied target: a caller that resolves the conflict by
+    // freeing the target must not be sent down that path for a move with nothing to move.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 1), VecSimRelabel_OldLabelMissing);
+
+    // Every rejection left both tiers and the job map untouched.
+    ASSERT_TRUE(hnsw_index->isLabelExists(1));
+    ASSERT_TRUE(frontend_index->isLabelExists(2));
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(2).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(2)[0]->label, 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// Relabel racing against live ingestion by the worker threads. The point of interest is the
+// invariant that `addVector` and `deleteVector` rely on when they reach for
+// `labelToInsertJobs.at(label)` behind an `isLabelExists(label)` guard, and that
+// `executeInsertJob` relies on for `labelToInsertJobs.at(job->label)`: a label present in the flat
+// buffer must be a key in the job map. A relabel that moved the flat entry without re-keying the
+// job map (or without rewriting `job->label`) breaks it, and the resulting `std::out_of_range`
+// would be thrown inside a worker thread - i.e. it would terminate the process, not fail an
+// assertion. So reaching the end of this test at all is the real assertion.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
+    size_t dim = 4;
+    size_t n = 500;
+    // The offset that maps an original label to its relabeled value; kept larger than `n` so the
+    // two ranges cannot overlap and make a relabel fail on an occupied target.
+    const labelType relabel_offset = 10000;
+
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    mock_thread_pool.init_threads();
+
+    // Interleave adds with relabels of already-added labels, so that a relabel can land while a
+    // worker is anywhere in `executeInsertJob` for that same label - including the window where the
+    // vector is live in both tiers at once.
+    size_t relabeled = 0;
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        if (i > 0) {
+            relabeled +=
+                tiered_index->relabelVector(i - 1, i - 1 + relabel_offset) == VecSimRelabel_OK;
+        }
+    }
+    relabeled += tiered_index->relabelVector(n - 1, n - 1 + relabel_offset) == VecSimRelabel_OK;
+
+    mock_thread_pool.thread_pool_join();
+
+    // Every relabel targeted a distinct, unoccupied label of a vector known to exist, so all of
+    // them must have been applied - otherwise the label accounting below would pass trivially.
+    ASSERT_EQ(relabeled, n);
+
+    // The index is fully ingested, holds exactly the relabeled range, and none of the original
+    // labels survived anywhere.
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_EQ(tiered_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), n);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_TRUE(hnsw_index->isLabelExists(i + relabel_offset)) << "missing label " << i;
+        ASSERT_FALSE(hnsw_index->isLabelExists(i)) << "stale label " << i;
+    }
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // Each moved label still resolves to its own vector, so no relabel crossed wires.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T expected[dim];
+        GenerateVector<TEST_DATA_T>(expected, dim, i);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(i + relabel_offset, expected), 0)
+            << "label " << i + relabel_offset << " does not hold its original vector";
+    }
 }

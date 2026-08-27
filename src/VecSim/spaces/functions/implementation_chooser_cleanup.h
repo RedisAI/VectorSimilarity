@@ -20,6 +20,7 @@
 #undef C32
 #undef C64
 
+#undef CASES4
 #undef CASES8
 #undef CASES16
 #undef CASES32

@@ -11,6 +11,8 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/vec_sim_debug.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/index_factories/factory_utils.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "unit_test_utils.h"
 #include "VecSim/utils/serializer.h"
@@ -42,6 +44,50 @@ protected:
 // DataTypeSet, TEST_DATA_T and TEST_DIST_T are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(HNSWTest, DataTypeSet);
+
+namespace {
+
+float storedDispatchTestFunc(const void *, const void *, size_t) { return 11.0f; }
+
+float queryDispatchTestFunc(const void *, const void *, size_t) { return 22.0f; }
+
+} // namespace
+
+TEST(HNSWDistanceDispatchTest, UsesStoredToQueryDispatch) {
+    constexpr size_t dim = 4;
+    HNSWParams params = {
+        .type = VecSimType_FLOAT32,
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = false,
+    };
+    auto abstract_params = VecSimFactory::NewAbstractInitParams(&params, nullptr, false);
+    auto components = CreateIndexComponents<float, float>(abstract_params.allocator, params.metric,
+                                                          params.dim, false);
+    delete components.indexCalculator;
+    components.indexCalculator = new (abstract_params.allocator) DistanceCalculatorCommon<float>(
+        abstract_params.allocator, storedDispatchTestFunc, queryDispatchTestFunc);
+
+    auto *index = new (abstract_params.allocator)
+        HNSWIndex_Single<float, float>(&params, abstract_params, components);
+    float vector[dim] = {1.0f, 2.0f, 3.0f, 4.0f};
+    float query[dim] = {4.0f, 3.0f, 2.0f, 1.0f};
+    VecSimIndex_AddVector(index, vector, 7);
+
+    ASSERT_FLOAT_EQ(index->calcDistance(vector, query), 11.0f);
+    auto verify_query_score = [](size_t id, double score, size_t) {
+        ASSERT_EQ(id, 7);
+        ASSERT_FLOAT_EQ(score, 22.0f);
+    };
+
+    runTopKSearchTest(index, query, 1, verify_query_score);
+    runRangeQueryTest(index, query, 23.0, verify_query_score, 1, BY_SCORE);
+    VecSimBatchIterator *batch_iterator = VecSimBatchIterator_New(index, query, nullptr);
+    runBatchIteratorSearchTest(batch_iterator, 1, verify_query_score);
+    VecSimBatchIterator_Free(batch_iterator);
+
+    VecSimIndex_Free(index);
+}
 
 TYPED_TEST(HNSWTest, hnsw_vector_add_test) {
     size_t dim = 4;
@@ -1244,6 +1290,160 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(HNSWTest, hnsw_resolve_rerank_rejected_on_ram_hnsw) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 2;
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = M, .efConstruction = ef, .efRuntime = ef};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+
+    VecSimQueryParams qparams;
+    std::vector<VecSimRawParam> rparams;
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
+
+    // RERANK is only valid for disk-based HNSW; reject on RAM HNSW for every query type.
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
+            VecSimParamResolverErr_UnknownParam);
+    }
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
+    size_t dim = 4;
+    size_t M = 8;
+    size_t ef = 2;
+
+    HNSWParams params = {
+        .dim = dim, .metric = VecSimMetric_L2, .M = M, .efConstruction = ef, .efRuntime = ef};
+
+    VecSimIndex *index = this->CreateNewIndex(params);
+    // Flip the disk flag so that the resolver treats this as a disk-based HNSW.
+    this->CastToHNSW(index)->setIsDiskForTesting(true);
+
+    VecSimQueryParams qparams;
+    std::vector<VecSimRawParam> rparams;
+
+    // --- defaults: efRuntime=0, shouldRerank=UNSET across all query types ---
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, nullptr, 0, &qparams, query_type), VecSim_OK);
+        EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 0);
+        EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_UNSET);
+    }
+
+    // --- RERANK: TRUE accepted on KNN/HYBRID/RANGE/NONE ---
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(
+            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
+            VecSim_OK);
+        EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_TRUE);
+    }
+
+    // --- RERANK: FALSE (case-insensitive) ---
+    rparams[0] = (VecSimRawParam){
+        .name = "rerank", .nameLen = strlen("rerank"), .value = "false", .valLen = strlen("false")};
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_FALSE);
+
+    // --- EF_RUNTIME: KNN OK, value visible via the disk union view ---
+    rparams[0] = (VecSimRawParam){.name = "ef_runtime",
+                                  .nameLen = strlen("ef_runtime"),
+                                  .value = "100",
+                                  .valLen = strlen("100")};
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 100);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_UNSET);
+
+    // --- EF_RUNTIME: rejected on RANGE ---
+    EXPECT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_RANGE),
+              VecSimParamResolverErr_UnknownParam);
+
+    // --- combined: EF_RUNTIME + RERANK in one resolve call ---
+    rparams.push_back((VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
+    ASSERT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 100);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.shouldRerank, VecSimBool_TRUE);
+
+    // --- HYBRID interactions: EF_RUNTIME + HYBRID_POLICY=ADHOC_BF rejected ---
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "ADHOC_BF",
+                                  .valLen = strlen("ADHOC_BF")};
+    EXPECT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
+
+    // --- HYBRID interactions: EF_RUNTIME + HYBRID_POLICY=BATCHES + BATCH_SIZE accepted ---
+    rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
+                                  .nameLen = strlen("HYBRID_POLICY"),
+                                  .value = "BATCHES",
+                                  .valLen = strlen("BATCHES")};
+    rparams.push_back((VecSimRawParam){.name = "batch_size",
+                                       .nameLen = strlen("batch_size"),
+                                       .value = "50",
+                                       .valLen = strlen("50")});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_HYBRID),
+              VecSim_OK);
+    EXPECT_EQ(qparams.hnswDiskRuntimeParams.efRuntime, 100);
+    EXPECT_EQ(qparams.searchMode, HYBRID_BATCHES);
+    EXPECT_EQ(qparams.batchSize, 50);
+
+    // --- error paths: BadValue ---
+    rparams.clear();
+    rparams.push_back((VecSimRawParam){.name = "RERANK",
+                                       .nameLen = strlen("RERANK"),
+                                       .value = "MAYBE",
+                                       .valLen = strlen("MAYBE")});
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    rparams[0] = (VecSimRawParam){
+        .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "-30", .valLen = 3};
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_BadValue);
+
+    // --- error paths: AlreadySet (RERANK) ---
+    rparams[0] = (VecSimRawParam){
+        .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")};
+    rparams.push_back((VecSimRawParam){.name = "RERANK",
+                                       .nameLen = strlen("RERANK"),
+                                       .value = "FALSE",
+                                       .valLen = strlen("FALSE")});
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_AlreadySet);
+
+    // --- error paths: AlreadySet (EF_RUNTIME) ---
+    rparams[0] = (VecSimRawParam){
+        .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "100", .valLen = 3};
+    rparams[1] = (VecSimRawParam){
+        .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "100", .valLen = 3};
+    EXPECT_EQ(
+        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
+        VecSimParamResolverErr_AlreadySet);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTest, hnsw_get_distance) {
     size_t n = 4;
     size_t dim = 2;
@@ -2036,6 +2236,80 @@ TYPED_TEST(HNSWTest, repairNodeConnectionsBasic) {
     VecSimIndex_Free(index);
 }
 
+// `isolateDeletedElement` handles three edge shapes, and the two that involve another *deleted*
+// element are the ones that no repair job ever fixes - two deleted elements never get a repair job
+// for each other's deletion. Build those two shapes explicitly, as a workload only runs into them
+// incidentally.
+TYPED_TEST(HNSWTest, isolateDeletedElementEdgeShapes) {
+    size_t dim = 8;
+    size_t n = dim;
+    size_t M = 8;
+
+    // An index with a full graph at level 0, in which 0 and 1 are marked deleted and every live
+    // element was already repaired. The only edges left on 0 are then the one to 1 - between two
+    // deleted elements, recorded on neither side - and unidirectional ones to the live elements.
+    auto build_index = [&]() {
+        HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = M};
+        VecSimIndex *index = this->CreateNewIndex(params);
+        TEST_DATA_T vec[] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (size_t i = 0; i < n; i++) {
+            vec[i] = 1.0;
+            VecSimIndex_AddVector(index, vec, i);
+            vec[i] = 0.0;
+        }
+        auto *hnsw_index = this->CastToHNSW(index);
+        hnsw_index->markDelete(0);
+        hnsw_index->markDelete(1);
+        for (size_t i = 2; i < n; i++) {
+            hnsw_index->repairNodeConnections(i, 0);
+        }
+        return index;
+    };
+
+    const idType isolated_id = 0;
+    const idType deleted_neighbour_id = 1;
+
+    auto assert_isolated = [&](auto *hnsw_index) {
+        ElementLevelData &isolated = hnsw_index->getElementLevelData(isolated_id, 0);
+        ASSERT_EQ(isolated.getNumLinks(), 0);
+        ASSERT_TRUE(isolated.getIncomingEdges().empty());
+        for (idType i = 1; i < (idType)n; i++) {
+            ASSERT_FALSE(hnsw_index->hasLink(hnsw_index->getElementLevelData(i, 0), isolated_id));
+        }
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    };
+
+    // A bidirectional edge between two deleted elements: 1 was never repaired, so 0 <-> 1 is
+    // still intact.
+    {
+        VecSimIndex *index = build_index();
+        auto *hnsw_index = this->CastToHNSW(index);
+        ASSERT_TRUE(hnsw_index->hasLink(hnsw_index->getElementLevelData(isolated_id, 0),
+                                        deleted_neighbour_id));
+        ASSERT_TRUE(hnsw_index->hasLink(hnsw_index->getElementLevelData(deleted_neighbour_id, 0),
+                                        isolated_id));
+
+        hnsw_index->isolateDeletedElement(isolated_id);
+        assert_isolated(hnsw_index);
+        VecSimIndex_Free(index);
+    }
+
+    // The same edge, now unidirectional *into* the isolated element: drop 0->1 and record it as an
+    // incoming edge of 0, exactly as removing that side of the edge would.
+    {
+        VecSimIndex *index = build_index();
+        auto *hnsw_index = this->CastToHNSW(index);
+        ElementLevelData &isolated = hnsw_index->getElementLevelData(isolated_id, 0);
+        isolated.removeLink(deleted_neighbour_id);
+        isolated.newIncomingUnidirectionalEdge(deleted_neighbour_id);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+        hnsw_index->isolateDeletedElement(isolated_id);
+        assert_isolated(hnsw_index);
+        VecSimIndex_Free(index);
+    }
+}
+
 TYPED_TEST(HNSWTest, getElementNeighbors) {
     size_t dim = 4;
     size_t n = 0;
@@ -2091,6 +2365,111 @@ TYPED_TEST(HNSWTest, FitMemoryTest) {
     index->fitMemory();
     // Due to the initial capacity, the memory for the vector was already allocated
     ASSERT_EQ(index->getAllocationSize(), initial_memory);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, relabelVector) {
+    size_t dim = 4;
+    size_t n = 10;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Capture the state that a relabel must preserve: the internal id, and the distance from a
+    // query, which together prove that neither the stored data nor the graph position moved.
+    const labelType old_label = 3;
+    const labelType new_label = 100;
+    auto ids_before = hnsw_index->getElementIds(old_label);
+    ASSERT_EQ(ids_before.size(), 1);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, old_label);
+    const double dist_before = hnsw_index->getDistanceFrom_Unsafe(old_label, query);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, old_label, new_label), VecSimRelabel_OK);
+
+    // Nothing was added or removed.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The old label is gone, the new one holds the very same element.
+    ASSERT_FALSE(hnsw_index->isLabelExists(old_label));
+    ASSERT_TRUE(hnsw_index->isLabelExists(new_label));
+    ASSERT_EQ(hnsw_index->getElementIds(new_label), ids_before);
+    ASSERT_EQ(hnsw_index->getExternalLabel(ids_before[0]), new_label);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(new_label, query), dist_before);
+    ASSERT_TRUE(std::isnan(hnsw_index->getDistanceFrom_Unsafe(old_label, query)));
+
+    // The element is still reachable by search, under the new label and with an unchanged score.
+    // This also guards against clobbering the element's flags with IN_PROCESS, which would make a
+    // live element invisible to queries.
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, new_label);
+        ASSERT_EQ(score, dist_before);
+    };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, relabelVectorRejects) {
+    size_t dim = 4;
+    size_t n = 5;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // A missing source, an occupied target and a no-op move are all rejected, and none of them may
+    // leave the index in a modified state.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
+    // An absent source outranks an occupied target: a caller that resolves the conflict by
+    // freeing the target must not be sent down that path for a move with nothing to move.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 1), VecSimRelabel_OldLabelMissing);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_TRUE(hnsw_index->isLabelExists(i));
+    }
+    ASSERT_FALSE(hnsw_index->isLabelExists(100));
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, relabelVectorMarkedDeleted) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
+
+    auto deleted_ids = hnsw_index->markDelete(0);
+    ASSERT_EQ(deleted_ids.size(), 1);
+
+    // A marked-deleted element is out of the label lookup, so it is reported as absent and left
+    // alone - its `idToMetaData` label is still needed by the swap/repair jobs holding its id.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(hnsw_index->getExternalLabel(deleted_ids[0]), 0);
+    ASSERT_FALSE(hnsw_index->isLabelExists(100));
+
+    // A live label in the same index still relabels fine.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 101), VecSimRelabel_OK);
+    ASSERT_TRUE(hnsw_index->isLabelExists(101));
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 
     VecSimIndex_Free(index);
 }

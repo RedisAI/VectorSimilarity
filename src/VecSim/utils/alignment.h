@@ -8,6 +8,23 @@
  */
 #pragma once
 
+#include <cstring>
+#include <type_traits>
+
+// Alignment-safe load of a trivially-copyable T from an arbitrary byte address.
+// Use when accessing fields whose alignment is not guaranteed by the layout
+// (e.g. FP32 metadata that follows a uint8_t / float16 payload of dynamic length).
+// Compilers reliably lower this to a single load on architectures that allow
+// unaligned access; on strict-alignment targets it expands to a safe byte copy.
+template <typename T>
+static inline T load_unaligned(const void *ptr) {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "load_unaligned requires a trivially-copyable T");
+    T value;
+    std::memcpy(&value, ptr, sizeof(T));
+    return value;
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 #define PORTABLE_ALIGN16 __attribute__((aligned(16)))
 #define PORTABLE_ALIGN32 __attribute__((aligned(32)))

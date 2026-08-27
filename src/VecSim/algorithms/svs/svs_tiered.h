@@ -177,6 +177,7 @@ private:
     task_type task;
     std::shared_ptr<ControlBlock> controlBlock;
     JobsRegistry *jobsRegistry;
+    bool isScheduled; // true if this job holds a pending-job reservation on the thread pool
 
     static void ExecuteMultiThreadJobImpl(AsyncJob *job) {
         auto *jobPtr = static_cast<SVSMultiThreadJob *>(job);
@@ -195,26 +196,44 @@ private:
 
     SVSMultiThreadJob(std::shared_ptr<VecSimAllocator> allocator, JobType jobType,
                       task_type callback, VecSimIndex *index,
-                      std::shared_ptr<ControlBlock> controlBlock, JobsRegistry *registry)
+                      std::shared_ptr<ControlBlock> controlBlock, JobsRegistry *registry,
+                      bool scheduled = false)
         : AsyncJob(std::move(allocator), jobType, ExecuteMultiThreadJobImpl, index),
-          task(std::move(callback)), controlBlock(std::move(controlBlock)), jobsRegistry(registry) {
+          task(std::move(callback)), controlBlock(std::move(controlBlock)), jobsRegistry(registry),
+          isScheduled(scheduled) {}
+
+    ~SVSMultiThreadJob() {
+        if (isScheduled) {
+            VecSimSVSThreadPoolImpl::instance()->endScheduledJob();
+        }
     }
 
 public:
     template <typename Rep, typename Period>
     static vecsim_stl::vector<AsyncJob *>
+    createScheduledJobs(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
+                        std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
+                        std::chrono::duration<Rep, Period> threads_wait_timeout,
+                        JobsRegistry *registry) {
+        size_t num_threads = VecSimSVSThreadPoolImpl::instance()->beginScheduledJob();
+        return createJobs(allocator, jobType, callback, index, num_threads, threads_wait_timeout,
+                          registry, /*scheduled=*/true);
+    }
+
+    template <typename Rep, typename Period>
+    static vecsim_stl::vector<AsyncJob *>
     createJobs(const std::shared_ptr<VecSimAllocator> &allocator, JobType jobType,
                std::function<void(VecSimIndex *, size_t)> callback, VecSimIndex *index,
                size_t num_threads, std::chrono::duration<Rep, Period> threads_wait_timeout,
-               JobsRegistry *registry) {
+               JobsRegistry *registry, bool scheduled = false) {
         assert(num_threads > 0);
         std::shared_ptr<ControlBlock> controlBlock =
             num_threads == 1 ? nullptr
                              : std::make_shared<ControlBlock>(num_threads, threads_wait_timeout);
 
         vecsim_stl::vector<AsyncJob *> jobs(num_threads, allocator);
-        jobs[0] = new (allocator)
-            SVSMultiThreadJob(allocator, jobType, callback, index, controlBlock, registry);
+        jobs[0] = new (allocator) SVSMultiThreadJob(allocator, jobType, callback, index,
+                                                    controlBlock, registry, scheduled);
         for (size_t i = 1; i < num_threads; ++i) {
             jobs[i] =
                 new (allocator) ReserveThreadJob(allocator, jobType, index, controlBlock, registry);
@@ -662,6 +681,7 @@ private:
             index->indexGCScheduled.clear();
             return;
         }
+        index->executeTracingCallback("GCJob::before_run_gc");
         std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
 
         svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
@@ -708,9 +728,8 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getPoolSize();
-        auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, SVS_BATCH_UPDATE_JOB, initSVSIndexWrapper, this, total_threads,
+        auto jobs = SVSMultiThreadJob::createScheduledJobs(
+            this->allocator, SVS_BATCH_UPDATE_JOB, initSVSIndexWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
     }
@@ -721,9 +740,8 @@ public:
             return;
         }
 
-        auto total_threads = this->GetSVSIndex()->getPoolSize();
-        auto jobs = SVSMultiThreadJob::createJobs(
-            this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this, total_threads,
+        auto jobs = SVSMultiThreadJob::createScheduledJobs(
+            this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
 
@@ -874,7 +892,9 @@ private:
             }
             ids_to_init_.clear();
 
-            {
+            // Nothing to initialize from an empty batch, and setParallelism(0) is not a
+            // valid request against the shared pool.
+            if (!labels_to_move.empty()) {
                 auto svs_index = GetSVSIndex();
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
@@ -987,11 +1007,11 @@ public:
                 auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
+                // Only updateJobMutex is needed here, not mainIndexGuard: the concurrent
+                // backend index serializes writes against concurrent readers itself.
                 std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
-                // Set available thread count to 1 for single vector write-in-place operation.
-                // This maintains the contract that single vector operations use exactly one thread.
-                // TODO: Replace this setParallelism(1) call with an assertion once we establish
-                // a contract that write-in-place mode guarantees numThreads == 1.
+                // Defensive: ensure single-threaded operation for write-in-place mode.
+                // parallelism_ defaults to 1, so this is a no-op in the normal case.
                 svs_index->setParallelism(1);
                 int deleted = 0;
                 if (!this->backendIndex->isMultiValue()) {
@@ -1240,8 +1260,7 @@ public:
             // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
             std::unique_lock<std::shared_mutex> lock(this->updateJobMutex, std::try_to_lock);
             if (lock.owns_lock()) {
-                svsTieredInfo.indexUpdateScheduled =
-                    this->indexUpdateScheduled.test() == VecSimBool_TRUE;
+                svsTieredInfo.indexUpdateScheduled = this->indexUpdateScheduled.test();
             } else {
                 // Mutex is held by initSVSIndexWrapper — training is in progress.
                 svsTieredInfo.indexUpdateScheduled = true;

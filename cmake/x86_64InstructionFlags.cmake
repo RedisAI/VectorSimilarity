@@ -73,6 +73,24 @@ if(CXX_AVX512F AND CXX_AVX512BW AND CXX_AVX512VL AND CXX_AVX512VNNI)
 	add_compile_definitions(OPT_AVX512_F_BW_VL_VNNI)
 endif()
 
+# OPT_F16C is unusual compared to the other OPT_* macros above:
+#
+#  1. It is a *capability* gate, not a dispatch tier. Every other OPT_* maps 1:1 to a single
+#     ISA tier that owns its own translation unit (OPT_AVX2 -> AVX2.cpp, OPT_SSE4 -> SSE4.cpp).
+#     F16C owns no tier of its own; it only enables the vcvtph2ps (FP16<->FP32) conversion that
+#     several tiers need. So it is hoisted *around* multiple tiers (AVX2_FMA / AVX2 / SSE4 for
+#     the SQ8<->FP16 kernels) rather than selecting one.
+#
+#  2. It is a compound guard (CXX_F16C AND CXX_FMA AND CXX_AVX), not a single flag. F16C is
+#     VEX-encoded, so vcvtph2ps requires AVX state to execute -- emitting it without AVX is
+#     invalid. Defining OPT_F16C therefore implies AVX is present, and the F16C kernels must be
+#     compiled with -mf16c added *on top of* -mavx (see functions/*_F16C.cpp in
+#     src/VecSim/spaces/CMakeLists.txt). The base AVX2.cpp / SSE4.cpp objects stay F16C-free so
+#     they still run on CPUs without F16C.
+#
+#  3. The AVX-512 tier deliberately does NOT use this gate: _mm512_cvtph_ps is part of AVX512F
+#     itself, so the AVX-512 SQ8<->FP16 path needs only OPT_AVX512F and lives outside any
+#     OPT_F16C guard.
 if(CXX_F16C AND CXX_FMA AND CXX_AVX)
 	add_compile_definitions(OPT_F16C)
 endif()

@@ -11,6 +11,12 @@
 #include "VecSim/spaces/space_includes.h"
 #include <arm_sve.h>
 
+// SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
+// anonymous namespace keeps each tier's bodies to itself; without it they are weak
+// symbols that both objects define and link order picks the -march. Only the Choose_*
+// entry points stay external. Dependencies above must stay outside the namespace.
+namespace {
+
 inline void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_t &offset,
                              svint32_t &sum, const size_t chunk) {
     svbool_t pg = svptrue_b8();
@@ -24,8 +30,9 @@ inline void InnerProductStep(const int8_t *&pVect1, const int8_t *&pVect2, size_
     offset += chunk; // Move to the next set of int8 elements
 }
 
+// static: this header is built into both the SVE and SVE2 units, at different -march.
 template <bool partial_chunk, unsigned char additional_steps>
-float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
+static float INT8_InnerProductImp(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const int8_t *pVect1 = reinterpret_cast<const int8_t *>(pVect1v);
     const int8_t *pVect2 = reinterpret_cast<const int8_t *>(pVect2v);
 
@@ -98,9 +105,8 @@ float INT8_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t
 template <bool partial_chunk, unsigned char additional_steps>
 float INT8_CosineSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     float ip = INT8_InnerProductImp<partial_chunk, additional_steps>(pVect1v, pVect2v, dimension);
-    float norm_v1 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect1v) + dimension);
-    float norm_v2 =
-        *reinterpret_cast<const float *>(static_cast<const int8_t *>(pVect2v) + dimension);
+    const float norm_v1 = load_unaligned<float>(static_cast<const int8_t *>(pVect1v) + dimension);
+    const float norm_v2 = load_unaligned<float>(static_cast<const int8_t *>(pVect2v) + dimension);
     return 1.0f - ip / (norm_v1 * norm_v2);
 }
+} // namespace

@@ -39,6 +39,13 @@ public:
     template <typename algo_t>
     static void DeleteLabel(algo_t *index, benchmark::State &st);
 
+    // Move one label to a fresh label in each iteration. This only rewrites label bookkeeping -
+    // no vector data is copied and, for HNSW, the graph is untouched - so it is expected to be
+    // orders of magnitude cheaper than the AddLabel + DeleteLabel pair it replaces for callers
+    // whose external id changed while the vector did not. Reported in microseconds for that
+    // reason, whereas the add/delete benchmarks above are reported in milliseconds.
+    static void RelabelLabel(benchmark::State &st);
+
     static void Range_BF(benchmark::State &st);
     static void Range_HNSW(benchmark::State &st);
 
@@ -267,6 +274,42 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
 }
 
 template <typename index_type_t>
+void BM_VecSimBasics<index_type_t>::RelabelLabel(benchmark::State &st) {
+    auto index = GET_INDEX(st.range(0));
+    const size_t initial_label_count = index->indexLabelCount();
+    const size_t initial_index_size = VecSimIndex_IndexSize(index);
+
+    // The loaded index labels occupy [0, initial_label_count), so every target taken from
+    // initial_label_count upwards is free. That matters because relabelVector rejects an occupied
+    // target, and a rejected call would time a no-op instead of the real work.
+    const labelType target_base = initial_label_count;
+
+    size_t attempted = 0;
+    size_t moved = 0;
+    for (auto _ : st) {
+        moved += VecSimIndex_RelabelVector(index, attempted, target_base + attempted) ==
+                 VecSimRelabel_OK;
+        attempted++;
+    }
+
+    // Restore the original labels. Benchmark order affects results in this suite, so the following
+    // benchmarks must see the label range they were written against. Note that for the tiered index
+    // this also restores what INDEX_HNSW sees, since the tiered index wraps that same HNSW index.
+    // Restoring an attempt that was rejected above is itself a harmless no-op.
+    for (size_t i = 0; i < attempted; i++) {
+        VecSimIndex_RelabelVector(index, target_base + i, i);
+    }
+
+    // A ratio below 1 means some timed calls were rejected and the reported time is not a
+    // measurement of the relabel work - most likely the iteration count outgrew the label range.
+    st.counters["relabeled_ratio"] = (double)moved / (double)attempted;
+    st.counters["vectors_per_label"] = (double)initial_index_size / (double)initial_label_count;
+
+    assert(index->indexLabelCount() == initial_label_count);
+    assert(VecSimIndex_IndexSize(index) == initial_index_size);
+}
+
+template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
     double radius = (1.0 / 100.0) * (double)st.range(0);
     size_t iter = 0;
@@ -437,4 +480,16 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
 #define REGISTER_UpdateAtBlockSize(BM_FUNC, VecSimAlgo)                                            \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo)                                                     \
+        ->ArgName(#VecSimAlgo)
+
+// A relabel is label bookkeeping only, so it lands orders of magnitude below the add/delete
+// benchmarks - hence microseconds rather than the shared UNIT_AND_ITERATIONS milliseconds. The
+// iteration count stays fixed (rather than letting the harness choose) because each iteration
+// consumes one source label, and overrunning the label range would silently turn timed work into
+// rejected no-ops.
+#define REGISTER_RelabelLabel(BM_FUNC, VecSimAlgo)                                                 \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
+        ->Unit(benchmark::kMicrosecond)                                                            \
+        ->Iterations(BM_VecSimGeneral::block_size)                                                 \
+        ->Arg(VecSimAlgo)                                                                          \
         ->ArgName(#VecSimAlgo)

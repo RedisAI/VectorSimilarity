@@ -54,3 +54,17 @@ BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_AddVectorsDuringTraining))
                    {2, 4}})
     ->ArgNames({"training_threshold", "thread_count"})
     ->UseRealTime();
+
+// TopK search on the loaded SVS index, using the search window_size and k defined below.
+// {window_size, k} (recall that always window_size >= k)
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_FUNC_NAME(BM_TopK), DATA_TYPE_INDEX_T)
+(benchmark::State &st) { TopK_SVS(st); }
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_TopK))
+    ->Unit(benchmark::kMillisecond)
+    ->Iterations(10)
+    ->Args({10, 10})
+    ->Args({200, 10})
+    ->Args({100, 100})
+    ->Args({200, 100})
+    ->Args({500, 500})
+    ->ArgNames({"window_size", "k"});

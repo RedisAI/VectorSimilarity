@@ -28,7 +28,7 @@ dist_func_t<float> Choose_FP32_IP_implementation_SSE(size_t dim) {
 
 dist_func_t<double> Choose_FP64_IP_implementation_SSE(size_t dim) {
     dist_func_t<double> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_InnerProductSIMD8_SSE);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 4, FP64_InnerProductSIMD8_SSE);
     return ret_dist_func;
 }
 
@@ -40,7 +40,7 @@ dist_func_t<float> Choose_FP32_L2_implementation_SSE(size_t dim) {
 
 dist_func_t<double> Choose_FP64_L2_implementation_SSE(size_t dim) {
     dist_func_t<double> ret_dist_func;
-    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 8, FP64_L2SqrSIMD8_SSE);
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 4, FP64_L2SqrSIMD8_SSE);
     return ret_dist_func;
 }
 

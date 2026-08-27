@@ -31,11 +31,15 @@ float FP16_InnerProductSIMD32_F16C(const void *pVect1v, const void *pVect2v, siz
 
     const float16 *pEnd1 = pVect1 + dimension;
 
-    auto sum = _mm256_setzero_ps();
+    // Four accumulators break the FMA dependency chain, letting more FMAs be in flight at once.
+    auto sum0 = _mm256_setzero_ps();
+    auto sum1 = _mm256_setzero_ps();
+    auto sum2 = _mm256_setzero_ps();
+    auto sum3 = _mm256_setzero_ps();
 
     if constexpr (residual % 8) {
-        // Deal with remainder first. `dim` is more than 32, so we have at least one block of 32
-        // 16-bit float so mask loading is guaranteed to be safe.
+        // Deal with remainder first. The full-width load of 8 16-bit floats is safe because
+        // `dim` is at least 8, so the vector spans at least 8 elements.
         __mmask16 constexpr residuals_mask = (1 << (residual % 8)) - 1;
         // Convert the first 8 half-floats into floats and store them 256 bits register,
         // where the floats in the positions corresponding to residuals are zeros.
@@ -45,29 +49,31 @@ float FP16_InnerProductSIMD32_F16C(const void *pVect1v, const void *pVect2v, siz
         auto v2 = _mm256_blend_ps(_mm256_setzero_ps(),
                                   _mm256_cvtph_ps(_mm_loadu_si128((__m128i_u const *)pVect2)),
                                   residuals_mask);
-        sum = _mm256_mul_ps(v1, v2);
+        sum0 = _mm256_mul_ps(v1, v2);
         pVect1 += residual % 8;
         pVect2 += residual % 8;
     }
     if constexpr (residual >= 8 && residual < 16) {
-        InnerProductStep(pVect1, pVect2, sum);
+        InnerProductStep(pVect1, pVect2, sum1);
     } else if constexpr (residual >= 16 && residual < 24) {
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum2);
     } else if constexpr (residual >= 24) {
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
     }
 
     // We dealt with the residual part. We are left with some multiple of 32 16-bit floats.
-    // In every iteration we process 4 chunk of 128bit (32 FP16)
-    do {
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
-        InnerProductStep(pVect1, pVect2, sum);
-    } while (pVect1 < pEnd1);
+    // In every iteration we process 4 chunk of 128bit (32 FP16). The loop may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        InnerProductStep(pVect1, pVect2, sum0);
+        InnerProductStep(pVect1, pVect2, sum1);
+        InnerProductStep(pVect1, pVect2, sum2);
+        InnerProductStep(pVect1, pVect2, sum3);
+    }
 
+    __m256 sum = _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3));
     return 1.0f - my_mm256_reduce_add_ps(sum);
 }

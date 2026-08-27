@@ -18,7 +18,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
                                          HNSWSerializer::EncodingVersion version)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
       HNSWSerializer(version), epsilon(params->epsilon), graphDataBlocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      elementLocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     this->restoreIndexFields(input);
     this->fieldsValidation();
@@ -30,11 +31,22 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 
     // Set the initial capacity based on the number of elements in the loaded index.
     maxElements = RoundUpInitialCapacity(this->curElementCount, this->blockSize);
+    this->elementLocks.resize(maxElements);
     this->idToMetaData.resize(maxElements);
     this->visitedNodesHandlerPool.resize(maxElements);
 
     size_t initial_vector_size = maxElements / this->blockSize;
     graphDataBlocks.reserve(initial_vector_size);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::validateSave() const {
+    // V4 does not store quantization settings, and its loader always creates unquantized
+    // components. Reject the save rather than write a file the loader would misread.
+    if (this->isQuantized) {
+        throw std::runtime_error(
+            "Cannot save index: serialization of quantized indexes is not supported");
+    }
 }
 
 template <typename DataType, typename DistType>

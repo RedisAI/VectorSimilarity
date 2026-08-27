@@ -33,14 +33,6 @@ jobs:
   #   with:
   #     container: debian:bullseye
   #     run-valgrind: false
-  # amazonlinux2:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: amazonlinux:2
-  #     pre-checkout-script: yum install -y tar gzip
-  #     run-valgrind: false
-  # mariner2:
-  #   uses: ./.github/workflows/mariner2.yml
   # rocky8:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
