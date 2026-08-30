@@ -11,15 +11,18 @@
 #include "VecSim/query_result_definitions.h"
 #include <VecSim/utils/vec_utils.h>
 
-#define VECSIM_EPSILON (1e-6)
-
-inline bool double_eq(double a, double b) { return fabs(a - b) < VECSIM_EPSILON; }
-
-// Compare two results by score, and if the scores are equal, by id.
+// Compare two results by score, and if the scores are equal, by id. The score comparison must be
+// exact: merge_results() walks lists that are ordered by exact score, and any tolerance here makes
+// this comparator disagree with that order, which breaks the merge's duplicate detection.
 inline int cmpVecSimQueryResultByScoreThenId(const VecSimQueryResultContainer::iterator res1,
                                              const VecSimQueryResultContainer::iterator res2) {
-    return !double_eq(res1->score, res2->score) ? (res1->score > res2->score ? 1 : -1)
-                                                : (int)(res1->id - res2->id);
+    if (res1->score != res2->score) {
+        return res1->score > res2->score ? 1 : -1;
+    }
+    if (res1->id == res2->id) {
+        return 0;
+    }
+    return res1->id > res2->id ? 1 : -1;
 }
 
 // Append the current result to the merged results, after verifying that it did not added yet (if
@@ -89,17 +92,82 @@ std::pair<size_t, size_t> merge_results(VecSimQueryResultContainer &results,
     return {cur_first - first.begin(), cur_second - second.begin()};
 }
 
-// Assumes that the arrays are sorted by score firstly and by id secondarily.
-// Use withSet=false if you can guarantee that shared ids between the two lists
-// will also have identical scores. In this case, any duplicates will naturally align
-// at the front of both lists during the merge, so they can be removed without explicitly
-// tracking seen ids — enabling a more efficient merge.
-template <bool withSet>
-VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *second,
-                                     size_t limit) {
+// Each input contains at most one result per label, so duplicates in a one-shot tier merge can only
+// occur across the two inputs. Therefore, tracking IDs from the smaller input is sufficient. Batch
+// iterators cannot use this optimization because they also need to remember labels returned by
+// earlier calls.
+inline std::pair<size_t, size_t>
+merge_results_with_cross_tier_dedup(VecSimQueryResultContainer &results,
+                                    VecSimQueryResultContainer &first,
+                                    VecSimQueryResultContainer &second, size_t limit) {
+    results.reserve(std::min(limit, first.size() + second.size()));
+    const auto &smaller = first.size() <= second.size() ? first : second;
+    // The mapped bool records whether this tracked ID has already been emitted.
+    vecsim_stl::unordered_map<labelType, bool> tracked_ids(0, smaller.getAllocator());
+    tracked_ids.reserve(smaller.size());
+    for (const auto &result : smaller) {
+        tracked_ids.emplace(result.id, false);
+    }
+    auto cur_first = first.begin();
+    auto cur_second = second.begin();
 
+    auto should_emit = [&](labelType id) {
+        auto it = tracked_ids.find(id);
+        if (it == tracked_ids.end()) {
+            return true;
+        }
+        if (it->second) {
+            return false;
+        }
+        it->second = true;
+        return true;
+    };
+
+    auto maybe_append = [&](auto &current) {
+        if (should_emit(current->id)) {
+            results.push_back(*current);
+            limit--;
+        }
+        current++;
+    };
+
+    while (limit && cur_first != first.end() && cur_second != second.end()) {
+        int cmp = cmpVecSimQueryResultByScoreThenId(cur_first, cur_second);
+        if (cmp > 0) {
+            maybe_append(cur_second);
+        } else if (cmp < 0) {
+            maybe_append(cur_first);
+        } else {
+            // Exact cross-tier duplicate. Per-input label uniqueness means it was not emitted
+            // earlier.
+            results.push_back(*cur_first);
+            cur_first++;
+            cur_second++;
+            limit--;
+        }
+    }
+
+    while (limit && cur_first != first.end()) {
+        maybe_append(cur_first);
+    }
+    while (limit && cur_second != second.end()) {
+        maybe_append(cur_second);
+    }
+
+    return {cur_first - first.begin(), cur_second - second.begin()};
+}
+
+// Assumes that the arrays are sorted by score firstly and by id secondarily.
+inline VecSimQueryReply *merge_result_lists(VecSimQueryReply *first, VecSimQueryReply *second,
+                                            size_t limit) {
     auto mergedResults = new VecSimQueryReply(first->results.getAllocator());
-    merge_results<withSet>(mergedResults->results, first->results, second->results, limit);
+    if (limit <= 1 || first->results.empty() || second->results.empty()) {
+        // At most one result or only one source means a cross-tier duplicate cannot be emitted.
+        merge_results<false>(mergedResults->results, first->results, second->results, limit);
+    } else {
+        merge_results_with_cross_tier_dedup(mergedResults->results, first->results, second->results,
+                                            limit);
+    }
 
     VecSimQueryReply_Free(first);
     VecSimQueryReply_Free(second);
@@ -115,8 +183,7 @@ static inline void concat_results(VecSimQueryReply *first, VecSimQueryReply *sec
 // Sorts the results by id and removes duplicates.
 // Assumes that a result can appear at most twice in the results list.
 // @returns the number of unique results. This should be set to be the new length of the results
-template <bool IsMulti>
-void filter_results_by_id(VecSimQueryReply *results) {
+inline void filter_results_by_id(VecSimQueryReply *results) {
     if (VecSimQueryReply_Len(results) < 2) {
         return;
     }
@@ -127,17 +194,11 @@ void filter_results_by_id(VecSimQueryReply *results) {
         const VecSimQueryResult *cur_res = results->results.data() + i;
         const VecSimQueryResult *next_res = cur_res + 1;
         if (VecSimQueryResult_GetId(cur_res) == VecSimQueryResult_GetId(next_res)) {
-            if (IsMulti) {
-                // On multi value index, scores might be different and we want to keep the lower
-                // score.
-                if (VecSimQueryResult_GetScore(cur_res) < VecSimQueryResult_GetScore(next_res)) {
-                    results->results[cur_end] = *cur_res;
-                } else {
-                    results->results[cur_end] = *next_res;
-                }
-            } else {
-                // On single value index, scores are the same so we can keep any of the results.
+            // Cross-tier copies may have different scores, so keep the better one.
+            if (VecSimQueryResult_GetScore(cur_res) < VecSimQueryResult_GetScore(next_res)) {
                 results->results[cur_end] = *cur_res;
+            } else {
+                results->results[cur_end] = *next_res;
             }
             // Assuming every id can appear at most twice, we can skip the next comparison between
             // the current and the next result.

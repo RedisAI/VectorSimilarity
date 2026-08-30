@@ -1066,21 +1066,6 @@ public:
         return infoIterator;
     }
 
-    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
-                                VecSimQueryParams *queryParams) const override {
-        // SVS implements it's own distance computation functions which may cause sligthly different
-        // distance values than VecSim Flat Index does, so we always have to merge results with set.
-        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
-    }
-
-    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
-                                 VecSimQueryParams *queryParams,
-                                 VecSimQueryReply_Order order) const override {
-        // SVS implements it's own distance computation functions which may cause sligthly different
-        // distance values than VecSim Flat Index does, so we always have to merge results with set.
-        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
-    }
-
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
                                           VecSimQueryParams *queryParams) const override {
         // The query blob will be processed and copied by the internal indexes's batch iterator.
