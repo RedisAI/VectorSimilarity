@@ -3509,6 +3509,67 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorCosine) {
     VecSimBatchIterator_Free(batchIterator);
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorCosineMidIngestDuplicate) {
+    constexpr size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+        .multi = false,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    TEST_DATA_T query[dim] = {1, 0, 0, 0};
+    TEST_DATA_T flat_only[dim] = {1, 0, 0, 0};
+    TEST_DATA_T shared[dim] = {1, 1, 0, 0};
+    TEST_DATA_T hnsw_only[dim] = {0, 1, 0, 0};
+
+    VecSimIndex_AddVector(tiered_index, flat_only, 0);
+    VecSimIndex_AddVector(tiered_index, shared, 1);
+
+    // An insertion job passes the frontend's normalized blob to HNSW before erasing it from the
+    // flat buffer. Reproduce that overlap without completing the queued job.
+    std::vector<std::vector<TEST_DATA_T>> normalized_shared;
+    frontend_index->getDataByLabel(1, normalized_shared);
+    ASSERT_EQ(normalized_shared.size(), 1);
+    VecSimIndex_AddVector(hnsw_index, normalized_shared[0].data(), 1);
+    VecSimIndex_AddVector(hnsw_index, hnsw_only, 2);
+
+    // The HNSW backend is configured to accept already-normalized data. With the same normalized
+    // query, the shared copy must therefore have exactly the same score in both tiers.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, sizeof(query));
+    VecSim_Normalize(normalized_query, dim, params.type);
+    auto flat_res = VecSimIndex_TopKQuery(frontend_index, query, 2, nullptr, BY_SCORE);
+    auto hnsw_res = VecSimIndex_TopKQuery(hnsw_index, normalized_query, 2, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(flat_res), 2);
+    ASSERT_EQ(VecSimQueryReply_Len(hnsw_res), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(flat_res->results.data() + 1), 1);
+    ASSERT_EQ(VecSimQueryResult_GetId(hnsw_res->results.data()), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(flat_res->results.data() + 1),
+              VecSimQueryResult_GetScore(hnsw_res->results.data()));
+    VecSimQueryReply_Free(flat_res);
+    VecSimQueryReply_Free(hnsw_res);
+
+    // A one-result batch first consumes the better flat-only result, leaving the shared HNSW
+    // result buffered. The next batch must consume both copies together and emit the label once.
+    VecSimBatchIterator *batch_iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+    for (labelType expected_label = 0; expected_label < 3; ++expected_label) {
+        ASSERT_TRUE(VecSimBatchIterator_HasNext(batch_iterator));
+        runBatchIteratorSearchTest(batch_iterator, 1,
+                                   [expected_label](size_t id, double score, size_t result_rank) {
+                                       ASSERT_EQ(id, expected_label);
+                                   });
+    }
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batch_iterator));
+    VecSimBatchIterator_Free(batch_iterator);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {
     size_t dim = 4;
     size_t k = 11;
