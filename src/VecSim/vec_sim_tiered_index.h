@@ -101,15 +101,9 @@ protected:
 public:
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
-    // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
-    // two lists will also have identical scores. In this case, any duplicates will naturally align
-    // at the front of both lists during the merge, so they can be removed without explicitly
-    // tracking seen ids — enabling a more efficient merge.
-    template <bool WithSet>
     VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
                                    VecSimQueryParams *queryParams) const;
 
-    template <bool WithSet>
     VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
                                     VecSimQueryParams *queryParams,
                                     VecSimQueryReply_Order order) const;
@@ -167,7 +161,6 @@ public:
 };
 
 template <typename DataType, typename DistType>
-template <bool withSet>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
@@ -214,21 +207,14 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
             return main_results;
         }
 
-        return merge_result_lists<withSet>(main_results, flat_results, k);
+        return merge_result_lists(main_results, flat_results, k);
     }
 }
 template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
-    } else {
-        // Calling with withSet=false for optimized performance, assuming that shared IDs across
-        // lists also have identical scores — in which case duplicates are implicitly avoided by the
-        // merge logic.
-        return this->topKQueryImp<false>(queryBlob, k, queryParams);
-    }
+    return this->topKQueryImp(queryBlob, k, queryParams);
 }
 
 template <typename DataType, typename DistType>
@@ -236,19 +222,10 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->rangeQueryImp<true>(queryBlob, radius, queryParams,
-                                         order); // Multi-value index
-    } else {
-        // Calling with withSet=false for optimized performance, assuming that shared IDs across
-        // lists also have identical scores — in which case duplicates are implicitly avoided by the
-        // merge logic.
-        return this->rangeQueryImp<false>(queryBlob, radius, queryParams, order);
-    }
+    return this->rangeQueryImp(queryBlob, radius, queryParams, order);
 }
 
 template <typename DataType, typename DistType>
-template <bool withSet>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
@@ -301,7 +278,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
             auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryReply *ret = merge_result_lists<withSet>(main_results, flat_results, -1);
+            VecSimQueryReply *ret = merge_result_lists(main_results, flat_results, -1);
             // Restore the return code and return.
             ret->code = code;
             return ret;
@@ -309,7 +286,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         } else { // BY_ID
             // Notice that we don't modify the return code of the main index in any step.
             concat_results(main_results, flat_results);
-            filter_results_by_id<withSet>(main_results);
+            filter_results_by_id(main_results);
             return main_results;
         }
     }

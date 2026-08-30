@@ -169,11 +169,6 @@ void runTopKSearchTest(VecSimIndex *index, const void *query, size_t k,
                        VecSimQueryParams *params = nullptr,
                        VecSimQueryReply_Order order = BY_SCORE);
 
-template <bool withSet, typename data_t, typename dist_t>
-void runTopKTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
-                                  size_t k, std::function<void(size_t, double, size_t)> ResCB,
-                                  VecSimQueryParams *params = nullptr);
-
 void runBatchIteratorSearchTest(VecSimBatchIterator *batch_iterator, size_t n_res,
                                 std::function<void(size_t, double, size_t)> ResCB,
                                 VecSimQueryReply_Order order = BY_SCORE,
@@ -210,13 +205,6 @@ void runRangeQueryTest(VecSimIndex *index, const void *query, double radius,
                        const std::function<void(size_t, double, size_t)> &ResCB,
                        size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
                        VecSimQueryParams *params = nullptr);
-
-template <bool withSet, typename data_t = float, typename dist_t = float>
-void runRangeTieredIndexSearchTest(VecSimTieredIndex<data_t, dist_t> *index, const void *query,
-                                   double radius,
-                                   const std::function<void(size_t, double, size_t)> &ResCB,
-                                   size_t expected_res_num, VecSimQueryReply_Order order = BY_ID,
-                                   VecSimQueryParams *params = nullptr);
 
 size_t getLabelsLookupNodeSize();
 
