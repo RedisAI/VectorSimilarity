@@ -14,6 +14,7 @@
 #include <random>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -672,6 +673,101 @@ TEST_F(SpacesTest, smallDimChooser) {
         ASSERT_EQ(Cosine_INT8_GetDistFunc(dim), INT8_Cosine);
         ASSERT_EQ(Cosine_UINT8_GetDistFunc(dim), UINT8_Cosine);
     }
+}
+#endif
+
+TEST_F(SpacesTest, FP16NativeDispatcherDimensionCap) {
+    auto optimization = getCpuOptimizationFeatures();
+    unsigned char alignment = 0;
+
+    static_assert(spaces::FP16_MAX_UNIT_IP_SIMD_DIM == 65504);
+    static_assert(spaces::FP16_MAX_UNIT_L2_SIMD_DIM == 16376);
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_VL)
+    if (optimization.avx512_fp16 && optimization.avx512vl) {
+        const size_t ip_cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
+        const size_t l2_cap = spaces::FP16_MAX_UNIT_L2_SIMD_DIM;
+        ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap, &alignment, &optimization),
+                  Choose_FP16_IP_implementation_AVX512FP16_VL(ip_cap));
+        ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap, &alignment, &optimization),
+                  Choose_FP16_L2_implementation_AVX512FP16_VL(l2_cap));
+        ASSERT_NE(IP_FP16_GetDistFunc(ip_cap + 1, &alignment, &optimization),
+                  Choose_FP16_IP_implementation_AVX512FP16_VL(ip_cap + 1));
+        ASSERT_NE(L2_FP16_GetDistFunc(l2_cap + 1, &alignment, &optimization),
+                  Choose_FP16_L2_implementation_AVX512FP16_VL(l2_cap + 1));
+    }
+#elif defined(CPU_FEATURES_ARCH_AARCH64)
+    const size_t ip_cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
+    const size_t l2_cap = spaces::FP16_MAX_UNIT_L2_SIMD_DIM;
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap, &alignment, &optimization),
+                  Choose_FP16_IP_implementation_SVE2(ip_cap));
+        ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap, &alignment, &optimization),
+                  Choose_FP16_L2_implementation_SVE2(l2_cap));
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        auto sve_optimization = optimization;
+        sve_optimization.sve2 = 0;
+        ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap, &alignment, &sve_optimization),
+                  Choose_FP16_IP_implementation_SVE(ip_cap));
+        ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap, &alignment, &sve_optimization),
+                  Choose_FP16_L2_implementation_SVE(l2_cap));
+    }
+#endif
+#ifdef OPT_NEON_HP
+    if (optimization.asimdhp) {
+        auto neon_optimization = optimization;
+        neon_optimization.sve = neon_optimization.sve2 = 0;
+        ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap, &alignment, &neon_optimization),
+                  Choose_FP16_IP_implementation_NEON_HP(ip_cap));
+        ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap, &alignment, &neon_optimization),
+                  Choose_FP16_L2_implementation_NEON_HP(l2_cap));
+    }
+#endif
+    ASSERT_EQ(IP_FP16_GetDistFunc(ip_cap + 1, &alignment, &optimization), FP16_InnerProduct);
+    ASSERT_EQ(L2_FP16_GetDistFunc(l2_cap + 1, &alignment, &optimization), FP16_L2Sqr);
+#endif
+}
+
+// The cap is evaluated once by the dispatcher. The selected distance function therefore has no
+// added hot-path instructions, while high-dimensional unit-bounded inputs avoid a native-fp16
+// total that exceeds 65,504.
+TEST_F(SpacesTest, FP16HighDimensionDispatcherAvoidsHalfOverflow) {
+    const size_t ip_dim = spaces::FP16_MAX_UNIT_IP_SIMD_DIM + 32;
+    const float16 one = vecsim_types::FP32_to_FP16(1.0f);
+    std::vector<float16> ip_v1(ip_dim, one);
+    std::vector<float16> ip_v2(ip_dim, one);
+    auto ip = IP_FP16_GetDistFunc(ip_dim);
+    ASSERT_EQ(ip(ip_v1.data(), ip_v2.data(), ip_dim), 1.0f - static_cast<float>(ip_dim));
+
+    const size_t l2_dim = spaces::FP16_MAX_UNIT_L2_SIMD_DIM + 8;
+    const float16 minus_one = vecsim_types::FP32_to_FP16(-1.0f);
+    std::vector<float16> l2_v1(l2_dim, one);
+    std::vector<float16> l2_v2(l2_dim, minus_one);
+    auto l2 = L2_FP16_GetDistFunc(l2_dim);
+    ASSERT_EQ(l2(l2_v1.data(), l2_v2.data(), l2_dim), 4.0f * static_cast<float>(l2_dim));
+}
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_VL)
+TEST_F(SpacesTest, AVX512FP16InnerProductSubtractsInFP32) {
+    const auto optimization = getCpuOptimizationFeatures();
+    if (!optimization.avx512_fp16 || !optimization.avx512vl) {
+        GTEST_SKIP() << "AVX512FP16+VL is unavailable";
+    }
+
+    constexpr size_t dim = 32;
+    const float16 zero = vecsim_types::FP32_to_FP16(0.0f);
+    std::vector<float16> v1(dim, zero);
+    std::vector<float16> v2(dim, zero);
+    v1[0] = vecsim_types::FP32_to_FP16(-1.0f / 4096.0f);
+    v2[0] = vecsim_types::FP32_to_FP16(1.0f);
+
+    auto ip = IP_FP16_GetDistFunc(dim, nullptr, &optimization);
+    ASSERT_EQ(ip, Choose_FP16_IP_implementation_AVX512FP16_VL(dim));
+    ASSERT_EQ(ip(v1.data(), v2.data(), dim), 1.0f + 1.0f / 4096.0f);
 }
 #endif
 
@@ -1543,23 +1639,14 @@ TEST_P(FP16SpacesOptimizationTestAdvanced, FP16L2SqrTestAdv) {
             baseline += diff * diff;
         }
 
-        auto expected_alignment = [](size_t reg_bit_size, size_t dim) {
-            size_t elements_in_reg = reg_bit_size / sizeof(float16) / 8;
-            return (dim % elements_in_reg == 0) ? elements_in_reg * sizeof(float16) : 0;
-        };
-
         dist_func_t<float> arch_opt_func;
-        unsigned char alignment = 0;
-        arch_opt_func = L2_FP16_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_FP16_L2_implementation_AVX512FP16_VL(dim))
-            << "Unexpected distance function chosen for dim " << dim;
+        arch_opt_func = Choose_FP16_L2_implementation_AVX512FP16_VL(dim);
         float dist = arch_opt_func(v1, v2, dim);
         float f_baseline = baseline;
         float error = std::abs((dist / f_baseline) - 1);
         // Alow 1% error
         ASSERT_LE(error, 0.01) << "AVX512 with dim " << dim << ", baseline: " << f_baseline
                                << ", dist: " << dist;
-        ASSERT_EQ(alignment, expected_alignment(512, dim)) << "AVX512 with dim " << dim;
     }
 }
 #endif

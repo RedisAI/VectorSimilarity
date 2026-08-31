@@ -632,17 +632,18 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
 #ifdef OPT_SVE2
-    if (features.sve2) {
+    if (dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.sve2) {
         return Choose_FP16_IP_implementation_SVE2(dim);
     }
 #endif
 #ifdef OPT_SVE
-    if (features.sve) {
+    if (dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.sve) {
         return Choose_FP16_IP_implementation_SVE(dim);
     }
 #endif
 #ifdef OPT_NEON_HP
-    if (features.asimdhp && dim >= 8) { // Optimization assumes at least 8 16FPs (full chunk)
+    if (dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.asimdhp &&
+        dim >= 8) { // Optimization assumes at least 8 16FPs (full chunk)
         return Choose_FP16_IP_implementation_NEON_HP(dim);
     }
 #endif
@@ -655,7 +656,8 @@ dist_func_t<float> IP_FP16_GetDistFunc(size_t dim, unsigned char *alignment, con
 #ifdef OPT_AVX512_FP16_VL
     // More details about the dimension limitation can be found in this PR's description:
     // https://github.com/RedisAI/VectorSimilarity/pull/477
-    if (dim >= 32 && features.avx512_fp16 && features.avx512vl) {
+    if (dim >= 32 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.avx512_fp16 &&
+        features.avx512vl) {
         if (dim % 32 == 0) // no point in aligning if we have an offsetting residual
             *alignment = 32 * sizeof(float16); // handles 32 floats
         return Choose_FP16_IP_implementation_AVX512FP16_VL(dim);
