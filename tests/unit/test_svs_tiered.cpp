@@ -146,6 +146,111 @@ private:
 
 // TEST_DATA_T and TEST_DIST_T are defined in test_utils.h
 
+// A task exception must not leak a reserve job: the completion guard in
+// ExecuteMultiThreadJobImpl has to release the control block (and delete the
+// job) even when the task throws — otherwise the reserved worker below would
+// block forever and the test would time out.
+TEST(SVSMultiThreadJobTest, CompletionGuardReleasesReserveJobsOnTaskException) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    SVSMultiThreadJob::JobsRegistry registry(allocator);
+    auto jobs = SVSMultiThreadJob::createJobs(
+        allocator, SVS_BATCH_UPDATE_JOB,
+        [](VecSimIndex *, size_t) { throw std::runtime_error("task failure"); },
+        /*index=*/nullptr, /*num_threads=*/2, std::chrono::milliseconds(100), &registry);
+    ASSERT_EQ(jobs.size(), 2);
+
+    std::atomic_bool reserve_done{false};
+    std::thread reserver([&, job = jobs[1]] {
+        job->Execute(job);
+        reserve_done.store(true, std::memory_order_release);
+    });
+
+    // Run the main job on this thread. The task throws; the guard must swallow
+    // the exception (no caller to rethrow to) and release the reserve job.
+    ASSERT_NO_THROW(jobs[0]->Execute(jobs[0]));
+
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!reserve_done.load(std::memory_order_acquire)) {
+        ASSERT_LT(std::chrono::steady_clock::now(), deadline)
+            << "Reserve job was never released after a task exception";
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    reserver.join();
+}
+
+// Reclaim of parked pool threads must happen through the REAL production trigger —
+// the worker-executed completion path of a scheduled SVSMultiThreadJob — not only
+// via a direct reclaimExcessThreads() call. This catches trigger-placement bugs
+// such as gating reclaim on pending_jobs_ == 0 inside a scheduled job (self-block).
+// Spawn/park/reclaim transitions are asserted via the pool's own spawned-thread
+// accounting: process-wide OS thread counts are noisy in a binary that runs
+// thousands of unrelated tests (the isolated SVSThreadPoolTest fixture covers the
+// OS-thread-level laziness assertions).
+TEST(SVSMultiThreadJobTest, ExecutedScheduledJobReclaimsParkedThreads) {
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    // Full clean slate — earlier suites may have left spawned or parked slots.
+    pool->resetForTest();
+    pool->onIndexAttached();
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 0u);
+
+    // Warm 3 threads, then logically shrink — they park above the limit.
+    VecSimSVSThreadPool::resize(4);
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 0u); // lazy: resize spawns nothing
+    std::atomic_int ran{0};
+    pool->parallel_for([&](size_t) { ran++; }, 4);
+    ASSERT_EQ(ran, 4);
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 3u);
+    VecSimSVSThreadPool::resize(1);
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 3u); // parked, not joined
+
+    // Execute a real scheduled job; its completion path must reclaim the parked
+    // threads (isScheduled gate + post-guard trigger).
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    SVSMultiThreadJob::JobsRegistry registry(allocator);
+    auto jobs = SVSMultiThreadJob::createScheduledJobs(
+        allocator, SVS_BATCH_UPDATE_JOB, [](VecSimIndex *, size_t) {}, /*index=*/nullptr,
+        std::chrono::milliseconds(1), &registry);
+    ASSERT_EQ(jobs.size(), 1); // pool size 1 → single job, no reserve jobs
+    jobs[0]->Execute(jobs[0]);
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 0u);
+}
+
+// Negative: destroying UNEXECUTED scheduled jobs (JobsRegistry teardown — the
+// FT.DROPINDEX path, which runs on the Redis main thread) must apply a deferred
+// logical shrink but must NOT join/reclaim any thread.
+TEST(SVSMultiThreadJobTest, UnexecutedJobTeardownDoesNotReclaim) {
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    // Full clean slate (see ExecutedScheduledJobReclaimsParkedThreads).
+    pool->resetForTest();
+    pool->onIndexAttached();
+
+    VecSimSVSThreadPool::resize(4);
+    std::atomic_int ran{0};
+    pool->parallel_for([&](size_t) { ran++; }, 4);
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 3u);
+
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    {
+        SVSMultiThreadJob::JobsRegistry registry(allocator);
+        auto jobs = SVSMultiThreadJob::createScheduledJobs(
+            allocator, SVS_BATCH_UPDATE_JOB, [](VecSimIndex *, size_t) {},
+            /*index=*/nullptr, std::chrono::milliseconds(1), &registry);
+        ASSERT_GE(jobs.size(), 1);
+        // Shrink while the job is pending → deferred.
+        VecSimSVSThreadPool::resize(1);
+        ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4);
+        // Registry teardown deletes the unexecuted jobs; their dtors run
+        // endScheduledJob(), which applies the deferred logical shrink...
+    }
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
+    // ...but joins nothing — the parked threads are still alive.
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 3u);
+
+    // Cleanup for subsequent tests.
+    pool->reclaimExcessThreads();
+    ASSERT_EQ(pool->spawnedThreadCountForTest(), 0u);
+}
+
 template <VecSimType type, typename DataType, VecSimSvsQuantBits quantBits, bool IsMulti>
 struct SVSIndexType {
     static constexpr VecSimType get_index_type() { return type; }
