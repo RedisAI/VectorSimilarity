@@ -575,16 +575,13 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TranslationInvariance) {
         ExpectSQ8_FP32_L2SqrNear(no_offset.storage.data(), no_offset.query.data(), dim,
                                  expected_no_offset, 1e-3, "dim " + std::to_string(dim) + ", C=0");
 
-        // The direct-diff kernel computes `diff = fma(delta, q, min - y)`. `min` and `y` both
-        // carry the large shared offset, so `min - y` is itself a large-minus-large FP32
-        // subtraction (magnitude ~1e5, absolute rounding ~ULP(1e5)/2 ~ 0.008) even though the
-        // *result* is a small O(1..10) value -- far milder than the old identity's ~1e10-scale
-        // cancellation, but not zero. This residual is a known, accepted precision limit of the
-        // direct-diff fix at large offsets (per MOD-17526 benchmarking); removing it entirely
-        // would require accumulating in double, which was scoped out as a separate product
-        // decision. Hence a looser tolerance here than the no-offset case above.
+        // The direct-diff kernel computes `diff = delta*q + (min - y)`. `min` and `y` both carry
+        // the large shared offset and are within a factor of 2 of each other, so by Sterbenz's
+        // lemma `min - y` is computed *exactly* in FP32 (no rounding at all) -- it's the small
+        // `delta*q` correction, not the offset, that's added afterward. So there's no large-scale
+        // cancellation left to tolerate here; the tolerance stays as tight as the no-offset case.
         ExpectSQ8_FP32_L2SqrNear(with_offset.storage.data(), with_offset.query.data(), dim,
-                                 expected_with_offset, 5e-3,
+                                 expected_with_offset, 1e-3,
                                  "dim " + std::to_string(dim) + ", C=" +
                                      std::to_string(large_offset));
     }
@@ -596,8 +593,8 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TicketReproShape) {
     // as a huge value minus a nearly-equal huge value in FP32 and could return 0, a negative
     // number, or other unbounded garbage instead of 64.
     const size_t dim = 2;
-    const float query_values[dim] = {100000.0f, 100008.0f};
-    const float storage_values[dim] = {100000.0f, 100000.0f};
+    const float storage_values[dim] = {100000.0f, 100008.0f};
+    const float query_values[dim] = {100000.0f, 100000.0f};
 
     std::vector<float> query(dim + sq8::query_metadata_count<VecSimMetric_L2>());
     std::copy(query_values, query_values + dim, query.begin());
@@ -609,6 +606,46 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TicketReproShape) {
 
     ExpectSQ8_FP32_L2SqrNear(storage.data(), query.data(), dim, /*expected=*/64.0, 1e-4,
                              "MOD-17526 ticket repro shape");
+}
+
+TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_ScalarAssociativityRegression) {
+    // Pins a scalar-only regression found in review: `diff = (min_val + delta*q) - y` and
+    // `diff = delta*q + (min_val - y)` are the same expression algebraically, but not in FP32 --
+    // the first rounds the dequantized value to the large offset's precision *before* subtracting
+    // y, silently discarding the residual the direct-diff kernel exists to preserve; the second
+    // computes the (Sterbenz-exact) min-y cancellation first and adds the small correction after.
+    //
+    // Concrete numbers where this bites: min=100000, delta=8/255, q=1 dequantizes to
+    // 100000.031372549..., which FP32 rounds to 100000.03125 (float32 ULP near 1e5 is 1/64).
+    // With y=100000.03125 chosen to land on exactly that rounded value, the buggy order gives
+    // diff=0 (100000.03125 - 100000.03125), while the correct order gives the true residual
+    // delta*1 + (100000 - 100000.03125) ~= 0.0001225, matching the double reference.
+    const size_t dim = 8;
+    // storage: min=100000 (index 0), max=100008 (index 7) => delta = 8/255, so index 1
+    // quantizes to q=1 (dequantizes to 100000 + 8/255 = 100000.031372549...).
+    const float storage_values[dim] = {100000.0f, 100000.0f + 8.0f / 255.0f, 100000.0f,
+                                       100000.0f,  100000.0f,                100000.0f,
+                                       100000.0f,  100008.0f};
+    // query matches storage exactly everywhere except index 1, so every other element
+    // contributes exactly 0 and the whole result isolates the associativity bug at index 1.
+    const float query_values[dim] = {100000.0f, 100000.03125f, 100000.0f, 100000.0f,
+                                     100000.0f,  100000.0f,     100000.0f, 100008.0f};
+
+    std::vector<float> query(dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    std::copy(query_values, query_values + dim, query.begin());
+    test_utils::preprocess_sq8_fp32_query(query.data(), dim);
+
+    std::vector<uint8_t> storage(dim * sizeof(uint8_t) +
+                                 sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(storage_values, dim, storage.data());
+
+    const double expected = SQ8_FP32_L2Sqr_DoubleReference(storage.data(), query.data(), dim);
+    ASSERT_GT(expected, 0.0) << "test construction should produce a nonzero true distance";
+    // Absolute tolerance, not relative: the true value is tiny (~1.5e-8), and the bug this
+    // pins is "kernel returns exactly 0 instead of a small nonzero value", not a rounding-scale
+    // discrepancy -- a relative check against a near-zero expected value isn't meaningful here.
+    EXPECT_NEAR(SQ8_FP32_L2Sqr(storage.data(), query.data(), dim), expected, 1e-9)
+        << "scalar kernel: expected=" << expected;
 }
 
 TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_RegularVectorSanity) {

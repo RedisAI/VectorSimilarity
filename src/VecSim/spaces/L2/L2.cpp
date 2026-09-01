@@ -41,8 +41,13 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        // diff = dequant(x_i) - y_i = min_val + delta * q_i - y_i
-        float diff = min_val + delta * static_cast<float>(pVect1[i]) - pVect2[i];
+        // diff = dequant(x_i) - y_i = delta * q_i + (min_val - y_i). Order matters: min_val and
+        // y_i are both large and close in magnitude (Sterbenz's lemma makes their subtraction
+        // exact), so computing that first and adding the small delta*q_i correction preserves the
+        // residual. Computing (min_val + delta*q_i) - y_i first rounds the dequantized value to
+        // FP32 at the large offset's precision, discarding the residual before the subtraction
+        // ever happens -- silently reintroducing the cancellation this kernel exists to avoid.
+        float diff = delta * static_cast<float>(pVect1[i]) + (min_val - pVect2[i]);
         res += diff * diff;
     }
     return res;
