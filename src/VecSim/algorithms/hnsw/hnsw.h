@@ -303,7 +303,7 @@ public:
         return idToMetaData.data() + internal_id;
     }
     vecsim_stl::vector<graphNodeType> safeCollectAllNodeIncomingNeighbors(idType node_id) const;
-    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData);
+    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData) override;
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
     void removeVectorInPlace(idType id);
