@@ -35,3 +35,19 @@ static inline float my_mm256_reduce_add_ps(__m256 x) {
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
            TmpRes[7];
 }
+
+// Same result as my_mm256_reduce_add_ps, folded in-register instead of through the stack.
+//
+// The version above spills 8 floats and sums them with 7 *dependent* scalar adds, so it pays a
+// store-to-load stall plus a serial ~7-add latency chain every call. That is a fixed cost, so
+// it dominates at small dimensions. This does it in three in-register steps.
+//
+// Reassociating changes which partial sums are formed, so the low bits of the result can
+// differ. Added alongside the original rather than replacing it: the original has many callers
+// across the repo that would each need their own benchmarking and tolerance review.
+static inline float my_mm256_reduce_add_ps_tree(__m256 x) {
+    __m128 sum128 = _mm_add_ps(_mm256_castps256_ps128(x), _mm256_extractf128_ps(x, 1));
+    sum128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+    sum128 = _mm_add_ss(sum128, _mm_shuffle_ps(sum128, sum128, 0x1));
+    return _mm_cvtss_f32(sum128);
+}

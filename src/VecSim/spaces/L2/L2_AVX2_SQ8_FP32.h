@@ -116,6 +116,8 @@ float SQ8_FP32_L2SqrSIMD16_AVX2(const void *pVect1v, const void *pVect2v, size_t
     }
 
     // Reduce to get Σ(diff_i²)
-    return my_mm256_reduce_add_ps(
+    // Tree reduction: the fixed cost of the stack-based fold is a large share of
+    // total time at small dimensions. See my_mm256_reduce_add_ps_tree in AVX_utils.h.
+    return my_mm256_reduce_add_ps_tree(
         _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3)));
 }

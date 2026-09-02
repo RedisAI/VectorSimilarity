@@ -84,48 +84,30 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
     svfloat32_t sum2 = svdup_f32(0.0f);
     svfloat32_t sum3 = svdup_f32(0.0f);
 
-    // Handle partial chunk if needed
-    if constexpr (partial_chunk) {
-        size_t remaining = dimension % chunk;
-        if (remaining > 0) {
-            // Create predicate for the remaining elements
-            svbool_t pg_partial =
-                svwhilelt_b32(static_cast<uint32_t>(0), static_cast<uint32_t>(remaining));
-
-            // Load uint8 elements and zero-extend to uint32
-            svuint32_t v1_u32 = svld1ub_u32(pg_partial, pVect1 + offset);
-
-            // Convert uint32 to float32
-            svfloat32_t v1_f = svcvt_f32_u32_z(pg_partial, v1_u32);
-
-            // Load float elements from query with predicate. `+ offset` is 0 here (this block
-            // runs before any full-width step), but spell it out to match the load above and
-            // so the two stay correct if the block order ever changes.
-            svfloat32_t v2 = svld1_f32(pg_partial, pVect2 + offset);
-
-            // min - y, then dequantize-and-subtract. Inactive lanes of a `_z` (zeroing)
-            // predicated op become zero, which is exactly what we want when accumulating.
-            svfloat32_t min_minus_y = svsub_f32_z(pg_partial, min_val_vec, v2);
-            svfloat32_t diff = svmla_f32_z(pg_partial, min_minus_y, delta_vec, v1_f);
-            sum0 = svmla_f32_z(pg_partial, sum0, diff, diff);
-
-            offset += remaining;
-        }
-    }
-
-    // Process 4 chunks at a time in the main loop
-    auto chunk_size = 4 * chunk;
-    const size_t number_of_chunks =
-        (dimension - (partial_chunk ? dimension % chunk : 0)) / chunk_size;
-
-    for (size_t i = 0; i < number_of_chunks; i++) {
+    // Full-width groups first, predicated tail last, and every bound compared rather than
+    // divided.
+    //
+    // `chunk` is a runtime value (svcntw), so `dimension % chunk` and `/ chunk_size` compile to
+    // real `udiv` instructions -- ~12-20 cycles each and not pipelined, on a function called
+    // thousands of times per query. They are also redundant: CHOOSE_SVE_IMPLEMENTATION already
+    // divides once, at chooser time, and hands the results down as `partial_chunk` and
+    // `additional_steps`. Doing the full vectors first additionally keeps every unpredicated
+    // load at a multiple of the vector length; a leading partial chunk would push all of them
+    // to a non-VL-multiple offset.
+    //
+    // This is why the shape here differs from the prefix-first sibling SQ8 SVE kernels. Given
+    // dimension = k*chunk + r (r = dimension % chunk, so r > 0 exactly when partial_chunk),
+    // the loop below runs floor(k/4) times, leaving (k % 4) == additional_steps full vectors
+    // plus r tail elements.
+    const size_t chunk_size = 4 * chunk;
+    while (offset + chunk_size <= dimension) {
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum0, chunk, min_val_vec, delta_vec);
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum1, chunk, min_val_vec, delta_vec);
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum2, chunk, min_val_vec, delta_vec);
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum3, chunk, min_val_vec, delta_vec);
     }
 
-    // Handle remaining steps (0-3)
+    // Handle remaining full-width steps (0-3), resolved at compile time.
     if constexpr (additional_steps > 0) {
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum0, chunk, min_val_vec, delta_vec);
     }
@@ -134,6 +116,22 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
     }
     if constexpr (additional_steps > 2) {
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum2, chunk, min_val_vec, delta_vec);
+    }
+
+    // Predicated tail for the final partial vector. svwhilelt derives the predicate from the
+    // current offset against `dimension`, so no residual arithmetic is needed, and inactive
+    // lanes of the `_z` (zeroing) forms contribute 0 to the accumulator.
+    if constexpr (partial_chunk) {
+        svbool_t pg_tail =
+            svwhilelt_b32(static_cast<uint32_t>(offset), static_cast<uint32_t>(dimension));
+
+        svuint32_t v1_u32 = svld1ub_u32(pg_tail, pVect1 + offset);
+        svfloat32_t v1_f = svcvt_f32_u32_z(pg_tail, v1_u32);
+        svfloat32_t v2 = svld1_f32(pg_tail, pVect2 + offset);
+
+        svfloat32_t min_minus_y = svsub_f32_z(pg_tail, min_val_vec, v2);
+        svfloat32_t diff = svmla_f32_z(pg_tail, min_minus_y, delta_vec, v1_f);
+        sum3 = svmla_f32_z(pg_tail, sum3, diff, diff);
     }
 
     // Combine the accumulators
