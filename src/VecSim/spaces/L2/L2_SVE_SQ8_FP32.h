@@ -99,6 +99,18 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
     // dimension = k*chunk + r (r = dimension % chunk, so r > 0 exactly when partial_chunk),
     // the loop below runs floor(k/4) times, leaving (k % 4) == additional_steps full vectors
     // plus r tail elements.
+    //
+    // Measured on Graviton4 (Neoverse-V2, 128-bit VL), median of 9, cv <= 0.33%, against the
+    // prefix-first shape: SVE2 is faster everywhere (dim 1024 160 -> 141ns, dim 513 81.9 ->
+    // 79.4ns), and SVE is faster where dimension is a multiple of the vector length (dim 1024
+    // 164 -> 153ns) but ~8% slower at dims that leave a tail (dim 513 78.3 -> 84.6ns). Kept
+    // because SVE2 is the tier the chooser prefers when both are present, and because real
+    // embedding dims (128/256/384/512/768/1024/1536) all divide evenly at 128- and 256-bit VL,
+    // landing on the faster path. Feeding the tail through its own accumulator instead of
+    // svmla_f32_m was also tried and measured slightly worse (dim 513 85.7ns).
+    //
+    // Note `dimension & (chunk - 1)` is NOT a valid substitute for the modulo: SVE permits any
+    // vector length that is a multiple of 128 bits, not only powers of two.
     const size_t chunk_size = 4 * chunk;
     while (offset + chunk_size <= dimension) {
         L2StepSQ8_FP32_SVE(pVect1, pVect2, offset, sum0, chunk, min_val_vec, delta_vec);
