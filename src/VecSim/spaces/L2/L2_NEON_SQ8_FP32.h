@@ -52,6 +52,45 @@ static inline void L2StepSQ8_FP32_NEON(const uint8_t *&pVect1, const float *&pVe
     sum = vfmaq_f32(sum, diff, diff);
 }
 
+// Helper: same arithmetic as above, but for 16 elements off a single 16-byte load.
+//
+// The 4-element helper reads 8 bytes (vld1_u8) and consumes only the low 4 (vget_low_u16),
+// then advances the pointer by 4, so back-to-back calls re-read half of what they just loaded
+// and defeat load pairing. Widening one load into all four float32x4_t groups removes that.
+// Per-lane arithmetic and accumulator assignment are unchanged (group g still lands in sum<g>,
+// still fma(delta, q, min - y)), so results stay bit-identical to the 4-element path.
+static inline void L2Step16SQ8_FP32_NEON(const uint8_t *&pVect1, const float *&pVect2,
+                                         float32x4_t &sum0, float32x4_t &sum1, float32x4_t &sum2,
+                                         float32x4_t &sum3, float32x4_t min_val_vec,
+                                         float32x4_t delta_vec) {
+    uint8x16_t v1_u8 = vld1q_u8(pVect1);
+    pVect1 += 16;
+
+    const uint16x8_t wide_lo = vmovl_u8(vget_low_u8(v1_u8));
+    const uint16x8_t wide_hi = vmovl_u8(vget_high_u8(v1_u8));
+
+    const float32x4_t q0 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(wide_lo)));
+    const float32x4_t q1 = vcvtq_f32_u32(vmovl_u16(vget_high_u16(wide_lo)));
+    const float32x4_t q2 = vcvtq_f32_u32(vmovl_u16(vget_low_u16(wide_hi)));
+    const float32x4_t q3 = vcvtq_f32_u32(vmovl_u16(vget_high_u16(wide_hi)));
+
+    const float32x4_t y0 = vld1q_f32(pVect2);
+    const float32x4_t y1 = vld1q_f32(pVect2 + 4);
+    const float32x4_t y2 = vld1q_f32(pVect2 + 8);
+    const float32x4_t y3 = vld1q_f32(pVect2 + 12);
+    pVect2 += 16;
+
+    const float32x4_t d0 = vfmaq_f32(vsubq_f32(min_val_vec, y0), delta_vec, q0);
+    const float32x4_t d1 = vfmaq_f32(vsubq_f32(min_val_vec, y1), delta_vec, q1);
+    const float32x4_t d2 = vfmaq_f32(vsubq_f32(min_val_vec, y2), delta_vec, q2);
+    const float32x4_t d3 = vfmaq_f32(vsubq_f32(min_val_vec, y3), delta_vec, q3);
+
+    sum0 = vfmaq_f32(sum0, d0, d0);
+    sum1 = vfmaq_f32(sum1, d1, d1);
+    sum2 = vfmaq_f32(sum2, d2, d2);
+    sum3 = vfmaq_f32(sum3, d3, d3);
+}
+
 // pVect1v = SQ8 storage, pVect2v = FP32 query
 template <unsigned char residual> // 0..15
 float SQ8_FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -74,12 +113,9 @@ float SQ8_FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t
 
     const size_t num_of_chunks = dimension / 16;
 
-    // Process 16 elements at a time in the main loop
+    // Process 16 elements at a time in the main loop, one 16-byte load per iteration.
     for (size_t i = 0; i < num_of_chunks; i++) {
-        L2StepSQ8_FP32_NEON(pVect1, pVect2, sum0, min_val_vec, delta_vec);
-        L2StepSQ8_FP32_NEON(pVect1, pVect2, sum1, min_val_vec, delta_vec);
-        L2StepSQ8_FP32_NEON(pVect1, pVect2, sum2, min_val_vec, delta_vec);
-        L2StepSQ8_FP32_NEON(pVect1, pVect2, sum3, min_val_vec, delta_vec);
+        L2Step16SQ8_FP32_NEON(pVect1, pVect2, sum0, sum1, sum2, sum3, min_val_vec, delta_vec);
     }
 
     // Handle remaining complete 4-element blocks within residual
