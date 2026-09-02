@@ -86,6 +86,11 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
+    if (hnsw_params.quantType == VecSimQuant_SQ8 && hnsw_params.dim < 64) {
+        frontendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                           "SQ8 compression is not recommended for dimensions below 64");
+    }
+
     // Create new tiered hnsw index
     std::shared_ptr<VecSimAllocator> management_layer_allocator =
         VecSimAllocator::newVecsimAllocator();

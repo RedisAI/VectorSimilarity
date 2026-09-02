@@ -5736,13 +5736,19 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BatchIteratorDuringAccumulation) {
     auto *batch_iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
     ASSERT_NE(batch_iterator, nullptr);
 
-    // Get first batch.
-    auto *batch = VecSimBatchIterator_Next(batch_iterator, 5, BY_SCORE);
-    ASSERT_NE(batch, nullptr);
-    size_t count = VecSimQueryReply_Len(batch);
-    ASSERT_GT(count, 0);
-    ASSERT_LE(count, 5);
-    VecSimQueryReply_Free(batch);
+    size_t count = 0;
+    size_t batches = 0;
+    while (VecSimBatchIterator_HasNext(batch_iterator)) {
+        auto *batch = VecSimBatchIterator_Next(batch_iterator, 5, BY_SCORE);
+        ASSERT_NE(batch, nullptr);
+        ASSERT_GT(VecSimQueryReply_Len(batch), 0);
+        ASSERT_LE(VecSimQueryReply_Len(batch), 5);
+        count += VecSimQueryReply_Len(batch);
+        VecSimQueryReply_Free(batch);
+        ASSERT_LE(++batches, n);
+    }
+    EXPECT_EQ(count, n);
+    EXPECT_FALSE(VecSimBatchIterator_HasNext(batch_iterator));
 
     VecSimBatchIterator_Free(batch_iterator);
 }

@@ -50,8 +50,8 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
     // Graph construction compares two stored SQ8 blobs; search compares a stored blob with a
     // DataType query. Both dispatchers report alignment for the stored operand.
     auto sym_func = spaces::GetDistFunc<vecsim_types::sq8, float>(Metric, dim, &storage_alignment);
-    auto asym_func =
-        spaces::GetDistFunc<vecsim_types::sq8, float, DataType>(Metric, dim, &asym_storage_alignment);
+    auto asym_func = spaces::GetDistFunc<vecsim_types::sq8, float, DataType>(
+        Metric, dim, &asym_storage_alignment);
     storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
     const unsigned char query_alignment = GetQueryAlignment<DataType>(Metric, dim);
 

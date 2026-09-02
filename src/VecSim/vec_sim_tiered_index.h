@@ -16,6 +16,7 @@
 #include "VecSim/utils/query_result_utils.h"
 #include "VecSim/utils/alignment.h"
 
+#include <mutex>
 #include <shared_mutex>
 
 #if HAVE_SVS
@@ -63,6 +64,14 @@ protected:
     }
 
     void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+
+    std::unique_lock<std::shared_mutex> acquireMainIndexGuard() const {
+        std::unique_lock<std::shared_mutex> lock(mainIndexGuard);
+#ifdef BUILD_TESTS
+        mainIndexGuard_write_lock_count++;
+#endif
+        return lock;
+    }
 #ifdef BUILD_TESTS
     mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
 #endif

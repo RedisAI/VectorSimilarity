@@ -116,6 +116,19 @@ private:
     };
     std::optional<SQAccumulationState> sqAccumulationState;
 
+    template <typename QueryFunction>
+    std::optional<VecSimQueryReply *>
+    queryFrontendIfBackendUninitialized(QueryFunction &&query) const {
+        std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
+        {
+            std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+            if (this->backendIndex) {
+                return std::nullopt;
+            }
+        }
+        return query();
+    }
+
 #ifdef BUILD_TESTS
     std::function<void()> beforeQuantizedBackendReplacement;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
@@ -204,6 +217,7 @@ public:
     class TieredHNSW_BatchIterator : public VecSimBatchIterator {
     private:
         const TieredHNSWIndex<DataType, DistType> *index;
+        std::optional<std::shared_lock<std::shared_mutex>> backend_index_lock;
         VecSimQueryParams *queryParams;
 
         VecSimQueryResultContainer flat_results;
@@ -267,10 +281,7 @@ public:
     }
 #endif
 
-    // Override query routing so that for quantized tiered indices the flat+backend
-    // merge always uses withSet=true (the flat and quantized backend scores are not
-    // directly comparable, so the withSet=false optimization is unsound).
-    // Also short-circuits to a flat-only query while in accumulation phase.
+    // Override query routing to short-circuit to a flat-only query while in accumulation phase.
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
                                 VecSimQueryParams *queryParams) const override;
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
@@ -281,11 +292,8 @@ public:
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
-        this->mainIndexGuard.lock_shared();
-        size_t num_marked_deleted =
-            this->backendIndex ? this->getHNSWIndex()->getNumMarkedDeleted() : 0;
-        this->mainIndexGuard.unlock_shared();
-        return num_marked_deleted;
+        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+        return this->backendIndex ? this->getHNSWIndex()->getNumMarkedDeleted() : 0;
     }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -303,19 +311,18 @@ public:
             TieredHNSW_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
-        this->mainIndexGuard.lock_shared();
+        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
         if (this->backendIndex) {
             this->backendIndex->setLastSearchMode(mode);
         }
-        this->mainIndexGuard.unlock_shared();
     }
     void runGC() override {
-        this->mainIndexGuard.lock_shared();
-        if (!this->backendIndex) {
-            this->mainIndexGuard.unlock_shared();
-            return;
+        {
+            std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+            if (!this->backendIndex) {
+                return;
+            }
         }
-        this->mainIndexGuard.unlock_shared();
         // Run no more than pendingSwapJobsThreshold value jobs.
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered HNSW index");
@@ -338,21 +345,17 @@ public:
     }
 
     VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData) {
-        this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex
-                       ? this->getHNSWIndex()->getHNSWElementNeighbors(label, neighborsData)
-                       : VecSimDebugCommandCode_LabelNotExists;
-        this->mainIndexGuard.unlock_shared();
-        return res;
+        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+        return this->backendIndex
+                   ? this->getHNSWIndex()->getHNSWElementNeighbors(label, neighborsData)
+                   : VecSimDebugCommandCode_LabelNotExists;
     }
 
 #ifdef BUILD_TESTS
     size_t indexMetaDataCapacity() const override {
-        this->mainIndexGuard.lock_shared();
-        size_t backend_capacity =
-            this->backendIndex ? this->backendIndex->indexMetaDataCapacity() : 0;
-        this->mainIndexGuard.unlock_shared();
-        return backend_capacity + this->frontendIndex->indexMetaDataCapacity();
+        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+        return (this->backendIndex ? this->backendIndex->indexMetaDataCapacity() : 0) +
+               this->frontendIndex->indexMetaDataCapacity();
     }
 #endif
 };
@@ -853,21 +856,10 @@ TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                VecSimQueryParams *queryParams) const {
     // Accumulation phase: backend is nullptr. We can short-circuit
     // to a flat-only query.
-    this->flatIndexGuard.lock_shared();
-    this->mainIndexGuard.lock_shared();
-    if (!this->backendIndex) {
-        this->mainIndexGuard.unlock_shared();
-        auto *res = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-        this->flatIndexGuard.unlock_shared();
-        return res;
-    }
-    this->mainIndexGuard.unlock_shared();
-    this->flatIndexGuard.unlock_shared();
-    // For quantized tiered, flat/backend scores are not directly comparable, so we
-    // must use withSet=true even for single-value indexes. Multi-value already
-    // uses withSet=true in the base.
-    if (isQuantized && !this->frontendIndex->isMultiValue()) {
-        return this->template topKQueryImp<true>(queryBlob, k, queryParams);
+    auto frontend_results = this->queryFrontendIfBackendUninitialized(
+        [&]() { return this->frontendIndex->topKQuery(queryBlob, k, queryParams); });
+    if (frontend_results) {
+        return *frontend_results;
     }
     return VecSimTieredIndex<DataType, DistType>::topKQuery(queryBlob, k, queryParams);
 }
@@ -877,21 +869,14 @@ VecSimQueryReply *
 TieredHNSWIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                 VecSimQueryParams *queryParams,
                                                 VecSimQueryReply_Order order) const {
-    this->flatIndexGuard.lock_shared();
-    this->mainIndexGuard.lock_shared();
-    if (!this->backendIndex) {
-        this->mainIndexGuard.unlock_shared();
-        auto *res = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
-        this->flatIndexGuard.unlock_shared();
+    auto frontend_results = this->queryFrontendIfBackendUninitialized(
+        [&]() { return this->frontendIndex->rangeQuery(queryBlob, radius, queryParams); });
+    if (frontend_results) {
+        auto *res = *frontend_results;
         if (res) {
             sort_results(res, order);
         }
         return res;
-    }
-    this->mainIndexGuard.unlock_shared();
-    this->flatIndexGuard.unlock_shared();
-    if (isQuantized && !this->frontendIndex->isMultiValue()) {
-        return this->template rangeQueryImp<true>(queryBlob, radius, queryParams, order);
     }
     return VecSimTieredIndex<DataType, DistType>::rangeQuery(queryBlob, radius, queryParams, order);
 }
@@ -920,34 +905,32 @@ void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
         }
 #endif
 
-        this->lockMainIndexGuard();
-        this->backendIndex = new_backend;
-        this->unlockMainIndexGuard();
+        {
+            auto main_index_lock = this->acquireMainIndexGuard();
+            this->backendIndex = new_backend;
+        }
         this->sqAccumulationState.reset();
     }
 }
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
-    this->flatIndexGuard.lock_shared();
+    std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
     size_t res = this->frontendIndex->indexSize();
-    this->mainIndexGuard.lock_shared();
+    std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
     if (this->backendIndex) {
         this->getHNSWIndex()->lockSharedIndexDataGuard();
         res += this->backendIndex->indexSize();
         this->getHNSWIndex()->unlockSharedIndexDataGuard();
     }
-    this->mainIndexGuard.unlock_shared();
-    this->flatIndexGuard.unlock_shared();
     return res;
 }
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
-    this->mainIndexGuard.lock_shared();
-    size_t backend_capacity = this->backendIndex ? this->backendIndex->indexCapacity() : 0;
-    this->mainIndexGuard.unlock_shared();
-    return backend_capacity + this->frontendIndex->indexCapacity();
+    std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+    return (this->backendIndex ? this->backendIndex->indexCapacity() : 0) +
+           this->frontendIndex->indexCapacity();
 }
 
 // In the tiered index, we assume that the blobs are processed by the flat buffer
@@ -1312,9 +1295,11 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
       index(index), flat_results(this->allocator), hnsw_results(this->allocator),
       flat_iterator(UNINITIALIZED), hnsw_iterator(UNINITIALIZED),
       returned_results_set(this->allocator) {
-    this->index->flatIndexGuard.lock_shared();
-    this->flat_iterator = this->index->frontendIndex->newBatchIterator(query_vector, queryParams);
-    this->index->flatIndexGuard.unlock_shared();
+    {
+        std::shared_lock<std::shared_mutex> flat_index_lock(this->index->flatIndexGuard);
+        this->flat_iterator =
+            this->index->frontendIndex->newBatchIterator(query_vector, queryParams);
+    }
 
     // Save a copy of the query params to initialize the HNSW iterator with (on first batch and
     // first batch after reset).
@@ -1333,7 +1318,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::~TieredHNSW_Batch
 
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
-        this->index->mainIndexGuard.unlock_shared();
     }
 
     this->allocator->free_allocation(this->queryParams);
@@ -1363,9 +1347,10 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         VecSimQueryReply_Free(cur_flat_results);
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
-        this->index->mainIndexGuard.lock_shared();
+        this->backend_index_lock.emplace(this->index->mainIndexGuard);
         if (!this->index->backendIndex) {
-            this->index->mainIndexGuard.unlock_shared();
+            this->hnsw_iterator = DEPLETED;
+            this->backend_index_lock.reset();
         } else {
             this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
                 this->flat_iterator->getQueryBlob(), queryParams);
@@ -1376,7 +1361,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             if (this->hnsw_iterator->isDepleted()) {
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
-                this->index->mainIndexGuard.unlock_shared();
+                this->backend_index_lock.reset();
             }
         }
     } else {
@@ -1416,7 +1401,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             if (this->hnsw_iterator->isDepleted()) {
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
-                this->index->mainIndexGuard.unlock_shared();
+                this->backend_index_lock.reset();
             }
         }
     }
@@ -1456,7 +1441,7 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
-        this->index->mainIndexGuard.unlock_shared();
+        this->backend_index_lock.reset();
     }
     this->resetResultsCount();
     this->flat_iterator->reset();

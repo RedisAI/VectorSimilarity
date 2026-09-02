@@ -15,6 +15,7 @@
 #include "mock_thread_pool.h"
 #include "unit_test_utils.h"
 
+#include <atomic>
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
@@ -915,26 +916,71 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
                                            [&] { return replacement_entered; }));
     }
 
-    std::thread top_k_reader([&] {
-        auto *reply = VecSimIndex_TopKQuery(index, query, 2, nullptr, BY_SCORE);
-        ASSERT_NE(reply, nullptr);
-        EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
-        EXPECT_EQ(VecSimQueryReply_Len(reply), normalization_set_size);
-        VecSimQueryReply_Free(reply);
-    });
-    std::thread range_reader([&] {
-        auto *reply = VecSimIndex_RangeQuery(index, query, 100.0, nullptr, BY_SCORE);
-        ASSERT_NE(reply, nullptr);
-        EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
-        EXPECT_EQ(VecSimQueryReply_Len(reply), normalization_set_size);
-        VecSimQueryReply_Free(reply);
-    });
-    std::thread ad_hoc_reader(
-        [&] { (void)VecSimIndex_PreferAdHocSearch(index, normalization_set_size, 1, true); });
+    std::atomic_bool keep_reading = true;
+    std::atomic_int failures = 0;
+    std::condition_variable readers_cv;
+    std::mutex readers_mutex;
+    bool reader_completed_iteration = false;
+    std::thread reader([&] {
+        bool announced = false;
+        while (keep_reading.load()) {
+            auto *reply = VecSimIndex_TopKQuery(index, query, 2, nullptr, BY_SCORE);
+            if (!reply || reply->code != VecSim_QueryReply_OK ||
+                VecSimQueryReply_Len(reply) != normalization_set_size) {
+                failures.fetch_add(1);
+            }
+            if (reply) {
+                VecSimQueryReply_Free(reply);
+            }
 
-    top_k_reader.join();
-    range_reader.join();
-    ad_hoc_reader.join();
+            reply = VecSimIndex_RangeQuery(index, query, 100.0, nullptr, BY_SCORE);
+            if (!reply || reply->code != VecSim_QueryReply_OK ||
+                VecSimQueryReply_Len(reply) != normalization_set_size) {
+                failures.fetch_add(1);
+            }
+            if (reply) {
+                VecSimQueryReply_Free(reply);
+            }
+
+            auto *iterator = VecSimBatchIterator_New(index, query, nullptr);
+            if (!iterator) {
+                failures.fetch_add(1);
+            } else {
+                if (VecSimBatchIterator_HasNext(iterator)) {
+                    reply = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+                    if (!reply || reply->code != VecSim_QueryReply_OK) {
+                        failures.fetch_add(1);
+                    }
+                    if (reply) {
+                        VecSimQueryReply_Free(reply);
+                    }
+                }
+                VecSimBatchIterator_Free(iterator);
+            }
+
+            (void)VecSimIndex_IndexSize(index);
+            (void)VecSimIndex_DebugInfo(index);
+            (void)VecSimIndex_StatsInfo(index);
+            (void)VecSimIndex_PreferAdHocSearch(index, normalization_set_size, 1, true);
+
+            if (!announced) {
+                {
+                    std::lock_guard lock(readers_mutex);
+                    reader_completed_iteration = true;
+                }
+                readers_cv.notify_one();
+                announced = true;
+            }
+        }
+    });
+
+    {
+        std::unique_lock lock(readers_mutex);
+        EXPECT_TRUE(readers_cv.wait_for(lock, std::chrono::seconds(10),
+                                        [&] { return reader_completed_iteration; }));
+    }
+
+    mock_thread_pool.init_threads();
 
     {
         std::lock_guard lock(transition_mutex);
@@ -942,10 +988,11 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
     }
     transition_cv.notify_all();
     writer.join();
+    mock_thread_pool.thread_pool_wait();
 
-    while (!mock_thread_pool.jobQ.empty()) {
-        mock_thread_pool.thread_iteration();
-    }
+    keep_reading.store(false);
+    reader.join();
+    EXPECT_EQ(failures.load(), 0);
 
     auto *reply = VecSimIndex_TopKQuery(index, query, 2, nullptr, BY_SCORE);
     ASSERT_NE(reply, nullptr);
@@ -954,6 +1001,46 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
     VecSimQueryReply_Free(reply);
 
     // Keep the allocator alive while reset_ctx releases the index's final reference.
+    auto allocator = index->getAllocator();
+    mock_thread_pool.reset_ctx();
+}
+
+TEST(SQ8TieredHNSWTest, WarnsForDimensionsBelow64) {
+    auto previous_log_callback = VecSimIndexInterface::logCallback;
+    struct LogCallbackRestorer {
+        logCallbackFunction callback;
+        ~LogCallbackRestorer() { VecSimIndexInterface::logCallback = callback; }
+    } restore_log_callback{previous_log_callback};
+
+    std::vector<std::string> warnings;
+    VecSimIndexInterface::logCallback = [](void *ctx, const char *level, const char *message) {
+        if (strcmp(level, VecSimCommonStrings::LOG_WARNING_STRING) == 0) {
+            static_cast<std::vector<std::string> *>(ctx)->emplace_back(message);
+        }
+    };
+
+    HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
+                              .dim = 32,
+                              .metric = VecSimMetric_L2,
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams primary_index_params = CreateParams(hnsw_params);
+    primary_index_params.logCtx = &warnings;
+    tieredIndexMock mock_thread_pool;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &mock_thread_pool.jobQ,
+        .jobQueueCtx = mock_thread_pool.ctx,
+        .submitCb = tieredIndexMock::submit_callback,
+        .primaryIndexParams = &primary_index_params,
+        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = 10}}};
+    VecSimParams params = CreateParams(tiered_params);
+    auto *index = VecSimIndex_New(&params);
+    ASSERT_NE(index, nullptr);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    ASSERT_EQ(warnings.size(), 1);
+    EXPECT_NE(warnings.front().find("SQ8 compression is not recommended for dimensions below 64"),
+              std::string::npos);
+
     auto allocator = index->getAllocator();
     mock_thread_pool.reset_ctx();
 }
