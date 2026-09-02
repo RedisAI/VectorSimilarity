@@ -249,13 +249,9 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
-        if (!this->isBackendPublished()) {
-            return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
-        }
-
-        auto &backend = this->publishedBackend();
-        if (backend.indexSize() > this->frontendIndex->indexSize()) {
-            return backend.preferAdHocSearch(subsetSize, k, initial_check);
+        if (this->isBackendPublished() &&
+            this->publishedBackend().indexSize() > this->frontendIndex->indexSize()) {
+            return this->publishedBackend().preferAdHocSearch(subsetSize, k, initial_check);
         }
         return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
