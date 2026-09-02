@@ -251,9 +251,7 @@ public:
     void unlockIndexDataGuard() const;
     void lockSharedIndexDataGuard() const;
     void unlockSharedIndexDataGuard() const;
-    std::shared_lock<std::shared_mutex> acquireSharedIndexDataGuard() const {
-        return std::shared_lock<std::shared_mutex>(indexDataGuard);
-    }
+    std::shared_lock<std::shared_mutex> acquireSharedIndexDataGuard() const;
     void lockNodeLinks(idType node_id) const;
     void unlockNodeLinks(idType node_id) const;
     VisitedNodesHandler *getVisitedList() const;
@@ -546,6 +544,12 @@ void HNSWIndex<DataType, DistType>::lockSharedIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
     indexDataGuard.unlock_shared();
+}
+
+template <typename DataType, typename DistType>
+std::shared_lock<std::shared_mutex>
+HNSWIndex<DataType, DistType>::acquireSharedIndexDataGuard() const {
+    return std::shared_lock<std::shared_mutex>(indexDataGuard);
 }
 
 template <typename DataType, typename DistType>
