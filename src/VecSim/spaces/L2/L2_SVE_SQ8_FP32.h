@@ -36,8 +36,8 @@ using sq8 = vecsim_types::sq8;
 // pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query.
 // min_val_vec/delta_vec are broadcast scalars from the stored vector's metadata.
 static inline void L2StepSQ8_FP32_SVE(const uint8_t *pVect1, const float *pVect2, size_t &offset,
-                                      svfloat32_t &sum, const size_t chunk,
-                                      svfloat32_t min_val_vec, svfloat32_t delta_vec) {
+                                      svfloat32_t &sum, const size_t chunk, svfloat32_t min_val_vec,
+                                      svfloat32_t delta_vec) {
     svbool_t pg = svptrue_b32();
 
     // Load uint8 elements and zero-extend to uint32
@@ -98,8 +98,10 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
             // Convert uint32 to float32
             svfloat32_t v1_f = svcvt_f32_u32_z(pg_partial, v1_u32);
 
-            // Load float elements from query with predicate
-            svfloat32_t v2 = svld1_f32(pg_partial, pVect2);
+            // Load float elements from query with predicate. `+ offset` is 0 here (this block
+            // runs before any full-width step), but spell it out to match the load above and
+            // so the two stay correct if the block order ever changes.
+            svfloat32_t v2 = svld1_f32(pg_partial, pVect2 + offset);
 
             // min - y, then dequantize-and-subtract. Inactive lanes of a `_z` (zeroing)
             // predicated op become zero, which is exactly what we want when accumulating.
