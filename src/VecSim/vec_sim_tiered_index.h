@@ -234,12 +234,8 @@ public:
                                  VecSimQueryReply_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
-        uint64_t size =
-            this->allocator->getAllocationSize() + this->frontendIndex->getAllocationSize();
-        if (this->isBackendPublished()) {
-            size += this->publishedBackend().getAllocationSize();
-        }
-        return size;
+        return this->allocator->getAllocationSize() + this->frontendIndex->getAllocationSize() +
+               (this->isBackendPublished() ? this->publishedBackend().getAllocationSize() : 0);
     }
     virtual size_t getNumMarkedDeleted() const = 0;
     size_t indexLabelCount() const override;
