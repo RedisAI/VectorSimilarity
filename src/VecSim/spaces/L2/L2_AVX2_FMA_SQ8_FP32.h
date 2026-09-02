@@ -9,38 +9,119 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/AVX_utils.h"
-#include "VecSim/spaces/IP/IP_AVX2_FMA_SQ8_FP32.h"
 #include "VecSim/types/sq8.h"
 
 using sq8 = vecsim_types::sq8;
 
 /*
- * Optimized asymmetric SQ8 L2 squared distance using algebraic identity:
+ * Asymmetric SQ8 L2 squared distance computed via direct residual accumulation:
  *
- *   ||x - y||² = Σx_i² - 2*IP(x, y) + Σy_i²
- *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
+ *   ||x - y||² = Σ(dequant(x_i) - y_i)²
+ *   where dequant(x_i) = min_val + delta * q_i
  *
- * where:
- *   - IP(x, y) = min * y_sum + delta * Σ(q_i * y_i)  (computed via SQ8_FP32_InnerProductImp_FMA)
- *   - x_sum_squares and y_sum_squares are precomputed
+ * This avoids the algebraic-identity/cancellation approach, which catastrophically cancels in
+ * FP32 when x and y share a large common offset relative to their spread.
  *
- * This avoids dequantization in the hot loop.
+ * This version uses FMA instructions. Critically, the subtract is fused into the FMA
+ * (diff = fma(delta, q, min - y)) rather than computed separately, which matters for
+ * performance.
  */
+
+// Helper: compute Σ(diff_i²) for 8 elements, where diff_i = dequant(x_i) - y_i.
+// pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query.
+// min_val_vec/delta_vec are broadcast scalars from the stored vector's metadata.
+static inline void L2StepSQ8_FP32_FMA(const uint8_t *&pVect1, const float *&pVect2, __m256 &sum,
+                                      __m256 min_val_vec, __m256 delta_vec) {
+    // Load 8 uint8 elements and convert to float
+    __m128i v1_128 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(pVect1));
+    pVect1 += 8;
+    __m256i v1_256 = _mm256_cvtepu8_epi32(v1_128);
+    __m256 v1_f = _mm256_cvtepi32_ps(v1_256);
+
+    // Load 8 float elements from query
+    __m256 v2 = _mm256_loadu_ps(pVect2);
+    pVect2 += 8;
+
+    // min - y computed once per lane, then fuse the dequantize-and-subtract into a single FMA:
+    // diff = delta*q + (min - y).
+    __m256 min_minus_y = _mm256_sub_ps(min_val_vec, v2);
+    __m256 diff = _mm256_fmadd_ps(delta_vec, v1_f, min_minus_y);
+
+    sum = _mm256_fmadd_ps(diff, diff, sum);
+}
 
 // pVect1v = SQ8 storage, pVect2v = FP32 query
 template <unsigned char residual> // 0..31
 float SQ8_FP32_L2SqrSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    // Get the raw inner product using the common SIMD implementation
-    const float ip = SQ8_FP32_InnerProductImp_FMA<residual>(pVect1v, pVect2v, dimension);
+    const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
+    const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
+    const uint8_t *pEnd1 = pVect1 + dimension;
 
-    // Get precomputed sum of squares from storage blob (pVect1v is SQ8 storage)
-    const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const float x_sum_sq =
-        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
+    // Get quantization parameters from stored vector (after quantized data)
+    const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);
+    const auto *params1 = pVect1Base + dimension;
+    const float min_val_scalar = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta_scalar = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
+    const __m256 min_val_vec = _mm256_set1_ps(min_val_scalar);
+    const __m256 delta_vec = _mm256_set1_ps(delta_scalar);
 
-    // Get precomputed sum of squares from query blob (pVect2v is FP32 query)
-    const float y_sum_sq = static_cast<const float *>(pVect2v)[dimension + sq8::SUM_SQUARES_QUERY];
+    // Initialize sum accumulators. Four accumulators break the FMA dependency chain, letting
+    // more FMAs be in flight at once.
+    __m256 sum0 = _mm256_setzero_ps();
+    __m256 sum1 = _mm256_setzero_ps();
+    __m256 sum2 = _mm256_setzero_ps();
+    __m256 sum3 = _mm256_setzero_ps();
 
-    // L2² = ||x||² + ||y||² - 2*IP(x, y)
-    return x_sum_sq + y_sum_sq - 2.0f * ip;
+    // Handle residual elements first (0-7 elements). The full-width query load is safe because
+    // `dim` is at least 8, so the query spans at least 8 floats.
+    if constexpr (residual % 8) {
+        __mmask8 constexpr mask = (1 << (residual % 8)) - 1;
+
+        // Load uint8 elements and convert to float
+        __m128i v1_128 = _mm_loadl_epi64(reinterpret_cast<const __m128i *>(pVect1));
+        pVect1 += residual % 8;
+
+        __m256i v1_256 = _mm256_cvtepu8_epi32(v1_128);
+        __m256 v1_f = _mm256_cvtepi32_ps(v1_256);
+
+        // Load masked float elements from query
+        __m256 v2 = my_mm256_maskz_loadu_ps<mask>(pVect2);
+        pVect2 += residual % 8;
+
+        // min - y, then dequantize-and-subtract
+        __m256 min_minus_y = _mm256_sub_ps(min_val_vec, v2);
+        __m256 diff = _mm256_fmadd_ps(delta_vec, v1_f, min_minus_y);
+
+        // Masked-out lanes carry garbage (v2 was zeroed, not set to min_val), so blend the
+        // squared diff with zero for those lanes before accumulating.
+        __m256 diff_sq = _mm256_mul_ps(diff, diff);
+        sum0 = _mm256_blend_ps(_mm256_setzero_ps(), diff_sq, mask);
+    }
+
+    // Handle the remaining full 8-element blocks of the residual (compile-time resolved).
+    if constexpr (residual >= 8) {
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum1, min_val_vec, delta_vec);
+    }
+    if constexpr (residual >= 16) {
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum2, min_val_vec, delta_vec);
+    }
+    if constexpr (residual >= 24) {
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum3, min_val_vec, delta_vec);
+    }
+
+    // We dealt with the residual part. We are left with some multiple of 32 elements.
+    // In each iteration we calculate 32 elements = 4 chunks of 8. The loop may run zero times
+    // (dim can be as small as 8).
+    while (pVect1 < pEnd1) {
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum0, min_val_vec, delta_vec);
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum1, min_val_vec, delta_vec);
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum2, min_val_vec, delta_vec);
+        L2StepSQ8_FP32_FMA(pVect1, pVect2, sum3, min_val_vec, delta_vec);
+    }
+
+    // Reduce to get Σ(diff_i²)
+    // Tree reduction: the fixed cost of the stack-based fold is a large share of
+    // total time at small dimensions. See my_mm256_reduce_add_ps_tree in AVX_utils.h.
+    return my_mm256_reduce_add_ps_tree(
+        _mm256_add_ps(_mm256_add_ps(sum0, sum1), _mm256_add_ps(sum2, sum3)));
 }

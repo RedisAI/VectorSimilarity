@@ -19,29 +19,38 @@ using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
 
 /*
- * Optimized asymmetric SQ8-FP32 L2 squared distance using algebraic identity:
- *   ||x - y||² = Σx_i² - 2*IP(x, y) + Σy_i²
- *              = x_sum_squares - 2 * IP(x, y) + y_sum_squares
- *   where IP(x, y) = min * y_sum + delta * Σ(q_i * y_i)
+ * Asymmetric SQ8-FP32 L2 squared distance computed via direct residual accumulation:
+ *   ||x - y||² = Σ(dequant(x_i) - y_i)²
+ *   where dequant(x_i) = min_val + delta * q_i
+ *
+ * This avoids the algebraic-identity/cancellation approach (||x||² + ||y||² - 2*IP(x, y)),
+ * which catastrophically cancels in FP32 when x and y share a large common offset relative to
+ * their spread.
+ *
+ * The operand order below relies on FP addition NOT being reassociated, so `-ffast-math` /
+ * `-Ofast` would reinstate the bug. The repo's -O3 builds are safe.
  *
  * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
  * pVect2 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
  */
 float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    // Get the raw inner product using the common implementation
-    const float ip = SQ8_FP32_InnerProduct_Impl(pVect1v, pVect2v, dimension);
-
     // Storage metadata follows a byte payload and is not necessarily float-aligned.
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
-    const float x_sum_sq =
-        load_unaligned<float>(pVect1 + dimension + sq8::SUM_SQUARES * sizeof(float));
-
-    // Get precomputed sum of squares from query blob (pVect2 is FP32)
     const auto *pVect2 = static_cast<const float *>(pVect2v);
-    const float y_sum_sq = pVect2[dimension + sq8::SUM_SQUARES_QUERY];
 
-    // L2² = ||x||² + ||y||² - 2*IP(x, y)
-    return x_sum_sq + y_sum_sq - 2.0f * ip;
+    const auto *params1 = pVect1 + dimension;
+    const float min_val = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
+
+    float res = 0;
+    for (size_t i = 0; i < dimension; i++) {
+        // Order matters: min_val - y_i is exact (Sterbenz) since both are large and close, so
+        // adding the small delta*q_i correction afterward preserves the residual. Computing
+        // (min_val + delta*q_i) - y_i instead rounds it away at the large offset's precision.
+        float diff = delta * static_cast<float>(pVect1[i]) + (min_val - pVect2[i]);
+        res += diff * diff;
+    }
+    return res;
 }
 
 /*

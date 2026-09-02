@@ -14,6 +14,7 @@
 #include <random>
 #include <cmath>
 #include <limits>
+#include <string>
 
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
@@ -406,6 +407,238 @@ TEST_F(SpacesTest, SQ8_FP32_odd_dim_unaligned_metadata_test) {
         EXPECT_NEAR(L2_SQ8_FP32_GetDistFunc(dim, nullptr)(storage, query.data(), dim), expected_l2,
                     0.01)
             << "dispatched L2 with dim " << dim;
+    }
+}
+
+/* ==================== MOD-17526 regression tests ====================
+ * The SQ8-FP32 L2 kernels used to compute L2^2 via the ||x||^2 + ||y||^2 - 2*IP identity, which
+ * cancels catastrophically in FP32 when both vectors share a large common offset.
+ *
+ * These check against an independent double-precision reference rather than another kernel
+ * (pre-fix, scalar and SIMD were wrong together), and use relative rather than absolute
+ * tolerances, since a ~0.01 absolute bound is what let the bug hide.
+ */
+
+namespace {
+
+// Ground truth: dequantizes the storage by hand and accumulates in double. Independent of the
+// production kernels and of test_utils::SQ8_FP32_NotOptimized_L2Sqr, which accumulates in float.
+double SQ8_FP32_L2Sqr_DoubleReference(const uint8_t *storage, const float *query, size_t dim) {
+    const float min_val = load_unaligned<float>(storage + dim + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(storage + dim + sq8::DELTA * sizeof(float));
+    double res = 0.0;
+    for (size_t i = 0; i < dim; i++) {
+        const double dequantized =
+            static_cast<double>(min_val) + static_cast<double>(delta) * storage[i];
+        const double diff = static_cast<double>(query[i]) - dequantized;
+        res += diff * diff;
+    }
+    return res;
+}
+
+// Checks the scalar kernel, the dispatched kernel, and every SIMD variant in this binary against
+// `expected`, within `rel_tol` scaled by max(expected, 1.0).
+void ExpectSQ8_FP32_L2SqrNear(const uint8_t *storage, const float *query, size_t dim,
+                              double expected, double rel_tol, const std::string &context) {
+    const double scale = std::max(expected, 1.0);
+    auto check = [&](double actual, const char *label) {
+        EXPECT_NEAR(actual, expected, rel_tol * scale)
+            << context << " [" << label << "]: actual=" << actual << ", expected=" << expected;
+    };
+
+    check(SQ8_FP32_L2Sqr(storage, query, dim), "scalar");
+    check(L2_SQ8_FP32_GetDistFunc(dim, nullptr)(storage, query, dim), "dispatched");
+
+    auto optimization = getCpuOptimizationFeatures();
+
+    // The chooser only reaches the x86 kernels at dim >= 8, and the AVX2 residual path reads a
+    // full 32-byte vector (my_mm256_maskz_loadu_ps is an unconditional load), which overreads a
+    // smaller query blob. aarch64 has no such floor, so those tiers stay ungated to match
+    // production.
+    const bool x86_simd_reachable = dim >= 8;
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (x86_simd_reachable && optimization.avx512f && optimization.avx512bw &&
+        optimization.avx512vl && optimization.avx512vnni) {
+        check(Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim)(storage, query, dim),
+              "AVX512F_BW_VL_VNNI");
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (x86_simd_reachable && optimization.avx2 && optimization.fma3) {
+        check(Choose_SQ8_FP32_L2_implementation_AVX2_FMA(dim)(storage, query, dim), "AVX2_FMA");
+    }
+#endif
+#ifdef OPT_AVX2
+    if (x86_simd_reachable && optimization.avx2) {
+        check(Choose_SQ8_FP32_L2_implementation_AVX2(dim)(storage, query, dim), "AVX2");
+    }
+#endif
+#ifdef OPT_SSE4
+    if (x86_simd_reachable && optimization.sse4_1) {
+        check(Choose_SQ8_FP32_L2_implementation_SSE4(dim)(storage, query, dim), "SSE4");
+    }
+#endif
+#ifdef OPT_SVE2
+    if (optimization.sve2) {
+        check(Choose_SQ8_FP32_L2_implementation_SVE2(dim)(storage, query, dim), "SVE2");
+    }
+#endif
+#ifdef OPT_SVE
+    if (optimization.sve) {
+        check(Choose_SQ8_FP32_L2_implementation_SVE(dim)(storage, query, dim), "SVE");
+    }
+#endif
+#ifdef OPT_NEON
+    if (optimization.asimd) {
+        check(Choose_SQ8_FP32_L2_implementation_NEON(dim)(storage, query, dim), "NEON");
+    }
+#endif
+}
+
+// Builds the blobs from explicit float vectors, kept separate from generation so a caller can
+// derive a shifted pair by adding a constant to the same values. Re-sampling
+// std::uniform_real_distribution over a shifted [min,max] with the same seed does NOT give "the
+// same vector plus a constant", which is what a translation-invariance test needs.
+struct SQ8_FP32_L2_TestVectors {
+    std::vector<float> query;     // [float values (dim)] [sum] [sum_squares]
+    std::vector<uint8_t> storage; // [uint8_t values (dim)] [min] [delta] [sum] [sum_squares]
+};
+
+SQ8_FP32_L2_TestVectors
+BuildSQ8_FP32_L2_TestVectorsFromValues(const std::vector<float> &query_values,
+                                       const std::vector<float> &storage_values) {
+    const size_t dim = query_values.size();
+    SQ8_FP32_L2_TestVectors v;
+    v.query.resize(dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    std::copy(query_values.begin(), query_values.end(), v.query.begin());
+    test_utils::preprocess_sq8_fp32_query(v.query.data(), dim);
+
+    v.storage.resize(dim * sizeof(uint8_t) +
+                     sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(storage_values.data(), dim,
+                                                        v.storage.data());
+    return v;
+}
+
+// One base (query, storage) pair, plus the same pair with `offset` added to every element.
+std::pair<SQ8_FP32_L2_TestVectors, SQ8_FP32_L2_TestVectors>
+BuildSQ8_FP32_L2_ShiftedPair(size_t dim, float spread, float offset, int seed) {
+    std::vector<float> query_values(dim), storage_values(dim);
+    test_utils::populate_float_vec(query_values.data(), dim, seed, -spread, spread);
+    test_utils::populate_float_vec(storage_values.data(), dim, seed + 1, -spread, spread);
+
+    std::vector<float> shifted_query(dim), shifted_storage(dim);
+    for (size_t i = 0; i < dim; i++) {
+        shifted_query[i] = query_values[i] + offset;
+        shifted_storage[i] = storage_values[i] + offset;
+    }
+
+    return {BuildSQ8_FP32_L2_TestVectorsFromValues(query_values, storage_values),
+            BuildSQ8_FP32_L2_TestVectorsFromValues(shifted_query, shifted_storage)};
+}
+
+} // namespace
+
+TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TranslationInvariance) {
+    // L2 must satisfy L2(x, y) == L2(x + C, y + C) for any constant offset C. The old
+    // identity-based kernel violated this for large C relative to the vectors' spread; the
+    // direct-residual kernel must satisfy it (up to FP32 rounding, hence the relative tolerance).
+    const float spread = 1.0f;
+    const float large_offset = 100000.0f; // offset/spread == 100000, far past the ~4000 threshold
+                                          // where the old identity started to catastrophically
+                                          // cancel in FP32.
+    // Mixes exact multiples of the SIMD chunk widths with awkward remainders, so the
+    // large-offset case also runs through the residual/masked-lane tails.
+    for (const size_t dim : {128UL, 129UL, 145UL, 512UL, 513UL, 527UL, 768UL}) {
+        auto [no_offset, with_offset] =
+            BuildSQ8_FP32_L2_ShiftedPair(dim, spread, large_offset, 1234);
+
+        const double expected_no_offset =
+            SQ8_FP32_L2Sqr_DoubleReference(no_offset.storage.data(), no_offset.query.data(), dim);
+        const double expected_with_offset = SQ8_FP32_L2Sqr_DoubleReference(
+            with_offset.storage.data(), with_offset.query.data(), dim);
+
+        // The reference itself must be translation-invariant. Not exact equality: float32
+        // spacing near 1e5 is coarser than near 0, which can shift a value to an adjacent
+        // quantization code.
+        ASSERT_NEAR(expected_no_offset, expected_with_offset,
+                    1e-2 * std::max(expected_no_offset, 1.0))
+            << "dim " << dim << ": independent reference is not translation-invariant";
+
+        ExpectSQ8_FP32_L2SqrNear(no_offset.storage.data(), no_offset.query.data(), dim,
+                                 expected_no_offset, 1e-3, "dim " + std::to_string(dim) + ", C=0");
+
+        // `min - y` is exact in FP32 by Sterbenz (both large, within a factor of 2), so no
+        // large-scale cancellation remains and the tolerance stays as tight as the C=0 case.
+        ExpectSQ8_FP32_L2SqrNear(
+            with_offset.storage.data(), with_offset.query.data(), dim, expected_with_offset, 1e-3,
+            "dim " + std::to_string(dim) + ", C=" + std::to_string(large_offset));
+    }
+}
+
+TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TicketReproShape) {
+    // The ticket's literal repro: x=[100000,100008], y=[100000,100000]. True L2^2 = (100000 -
+    // 100000)^2 + (100008 - 100000)^2 = 64. The old ||x||^2+||y||^2-2*IP identity computed this
+    // as a huge value minus a nearly-equal huge value in FP32 and could return 0, a negative
+    // number, or other unbounded garbage instead of 64.
+    const size_t dim = 2;
+    const float storage_values[dim] = {100000.0f, 100008.0f};
+    const float query_values[dim] = {100000.0f, 100000.0f};
+
+    std::vector<float> query(dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    std::copy(query_values, query_values + dim, query.begin());
+    test_utils::preprocess_sq8_fp32_query(query.data(), dim);
+
+    std::vector<uint8_t> storage(dim * sizeof(uint8_t) +
+                                 sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(storage_values, dim, storage.data());
+
+    ExpectSQ8_FP32_L2SqrNear(storage.data(), query.data(), dim, /*expected=*/64.0, 1e-4,
+                             "MOD-17526 ticket repro shape");
+}
+
+TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_ScalarAssociativityRegression) {
+    // Pins a scalar-only ordering bug: `(min_val + delta*q) - y` rounds the dequantized value at
+    // the large offset's precision before subtracting, discarding the residual, while
+    // `delta*q + (min_val - y)` keeps it. With min=100000, delta=8/255, q=1 the dequantized value
+    // is 100000.031372549..., which FP32 rounds to exactly y=100000.03125, so the buggy order
+    // yields diff=0 instead of ~0.0001225.
+    const size_t dim = 8;
+    // storage: min=100000 (index 0), max=100008 (index 7) => delta = 8/255, so index 1
+    // quantizes to q=1 (dequantizes to 100000 + 8/255 = 100000.031372549...).
+    const float storage_values[dim] = {
+        100000.0f, 100000.0f + 8.0f / 255.0f, 100000.0f, 100000.0f, 100000.0f, 100000.0f, 100000.0f,
+        100008.0f};
+    // query matches storage exactly everywhere except index 1, so every other element
+    // contributes exactly 0 and the whole result isolates the associativity bug at index 1.
+    const float query_values[dim] = {100000.0f, 100000.03125f, 100000.0f, 100000.0f,
+                                     100000.0f, 100000.0f,     100000.0f, 100008.0f};
+
+    std::vector<float> query(dim + sq8::query_metadata_count<VecSimMetric_L2>());
+    std::copy(query_values, query_values + dim, query.begin());
+    test_utils::preprocess_sq8_fp32_query(query.data(), dim);
+
+    std::vector<uint8_t> storage(dim * sizeof(uint8_t) +
+                                 sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(storage_values, dim, storage.data());
+
+    const double expected = SQ8_FP32_L2Sqr_DoubleReference(storage.data(), query.data(), dim);
+    ASSERT_GT(expected, 0.0) << "test construction should produce a nonzero true distance";
+    // Absolute, not relative: the true value is ~1.5e-8 and the bug returns exactly 0.
+    EXPECT_NEAR(SQ8_FP32_L2Sqr(storage.data(), query.data(), dim), expected, 1e-9)
+        << "scalar kernel: expected=" << expected;
+}
+
+TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_RegularVectorSanity) {
+    // Sanity check that the fix didn't regress the common case: ordinary small-magnitude
+    // vectors, no large shared offset, realistic embedding-sized dims.
+    for (const size_t dim : {128UL, 768UL}) {
+        auto [v, _unused] =
+            BuildSQ8_FP32_L2_ShiftedPair(dim, /*spread=*/1.0f, /*offset=*/0.0f, 4242);
+        const double expected =
+            SQ8_FP32_L2Sqr_DoubleReference(v.storage.data(), v.query.data(), dim);
+        ExpectSQ8_FP32_L2SqrNear(v.storage.data(), v.query.data(), dim, expected, 1e-3,
+                                 "dim " + std::to_string(dim) + ", regular vectors");
     }
 }
 
