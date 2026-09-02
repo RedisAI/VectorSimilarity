@@ -676,7 +676,8 @@ TEST(SQ8TieredHNSWTest, PhaseZeroAccessorsAndRelabelDoNotRequireBackend) {
               tiered_index->getFlatBufferIndex()->indexMetaDataCapacity());
     EXPECT_EQ(tiered_index->preferAdHocSearch(1, 1, true),
               tiered_index->getFlatBufferIndex()->preferAdHocSearch(1, 1, true));
-    EXPECT_NO_THROW(tiered_index->setLastSearchMode(STANDARD_KNN));
+    tiered_index->setLastSearchMode(STANDARD_KNN);
+    EXPECT_EQ(tiered_index->debugInfo().commonInfo.lastMode, STANDARD_KNN);
     EXPECT_NO_THROW(tiered_index->fitMemory());
     EXPECT_NO_THROW(tiered_index->runGC());
 

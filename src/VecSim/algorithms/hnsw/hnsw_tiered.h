@@ -292,6 +292,8 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override {
         if (this->isBackendPublished()) {
             this->publishedBackend().setLastSearchMode(mode);
+        } else {
+            this->frontendIndex->setLastSearchMode(mode);
         }
     }
     void runGC() override {

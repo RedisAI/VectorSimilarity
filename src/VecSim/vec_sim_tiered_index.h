@@ -451,6 +451,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         backendInfo = this->backendIndex->debugInfo();
     } else {
         backendInfo.commonInfo.basicInfo = this->basicInfo();
+        backendInfo.commonInfo.lastMode = frontendInfo.commonInfo.lastMode;
     }
 
     info.commonInfo.indexLabelCount = this->computeUnifiedIndexLabelsSetUnsafe().size();
