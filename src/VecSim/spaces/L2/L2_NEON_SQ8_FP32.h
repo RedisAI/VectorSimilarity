@@ -14,51 +14,37 @@
 using sq8 = vecsim_types::sq8;
 
 /*
- * Asymmetric SQ8 L2 squared distance computed via direct residual accumulation:
+ * Asymmetric SQ8-FP32 L2 squared distance via direct residual accumulation:
  *
- *   ||x - y||² = Σ(dequant(x_i) - y_i)²
- *   where dequant(x_i) = min_val + delta * q_i
+ *   ||x - y||² = Σ(dequant(x_i) - y_i)², where dequant(x_i) = min_val + delta * q_i
  *
- * This avoids the algebraic-identity/cancellation approach, which catastrophically cancels in
- * FP32 when x and y share a large common offset relative to their spread.
- *
- * The subtract is fused into the FMA (diff = fma(delta, q, min - y)) using the explicit
- * vfmaq_f32 intrinsic rather than computed separately (and rather than relying on
- * autovectorizing vmlaq_f32-style code), which matters for performance on ARM.
+ * Not the ||x||² + ||y||² - 2*IP identity, which cancels catastrophically in FP32 when x and y
+ * share a large common offset relative to their spread (MOD-17526).
  */
 
-// Helper: compute Σ(diff_i²) for 4 elements, where diff_i = dequant(x_i) - y_i.
-// pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query.
-// min_val_vec/delta_vec are broadcast scalars from the stored vector's metadata.
+// 4 elements of Σ(diff_i²). Used for the tail; the main loop uses the 16-element form below.
 static inline void L2StepSQ8_FP32_NEON(const uint8_t *&pVect1, const float *&pVect2,
                                        float32x4_t &sum, float32x4_t min_val_vec,
                                        float32x4_t delta_vec) {
-    // Load 4 uint8 elements and convert to float
     uint8x8_t v1_u8 = vld1_u8(pVect1);
     pVect1 += 4;
 
     uint32x4_t v1_u32 = vmovl_u16(vget_low_u16(vmovl_u8(v1_u8)));
     float32x4_t v1_f = vcvtq_f32_u32(v1_u32);
 
-    // Load 4 float elements from query
     float32x4_t v2 = vld1q_f32(pVect2);
     pVect2 += 4;
 
-    // min - y computed once per lane, then fuse the dequantize-and-subtract into a single FMA:
-    // diff = fma(delta, q, min - y). Uses the explicit vfmaq_f32 intrinsic, not vmlaq_f32.
+    // Explicit vfmaq_f32, not vmlaq_f32: keeping min - y first is what preserves the residual.
     float32x4_t min_minus_y = vsubq_f32(min_val_vec, v2);
     float32x4_t diff = vfmaq_f32(min_minus_y, delta_vec, v1_f);
 
     sum = vfmaq_f32(sum, diff, diff);
 }
 
-// Helper: same arithmetic as above, but for 16 elements off a single 16-byte load.
-//
-// The 4-element helper reads 8 bytes (vld1_u8) and consumes only the low 4 (vget_low_u16),
-// then advances the pointer by 4, so back-to-back calls re-read half of what they just loaded
-// and defeat load pairing. Widening one load into all four float32x4_t groups removes that.
-// Per-lane arithmetic and accumulator assignment are unchanged (group g still lands in sum<g>,
-// still fma(delta, q, min - y)), so results stay bit-identical to the 4-element path.
+// 16 elements off a single 16-byte load. The 4-element form reads 8 bytes and uses only 4, so
+// back-to-back calls re-read half of every load. Per-lane arithmetic and accumulator mapping are
+// unchanged, so results match the 4-element path exactly.
 static inline void L2Step16SQ8_FP32_NEON(const uint8_t *&pVect1, const float *&pVect2,
                                          float32x4_t &sum0, float32x4_t &sum1, float32x4_t &sum2,
                                          float32x4_t &sum3, float32x4_t min_val_vec,

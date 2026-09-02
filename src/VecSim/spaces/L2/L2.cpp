@@ -27,9 +27,8 @@ using sq8 = vecsim_types::sq8;
  * which catastrophically cancels in FP32 when x and y share a large common offset relative to
  * their spread.
  *
- * The operand order in the loop below is load-bearing, not stylistic: it relies on FP addition
- * NOT being reassociated. `-ffast-math` / `-Ofast` permit exactly that reassociation and would
- * reinstate the bug this kernel fixes. The repo's -O3 builds are safe; keep it that way.
+ * The operand order below relies on FP addition NOT being reassociated, so `-ffast-math` /
+ * `-Ofast` would reinstate the bug. The repo's -O3 builds are safe.
  *
  * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
  * pVect2 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
@@ -45,12 +44,9 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        // diff = dequant(x_i) - y_i = delta * q_i + (min_val - y_i). Order matters: min_val and
-        // y_i are both large and close in magnitude (Sterbenz's lemma makes their subtraction
-        // exact), so computing that first and adding the small delta*q_i correction preserves the
-        // residual. Computing (min_val + delta*q_i) - y_i first rounds the dequantized value to
-        // FP32 at the large offset's precision, discarding the residual before the subtraction
-        // ever happens -- silently reintroducing the cancellation this kernel exists to avoid.
+        // Order matters: min_val - y_i is exact (Sterbenz) since both are large and close, so
+        // adding the small delta*q_i correction afterward preserves the residual. Computing
+        // (min_val + delta*q_i) - y_i instead rounds it away at the large offset's precision.
         float diff = delta * static_cast<float>(pVect1[i]) + (min_val - pVect2[i]);
         res += diff * diff;
     }

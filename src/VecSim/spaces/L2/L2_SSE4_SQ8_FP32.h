@@ -66,17 +66,9 @@ float SQ8_FP32_L2SqrSIMD16_SSE4(const void *pVect1v, const void *pVect2v, size_t
     __m128 sum2 = _mm_setzero_ps();
     __m128 sum3 = _mm_setzero_ps();
 
-    // Process residual elements first (1-3 elements).
-    //
-    // Both operands are loaded at full width and the lanes past the residual are masked off,
-    // rather than staged through the stack. The previous form stored scalars into two 16-byte
-    // stack arrays and immediately reloaded them with _mm_load_ps; a 16-byte load cannot be
-    // store-to-load forwarded from four narrower stores, so it stalls. That showed up in the
-    // residual benchmark sweep as a fixed ~8-9 ns penalty on every dim where residual % 4 != 0.
-    //
-    // The wide loads are in bounds because this kernel is only reachable at dim >= 8 (the x86
-    // chooser floors SIMD there), so both operands have at least 8 elements ahead of offset 0,
-    // and the metadata trailing each blob keeps even a 16-byte read inside the allocation.
+    // Residual elements (1-3), loaded at full width with the lanes past the residual masked
+    // off. Staging them through stack arrays instead costs a store-to-load stall. In bounds
+    // because the x86 chooser never reaches this kernel below dim 8.
     if constexpr (residual % 4) {
         constexpr unsigned char r = residual % 4;
 
@@ -87,8 +79,7 @@ float SQ8_FP32_L2SqrSIMD16_SSE4(const void *pVect1v, const void *pVect2v, size_t
         __m128 min_minus_y = _mm_sub_ps(min_val, v2);
         __m128 diff = _mm_add_ps(_mm_mul_ps(delta, v1_f), min_minus_y);
 
-        // Lanes >= r hold elements the main loop will process; zero them so this step adds
-        // nothing for them. r is a compile-time value, so the mask is a constant.
+        // Lanes >= r hold elements the main loop will process; zero their contribution.
         const __m128 lane_mask = _mm_castsi128_ps(
             _mm_set_epi32(r > 3 ? -1 : 0, r > 2 ? -1 : 0, r > 1 ? -1 : 0, r > 0 ? -1 : 0));
         diff = _mm_and_ps(diff, lane_mask);

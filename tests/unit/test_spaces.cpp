@@ -411,28 +411,18 @@ TEST_F(SpacesTest, SQ8_FP32_odd_dim_unaligned_metadata_test) {
 }
 
 /* ==================== MOD-17526 regression tests ====================
- * SQ8_FP32_L2Sqr and its SIMD variants used to compute L2^2 via the algebraic identity
- * ||x||^2 + ||y||^2 - 2*IP(x, y), reading precomputed sums from the SQ8 blob metadata. That
- * identity catastrophically cancels in FP32 when the two vectors share a large common offset
- * relative to their spread (e.g. x=[100000,100008], y=[100000,100000]: true L2^2=64, the old
- * kernel could return 0, a negative value, or otherwise unbounded garbage because it computed a
- * huge positive value minus a nearly-equal huge positive value in single precision).
+ * The SQ8-FP32 L2 kernels used to compute L2^2 via the ||x||^2 + ||y||^2 - 2*IP identity, which
+ * cancels catastrophically in FP32 when both vectors share a large common offset.
  *
- * The tests below use an independent double-precision reference computed by manually
- * dequantizing the SQ8 storage and accumulating squared residuals -- NOT the algebraic identity,
- * and NOT test_utils::SQ8_FP32_NotOptimized_L2Sqr or any other kernel variant -- so they would
- * have failed against the old kernel and remain meaningful now that both are fixed. They also
- * use *relative* tolerances (scaled to the true distance) rather than the ~0.01 absolute
- * tolerance used elsewhere in this file, since an absolute tolerance is exactly what let the old
- * bug hide: the large-offset case produces errors many orders of magnitude larger than 0.01.
+ * These check against an independent double-precision reference rather than another kernel
+ * (pre-fix, scalar and SIMD were wrong together), and use relative rather than absolute
+ * tolerances, since a ~0.01 absolute bound is what let the bug hide.
  */
 
 namespace {
 
-// Manually dequantizes the SQ8 storage and accumulates the squared residual against the FP32
-// query in double precision. Deliberately independent of both the production kernels and of
-// test_utils::SQ8_FP32_NotOptimized_L2Sqr (which accumulates in float) so it serves as ground
-// truth rather than another instance of the same computation.
+// Ground truth: dequantizes the storage by hand and accumulates in double. Independent of the
+// production kernels and of test_utils::SQ8_FP32_NotOptimized_L2Sqr, which accumulates in float.
 double SQ8_FP32_L2Sqr_DoubleReference(const uint8_t *storage, const float *query, size_t dim) {
     const float min_val = load_unaligned<float>(storage + dim + sq8::MIN_VAL * sizeof(float));
     const float delta = load_unaligned<float>(storage + dim + sq8::DELTA * sizeof(float));
@@ -446,10 +436,8 @@ double SQ8_FP32_L2Sqr_DoubleReference(const uint8_t *storage, const float *query
     return res;
 }
 
-// Runs the scalar kernel, the runtime-dispatched kernel, and every SIMD variant compiled into
-// this binary against `storage`/`query`, asserting each is within `rel_tol` of `expected`
-// (relative to max(expected, 1.0), so a tiny true distance isn't swamped by an absolute
-// epsilon and a huge one isn't judged by an absolute epsilon that's too tight).
+// Checks the scalar kernel, the dispatched kernel, and every SIMD variant in this binary against
+// `expected`, within `rel_tol` scaled by max(expected, 1.0).
 void ExpectSQ8_FP32_L2SqrNear(const uint8_t *storage, const float *query, size_t dim,
                               double expected, double rel_tol, const std::string &context) {
     const double scale = std::max(expected, 1.0);
@@ -463,13 +451,10 @@ void ExpectSQ8_FP32_L2SqrNear(const uint8_t *storage, const float *query, size_t
 
     auto optimization = getCpuOptimizationFeatures();
 
-    // The x86 kernels are only ever reached through the chooser at dim >= 8 (L2_space.cpp:
-    // "Optimizations assume at least 8 elements (see the residual handling in the kernels)").
-    // Calling them directly below that floor tests a configuration production never produces,
-    // and the AVX2 residual path reads a full 32-byte vector via my_mm256_maskz_loadu_ps
-    // (AVX_utils.h) -- an unconditional _mm256_loadu_ps -- which overreads a dim<8 query blob
-    // and trips ASAN. aarch64 has no such floor (the chooser returns NEON/SVE at any dim, and
-    // the NEON tail uses per-lane loads), so those tiers stay ungated here to match production.
+    // The chooser only reaches the x86 kernels at dim >= 8, and the AVX2 residual path reads a
+    // full 32-byte vector (my_mm256_maskz_loadu_ps is an unconditional load), which overreads a
+    // smaller query blob. aarch64 has no such floor, so those tiers stay ungated to match
+    // production.
     const bool x86_simd_reachable = dim >= 8;
 #ifdef OPT_AVX512_F_BW_VL_VNNI
     if (x86_simd_reachable && optimization.avx512f && optimization.avx512bw &&
@@ -510,12 +495,10 @@ void ExpectSQ8_FP32_L2SqrNear(const uint8_t *storage, const float *query, size_t
 #endif
 }
 
-// Builds an SQ8 storage blob and an FP32 query for L2 from an explicit pair of float vectors
-// (query_values, storage_values). Kept separate from generation so callers can build one base
-// pair and derive a shifted pair by literally adding a constant to the same values -- re-sampling
-// std::uniform_real_distribution with a shifted [min,max] range and the same seed does NOT
-// reproduce "the same vector plus a constant" (it's an independently-shaped draw over the new
-// range), which is not what a translation-invariance test needs.
+// Builds the blobs from explicit float vectors, kept separate from generation so a caller can
+// derive a shifted pair by adding a constant to the same values. Re-sampling
+// std::uniform_real_distribution over a shifted [min,max] with the same seed does NOT give "the
+// same vector plus a constant", which is what a translation-invariance test needs.
 struct SQ8_FP32_L2_TestVectors {
     std::vector<float> query;     // [float values (dim)] [sum] [sum_squares]
     std::vector<uint8_t> storage; // [uint8_t values (dim)] [min] [delta] [sum] [sum_squares]
@@ -537,9 +520,7 @@ BuildSQ8_FP32_L2_TestVectorsFromValues(const std::vector<float> &query_values,
     return v;
 }
 
-// Draws one base (query, storage) float pair from N(0, spread) and returns it alongside the
-// same pair with `offset` added to every element -- a real shift of the identical values, not
-// two independently-seeded draws over different ranges.
+// One base (query, storage) pair, plus the same pair with `offset` added to every element.
 std::pair<SQ8_FP32_L2_TestVectors, SQ8_FP32_L2_TestVectors>
 BuildSQ8_FP32_L2_ShiftedPair(size_t dim, float spread, float offset, int seed) {
     std::vector<float> query_values(dim), storage_values(dim);
@@ -566,9 +547,8 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TranslationInvariance) {
     const float large_offset = 100000.0f; // offset/spread == 100000, far past the ~4000 threshold
                                           // where the old identity started to catastrophically
                                           // cancel in FP32.
-    // Dims deliberately mix exact multiples of the SIMD chunk widths with awkward remainders
-    // (129, 145, 513, 527), so the large-offset cancellation case also runs through the
-    // residual/masked-lane tails, not just the aligned main loops.
+    // Mixes exact multiples of the SIMD chunk widths with awkward remainders, so the
+    // large-offset case also runs through the residual/masked-lane tails.
     for (const size_t dim : {128UL, 129UL, 145UL, 512UL, 513UL, 527UL, 768UL}) {
         auto [no_offset, with_offset] =
             BuildSQ8_FP32_L2_ShiftedPair(dim, spread, large_offset, 1234);
@@ -578,11 +558,9 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TranslationInvariance) {
         const double expected_with_offset = SQ8_FP32_L2Sqr_DoubleReference(
             with_offset.storage.data(), with_offset.query.data(), dim);
 
-        // Sanity check on the reference itself: the two builds only differ by a shared additive
-        // constant on both vectors, so their true L2^2 must match closely. A small tolerance
-        // (rather than exact equality) accounts for the shifted float32 inputs themselves losing
-        // a bit of precision at the larger magnitude (float32 spacing near 1e5 is coarser than
-        // near 0), which perturbs which byte a value quantizes to right at a code boundary.
+        // The reference itself must be translation-invariant. Not exact equality: float32
+        // spacing near 1e5 is coarser than near 0, which can shift a value to an adjacent
+        // quantization code.
         ASSERT_NEAR(expected_no_offset, expected_with_offset,
                     1e-2 * std::max(expected_no_offset, 1.0))
             << "dim " << dim << ": independent reference is not translation-invariant";
@@ -590,11 +568,8 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TranslationInvariance) {
         ExpectSQ8_FP32_L2SqrNear(no_offset.storage.data(), no_offset.query.data(), dim,
                                  expected_no_offset, 1e-3, "dim " + std::to_string(dim) + ", C=0");
 
-        // The direct-diff kernel computes `diff = delta*q + (min - y)`. `min` and `y` both carry
-        // the large shared offset and are within a factor of 2 of each other, so by Sterbenz's
-        // lemma `min - y` is computed *exactly* in FP32 (no rounding at all) -- it's the small
-        // `delta*q` correction, not the offset, that's added afterward. So there's no large-scale
-        // cancellation left to tolerate here; the tolerance stays as tight as the no-offset case.
+        // `min - y` is exact in FP32 by Sterbenz (both large, within a factor of 2), so no
+        // large-scale cancellation remains and the tolerance stays as tight as the C=0 case.
         ExpectSQ8_FP32_L2SqrNear(
             with_offset.storage.data(), with_offset.query.data(), dim, expected_with_offset, 1e-3,
             "dim " + std::to_string(dim) + ", C=" + std::to_string(large_offset));
@@ -623,17 +598,11 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_TicketReproShape) {
 }
 
 TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_ScalarAssociativityRegression) {
-    // Pins a scalar-only regression found in review: `diff = (min_val + delta*q) - y` and
-    // `diff = delta*q + (min_val - y)` are the same expression algebraically, but not in FP32 --
-    // the first rounds the dequantized value to the large offset's precision *before* subtracting
-    // y, silently discarding the residual the direct-diff kernel exists to preserve; the second
-    // computes the (Sterbenz-exact) min-y cancellation first and adds the small correction after.
-    //
-    // Concrete numbers where this bites: min=100000, delta=8/255, q=1 dequantizes to
-    // 100000.031372549..., which FP32 rounds to 100000.03125 (float32 ULP near 1e5 is 1/64).
-    // With y=100000.03125 chosen to land on exactly that rounded value, the buggy order gives
-    // diff=0 (100000.03125 - 100000.03125), while the correct order gives the true residual
-    // delta*1 + (100000 - 100000.03125) ~= 0.0001225, matching the double reference.
+    // Pins a scalar-only ordering bug: `(min_val + delta*q) - y` rounds the dequantized value at
+    // the large offset's precision before subtracting, discarding the residual, while
+    // `delta*q + (min_val - y)` keeps it. With min=100000, delta=8/255, q=1 the dequantized value
+    // is 100000.031372549..., which FP32 rounds to exactly y=100000.03125, so the buggy order
+    // yields diff=0 instead of ~0.0001225.
     const size_t dim = 8;
     // storage: min=100000 (index 0), max=100008 (index 7) => delta = 8/255, so index 1
     // quantizes to q=1 (dequantizes to 100000 + 8/255 = 100000.031372549...).
@@ -655,9 +624,7 @@ TEST_F(SpacesTest, SQ8_FP32_L2Sqr_MOD17526_ScalarAssociativityRegression) {
 
     const double expected = SQ8_FP32_L2Sqr_DoubleReference(storage.data(), query.data(), dim);
     ASSERT_GT(expected, 0.0) << "test construction should produce a nonzero true distance";
-    // Absolute tolerance, not relative: the true value is tiny (~1.5e-8), and the bug this
-    // pins is "kernel returns exactly 0 instead of a small nonzero value", not a rounding-scale
-    // discrepancy -- a relative check against a near-zero expected value isn't meaningful here.
+    // Absolute, not relative: the true value is ~1.5e-8 and the bug returns exactly 0.
     EXPECT_NEAR(SQ8_FP32_L2Sqr(storage.data(), query.data(), dim), expected, 1e-9)
         << "scalar kernel: expected=" << expected;
 }
