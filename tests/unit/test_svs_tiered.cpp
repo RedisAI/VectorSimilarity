@@ -519,7 +519,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
         shrink_callback_ran = true;
     });
 
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads);
 
     mock_thread_pool.init_threads();

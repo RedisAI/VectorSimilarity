@@ -323,7 +323,7 @@ protected:
         return n - deleted_num;
     }
 
-    void consolidate(const std::vector<labelType>& labels) {
+    void consolidate(const std::vector<labelType>& labels) override {
         std::shared_lock lock(this->pimplGuard_);
         if (!ready())
             return;
