@@ -155,7 +155,8 @@ int BruteForceIndex_Single<DataType, DistType>::addVector(const void *vector_dat
     // Check if label already exists, so it is an update operation.
     if (optionalID != this->labelToIdLookup.end()) {
         idType id = optionalID->second;
-        this->vectors->updateElement(id, vector_data);
+        auto processed_blob = this->preprocessForStorage(vector_data);
+        this->vectors->updateElement(id, processed_blob.get());
         return 0;
     }
 

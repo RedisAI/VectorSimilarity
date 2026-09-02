@@ -16,6 +16,8 @@
 #include "VecSim/utils/query_result_utils.h"
 #include "VecSim/utils/alignment.h"
 
+#include <atomic>
+#include <mutex>
 #include <shared_mutex>
 
 #if HAVE_SVS
@@ -23,7 +25,7 @@
 #include "VecSim/algorithms/svs/svs.h"
 #endif
 
-#define TIERED_LOG this->backendIndex->log
+#define TIERED_LOG this->frontendIndex->log
 
 /**
  * Definition of generic job structure for asynchronous tiered index.
@@ -49,6 +51,20 @@ protected:
     VecSimIndexAbstract<DataType, DistType> *backendIndex;
     BruteForceIndex<DataType, DistType> *frontendIndex;
 
+    // Set once backendIndex points to a usable index, and never cleared while readers can access
+    // this object. The publisher stores backendIndex before the release store; a reader that
+    // observes true with an acquire load may therefore safely read the plain pointer.
+    std::atomic<bool> backendPublished;
+
+    bool isBackendPublished() const { return backendPublished.load(std::memory_order_acquire); }
+
+    // Callers must first observe isBackendPublished(). Returning a reference encodes the resulting
+    // non-null invariant at the call site without exposing atomic state through the index API.
+    VecSimIndexAbstract<DataType, DistType> &publishedBackend() const {
+        assert(isBackendPublished());
+        return *backendIndex;
+    }
+
     void *jobQueue;
     void *jobQueueCtx; // External context to be sent to the submit callback.
     SubmitCB SubmitJobsToQueue;
@@ -63,6 +79,14 @@ protected:
     }
 
     void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+
+    std::unique_lock<std::shared_mutex> acquireMainIndexGuard() const {
+        std::unique_lock<std::shared_mutex> lock(mainIndexGuard);
+#ifdef BUILD_TESTS
+        mainIndexGuard_write_lock_count++;
+#endif
+        return lock;
+    }
 #ifdef BUILD_TESTS
     mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
 #endif
@@ -91,8 +115,11 @@ protected:
      * @return index label count for debug purposes.
      */
     vecsim_stl::vector<labelType> computeUnifiedIndexLabelsSetUnsafe() const {
-        auto [flat_labels, backend_labels] =
-            std::make_pair(this->frontendIndex->getLabelsSet(), this->backendIndex->getLabelsSet());
+        auto flat_labels = this->frontendIndex->getLabelsSet();
+        vecsim_stl::set<labelType> backend_labels(this->allocator);
+        if (this->backendIndex) {
+            backend_labels = this->backendIndex->getLabelsSet();
+        }
 
         // Compute the union of the two sets.
         vecsim_stl::vector<labelType> labels_union(this->allocator);
@@ -147,13 +174,14 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        // A quantized backend cannot report its stored vectors as values -- the stored form is
-        // compression plus metadata, and nothing here dequantizes -- so it would append nothing.
-        bool backend_can_report = true;
+        // Take the flat lock before sampling publication. If publication wins first, read both
+        // tiers; if this load still sees false, migration cannot remove a flat vector until this
+        // method returns.
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        const bool backend_published = this->isBackendPublished();
 #if HAVE_SVS
         // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
-        // means deleting this block, the `backend_can_report` flag, and the guarded include of
-        // svs.h, then unwrapping the body below.
+        // means deleting this block and the guarded include of svs.h.
         //
         // Until then nothing is read at all for an SVS backend: the buffer alone would be a
         // partial answer for a multi-value label split across the tiers, and a caller cannot tell
@@ -166,18 +194,20 @@ public:
         // that), so a derived override would simply not be found. The type test is deliberately
         // explicit rather than dressed up as a capability: it is a special case, not
         // architecture.
-        backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
+        if (backend_published &&
+            dynamic_cast<const SVSIndexBase *>(&this->publishedBackend()) != nullptr) {
+            return;
+        }
 #endif
-        if (backend_can_report) {
-            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-            const size_t before_flat = vectors_output.size();
-            this->frontendIndex->getDataByLabel(label, vectors_output);
-            // Whether the buffer held it, measured rather than read off emptiness, so the tier
-            // decision does not depend on an assertion that only exists in test builds.
-            if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
-                std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-                this->backendIndex->getDataByLabel(label, vectors_output);
-            }
+        const size_t before_flat = vectors_output.size();
+        this->frontendIndex->getDataByLabel(label, vectors_output);
+        // Whether the buffer held it, measured rather than read off emptiness, so the tier
+        // decision does not depend on an assertion that only exists in test builds. The frontend
+        // and backend have the same multi-value configuration, and the former exists in Phase 0.
+        if (backend_published &&
+            (this->frontendIndex->isMultiValue() || vectors_output.size() == before_flat)) {
+            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+            this->publishedBackend().getDataByLabel(label, vectors_output);
         }
     }
 
@@ -185,12 +215,14 @@ public:
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
                       TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
-          frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
-          jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          flatBufferLimit(tieredParams.flatBufferLimit) {}
+          frontendIndex(frontendIndex_), backendPublished(backendIndex_ != nullptr),
+          jobQueue(tieredParams.jobQueue), jobQueueCtx(tieredParams.jobQueueCtx),
+          SubmitJobsToQueue(tieredParams.submitCb), flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {
-        VecSimIndex_Free(backendIndex);
+        if (backendIndex) {
+            VecSimIndex_Free(backendIndex);
+        }
         VecSimIndex_Free(frontendIndex);
     }
 
@@ -202,8 +234,8 @@ public:
                                  VecSimQueryReply_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
-        return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
-               this->frontendIndex->getAllocationSize();
+        return this->allocator->getAllocationSize() + this->frontendIndex->getAllocationSize() +
+               (this->isBackendPublished() ? this->publishedBackend().getAllocationSize() : 0);
     }
     virtual size_t getNumMarkedDeleted() const = 0;
     size_t indexLabelCount() const override;
@@ -213,9 +245,11 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
-        return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
-                   ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
-                   : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
+        if (this->isBackendPublished() &&
+            this->publishedBackend().indexSize() > this->frontendIndex->indexSize()) {
+            return this->publishedBackend().preferAdHocSearch(subsetSize, k, initial_check);
+        }
+        return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
 
     // Return the current state of the global write mode (async/in-place).
@@ -226,7 +260,9 @@ public:
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
-        this->backendIndex->fitMemory();
+        if (this->isBackendPublished()) {
+            this->publishedBackend().fitMemory();
+        }
         this->frontendIndex->fitMemory();
     }
 #endif
@@ -237,6 +273,13 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
+
+    // If the backend has not been published yet, every vector is still in the flat buffer.
+    if (!this->isBackendPublished()) {
+        auto res = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
+        this->flatIndexGuard.unlock_shared();
+        return res;
+    }
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
@@ -303,6 +346,16 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryReply_Order order) const {
     this->flatIndexGuard.lock_shared();
+
+    // If the backend has not been published yet, every vector is still in the flat buffer.
+    if (!this->isBackendPublished()) {
+        auto res = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
+        this->flatIndexGuard.unlock_shared();
+        if (res) {
+            sort_results(res, order);
+        }
+        return res;
+    }
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
@@ -393,7 +446,13 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     this->mainIndexGuard.lock_shared();
 
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
-    VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
+    VecSimIndexDebugInfo backendInfo{};
+    if (this->backendIndex) {
+        backendInfo = this->backendIndex->debugInfo();
+    } else {
+        backendInfo.commonInfo.basicInfo = this->basicInfo();
+        backendInfo.commonInfo.lastMode = frontendInfo.commonInfo.lastMode;
+    }
 
     info.commonInfo.indexLabelCount = this->computeUnifiedIndexLabelsSetUnsafe().size();
 
@@ -409,7 +468,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         .algo = backendInfo.commonInfo.basicInfo.algo,
         .metric = backendInfo.commonInfo.basicInfo.metric,
         .type = backendInfo.commonInfo.basicInfo.type,
-        .isMulti = this->backendIndex->isMultiValue(),
+        .isMulti = backendInfo.commonInfo.basicInfo.isMulti,
         .isTiered = true,
         .isDisk = backendInfo.commonInfo.basicInfo.isDisk,
         .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
@@ -455,7 +514,7 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
         .fieldType = INFOFIELD_STRING,
         .fieldValue = {FieldValue{.stringValue = VecSimCommonStrings::TIERED_STRING}}});
 
-    this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
+    this->frontendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING,
@@ -484,10 +543,13 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
 
     {
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-        infoIterator->addInfoField(VecSim_InfoField{
-            .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
-            .fieldType = INFOFIELD_ITERATOR,
-            .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->debugInfoIterator()}}});
+        if (this->backendIndex) {
+            auto *backendInfoIterator = this->backendIndex->debugInfoIterator();
+            infoIterator->addInfoField(
+                VecSim_InfoField{.fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
+                                 .fieldType = INFOFIELD_ITERATOR,
+                                 .fieldValue = {FieldValue{.iteratorValue = backendInfoIterator}}});
+        }
     }
     return infoIterator;
 };
