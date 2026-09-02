@@ -56,7 +56,6 @@ float SQ8_FP32_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pV
                                               size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v); // SQ8 storage
     const float *pVec2 = static_cast<const float *>(pVec2v);     // FP32 query
-    const uint8_t *pEnd1 = pVec1 + dimension;
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVec1Base = static_cast<const uint8_t *>(pVec1v);
@@ -105,7 +104,8 @@ float SQ8_FP32_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pV
     // We dealt with the residual part. We are left with some multiple of 32 elements.
     // In each iteration we calculate 32 elements = 2 chunks of 16. The loop may run zero times
     // (dim can be as small as 8).
-    while (pVec1 < pEnd1) {
+    const size_t num_of_chunks = dimension / 32;
+    for (size_t i = 0; i < num_of_chunks; i++) {
         L2StepSQ8_FP32_AVX512(pVec1, pVec2, sum0, min_val_vec, delta_vec);
         L2StepSQ8_FP32_AVX512(pVec1, pVec2, sum1, min_val_vec, delta_vec);
     }
