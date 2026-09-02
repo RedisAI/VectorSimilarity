@@ -91,8 +91,11 @@ protected:
      * @return index label count for debug purposes.
      */
     vecsim_stl::vector<labelType> computeUnifiedIndexLabelsSetUnsafe() const {
-        auto [flat_labels, backend_labels] =
-            std::make_pair(this->frontendIndex->getLabelsSet(), this->backendIndex->getLabelsSet());
+        auto flat_labels = this->frontendIndex->getLabelsSet();
+        vecsim_stl::set<labelType> backend_labels(this->allocator);
+        if (this->backendIndex) {
+            backend_labels = this->backendIndex->getLabelsSet();
+        }
 
         // Compute the union of the two sets.
         vecsim_stl::vector<labelType> labels_union(this->allocator);
@@ -190,7 +193,9 @@ public:
           flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {
-        VecSimIndex_Free(backendIndex);
+        if (backendIndex) {
+            VecSimIndex_Free(backendIndex);
+        }
         VecSimIndex_Free(frontendIndex);
     }
 
@@ -202,8 +207,11 @@ public:
                                  VecSimQueryReply_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
-        return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
-               this->frontendIndex->getAllocationSize();
+        std::shared_lock<std::shared_mutex> lock(this->mainIndexGuard);
+        uint64_t size = this->allocator->getAllocationSize() +
+                        this->frontendIndex->getAllocationSize() +
+                        (this->backendIndex ? this->backendIndex->getAllocationSize() : 0);
+        return size;
     }
     virtual size_t getNumMarkedDeleted() const = 0;
     size_t indexLabelCount() const override;
@@ -213,7 +221,9 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
-        return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
+        std::shared_lock<std::shared_mutex> lock(this->mainIndexGuard);
+        return this->backendIndex &&
+                       this->backendIndex->indexSize() > this->frontendIndex->indexSize()
                    ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
                    : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
@@ -226,7 +236,10 @@ public:
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
-        this->backendIndex->fitMemory();
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+        if (this->backendIndex) {
+            this->backendIndex->fitMemory();
+        }
         this->frontendIndex->fitMemory();
     }
 #endif
@@ -393,7 +406,12 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     this->mainIndexGuard.lock_shared();
 
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
-    VecSimIndexDebugInfo backendInfo = this->backendIndex->debugInfo();
+    VecSimIndexDebugInfo backendInfo{};
+    if (this->backendIndex) {
+        backendInfo = this->backendIndex->debugInfo();
+    } else {
+        backendInfo.commonInfo.basicInfo = this->basicInfo();
+    }
 
     info.commonInfo.indexLabelCount = this->computeUnifiedIndexLabelsSetUnsafe().size();
 
@@ -409,7 +427,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         .algo = backendInfo.commonInfo.basicInfo.algo,
         .metric = backendInfo.commonInfo.basicInfo.metric,
         .type = backendInfo.commonInfo.basicInfo.type,
-        .isMulti = this->backendIndex->isMultiValue(),
+        .isMulti = backendInfo.commonInfo.basicInfo.isMulti,
         .isTiered = true,
         .isDisk = backendInfo.commonInfo.basicInfo.isDisk,
         .blockSize = backendInfo.commonInfo.basicInfo.blockSize,
@@ -455,7 +473,7 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
         .fieldType = INFOFIELD_STRING,
         .fieldValue = {FieldValue{.stringValue = VecSimCommonStrings::TIERED_STRING}}});
 
-    this->backendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
+    this->frontendIndex->addCommonInfoToIterator(infoIterator, info.commonInfo);
 
     infoIterator->addInfoField(VecSim_InfoField{
         .fieldName = VecSimCommonStrings::TIERED_MANAGEMENT_MEMORY_STRING,
@@ -484,10 +502,13 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
 
     {
         std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-        infoIterator->addInfoField(VecSim_InfoField{
-            .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
-            .fieldType = INFOFIELD_ITERATOR,
-            .fieldValue = {FieldValue{.iteratorValue = this->backendIndex->debugInfoIterator()}}});
+        if (this->backendIndex) {
+            auto *backendInfoIterator = this->backendIndex->debugInfoIterator();
+            infoIterator->addInfoField(
+                VecSim_InfoField{.fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
+                                 .fieldType = INFOFIELD_ITERATOR,
+                                 .fieldValue = {FieldValue{.iteratorValue = backendInfoIterator}}});
+        }
     }
     return infoIterator;
 };

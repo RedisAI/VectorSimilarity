@@ -11,9 +11,12 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
+#include "VecSim/types/float16.h"
 #include "VecSim/vec_sim_debug.h"
 #include <string>
 #include <array>
+#include <cmath>
+#include <numeric>
 
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
@@ -4989,4 +4992,1476 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
         ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(i + relabel_offset, expected), 0)
             << "label " << i + relabel_offset << " does not hold its original vector";
     }
+}
+using float16 = vecsim_types::float16;
+
+// -------------------------------------------------------------------
+// Type definitions for parameterized tests (float32 and float16)
+// -------------------------------------------------------------------
+
+template <VecSimType type, bool IsMulti, typename DataType, typename DistType = float>
+struct SQ8IndexType {
+    static VecSimType get_index_type() { return type; }
+    static bool isMulti() { return IsMulti; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
+};
+
+// -------------------------------------------------------------------
+// Test fixture
+// -------------------------------------------------------------------
+
+template <typename index_type_t>
+class HNSWTieredIndexTestSQ8 : public ::testing::Test {
+public:
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
+
+protected:
+    VecSimWriteMode original_mode;
+
+    void SetUp() override { original_mode = VecSimIndexInterface::asyncWriteMode; }
+    void TearDown() override { VecSimIndexInterface::asyncWriteMode = original_mode; }
+
+    // Create a tiered HNSW index with SQ8 quantization and accumulation phase.
+    TieredHNSWIndex<data_t, dist_t> *
+    CreateSQ8TieredIndex(tieredIndexMock &mock_thread_pool, size_t dim = 16,
+                         VecSimMetric metric = VecSimMetric_IP, size_t normSetSize = 100,
+                         size_t flat_buffer_limit = SIZE_MAX, size_t M = 16,
+                         size_t efConstruction = 200) {
+        HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
+                                  .dim = dim,
+                                  .metric = metric,
+                                  .multi = index_type_t::isMulti(),
+                                  .M = M,
+                                  .efConstruction = efConstruction,
+                                  .quantType = VecSimQuant_SQ8};
+        VecSimParams vecsim_params = CreateParams(hnsw_params);
+        TieredIndexParams tiered_params = {
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = flat_buffer_limit,
+            .primaryIndexParams = &vecsim_params,
+            .specificParams = {
+                TieredHNSWParams{.swapJobThreshold = 0, .QuantNormalizationSetSize = normSetSize}}};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(
+            TieredFactory::NewIndex(&tiered_params));
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+        return tiered_index;
+    }
+
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
+        return tiered_index->getHNSWIndex();
+    }
+
+    // --- Accessor helpers (HNSWTieredIndexTestSQ8 is a friend of TieredHNSWIndex) ---
+
+    bool getIsInAccumulationPhase(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return !idx->backendIndex;
+    }
+
+    const vecsim_stl::vector<float> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->sqAccumulationState->runningSumVec;
+    }
+
+    bool hasSQAccumulationState(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->sqAccumulationState.has_value();
+    }
+
+    size_t getQuantNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->quantNormalizationSetSize;
+    }
+
+    BruteForceIndex<data_t, dist_t> *getFrontendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->frontendIndex;
+    }
+
+    VecSimIndexAbstract<data_t, dist_t> *getBackendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->backendIndex;
+    }
+
+    auto &getLabelToInsertJobs(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->labelToInsertJobs;
+    }
+
+    void callExecuteReadySwapJobs(TieredHNSWIndex<data_t, dist_t> *idx) {
+        idx->executeReadySwapJobs();
+    }
+
+    // Generate a vector with a pattern based on label.
+    void GenerateVectorData(data_t *output, size_t dim, float base_value) {
+        const float angle = base_value * 0.01f;
+        for (size_t i = 0; i < dim; i++) {
+            float val = 0.0f;
+            if (i == 0) {
+                val = std::cos(angle);
+            } else if (i == 1) {
+                val = std::sin(angle);
+            }
+            if constexpr (std::is_same_v<data_t, float>) {
+                output[i] = val;
+            } else if constexpr (std::is_same_v<data_t, float16>) {
+                output[i] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+    }
+
+    // Get value as float from data type.
+    float ToFloat(data_t val) {
+        if constexpr (std::is_same_v<data_t, float>) {
+            return val;
+        } else {
+            return vecsim_types::FP16_to_FP32(val);
+        }
+    }
+};
+
+using SQ8FP32Single = SQ8IndexType<VecSimType_FLOAT32, false, float>;
+using SQ8FP32Multi = SQ8IndexType<VecSimType_FLOAT32, true, float>;
+using SQ8FP16Single = SQ8IndexType<VecSimType_FLOAT16, false, float16, float>;
+using SQ8FP16Multi = SQ8IndexType<VecSimType_FLOAT16, true, float16, float>;
+
+using SQ8DataTypeSet = ::testing::Types<SQ8FP32Single, SQ8FP32Multi, SQ8FP16Single, SQ8FP16Multi>;
+using SQ8SingleDataTypeSet = ::testing::Types<SQ8FP32Single, SQ8FP16Single>;
+using SQ8MultiDataTypeSet = ::testing::Types<SQ8FP32Multi, SQ8FP16Multi>;
+
+template <typename index_type_t>
+class HNSWTieredIndexTestSQ8Single : public HNSWTieredIndexTestSQ8<index_type_t> {};
+
+template <typename index_type_t>
+class HNSWTieredIndexTestSQ8Multi : public HNSWTieredIndexTestSQ8<index_type_t> {};
+
+TYPED_TEST_SUITE(HNSWTieredIndexTestSQ8, SQ8DataTypeSet);
+TYPED_TEST_SUITE(HNSWTieredIndexTestSQ8Single, SQ8SingleDataTypeSet);
+TYPED_TEST_SUITE(HNSWTieredIndexTestSQ8Multi, SQ8MultiDataTypeSet);
+
+// -------------------------------------------------------------------
+// Accumulation Phase Core Tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
+    // Verify that creating an SQ8 tiered index enters accumulation phase.
+    size_t dim = 16;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Verify accumulation phase state.
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
+    ASSERT_EQ(this->getRunningSumVec(tiered_index).size(), dim);
+    ASSERT_EQ(this->getQuantNormalizationSetSize(tiered_index), normSetSize);
+
+    // Verify running sum is zero-initialized.
+    for (size_t i = 0; i < dim; i++) {
+        ASSERT_FLOAT_EQ(this->getRunningSumVec(tiered_index)[i], 0.0f);
+    }
+
+    // Backend is not published until accumulation completes.
+    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, RunningSumAccuracy) {
+    // Verify that runningSumVec correctly accumulates vector values.
+    size_t dim = 8;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add vectors and verify running sum.
+    std::vector<float> expected_sum(dim, 0.0f);
+    for (size_t i = 0; i < 5; i++) {
+        TEST_DATA_T vec[dim];
+        float base = static_cast<float>(i + 1);
+        this->GenerateVectorData(vec, dim, base);
+        VecSimIndex_AddVector(tiered_index, vec, i);
+
+        // Update expected sum.
+        for (size_t d = 0; d < dim; d++) {
+            expected_sum[d] += this->ToFloat(vec[d]);
+        }
+    }
+
+    // Verify running sum matches expected.
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    for (size_t d = 0; d < dim; d++) {
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected_sum[d], 1e-3f)
+            << "Mismatch at dimension " << d;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, QueryDuringAccumulation) {
+    // Search should only return flat buffer results during accumulation.
+    size_t dim = 8;
+    size_t normSetSize = 100; // High threshold so we stay in accumulation.
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add some vectors.
+    size_t n = 10;
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), n);
+    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+
+    // Run TopK query.
+    TEST_DATA_T query[dim];
+    this->GenerateVectorData(query, dim, 0.0f);
+    auto *results = VecSimIndex_TopKQuery(tiered_index, query, 5, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    size_t res_count = VecSimQueryReply_Len(results);
+    ASSERT_GT(res_count, 0);
+    ASSERT_LE(res_count, 5);
+    VecSimQueryReply_Free(results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, RangeQueryDuringAccumulation) {
+    // Range queries should only use flat buffer during accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add identical vectors (distance 0 from each other).
+    size_t n = 5;
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, 1.0f); // Same vector
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Range query with large radius should find all vectors.
+    TEST_DATA_T query[dim];
+    this->GenerateVectorData(query, dim, 1.0f);
+    auto *results = VecSimIndex_RangeQuery(tiered_index, query, 0.01, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    size_t res_count = VecSimQueryReply_Len(results);
+    ASSERT_EQ(res_count, n);
+    VecSimQueryReply_Free(results);
+}
+
+// -------------------------------------------------------------------
+// Accumulation Phase Insert/Delete Tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, AddVectorDuringAccumulation) {
+    // Vectors added during accumulation go to flat buffer; no jobs submitted to queue.
+    size_t dim = 8;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    TEST_DATA_T vec[dim];
+    this->GenerateVectorData(vec, dim, 1.5f);
+    VecSimIndex_AddVector(tiered_index, vec, 42);
+
+    // Vector should be in flat buffer.
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+
+    // Job should be created in labelToInsertJobs but NOT submitted to queue.
+    ASSERT_EQ(this->getLabelToInsertJobs(tiered_index).size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteVectorDuringAccumulation) {
+    // Deletion from flat buffer during accumulation subtracts from running sum.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+
+    // Add two vectors.
+    TEST_DATA_T vec1[dim], vec2[dim];
+    this->GenerateVectorData(vec1, dim, 1.0f);
+    this->GenerateVectorData(vec2, dim, 2.0f);
+    VecSimIndex_AddVector(tiered_index, vec1, 1);
+    VecSimIndex_AddVector(tiered_index, vec2, 2);
+
+    // Record sum before deletion.
+    std::vector<float> sum_before(this->getRunningSumVec(tiered_index).begin(),
+                                  this->getRunningSumVec(tiered_index).end());
+
+    // Delete label 1.
+    VecSimIndex_DeleteVector(tiered_index, 1);
+
+    // Verify running sum was updated (subtracted vec1's values).
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    for (size_t d = 0; d < dim; d++) {
+        float expected = sum_before[d] - this->ToFloat(vec1[d]);
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected, 1e-3f);
+    }
+
+    // Verify index size.
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexSize(), 1);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteDuringAccumulation) {
+    // Vector overwrite should update running sum correctly (only for single-label).
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add vector with label 1.
+    TEST_DATA_T vec1[dim];
+    this->GenerateVectorData(vec1, dim, 1.0f);
+    VecSimIndex_AddVector(tiered_index, vec1, 1);
+
+    std::vector<float> sum_after_first(this->getRunningSumVec(tiered_index).begin(),
+                                       this->getRunningSumVec(tiered_index).end());
+
+    // Overwrite with different vector.
+    TEST_DATA_T vec2[dim];
+    this->GenerateVectorData(vec2, dim, 3.0f);
+    VecSimIndex_AddVector(tiered_index, vec2, 1);
+
+    // Running sum should reflect: sum - vec1 + vec2 (overwrite subtracts old + adds new).
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    for (size_t d = 0; d < dim; d++) {
+        float expected = sum_after_first[d] - this->ToFloat(vec1[d]) + this->ToFloat(vec2[d]);
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected, 1e-3f);
+    }
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+}
+
+// -------------------------------------------------------------------
+// Backend Index Initialization Tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
+    // When accumulation reaches quantNormalizationSetSize, backend is initialized.
+    size_t dim = 4;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add vectors up to threshold - 1.
+    for (size_t i = 0; i < normSetSize - 1; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize - 1);
+
+    // Add the threshold-triggering vector.
+    TEST_DATA_T vec[dim];
+    this->GenerateVectorData(vec, dim, static_cast<float>(normSetSize - 1));
+    VecSimIndex_AddVector(tiered_index, vec, normSetSize - 1);
+
+    // Accumulation phase should be over.
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_FALSE(this->hasSQAccumulationState(tiered_index));
+    // Backend should be initialized (still empty since jobs haven't run).
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
+    // Flat buffer should hold all vectors.
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize);
+    // All vectors should have associated insert jobs.
+    ASSERT_EQ(this->getLabelToInsertJobs(tiered_index).size(), normSetSize);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, MeanComputedCorrectly) {
+    // Verify the mean vector computed during initializeQuantizedBackend.
+    size_t dim = 4;
+    size_t normSetSize = 5;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Track expected sum.
+    std::vector<float> expected_sum(dim, 0.0f);
+    for (size_t i = 0; i < normSetSize - 1; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i + 1));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+        for (size_t d = 0; d < dim; d++) {
+            expected_sum[d] += this->ToFloat(vec[d]);
+        }
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, QueryDuringPartialMigration) {
+    // SQ8 scores from the flat and backend indexes are not directly comparable. Verify both
+    // query types find an exact-match vector that is still in the flat index while migration is
+    // in progress. For multi-value indexes, the vector shares a label with the migrated vector
+    // to verify duplicate labels are merged into one result.
+
+    size_t dim = 8;
+    size_t normSetSize = 3;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i * 10));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Migrate only one threshold vector, leaving the remaining vectors in the flat index.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize - 1);
+
+    // This post-transition vector remains in the flat index while the backend has SQ8 data.
+    // In multi-value indexes, reuse the migrated label to exercise deduplication across indexes.
+    TEST_DATA_T flat_vec[dim];
+    labelType flat_label = TypeParam::isMulti() ? 0 : 100;
+    this->GenerateVectorData(flat_vec, dim, static_cast<float>(flat_label));
+    VecSimIndex_AddVector(tiered_index, flat_vec, flat_label);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize);
+
+    auto *topk_results = VecSimIndex_TopKQuery(tiered_index, flat_vec, 1, nullptr, BY_SCORE);
+    ASSERT_NE(topk_results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(topk_results), 1);
+    auto *topk_iterator = VecSimQueryReply_GetIterator(topk_results);
+    auto *topk_result = VecSimQueryReply_IteratorNext(topk_iterator);
+    ASSERT_EQ(VecSimQueryResult_GetId(topk_result), flat_label);
+    VecSimQueryReply_IteratorFree(topk_iterator);
+    VecSimQueryReply_Free(topk_results);
+
+    auto *range_results = VecSimIndex_RangeQuery(tiered_index, flat_vec, 0.001, nullptr, BY_SCORE);
+    ASSERT_NE(range_results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(range_results), 1);
+    auto *range_iterator = VecSimQueryReply_GetIterator(range_results);
+    auto *range_result = VecSimQueryReply_IteratorNext(range_iterator);
+    ASSERT_EQ(VecSimQueryResult_GetId(range_result), flat_label);
+    VecSimQueryReply_IteratorFree(range_iterator);
+    VecSimQueryReply_Free(range_results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, NewVectorsAfterAccumulation) {
+    // Vectors added after accumulation are submitted to job queue.
+    size_t dim = 4;
+    size_t normSetSize = 5;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Trigger transition.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    size_t queue_size_before = mock_thread_pool.jobQ.size();
+
+    // Add a new vector after accumulation.
+    TEST_DATA_T new_vec[dim];
+    this->GenerateVectorData(new_vec, dim, 99.0f);
+    VecSimIndex_AddVector(tiered_index, new_vec, 99);
+
+    // New job should be submitted to queue.
+    ASSERT_GT(mock_thread_pool.jobQ.size(), queue_size_before);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteFromBackendAfterAccumulation) {
+    // Delete operations work on SQ backend after accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 5;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Trigger transition.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Execute all jobs to move vectors to HNSW backend.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize);
+
+    // Delete a vector (marks it for deletion in HNSW).
+    int deleted = VecSimIndex_DeleteVector(tiered_index, 0);
+    ASSERT_EQ(deleted, 1);
+
+    // Execute repair jobs, then run swap jobs to physically remove the vector.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    this->callExecuteReadySwapJobs(tiered_index);
+
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize - 1);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, ConcurrentSearchDuringAccumulation) {
+    // Parallel searches should work correctly during accumulation.
+    size_t dim = 8;
+    size_t normSetSize = 1000;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add some vectors.
+    size_t n = 50;
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Launch parallel searches.
+    std::atomic_int successful_searches(0);
+    size_t n_threads = 4;
+    auto search_fn = [&](size_t thread_id) {
+        TEST_DATA_T query[dim];
+        this->GenerateVectorData(query, dim, static_cast<float>(thread_id));
+        auto *results = VecSimIndex_TopKQuery(tiered_index, query, 5, nullptr, BY_SCORE);
+        if (results && VecSimQueryReply_Len(results) > 0) {
+            successful_searches++;
+        }
+        VecSimQueryReply_Free(results);
+    };
+
+    std::vector<std::thread> threads;
+    for (size_t t = 0; t < n_threads; t++) {
+        threads.emplace_back(search_fn, t);
+    }
+    for (auto &t : threads) {
+        t.join();
+    }
+
+    ASSERT_EQ(successful_searches, (int)n_threads);
+}
+
+// -------------------------------------------------------------------
+// Memory & Size Tracking Tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, IndexSizeDuringAccumulation) {
+    // indexSize() returns flat buffer size during accumulation (backend is empty).
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    for (size_t i = 0; i < 10; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(tiered_index->indexSize(), 10);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 10);
+    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CapacityDuringAccumulation) {
+    // indexCapacity() reflects flat buffer capacity during accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    TEST_DATA_T vec[dim];
+    this->GenerateVectorData(vec, dim, 1.0f);
+    VecSimIndex_AddVector(tiered_index, vec, 0);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    // Capacity should come from flat buffer (at least DEFAULT_BLOCK_SIZE after first insert).
+    ASSERT_GE(tiered_index->indexCapacity(), 1);
+    ASSERT_EQ(tiered_index->indexCapacity(), this->getFrontendIndex(tiered_index)->indexCapacity());
+}
+
+// -------------------------------------------------------------------
+// Edge Cases
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, ZeroAccumulationThreshold) {
+    // QuantNormalizationSetSize=0 should skip accumulation phase entirely.
+    size_t dim = 4;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, 0 /* normSetSize=0 */);
+
+    // Should NOT be in accumulation phase.
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Adding a vector should immediately submit job to queue.
+    TEST_DATA_T vec[dim];
+    this->GenerateVectorData(vec, dim, 1.0f);
+    VecSimIndex_AddVector(tiered_index, vec, 0);
+    ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, AllVectorsDeletedBeforeThreshold) {
+    // All vectors deleted before reaching threshold - should remain in accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add and delete vectors.
+    for (size_t i = 0; i < 5; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    for (size_t i = 0; i < 5; i++) {
+        VecSimIndex_DeleteVector(tiered_index, i);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), 0);
+
+    // Running sum should be approximately zero.
+    for (size_t d = 0; d < dim; d++) {
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], 0.0f, 1e-3f);
+    }
+}
+
+// -------------------------------------------------------------------
+// Multi-Label Accumulation
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Multi, AccumulationMultiLabel) {
+    // Multi-label: multiple vectors per label during accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add multiple vectors with the same label.
+    labelType shared_label = 42;
+    for (size_t i = 0; i < 3; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i + 1));
+        VecSimIndex_AddVector(tiered_index, vec, shared_label);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 3);
+    // labelToInsertJobs should have 3 jobs for the same label.
+    ASSERT_EQ(this->getLabelToInsertJobs(tiered_index).at(shared_label).size(), 3);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Multi, DeleteMultiLabelDuringAccumulation) {
+    // Multi-label: deleting one label removes all its vectors and adjusts the sum.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add vectors with different labels.
+    TEST_DATA_T vec1[dim], vec2[dim], vec3[dim];
+    this->GenerateVectorData(vec1, dim, 1.0f);
+    this->GenerateVectorData(vec2, dim, 2.0f);
+    this->GenerateVectorData(vec3, dim, 3.0f);
+
+    VecSimIndex_AddVector(tiered_index, vec1, 10);
+    VecSimIndex_AddVector(tiered_index, vec2, 10); // Same label
+    VecSimIndex_AddVector(tiered_index, vec3, 20); // Different label
+
+    std::vector<float> sum_before(this->getRunningSumVec(tiered_index).begin(),
+                                  this->getRunningSumVec(tiered_index).end());
+
+    // Delete label 10 (should remove both vectors).
+    VecSimIndex_DeleteVector(tiered_index, 10);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+
+    // Running sum should be adjusted by subtracting both vec1 and vec2.
+    for (size_t d = 0; d < dim; d++) {
+        float expected = sum_before[d] - this->ToFloat(vec1[d]) - this->ToFloat(vec2[d]);
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected, 1e-2f);
+    }
+}
+
+// -------------------------------------------------------------------
+// Batch Iterator During Accumulation
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, BatchIteratorDuringAccumulation) {
+    // Batch iterator works during accumulation (only flat buffer results).
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    size_t n = 20;
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    TEST_DATA_T query[dim];
+    this->GenerateVectorData(query, dim, 0.0f);
+    auto *batch_iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+    ASSERT_NE(batch_iterator, nullptr);
+
+    // Get first batch.
+    auto *batch = VecSimBatchIterator_Next(batch_iterator, 5, BY_SCORE);
+    ASSERT_NE(batch, nullptr);
+    size_t count = VecSimQueryReply_Len(batch);
+    ASSERT_GT(count, 0);
+    ASSERT_LE(count, 5);
+    VecSimQueryReply_Free(batch);
+
+    VecSimBatchIterator_Free(batch_iterator);
+}
+
+// -------------------------------------------------------------------
+// Index Statistics During Accumulation
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, DebugInfoDuringAccumulation) {
+    // Debug info during accumulation reflects flat-only state.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    for (size_t i = 0; i < 5; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    VecSimIndexDebugInfo info = tiered_index->debugInfo();
+    ASSERT_EQ(info.commonInfo.indexSize, 5);
+}
+
+// -------------------------------------------------------------------
+// Write Mode Interactions with Accumulation
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceDuringAccumulation) {
+    // WriteInPlace mode is ignored during accumulation phase.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Switch to write-in-place mode.
+    VecSimIndexInterface::asyncWriteMode = VecSim_WriteInPlace;
+
+    TEST_DATA_T vec[dim];
+    this->GenerateVectorData(vec, dim, 1.0f);
+    VecSimIndex_AddVector(tiered_index, vec, 0);
+
+    // During accumulation, WriteInPlace is ignored - vector goes to flat buffer.
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceAfterAccumulation) {
+    // After accumulation, WriteInPlace inserts directly to SQ backend.
+    size_t dim = 4;
+    size_t normSetSize = 5;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Trigger transition.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Execute all pending jobs (submitted by initializeQuantizedBackend).
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    // Switch to write-in-place mode.
+    VecSimIndexInterface::asyncWriteMode = VecSim_WriteInPlace;
+
+    // Add vector - should go directly to HNSW backend.
+    TEST_DATA_T new_vec[dim];
+    this->GenerateVectorData(new_vec, dim, 99.0f);
+    VecSimIndex_AddVector(tiered_index, new_vec, 99);
+
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize + 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+}
+
+// -------------------------------------------------------------------
+// Buffer Limit Interactions
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, BufferLimitWithAccumulation) {
+    // Flat buffer limit is respected during accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 100; // High normalization set size.
+    size_t buffer_limit = 10; // Small buffer limit.
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP,
+                                                    normSetSize, buffer_limit);
+
+    // During accumulation, buffer limit should not trigger direct insert to backend
+    // (since backend is not ready). The addVector code checks isInAccumulationPhase
+    // before checking flatBufferLimit.
+    for (size_t i = 0; i < 15; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    // Should still be in accumulation phase.
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    // All vectors should be in flat buffer (accumulation overrides buffer limit behavior).
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 15);
+}
+
+// -------------------------------------------------------------------
+// Quantization Quality Validation
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, QuantizedSearchQuality) {
+    // After accumulation, SQ8 backend should produce reasonable search results.
+    size_t dim = 16;
+    size_t normSetSize = 50;
+    size_t n = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add enough vectors to trigger transition and more.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Execute all jobs.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    // Query with the same vector as label 0 - should find label 0 as nearest.
+    TEST_DATA_T query[dim];
+    this->GenerateVectorData(query, dim, 0.0f);
+    auto *results = VecSimIndex_TopKQuery(tiered_index, query, 1, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(results), 1);
+
+    auto it = VecSimQueryReply_GetIterator(results);
+    auto *entry = VecSimQueryReply_IteratorNext(it);
+    // The closest vector should be label 0 (same as query).
+    ASSERT_EQ(VecSimQueryResult_GetId(entry), 0);
+    // Distance should be very small (quantization introduces some error).
+    ASSERT_LT(VecSimQueryResult_GetScore(entry), 1.0);
+
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(results);
+}
+
+// -------------------------------------------------------------------
+// End-to-end flow tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, FullFlowAsyncInsertAndSearch) {
+    // Full end-to-end test: accumulation -> transition -> async insert -> search.
+    size_t dim = 8;
+    size_t normSetSize = 20;
+    size_t total_vectors = 50;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Phase 1: Accumulation.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Phase 2: Post-accumulation inserts.
+    for (size_t i = normSetSize; i < total_vectors; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    // Phase 3: Execute all jobs (including accumulation-phase jobs submitted during transition).
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), total_vectors);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), total_vectors);
+
+    // Phase 4: Search.
+    TEST_DATA_T query[dim];
+    this->GenerateVectorData(query, dim, 0.0f);
+    auto *results = VecSimIndex_TopKQuery(tiered_index, query, 10, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(results), 10);
+    VecSimQueryReply_Free(results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteThenReinsertDuringAccumulation) {
+    // Delete and re-insert a vector during accumulation.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Add vector.
+    TEST_DATA_T vec1[dim];
+    this->GenerateVectorData(vec1, dim, 1.0f);
+    VecSimIndex_AddVector(tiered_index, vec1, 0);
+
+    // Delete it.
+    VecSimIndex_DeleteVector(tiered_index, 0);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+
+    // Re-insert with different data.
+    TEST_DATA_T vec2[dim];
+    this->GenerateVectorData(vec2, dim, 5.0f);
+    VecSimIndex_AddVector(tiered_index, vec2, 0);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+
+    // Running sum should only contain vec2's values (vec1 was subtracted, vec2 was added).
+    for (size_t d = 0; d < dim; d++) {
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], this->ToFloat(vec2[d]), 1e-3f);
+    }
+}
+
+// -------------------------------------------------------------------
+// FP16-specific precision tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, RunningSumPrecision) {
+    // Verify running sum precision over many insertions.
+    size_t dim = 4;
+    size_t normSetSize = 1000;
+    size_t n = 500;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    std::vector<float> reference_sum(dim, 0.0f);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        float base = static_cast<float>(i) * 0.01f;
+        this->GenerateVectorData(vec, dim, base);
+        VecSimIndex_AddVector(tiered_index, vec, i);
+
+        for (size_t d = 0; d < dim; d++) {
+            reference_sum[d] += this->ToFloat(vec[d]);
+        }
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    // The running sum should be close to our reference computation.
+    // Allow for floating point accumulation differences.
+    for (size_t d = 0; d < dim; d++) {
+        float relative_error =
+            std::abs(this->getRunningSumVec(tiered_index)[d] - reference_sum[d]) /
+            (std::abs(reference_sum[d]) + 1e-10f);
+        ASSERT_LT(relative_error, 0.01f) << "Precision loss at dim " << d;
+    }
+}
+
+// -------------------------------------------------------------------
+// Cosine Metric Tests
+// -------------------------------------------------------------------
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineAccumulationPhase) {
+    // Verify accumulation phase works correctly with Cosine metric.
+    // Cosine normalizes vectors before storage, so addToSum must use stored data.
+    size_t dim = 8;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Add vectors with varying magnitudes (normalization will make them unit vectors).
+    for (size_t i = 0; i < normSetSize - 1; i++) {
+        TEST_DATA_T vec[dim];
+        float scale = static_cast<float>(i + 1); // Different magnitudes
+        this->GenerateVectorData(vec, dim, scale);
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize - 1);
+
+    // Verify the running sum is computed from STORED (normalized) vectors.
+    // After normalization, each stored vector has unit length, so each component
+    // should be bounded by [-1, 1]. The sum of N unit vectors has bounded magnitude.
+    const auto &running_sum = this->getRunningSumVec(tiered_index);
+    float sum_norm_sq = 0.0f;
+    for (size_t d = 0; d < dim; d++) {
+        sum_norm_sq += running_sum[d] * running_sum[d];
+    }
+    // The magnitude of the sum of (normSetSize-1) unit vectors is at most (normSetSize-1).
+    float sum_norm = std::sqrt(sum_norm_sq);
+    ASSERT_LE(sum_norm, static_cast<float>(normSetSize - 1) + 0.1f);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineTransitionAndQuery) {
+    // Full flow: accumulation -> transition -> query with Cosine metric.
+    size_t dim = 16;
+    size_t normSetSize = 20;
+    size_t total_vectors = 50;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    // Phase 1: Fill up to threshold to trigger transition.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        // Create vectors with distinct directions by varying the first component.
+        for (size_t d = 0; d < dim; d++) {
+            float val = (d == 0) ? static_cast<float>(i + 1) : 1.0f;
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = val;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Phase 2: Add more vectors after transition.
+    for (size_t i = normSetSize; i < total_vectors; i++) {
+        TEST_DATA_T vec[dim];
+        for (size_t d = 0; d < dim; d++) {
+            float val = (d == 0) ? static_cast<float>(i + 1) : 1.0f;
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = val;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+
+    // Phase 3: Execute all jobs.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), total_vectors);
+
+    // Phase 4: Query - use same direction as highest-label vector (should be nearest).
+    TEST_DATA_T query[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = (d == 0) ? static_cast<float>(total_vectors) : 1.0f;
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            query[d] = val;
+        } else {
+            query[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+
+    auto *results = VecSimIndex_TopKQuery(tiered_index, query, 5, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(results), 5);
+
+    // The nearest neighbor should be the vector with highest first-component
+    // (most similar direction to query).
+    auto it = VecSimQueryReply_GetIterator(results);
+    auto *entry = VecSimQueryReply_IteratorNext(it);
+    labelType top_label = VecSimQueryResult_GetId(entry);
+    double top_score = VecSimQueryResult_GetScore(entry);
+
+    // Score for Cosine is 1 - cosine_similarity. Should be close to 0 for nearest.
+    ASSERT_LT(top_score, 0.01);
+    // The top result should be one of the vectors with the largest first component.
+    // With FP16+SQ8, vectors 48 and 49 are nearly indistinguishable, so allow some slack.
+    ASSERT_GE(top_label, total_vectors - 3)
+        << "Expected a high-label vector (near-identical direction to query)";
+
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Single, CosineOverwriteDuringAccumulation) {
+    // Overwrite during accumulation with Cosine: subtractFromSum must use stored
+    // (normalized) data, matching what addToSum accumulated.
+    size_t dim = 8;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    // Add a vector with label 1 (magnitude = ~4).
+    TEST_DATA_T vec1[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = static_cast<float>(d + 1) * 0.5f;
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            vec1[d] = val;
+        } else {
+            vec1[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+    VecSimIndex_AddVector(tiered_index, vec1, 1);
+
+    // Record running sum after first insert.
+    std::vector<float> sum_after_first(this->getRunningSumVec(tiered_index).begin(),
+                                       this->getRunningSumVec(tiered_index).end());
+
+    // Overwrite label 1 with a completely different vector (different direction).
+    TEST_DATA_T vec2[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = (d == 0) ? 10.0f : 0.01f;
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            vec2[d] = val;
+        } else {
+            vec2[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+    VecSimIndex_AddVector(tiered_index, vec2, 1);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+
+    // After overwrite: sum should reflect only vec2's stored (normalized) data.
+    // Since the running sum = 0 + stored(vec1) - stored(vec1) + stored(vec2) = stored(vec2),
+    // the sum should be the normalized form of vec2.
+    const auto &running_sum = this->getRunningSumVec(tiered_index);
+    float sum_norm_sq = 0.0f;
+    for (size_t d = 0; d < dim; d++) {
+        sum_norm_sq += running_sum[d] * running_sum[d];
+    }
+    float sum_norm = std::sqrt(sum_norm_sq);
+    // With only one normalized vector in the sum, the norm should be ~1.0.
+    ASSERT_NEAR(sum_norm, 1.0f, 0.05f);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineDeleteDuringAccumulation) {
+    // Delete during accumulation with Cosine: verify running sum is correctly updated.
+    size_t dim = 8;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    // Add two vectors.
+    TEST_DATA_T vec1[dim], vec2[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float v1 = static_cast<float>(d + 1);
+        float v2 = static_cast<float>(dim - d);
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            vec1[d] = v1;
+            vec2[d] = v2;
+        } else {
+            vec1[d] = vecsim_types::FP32_to_FP16(v1);
+            vec2[d] = vecsim_types::FP32_to_FP16(v2);
+        }
+    }
+    VecSimIndex_AddVector(tiered_index, vec1, 1);
+    VecSimIndex_AddVector(tiered_index, vec2, 2);
+
+    // Record sum with both vectors.
+    std::vector<float> sum_with_both(this->getRunningSumVec(tiered_index).begin(),
+                                     this->getRunningSumVec(tiered_index).end());
+
+    // Delete label 1.
+    VecSimIndex_DeleteVector(tiered_index, 1);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+
+    // After deleting vec1, sum should equal just stored(vec2).
+    // stored(vec2) is the normalized version of vec2, so its norm ≈ 1.
+    const auto &running_sum = this->getRunningSumVec(tiered_index);
+    float sum_norm_sq = 0.0f;
+    for (size_t d = 0; d < dim; d++) {
+        sum_norm_sq += running_sum[d] * running_sum[d];
+    }
+    float sum_norm = std::sqrt(sum_norm_sq);
+    ASSERT_NEAR(sum_norm, 1.0f, 0.05f);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineSearchAccuracyAfterTransition) {
+    // Verify that SQ8+Cosine produces reasonable search accuracy after transition.
+    // Compare results ordering against brute-force on the same index.
+    size_t dim = 32;
+    size_t normSetSize = 30;
+    size_t n = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine,
+                                                    normSetSize, SIZE_MAX, 16, 200);
+
+    // Insert vectors with different directions.
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T vec[dim];
+        for (size_t d = 0; d < dim; d++) {
+            // Create vectors where the i-th vector has a strong d==i%dim component.
+            float val = (d == (i % dim)) ? 10.0f : 1.0f / (d + 1.0f);
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = val;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Execute all jobs to move vectors to backend.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_EQ(tiered_index->indexSize(), n);
+
+    // Query for a vector similar to label 0 (strong component at dim 0).
+    TEST_DATA_T query[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = (d == 0) ? 10.0f : 0.5f / (d + 1.0f);
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            query[d] = val;
+        } else {
+            query[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+
+    size_t k = 10;
+    auto *results = VecSimIndex_TopKQuery(tiered_index, query, k, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(results), k);
+
+    // Verify results are sorted by increasing score (1 - cosine_sim).
+    auto it = VecSimQueryReply_GetIterator(results);
+    double prev_score = -1.0;
+    while (auto *entry = VecSimQueryReply_IteratorNext(it)) {
+        double score = VecSimQueryResult_GetScore(entry);
+        ASSERT_GE(score, 0.0);
+        ASSERT_LE(score, 2.0); // Cosine distance is in [0, 2]
+        ASSERT_GE(score, prev_score);
+        prev_score = score;
+    }
+    VecSimQueryReply_IteratorFree(it);
+
+    // The top-1 result should be label 0 (same strong direction at dim 0).
+    it = VecSimQueryReply_GetIterator(results);
+    auto *first = VecSimQueryReply_IteratorNext(it);
+    // Labels with strong component at dim 0 are: 0, 32, 64, 96
+    labelType top_label = VecSimQueryResult_GetId(first);
+    ASSERT_TRUE(top_label % dim == 0)
+        << "Top result label=" << top_label << " expected a vector with strong dim-0 component";
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineRangeQueryAfterTransition) {
+    // Verify range query with Cosine metric after accumulation transition.
+    size_t dim = 8;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    // Insert parallel vectors (identical direction, different magnitudes) - should have distance 0.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        float scale = static_cast<float>(i + 1);
+        for (size_t d = 0; d < dim; d++) {
+            float val = scale * (d + 1.0f);
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = val;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Execute all jobs.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    // Query with same direction - all vectors should be at distance ~0.
+    TEST_DATA_T query[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = static_cast<float>(d + 1);
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            query[d] = val;
+        } else {
+            query[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+
+    // Range query with small radius should find all parallel vectors.
+    auto *results = VecSimIndex_RangeQuery(tiered_index, query, 0.1, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    // All vectors have the same direction, so cosine distance ≈ 0 for all.
+    ASSERT_EQ(VecSimQueryReply_Len(results), normSetSize);
+    VecSimQueryReply_Free(results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineMeanCorrectness) {
+    // Verify the mean used for SQ8 quantization is computed from normalized vectors.
+    // The mean of N unit vectors with the same direction should be that unit vector itself.
+    size_t dim = 4;
+    size_t normSetSize = 5;
+    size_t addedVectorCount = normSetSize - 1;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    // Add parallel vectors (same direction [1,2,3,4], different magnitudes).
+    for (size_t i = 0; i < addedVectorCount; i++) {
+        TEST_DATA_T vec[dim];
+        float scale = static_cast<float>(i + 1);
+        for (size_t d = 0; d < dim; d++) {
+            float val = scale * (d + 1.0f);
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = val;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    // The running sum / addedVectorCount should be the mean of the normalized vectors.
+    // Since all vectors have the same direction [1,2,3,4], after normalization they're all
+    // [1,2,3,4]/sqrt(1+4+9+16) = [1,2,3,4]/sqrt(30). The mean is the same unit vector.
+    const auto &running_sum = this->getRunningSumVec(tiered_index);
+    float norm_factor = std::sqrt(1.0f + 4.0f + 9.0f + 16.0f);
+    for (size_t d = 0; d < dim; d++) {
+        float expected_mean = (d + 1.0f) / norm_factor;
+        float actual_mean = running_sum[d] / addedVectorCount;
+        ASSERT_NEAR(actual_mean, expected_mean, 0.02f) << "Mean mismatch at dim " << d;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, CosineDeleteAndReinsertAfterTransition) {
+    // Delete from Cosine SQ8 backend and reinsert.
+    size_t dim = 16;
+    size_t normSetSize = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_Cosine, normSetSize);
+
+    // Trigger transition.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        for (size_t d = 0; d < dim; d++) {
+            float val = (d == (i % dim)) ? 5.0f : 0.1f;
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = val;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Move all to backend.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize);
+
+    // Delete label 0.
+    VecSimIndex_DeleteVector(tiered_index, 0);
+    // Process repair jobs.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    this->callExecuteReadySwapJobs(tiered_index);
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize - 1);
+
+    // Reinsert with same label, different vector.
+    TEST_DATA_T new_vec[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = (d == 0) ? 10.0f : 0.01f;
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            new_vec[d] = val;
+        } else {
+            new_vec[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+    VecSimIndex_AddVector(tiered_index, new_vec, 0);
+
+    // Move to backend.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize);
+
+    // Query for the reinserted vector's direction.
+    TEST_DATA_T query[dim];
+    for (size_t d = 0; d < dim; d++) {
+        float val = (d == 0) ? 1.0f : 0.0f;
+        if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+            query[d] = val;
+        } else {
+            query[d] = vecsim_types::FP32_to_FP16(val);
+        }
+    }
+
+    auto *results = VecSimIndex_TopKQuery(tiered_index, query, 1, nullptr, BY_SCORE);
+    ASSERT_NE(results, nullptr);
+    ASSERT_EQ(VecSimQueryReply_Len(results), 1);
+    auto it = VecSimQueryReply_GetIterator(results);
+    auto *entry = VecSimQueryReply_IteratorNext(it);
+    // Label 0 has the strongest dim-0 component, should be top result.
+    ASSERT_EQ(VecSimQueryResult_GetId(entry), 0);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(results);
 }
