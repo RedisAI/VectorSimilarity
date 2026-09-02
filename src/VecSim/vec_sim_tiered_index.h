@@ -249,11 +249,15 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
-        if (this->isBackendPublished()) {
-            auto &backend = this->publishedBackend();
-            if (backend.indexSize() > this->frontendIndex->indexSize()) {
-                return backend.preferAdHocSearch(subsetSize, k, initial_check);
-            }
+        std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
+        if (!this->isBackendPublished()) {
+            return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
+        }
+
+        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
+        auto &backend = this->publishedBackend();
+        if (backend.indexSize() > this->frontendIndex->indexSize()) {
+            return backend.preferAdHocSearch(subsetSize, k, initial_check);
         }
         return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
@@ -266,8 +270,12 @@ public:
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
-        if (this->isBackendPublished()) {
-            this->publishedBackend().fitMemory();
+        // Test-only maintenance operation: take both tier locks exclusively because fitMemory()
+        // mutates the frontend and backend containers.
+        std::unique_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
+        auto main_index_lock = this->acquireMainIndexGuard();
+        if (this->backendIndex) {
+            this->backendIndex->fitMemory();
         }
         this->frontendIndex->fitMemory();
     }

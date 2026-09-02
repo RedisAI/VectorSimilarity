@@ -251,6 +251,9 @@ public:
     void unlockIndexDataGuard() const;
     void lockSharedIndexDataGuard() const;
     void unlockSharedIndexDataGuard() const;
+    std::shared_lock<std::shared_mutex> acquireSharedIndexDataGuard() const {
+        return std::shared_lock<std::shared_mutex>(indexDataGuard);
+    }
     void lockNodeLinks(idType node_id) const;
     void unlockNodeLinks(idType node_id) const;
     VisitedNodesHandler *getVisitedList() const;
