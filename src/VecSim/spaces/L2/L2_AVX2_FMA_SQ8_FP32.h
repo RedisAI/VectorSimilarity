@@ -55,7 +55,6 @@ template <unsigned char residual> // 0..31
 float SQ8_FP32_L2SqrSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, size_t dimension) {
     const uint8_t *pVect1 = static_cast<const uint8_t *>(pVect1v); // SQ8 storage
     const float *pVect2 = static_cast<const float *>(pVect2v);     // FP32 query
-    const uint8_t *pEnd1 = pVect1 + dimension;
 
     // Get quantization parameters from stored vector (after quantized data)
     const uint8_t *pVect1Base = static_cast<const uint8_t *>(pVect1v);
@@ -112,7 +111,8 @@ float SQ8_FP32_L2SqrSIMD16_AVX2_FMA(const void *pVect1v, const void *pVect2v, si
     // We dealt with the residual part. We are left with some multiple of 32 elements.
     // In each iteration we calculate 32 elements = 4 chunks of 8. The loop may run zero times
     // (dim can be as small as 8).
-    while (pVect1 < pEnd1) {
+    const size_t num_of_chunks = dimension / 32;
+    for (size_t i = 0; i < num_of_chunks; i++) {
         L2StepSQ8_FP32_FMA(pVect1, pVect2, sum0, min_val_vec, delta_vec);
         L2StepSQ8_FP32_FMA(pVect1, pVect2, sum1, min_val_vec, delta_vec);
         L2StepSQ8_FP32_FMA(pVect1, pVect2, sum2, min_val_vec, delta_vec);
