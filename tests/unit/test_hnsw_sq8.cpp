@@ -643,6 +643,60 @@ TYPED_TEST(SQ8TieredHNSWTest, GetDistanceMultiIP) {
 
 TYPED_TEST(SQ8TieredHNSWTest, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
 
+TEST(SQ8TieredHNSWTest, PhaseZeroAccessorsAndRelabelDoNotRequireBackend) {
+    constexpr size_t dim = 4;
+    constexpr size_t normalization_set_size = 4;
+    HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
+                              .dim = dim,
+                              .metric = VecSimMetric_IP,
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams primary_index_params = CreateParams(hnsw_params);
+    tieredIndexMock mock_thread_pool;
+    TieredIndexParams tiered_params = {
+        .jobQueue = &mock_thread_pool.jobQ,
+        .jobQueueCtx = mock_thread_pool.ctx,
+        .submitCb = tieredIndexMock::submit_callback,
+        .primaryIndexParams = &primary_index_params,
+        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = normalization_set_size}}};
+    VecSimParams params = CreateParams(tiered_params);
+    auto *index = VecSimIndex_New(&params);
+    ASSERT_NE(index, nullptr);
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+
+    auto *tiered_index = dynamic_cast<TieredHNSWIndex<float, float> *>(index);
+    ASSERT_NE(tiered_index, nullptr);
+
+    float vector[dim] = {1.0f, 2.0f, 3.0f, 4.0f};
+    ASSERT_EQ(VecSimIndex_AddVector(index, vector, 7), 1);
+
+    EXPECT_EQ(tiered_index->indexSize(), 1);
+    EXPECT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    EXPECT_GT(tiered_index->getAllocationSize(), 0);
+    EXPECT_EQ(tiered_index->indexMetaDataCapacity(),
+              tiered_index->getFlatBufferIndex()->indexMetaDataCapacity());
+    EXPECT_EQ(tiered_index->preferAdHocSearch(1, 1, true),
+              tiered_index->getFlatBufferIndex()->preferAdHocSearch(1, 1, true));
+    EXPECT_NO_THROW(tiered_index->setLastSearchMode(STANDARD_KNN));
+    EXPECT_NO_THROW(tiered_index->fitMemory());
+    EXPECT_NO_THROW(tiered_index->runGC());
+
+    std::vector<std::vector<float>> stored;
+    tiered_index->getDataByLabel(7, stored);
+    ASSERT_EQ(stored.size(), 1);
+    EXPECT_EQ(stored[0], std::vector<float>(vector, vector + dim));
+
+    EXPECT_EQ(VecSimIndex_RelabelVector(index, 7, 70), VecSimRelabel_OK);
+    stored.clear();
+    tiered_index->getDataByLabel(7, stored);
+    EXPECT_TRUE(stored.empty());
+    tiered_index->getDataByLabel(70, stored);
+    ASSERT_EQ(stored.size(), 1);
+    EXPECT_EQ(stored[0], std::vector<float>(vector, vector + dim));
+
+    auto allocator = index->getAllocator();
+    mock_thread_pool.reset_ctx();
+}
+
 namespace {
 struct MigrationQuerySubmitContext {
     tieredIndexMock *mock_thread_pool;

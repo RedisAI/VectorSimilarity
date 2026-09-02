@@ -120,11 +120,8 @@ private:
     std::optional<VecSimQueryReply *>
     queryFrontendIfBackendUninitialized(QueryFunction &&query) const {
         std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
-        {
-            std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-            if (this->backendIndex) {
-                return std::nullopt;
-            }
+        if (this->isBackendPublished()) {
+            return std::nullopt;
         }
         return query();
     }
@@ -292,8 +289,11 @@ public:
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
-        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-        return this->backendIndex ? this->getHNSWIndex()->getNumMarkedDeleted() : 0;
+        if (!this->isBackendPublished()) {
+            return 0;
+        }
+        return static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend())
+            .getNumMarkedDeleted();
     }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -311,17 +311,13 @@ public:
             TieredHNSW_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
-        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-        if (this->backendIndex) {
-            this->backendIndex->setLastSearchMode(mode);
+        if (this->isBackendPublished()) {
+            this->publishedBackend().setLastSearchMode(mode);
         }
     }
     void runGC() override {
-        {
-            std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-            if (!this->backendIndex) {
-                return;
-            }
+        if (!this->isBackendPublished()) {
+            return;
         }
         // Run no more than pendingSwapJobsThreshold value jobs.
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
@@ -353,9 +349,11 @@ public:
 
 #ifdef BUILD_TESTS
     size_t indexMetaDataCapacity() const override {
-        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-        return (this->backendIndex ? this->backendIndex->indexMetaDataCapacity() : 0) +
-               this->frontendIndex->indexMetaDataCapacity();
+        size_t capacity = this->frontendIndex->indexMetaDataCapacity();
+        if (this->isBackendPublished()) {
+            capacity += this->publishedBackend().indexMetaDataCapacity();
+        }
+        return capacity;
     }
 #endif
 };
@@ -908,6 +906,7 @@ void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
         {
             auto main_index_lock = this->acquireMainIndexGuard();
             this->backendIndex = new_backend;
+            this->backendPublished.store(true, std::memory_order_release);
         }
         this->sqAccumulationState.reset();
     }
@@ -917,11 +916,11 @@ template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
     size_t res = this->frontendIndex->indexSize();
-    std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-    if (this->backendIndex) {
-        this->getHNSWIndex()->lockSharedIndexDataGuard();
-        res += this->backendIndex->indexSize();
-        this->getHNSWIndex()->unlockSharedIndexDataGuard();
+    if (this->isBackendPublished()) {
+        auto &hnsw_index = static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend());
+        hnsw_index.lockSharedIndexDataGuard();
+        res += hnsw_index.indexSize();
+        hnsw_index.unlockSharedIndexDataGuard();
     }
     return res;
 }
@@ -1162,11 +1161,11 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
     const bool source_exists =
         this->frontendIndex->isLabelExists(old_label) ||
         this->labelToInsertJobs.find(old_label) != this->labelToInsertJobs.end() ||
-        hnsw_index->isLabelExists(old_label);
+        (hnsw_index && hnsw_index->isLabelExists(old_label));
     const bool target_taken =
         this->frontendIndex->isLabelExists(new_label) ||
         this->labelToInsertJobs.find(new_label) != this->labelToInsertJobs.end() ||
-        hnsw_index->isLabelExists(new_label);
+        (hnsw_index && hnsw_index->isLabelExists(new_label));
 
     // Each home is asked to move the label only once it reported holding it, and the checks above
     // ruled out every other rejection - the label is present, the target is free everywhere, and
@@ -1199,7 +1198,7 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
 
         // `relabelVector` takes the HNSW index data guard internally, which is the same
         // main-guard-then-data-guard order that `insertVectorToHNSW` uses.
-        if (hnsw_index->isLabelExists(old_label)) {
+        if (hnsw_index && hnsw_index->isLabelExists(old_label)) {
             const VecSimRelabelCode hnsw_ret = hnsw_index->relabelVector(old_label, new_label);
 #ifdef BUILD_TESTS
             assert(hnsw_ret == VecSimRelabel_OK && "HNSW just reported holding this label");

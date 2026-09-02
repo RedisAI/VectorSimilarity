@@ -16,6 +16,7 @@
 #include "VecSim/utils/query_result_utils.h"
 #include "VecSim/utils/alignment.h"
 
+#include <atomic>
 #include <mutex>
 #include <shared_mutex>
 
@@ -24,7 +25,7 @@
 #include "VecSim/algorithms/svs/svs.h"
 #endif
 
-#define TIERED_LOG this->backendIndex->log
+#define TIERED_LOG this->frontendIndex->log
 
 /**
  * Definition of generic job structure for asynchronous tiered index.
@@ -49,6 +50,20 @@ class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
     VecSimIndexAbstract<DataType, DistType> *backendIndex;
     BruteForceIndex<DataType, DistType> *frontendIndex;
+
+    // Set once backendIndex points to a usable index, and never cleared while readers can access
+    // this object. The publisher stores backendIndex before the release store; a reader that
+    // observes true with an acquire load may therefore safely read the plain pointer.
+    std::atomic<bool> backendPublished;
+
+    bool isBackendPublished() const { return backendPublished.load(std::memory_order_acquire); }
+
+    // Callers must first observe isBackendPublished(). Returning a reference encodes the resulting
+    // non-null invariant at the call site without exposing atomic state through the index API.
+    VecSimIndexAbstract<DataType, DistType> &publishedBackend() const {
+        assert(isBackendPublished());
+        return *backendIndex;
+    }
 
     void *jobQueue;
     void *jobQueueCtx; // External context to be sent to the submit callback.
@@ -159,13 +174,14 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        // A quantized backend cannot report its stored vectors as values -- the stored form is
-        // compression plus metadata, and nothing here dequantizes -- so it would append nothing.
-        bool backend_can_report = true;
+        // Take the flat lock before sampling publication. If publication wins first, read both
+        // tiers; if this load still sees false, migration cannot remove a flat vector until this
+        // method returns.
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        const bool backend_published = this->isBackendPublished();
 #if HAVE_SVS
         // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
-        // means deleting this block, the `backend_can_report` flag, and the guarded include of
-        // svs.h, then unwrapping the body below.
+        // means deleting this block and the guarded include of svs.h.
         //
         // Until then nothing is read at all for an SVS backend: the buffer alone would be a
         // partial answer for a multi-value label split across the tiers, and a caller cannot tell
@@ -178,18 +194,20 @@ public:
         // that), so a derived override would simply not be found. The type test is deliberately
         // explicit rather than dressed up as a capability: it is a special case, not
         // architecture.
-        backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
+        if (backend_published &&
+            dynamic_cast<const SVSIndexBase *>(&this->publishedBackend()) != nullptr) {
+            return;
+        }
 #endif
-        if (backend_can_report) {
-            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-            const size_t before_flat = vectors_output.size();
-            this->frontendIndex->getDataByLabel(label, vectors_output);
-            // Whether the buffer held it, measured rather than read off emptiness, so the tier
-            // decision does not depend on an assertion that only exists in test builds.
-            if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
-                std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-                this->backendIndex->getDataByLabel(label, vectors_output);
-            }
+        const size_t before_flat = vectors_output.size();
+        this->frontendIndex->getDataByLabel(label, vectors_output);
+        // Whether the buffer held it, measured rather than read off emptiness, so the tier
+        // decision does not depend on an assertion that only exists in test builds. The frontend
+        // and backend have the same multi-value configuration, and the former exists in Phase 0.
+        if (backend_published &&
+            (this->frontendIndex->isMultiValue() || vectors_output.size() == before_flat)) {
+            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+            this->publishedBackend().getDataByLabel(label, vectors_output);
         }
     }
 
@@ -197,9 +215,9 @@ public:
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
                       TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
-          frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
-          jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          flatBufferLimit(tieredParams.flatBufferLimit) {}
+          frontendIndex(frontendIndex_), backendPublished(backendIndex_ != nullptr),
+          jobQueue(tieredParams.jobQueue), jobQueueCtx(tieredParams.jobQueueCtx),
+          SubmitJobsToQueue(tieredParams.submitCb), flatBufferLimit(tieredParams.flatBufferLimit) {}
 
     virtual ~VecSimTieredIndex() {
         if (backendIndex) {
@@ -216,10 +234,11 @@ public:
                                  VecSimQueryReply_Order order) const override;
 
     virtual inline uint64_t getAllocationSize() const override {
-        std::shared_lock<std::shared_mutex> lock(this->mainIndexGuard);
-        uint64_t size = this->allocator->getAllocationSize() +
-                        this->frontendIndex->getAllocationSize() +
-                        (this->backendIndex ? this->backendIndex->getAllocationSize() : 0);
+        uint64_t size =
+            this->allocator->getAllocationSize() + this->frontendIndex->getAllocationSize();
+        if (this->isBackendPublished()) {
+            size += this->publishedBackend().getAllocationSize();
+        }
         return size;
     }
     virtual size_t getNumMarkedDeleted() const = 0;
@@ -230,11 +249,13 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
-        std::shared_lock<std::shared_mutex> lock(this->mainIndexGuard);
-        return this->backendIndex &&
-                       this->backendIndex->indexSize() > this->frontendIndex->indexSize()
-                   ? this->backendIndex->preferAdHocSearch(subsetSize, k, initial_check)
-                   : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
+        if (this->isBackendPublished()) {
+            auto &backend = this->publishedBackend();
+            if (backend.indexSize() > this->frontendIndex->indexSize()) {
+                return backend.preferAdHocSearch(subsetSize, k, initial_check);
+            }
+        }
+        return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
 
     // Return the current state of the global write mode (async/in-place).
@@ -245,9 +266,8 @@ public:
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
-        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-        if (this->backendIndex) {
-            this->backendIndex->fitMemory();
+        if (this->isBackendPublished()) {
+            this->publishedBackend().fitMemory();
         }
         this->frontendIndex->fitMemory();
     }
