@@ -269,15 +269,11 @@ public:
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
-        if (!this->isBackendPublished()) {
-            return 0;
-        }
-        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-        auto &hnsw_index = static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend());
-        auto index_data_lock = hnsw_index.acquireSharedIndexDataGuard();
-        return hnsw_index.getNumMarkedDeleted();
+        return this->isBackendPublished()
+                   ? static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend())
+                         .getNumMarkedDeleted()
+                   : 0;
     }
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
@@ -332,13 +328,11 @@ public:
 
 #ifdef BUILD_TESTS
     size_t indexMetaDataCapacity() const override {
-        std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
         size_t capacity = this->frontendIndex->indexMetaDataCapacity();
-        if (!this->isBackendPublished()) {
-            return capacity;
+        if (this->isBackendPublished()) {
+            capacity += this->publishedBackend().indexMetaDataCapacity();
         }
-        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-        return capacity + this->publishedBackend().indexMetaDataCapacity();
+        return capacity;
     }
 #endif
 };
@@ -870,27 +864,10 @@ void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
 }
 
 template <typename DataType, typename DistType>
-bool TieredHNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
-                                                            bool initial_check) const {
-    std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
-    if (!this->isBackendPublished()) {
-        return this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
-    }
-
-    std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-    auto &hnsw_index = static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend());
-    auto index_data_lock = hnsw_index.acquireSharedIndexDataGuard();
-    return hnsw_index.indexSize() > this->frontendIndex->indexSize()
-               ? hnsw_index.preferAdHocSearch(subsetSize, k, initial_check)
-               : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
-}
-
-template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
     size_t res = this->frontendIndex->indexSize();
     if (this->isBackendPublished()) {
-        std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
         auto &hnsw_index = static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend());
         auto index_data_lock = hnsw_index.acquireSharedIndexDataGuard();
         res += hnsw_index.indexSize();
@@ -900,8 +877,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
-    std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-    return (this->backendIndex ? this->backendIndex->indexCapacity() : 0) +
+    return (this->isBackendPublished() ? this->publishedBackend().indexCapacity() : 0) +
            this->frontendIndex->indexCapacity();
 }
 
