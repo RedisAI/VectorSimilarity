@@ -27,6 +27,10 @@ using sq8 = vecsim_types::sq8;
  * which catastrophically cancels in FP32 when x and y share a large common offset relative to
  * their spread.
  *
+ * The operand order in the loop below is load-bearing, not stylistic: it relies on FP addition
+ * NOT being reassociated. `-ffast-math` / `-Ofast` permit exactly that reassociation and would
+ * reinstate the bug this kernel fixes. The repo's -O3 builds are safe; keep it that way.
+ *
  * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
  * pVect2 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
  */

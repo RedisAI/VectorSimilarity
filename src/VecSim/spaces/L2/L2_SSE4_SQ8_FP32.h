@@ -25,8 +25,8 @@ using sq8 = vecsim_types::sq8;
 // Helper: compute Σ(diff_i²) for 4 elements, where diff_i = dequant(x_i) - y_i.
 // pVect1 = SQ8 storage (quantized values), pVect2 = FP32 query.
 // min_val/delta are broadcast scalars from the stored vector's metadata.
-static inline void L2StepSQ8_FP32_SSE4(const uint8_t *&pVect1, const float *&pVect2,
-                                       __m128 &sum, __m128 min_val, __m128 delta) {
+static inline void L2StepSQ8_FP32_SSE4(const uint8_t *&pVect1, const float *&pVect2, __m128 &sum,
+                                       __m128 min_val, __m128 delta) {
     // Load 4 uint8 elements and convert to float
     __m128i v1_i = _mm_cvtepu8_epi32(_mm_cvtsi32_si128(load_unaligned<int32_t>(pVect1)));
     pVect1 += 4;
