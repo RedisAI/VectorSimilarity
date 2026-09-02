@@ -108,7 +108,7 @@ private:
     size_t quantNormalizationSetSize;
 
     struct SQAccumulationState {
-        vecsim_stl::vector<float> runningSumVec;
+        vecsim_stl::vector<double> runningSumVec;
         VecSimParams backendIndexParams;
 
         SQAccumulationState(std::shared_ptr<VecSimAllocator> allocator, const VecSimParams &params)
@@ -819,7 +819,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             this->quantNormalizationSetSize = std::min(normSize, MAX_QUANT_NORMALIZATION_SET_SIZE);
             this->sqAccumulationState.emplace(this->allocator,
                                               *tiered_index_params.primaryIndexParams);
-            this->sqAccumulationState->runningSumVec.resize(hnswParams.dim, 0.0f);
+            this->sqAccumulationState->runningSumVec.resize(hnswParams.dim, 0.0);
         }
     }
 }
@@ -890,7 +890,8 @@ void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
         auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
         vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
         for (size_t i = 0; i < hnswParams.dim; i++) {
-            mean[i] = accumulationState.runningSumVec[i] / this->quantNormalizationSetSize;
+            mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
+                                         static_cast<double>(this->quantNormalizationSetSize));
         }
 
         hnswParams.quantParams = mean.data();

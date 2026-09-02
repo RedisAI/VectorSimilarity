@@ -5062,7 +5062,7 @@ protected:
         return !idx->backendIndex;
     }
 
-    const vecsim_stl::vector<float> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
+    const vecsim_stl::vector<double> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
         return idx->sqAccumulationState->runningSumVec;
     }
 
@@ -5157,7 +5157,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
 
     // Verify running sum is zero-initialized.
     for (size_t i = 0; i < dim; i++) {
-        ASSERT_FLOAT_EQ(this->getRunningSumVec(tiered_index)[i], 0.0f);
+        ASSERT_DOUBLE_EQ(this->getRunningSumVec(tiered_index)[i], 0.0);
     }
 
     // Backend is not published until accumulation completes.
@@ -5175,7 +5175,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, RunningSumAccuracy) {
         this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
 
     // Add vectors and verify running sum.
-    std::vector<float> expected_sum(dim, 0.0f);
+    std::vector<double> expected_sum(dim, 0.0);
     for (size_t i = 0; i < 5; i++) {
         TEST_DATA_T vec[dim];
         float base = static_cast<float>(i + 1);
@@ -5184,14 +5184,14 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, RunningSumAccuracy) {
 
         // Update expected sum.
         for (size_t d = 0; d < dim; d++) {
-            expected_sum[d] += this->ToFloat(vec[d]);
+            expected_sum[d] += static_cast<double>(this->ToFloat(vec[d]));
         }
     }
 
     // Verify running sum matches expected.
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
     for (size_t d = 0; d < dim; d++) {
-        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected_sum[d], 1e-3f)
+        ASSERT_DOUBLE_EQ(this->getRunningSumVec(tiered_index)[d], expected_sum[d])
             << "Mismatch at dimension " << d;
     }
 }
@@ -5984,39 +5984,40 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteThenReinsertDuringAccumulation) {
 }
 
 // -------------------------------------------------------------------
-// FP16-specific precision tests
+// Accumulation precision tests
 // -------------------------------------------------------------------
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, RunningSumPrecision) {
-    // Verify running sum precision over many insertions.
+    // Values smaller than the FP32 ULP of a large running sum must not be discarded. Both values
+    // are exactly representable in FP32 and FP16, as is their expected sum in FP64.
     size_t dim = 4;
-    size_t normSetSize = 1000;
-    size_t n = 500;
+    size_t normSetSize = 100;
+    constexpr size_t n_small_vectors = 32;
+    constexpr float large_value = 32768.0f;
+    constexpr float small_value = 1.0f / 1024.0f;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index =
         this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
 
-    std::vector<float> reference_sum(dim, 0.0f);
-    for (size_t i = 0; i < n; i++) {
+    for (size_t i = 0; i <= n_small_vectors; i++) {
         TEST_DATA_T vec[dim];
-        float base = static_cast<float>(i) * 0.01f;
-        this->GenerateVectorData(vec, dim, base);
-        VecSimIndex_AddVector(tiered_index, vec, i);
-
+        const float value = i == 0 ? large_value : small_value;
         for (size_t d = 0; d < dim; d++) {
-            reference_sum[d] += this->ToFloat(vec[d]);
+            if constexpr (std::is_same_v<TEST_DATA_T, float>) {
+                vec[d] = value;
+            } else {
+                vec[d] = vecsim_types::FP32_to_FP16(value);
+            }
         }
+        VecSimIndex_AddVector(tiered_index, vec, i);
     }
 
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
-
-    // The running sum should be close to our reference computation.
-    // Allow for floating point accumulation differences.
+    const double expected_sum =
+        static_cast<double>(large_value) + n_small_vectors * static_cast<double>(small_value);
     for (size_t d = 0; d < dim; d++) {
-        float relative_error =
-            std::abs(this->getRunningSumVec(tiered_index)[d] - reference_sum[d]) /
-            (std::abs(reference_sum[d]) + 1e-10f);
-        ASSERT_LT(relative_error, 0.01f) << "Precision loss at dim " << d;
+        ASSERT_DOUBLE_EQ(this->getRunningSumVec(tiered_index)[d], expected_sum)
+            << "Precision loss at dim " << d;
     }
 }
 

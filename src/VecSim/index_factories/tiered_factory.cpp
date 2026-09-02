@@ -121,7 +121,7 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     if (defer_backend) {
         // Add size of SQ accumulation buffer
-        est += allocations_overhead + hnsw_params.dim * sizeof(float);
+        est += allocations_overhead + hnsw_params.dim * sizeof(double);
     } else {
         // Add size estimation of VecSimTieredIndex sub indexes.
         // Normalization is done by the frontend index.
