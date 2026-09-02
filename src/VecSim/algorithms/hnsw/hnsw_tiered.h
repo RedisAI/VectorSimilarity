@@ -117,16 +117,6 @@ private:
     };
     std::optional<SQAccumulationState> sqAccumulationState;
 
-    template <typename QueryFunction>
-    std::optional<VecSimQueryReply *>
-    queryFrontendIfBackendUninitialized(QueryFunction &&query) const {
-        std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
-        if (this->isBackendPublished()) {
-            return std::nullopt;
-        }
-        return query();
-    }
-
 #ifdef BUILD_TESTS
     std::function<void()> beforeQuantizedBackendReplacement;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
@@ -274,13 +264,6 @@ public:
         afterBackendInsertBeforeFlatRemoval = std::move(hook);
     }
 #endif
-
-    // Override query routing to short-circuit to a flat-only query while in accumulation phase.
-    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
-                                VecSimQueryParams *queryParams) const override;
-    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
-                                 VecSimQueryParams *queryParams,
-                                 VecSimQueryReply_Order order) const override;
 
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
@@ -850,37 +833,6 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
     for (auto &it : this->invalidJobs) {
         delete it.second;
     }
-}
-
-template <typename DataType, typename DistType>
-VecSimQueryReply *
-TieredHNSWIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
-                                               VecSimQueryParams *queryParams) const {
-    // Accumulation phase: backend is nullptr. We can short-circuit
-    // to a flat-only query.
-    auto frontend_results = this->queryFrontendIfBackendUninitialized(
-        [&]() { return this->frontendIndex->topKQuery(queryBlob, k, queryParams); });
-    if (frontend_results) {
-        return *frontend_results;
-    }
-    return VecSimTieredIndex<DataType, DistType>::topKQuery(queryBlob, k, queryParams);
-}
-
-template <typename DataType, typename DistType>
-VecSimQueryReply *
-TieredHNSWIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
-                                                VecSimQueryParams *queryParams,
-                                                VecSimQueryReply_Order order) const {
-    auto frontend_results = this->queryFrontendIfBackendUninitialized(
-        [&]() { return this->frontendIndex->rangeQuery(queryBlob, radius, queryParams); });
-    if (frontend_results) {
-        auto *res = *frontend_results;
-        if (res) {
-            sort_results(res, order);
-        }
-        return res;
-    }
-    return VecSimTieredIndex<DataType, DistType>::rangeQuery(queryBlob, radius, queryParams, order);
 }
 
 template <typename DataType, typename DistType>

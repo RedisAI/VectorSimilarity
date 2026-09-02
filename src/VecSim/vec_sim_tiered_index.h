@@ -288,6 +288,13 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
                                                     VecSimQueryParams *queryParams) const {
     this->flatIndexGuard.lock_shared();
 
+    // If the backend has not been published yet, every vector is still in the flat buffer.
+    if (!this->isBackendPublished()) {
+        auto res = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
+        this->flatIndexGuard.unlock_shared();
+        return res;
+    }
+
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
@@ -353,6 +360,16 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
                                                      VecSimQueryParams *queryParams,
                                                      VecSimQueryReply_Order order) const {
     this->flatIndexGuard.lock_shared();
+
+    // If the backend has not been published yet, every vector is still in the flat buffer.
+    if (!this->isBackendPublished()) {
+        auto res = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
+        this->flatIndexGuard.unlock_shared();
+        if (res) {
+            sort_results(res, order);
+        }
+        return res;
+    }
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
