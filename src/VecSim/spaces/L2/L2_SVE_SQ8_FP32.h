@@ -131,7 +131,13 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
 
         svfloat32_t min_minus_y = svsub_f32_z(pg_tail, min_val_vec, v2);
         svfloat32_t diff = svmla_f32_z(pg_tail, min_minus_y, delta_vec, v1_f);
-        sum3 = svmla_f32_z(pg_tail, sum3, diff, diff);
+
+        // Merging (_m), not zeroing (_z): sum3 already holds full-vector partial sums from the
+        // main loop, and _z would zero every lane outside pg_tail, silently dropping them. _z is
+        // only safe on a freshly zeroed accumulator, which is why the pre-restructure kernel
+        // could use it here -- back then this block ran first, against an all-zero sum0.
+        // The temporaries above stay _z because they are fresh values, not accumulators.
+        sum3 = svmla_f32_m(pg_tail, sum3, diff, diff);
     }
 
     // Combine the accumulators
