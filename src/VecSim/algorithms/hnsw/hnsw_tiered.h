@@ -14,6 +14,7 @@
 #include <optional>
 
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
+#include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
@@ -185,23 +186,19 @@ private:
     int deleteLabelFromHNSWInplace(labelType label);
 
     void addToSum(const DataType *vector) {
-        auto &runningSumVec = this->sqAccumulationState->runningSumVec;
-        for (size_t i = 0; i < runningSumVec.size(); i++) {
-            if constexpr (std::is_same_v<DataType, float>) {
-                runningSumVec[i] += vector[i];
-            } else if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
-                runningSumVec[i] += FP16_to_FP32(vector[i]);
+        if constexpr (QuantInput<DataType>) {
+            auto &runningSumVec = this->sqAccumulationState->runningSumVec;
+            for (size_t i = 0; i < runningSumVec.size(); i++) {
+                runningSumVec[i] += to_fp32(vector[i]);
             }
         }
     }
 
     void subtractFromSum(const DataType *vector) {
-        auto &runningSumVec = this->sqAccumulationState->runningSumVec;
-        for (size_t i = 0; i < runningSumVec.size(); i++) {
-            if constexpr (std::is_same_v<DataType, float>) {
-                runningSumVec[i] -= vector[i];
-            } else if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
-                runningSumVec[i] -= FP16_to_FP32(vector[i]);
+        if constexpr (QuantInput<DataType>) {
+            auto &runningSumVec = this->sqAccumulationState->runningSumVec;
+            for (size_t i = 0; i < runningSumVec.size(); i++) {
+                runningSumVec[i] -= to_fp32(vector[i]);
             }
         }
     }
