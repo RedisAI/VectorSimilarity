@@ -640,33 +640,6 @@ private:
      * @note no need to implement extra non-static method, as GC logic is simple enough to be done
      * here.
      */
-    // static void SVSIndexGCWrapper(AsyncJob *job) {
-    //     auto gc_job = static_cast<SVSGCJob *>(job);
-    //     auto index = static_cast<TieredSVSIndex<DataType> *>(gc_job->index);
-
-    //     std::shared_lock<std::shared_mutex> lock(index->updateJobMutex);
-    //     // Do SVS index GC
-    //     index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-    //                              "running asynchronous GC for tiered SVS index");
-    //     auto svs_index = index->GetSVSIndex();
-    //     if (index->backendIndex->indexSize() == 0) {
-    //         index->indexGCScheduled.clear();
-    //         delete job;
-    //         // No need to run GC on an empty index.
-    //         return;
-    //     }
-    //     // svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
-    //     svs_index->setParallelism(1);
-    //     // VecSimIndexAbstract::runGC() is protected
-    //     fprintf(stderr, "runGC\n");
-    //     static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
-    //     fprintf(stderr, "GC done\n");
-
-    //     // Release the scheduled flag to allow scheduling again
-    //     index->indexGCScheduled.clear();
-    //     delete job;
-    // }
-
     static void SVSIndexGCWrapper(VecSimIndex *idx, size_t availableThreads) {
         assert(availableThreads > 0);
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
@@ -744,12 +717,6 @@ public:
             this->allocator, SVS_GC_JOB, SVSIndexGCWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
         this->submitJobs(jobs);
-
-        // AsyncJob *new_GC_job = new (this->allocator)
-        //     SVSGCJob(this->allocator, SVSIndexGCWrapper, this);
-
-        // // Insert job to the queue.
-        // this->submitSingleJob(new_GC_job);
     }
 
     void scheduleSVSIndexConsolidate(labelType label) {
@@ -823,7 +790,6 @@ private:
         memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
         this->flatIndexGuard.unlock_shared();
 
-        // svs_index->setParallelism(1);
         {
             std::shared_lock<std::shared_mutex> lock(updateJobMutex);
             svs_index->addVector(blob_copy.get(), job->label);
