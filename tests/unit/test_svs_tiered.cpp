@@ -603,7 +603,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledGCIsDeferred) {
     });
 
     VecSimTieredIndex_GC(tiered_index);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads);
+    // Each soft-deleted slot has corresponding consolidate() job
+    size_t num_consolidate = tiered_index->GetSVSIndex()->getNumMarkedDeleted();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads + num_consolidate);
 
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
