@@ -871,7 +871,7 @@ private:
             }
 
             std::sort(ids_to_move.begin(), ids_to_move.end());
-            int total_deleted = 0;
+            [[maybe_unused]] int total_deleted = 0;
             for (auto it = ids_to_move.rbegin(); it != ids_to_move.rend(); ++it) {
                 idType id = *it;
                 auto label = this->frontendIndex->getVectorLabel(id);
@@ -1308,7 +1308,7 @@ public:
                 return main_results;
             }
 
-            return merge_result_lists<true>(main_results, flat_results, k);
+            return merge_result_lists(main_results, flat_results, k);
         }
     }
 
@@ -1345,12 +1345,12 @@ public:
                 sort_results_by_score_then_id(flat_results);
 
                 auto code = main_results->code;
-                VecSimQueryReply *ret = merge_result_lists<true>(main_results, flat_results, -1);
+                VecSimQueryReply *ret = merge_result_lists(main_results, flat_results, -1);
                 ret->code = code;
                 return ret;
             } else { // BY_ID
                 concat_results(main_results, flat_results);
-                filter_results_by_id<true>(main_results);
+                filter_results_by_id(main_results);
                 return main_results;
             }
         }
