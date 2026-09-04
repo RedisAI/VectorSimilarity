@@ -89,6 +89,26 @@ TEST(HNSWDistanceDispatchTest, UsesStoredToQueryDispatch) {
     VecSimIndex_Free(index);
 }
 
+// See the brute-force counterpart: an absent label appends nothing instead of throwing, which
+// is what lets the output size stand in for "does the index hold this label".
+TYPED_TEST(HNSWTest, getDataByLabelAbsentLabel) {
+    size_t dim = 4;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnsw_index = this->CastToHNSW(index);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    hnsw_index->getDataByLabel(2, stored);
+    ASSERT_TRUE(stored.empty());
+
+    hnsw_index->getDataByLabel(1, stored);
+    ASSERT_EQ(stored.size(), 1);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(HNSWTest, hnsw_vector_add_test) {
     size_t dim = 4;
 

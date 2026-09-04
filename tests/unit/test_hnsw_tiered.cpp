@@ -486,6 +486,51 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsync) {
     }
 }
 
+// A multi-value label's vectors are routinely split across the tiers while an ingest job is
+// pending, so reading one tier reports a subset. Nothing else covers the tiered wrapper's
+// `getDataByLabel` -- the other uses in this file all call a tier directly.
+TYPED_TEST(HNSWTieredIndexTestBasic, getDataByLabelSpansBothTiers) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    TEST_DATA_T first[dim];
+    TEST_DATA_T second[dim];
+    GenerateVector<TEST_DATA_T>(first, dim, 1);
+    GenerateVector<TEST_DATA_T>(second, dim, 2);
+
+    // Two vectors under one label, with only the first ingested: one vector per tier.
+    VecSimIndex_AddVector(tiered_index, first, 0);
+    mock_thread_pool.thread_iteration();
+    VecSimIndex_AddVector(tiered_index, second, 0);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 2) << "a tier was not read; the label's vectors are split across them";
+    // Buffer first, then backend: `second` is the buffered one.
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), second, dim));
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[1].data(), first, dim));
+
+    // Once everything is ingested the backend alone holds both.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    stored.clear();
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 2);
+
+    // An absent label yields nothing rather than throwing, which is what lets the output size
+    // stand in for "does the index hold this label".
+    stored.clear();
+    tiered_index->getDataByLabel(12345, stored);
+    ASSERT_TRUE(stored.empty());
+}
+
 TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
@@ -916,6 +961,56 @@ TYPED_TEST(HNSWTieredIndexTestBasic, MergeMulti) {
     // indexes should result in a list of unique vectors, even if the scores of the duplicates are
     // different.
     runTopKSearchTest(tiered_index, query, 5, [](size_t _, double __, size_t ___) {});
+}
+
+// A label that is mid-ingest lives in the HNSW index and in the flat buffer at once, so
+// a top-K query merges two lists that both carry it. Both lists are ordered by exact score, while
+// cmpVecSimQueryResultByScoreThenId() used to call scores within 1e-6 equal and fall back to
+// ordering by id. Where those two orders disagree the shared label does not reach the two merge
+// cursors at the same time, and a merge that dedups by cursor alignment alone emits it twice.
+TYPED_TEST(HNSWTieredIndexTestBasic, MergeSingleWithNearTiedScores) {
+    size_t dim = 4;
+
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_L2,
+        .multi = false,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto allocator = tiered_index->getAllocator();
+
+    // Label 1 is the farther of the two from the query, and carries the smaller id. That
+    // combination is what makes the orders disagree: by exact score label 1 comes second, by id it
+    // comes first.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 1, 0.5000001);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->backendIndex, dim, 2, 0.5);
+    // An ingest job has already inserted label 1 into HNSW but not yet erased it from the flat
+    // buffer, so both indexes hold it - with the same vector, and so the same score.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->frontendIndex, dim, 1, 0.5000001);
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
+    // The regression needs the two distances to differ, but by less than the tolerance the merge
+    // comparator used to treat as equality. Assert it, so that a change in the vectors or in the
+    // data type fails here rather than silently retiring the test.
+    auto backend_res =
+        VecSimIndex_TopKQuery(tiered_index->backendIndex, query, 2, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(backend_res), 2);
+    double closer = VecSimQueryResult_GetScore(backend_res->results.data());
+    double farther = VecSimQueryResult_GetScore(backend_res->results.data() + 1);
+    VecSimQueryReply_Free(backend_res);
+    ASSERT_LT(closer, farther);
+    ASSERT_LT(farther - closer, 1e-6);
+
+    // k exceeds the label count on purpose: when the merge fills exactly k results the truncation
+    // hides the second copy, which is why a query for as many results as the index holds does not
+    // expose this.
+    runTopKSearchTest(tiered_index, query, 3, [](size_t _, double __, size_t ___) {});
 }
 
 TYPED_TEST(HNSWTieredIndexTest, deleteFromHNSWBasic) {
@@ -3457,6 +3552,67 @@ TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorCosine) {
     }
     ASSERT_EQ(iteration_num, n / n_res);
     VecSimBatchIterator_Free(batchIterator);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, BatchIteratorCosineMidIngestDuplicate) {
+    constexpr size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(),
+        .dim = dim,
+        .metric = VecSimMetric_Cosine,
+        .multi = false,
+    };
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto frontend_index = this->GetFlatIndex(tiered_index);
+    auto hnsw_index = this->CastToHNSW(tiered_index);
+
+    TEST_DATA_T query[dim] = {1, 0, 0, 0};
+    TEST_DATA_T flat_only[dim] = {1, 0, 0, 0};
+    TEST_DATA_T shared[dim] = {1, 1, 0, 0};
+    TEST_DATA_T hnsw_only[dim] = {0, 1, 0, 0};
+
+    VecSimIndex_AddVector(tiered_index, flat_only, 0);
+    VecSimIndex_AddVector(tiered_index, shared, 1);
+
+    // An insertion job passes the frontend's normalized blob to HNSW before erasing it from the
+    // flat buffer. Reproduce that overlap without completing the queued job.
+    std::vector<std::vector<TEST_DATA_T>> normalized_shared;
+    frontend_index->getDataByLabel(1, normalized_shared);
+    ASSERT_EQ(normalized_shared.size(), 1);
+    VecSimIndex_AddVector(hnsw_index, normalized_shared[0].data(), 1);
+    VecSimIndex_AddVector(hnsw_index, hnsw_only, 2);
+
+    // The HNSW backend is configured to accept already-normalized data. With the same normalized
+    // query, the shared copy must therefore have exactly the same score in both tiers.
+    TEST_DATA_T normalized_query[dim];
+    memcpy(normalized_query, query, sizeof(query));
+    VecSim_Normalize(normalized_query, dim, params.type);
+    auto flat_res = VecSimIndex_TopKQuery(frontend_index, query, 2, nullptr, BY_SCORE);
+    auto hnsw_res = VecSimIndex_TopKQuery(hnsw_index, normalized_query, 2, nullptr, BY_SCORE);
+    ASSERT_EQ(VecSimQueryReply_Len(flat_res), 2);
+    ASSERT_EQ(VecSimQueryReply_Len(hnsw_res), 2);
+    ASSERT_EQ(VecSimQueryResult_GetId(flat_res->results.data() + 1), 1);
+    ASSERT_EQ(VecSimQueryResult_GetId(hnsw_res->results.data()), 1);
+    ASSERT_EQ(VecSimQueryResult_GetScore(flat_res->results.data() + 1),
+              VecSimQueryResult_GetScore(hnsw_res->results.data()));
+    VecSimQueryReply_Free(flat_res);
+    VecSimQueryReply_Free(hnsw_res);
+
+    // A one-result batch first consumes the better flat-only result, leaving the shared HNSW
+    // result buffered. The next batch must consume both copies together and emit the label once.
+    VecSimBatchIterator *batch_iterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+    for (labelType expected_label = 0; expected_label < 3; ++expected_label) {
+        ASSERT_TRUE(VecSimBatchIterator_HasNext(batch_iterator));
+        runBatchIteratorSearchTest(batch_iterator, 1,
+                                   [expected_label](size_t id, double score, size_t result_rank) {
+                                       ASSERT_EQ(id, expected_label);
+                                   });
+    }
+    ASSERT_FALSE(VecSimBatchIterator_HasNext(batch_iterator));
+    VecSimBatchIterator_Free(batch_iterator);
 }
 
 TYPED_TEST(HNSWTieredIndexTest, RangeSearch) {

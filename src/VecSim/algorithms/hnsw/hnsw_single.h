@@ -44,17 +44,38 @@ public:
         : HNSWIndex<DataType, DistType>(input, params, abstractInitParams, components, version),
           labelLookup(this->maxElements, this->allocator) {}
 
+#endif
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
-
-        auto id = labelLookup.at(label);
+        // `labelLookup` and the data blocks are mutated under `indexDataGuard` by callers that
+        // hold no more than a shared main lock -- tiered ingest and `markDelete` both do -- so
+        // reading them needs this guard, not the caller's. Same reason `getLabelsSet` takes it.
+        // A quantized element is not the elements: SQ8 keeps one byte per dimension plus FP32
+        // metadata, so copying `dim * sizeof(DataType)` out of it would reinterpret compression
+        // and metadata as values. Nothing here dequantizes, so the honest answer is none -- per
+        // the contract an empty output reads as "cannot tell".
+        //
+        // Asking the index rather than comparing sizes: the quantized element is only *smaller*
+        // than the raw elements above a certain dimension. At dim 4 with FP32/L2 it is larger
+        // (4 + 4*4 = 20 bytes against 16), so a size test concludes "not quantized" exactly where
+        // it matters most.
+        if (this->isQuantized) {
+            return;
+        }
+        std::shared_lock<std::shared_mutex> index_data_lock(this->indexDataGuard);
+        auto it = labelLookup.find(label);
+        if (it == labelLookup.end()) {
+            return;
+        }
 
         auto vec = std::vector<DataType>(this->dim);
         // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like the
         // norm
-        memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
-        vectors_output.push_back(vec);
+        memcpy(vec.data(), this->getDataByInternalId(it->second), this->dim * sizeof(DataType));
+        vectors_output.push_back(std::move(vec));
     }
+
+#ifdef BUILD_TESTS
 
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         std::vector<std::vector<char>> vectors_output;

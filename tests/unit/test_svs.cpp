@@ -9,6 +9,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/vec_sim_index.h"
 #include "unit_test_utils.h"
 #include <array>
 #include <cmath>
@@ -2765,6 +2766,33 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                         QUERY_TYPE_RANGE),
               VecSimParamResolverErr_AlreadySet);
+
+    VecSimIndex_Free(index);
+}
+
+// SVS keeps its vectors in the SVS library's own form -- quantized, and for LeanVec reduced --
+// and does not hand them back, so `getDataByLabel` appends nothing. Per the contract on
+// `VecSimIndexAbstract::getDataByLabel` an empty output reads as "cannot tell", which is the
+// answer a caller comparing against stored data needs.
+//
+// Pinned because the alternative is silence: while this was left to a default in the base class,
+// a tiered SVS index reached a not-implemented stub through `VecSimTieredIndex::getDataByLabel`
+// as soon as a vector had been ingested.
+TEST(SVSTest, getDataByLabelReportsNothing) {
+    size_t dim = 4;
+    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams index_params = CreateParams(params);
+    VecSimIndex *index = VecSimIndex_New(&index_params);
+    ASSERT_NE(index, nullptr);
+
+    GenerateAndAddVector<float>(index, dim, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    auto *typed = dynamic_cast<VecSimIndexAbstract<float, float> *>(index);
+    ASSERT_NE(typed, nullptr);
+    std::vector<std::vector<float>> stored;
+    typed->getDataByLabel(1, stored);
+    EXPECT_TRUE(stored.empty()) << "SVS cannot report stored vectors, and must not pretend to";
 
     VecSimIndex_Free(index);
 }

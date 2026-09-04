@@ -327,6 +327,35 @@ public:
         };
         return info;
     }
+    /**
+     * @brief Get the vector elements stored under a given label, in insertion order.
+     *
+     * A tiered index cannot honour the ordering across its tiers; see
+     * `VecSimTieredIndex::getDataByLabel`.
+     *
+     * Appends nothing when the label is absent, so the output size doubles as the answer to
+     * whether the index holds it -- and likewise for an index type that cannot read its stored
+     * vectors back at all, which is how `SVSIndex` answers.
+     *
+     * Returns ONLY the vector elements, even where the stored vector carries extra
+     * metadata -- with int8_t/uint8_t under cosine, the trailing norm is not included.
+     * Use getStoredVectorDataByLabel() when the complete stored form is wanted.
+     *
+     * The elements are the *stored* ones, i.e. after any insert-time preprocessing —
+     * normalized under cosine, for instance — and not the blob originally handed to
+     * addVector.
+     *
+     * Nothing here dequantizes. A quantized index therefore appends nothing rather than
+     * reinterpreting compression and metadata as values, which reads as "cannot tell". The test
+     * is the index's own `isQuantized`, not a size comparison: an SQ8 element is smaller than the
+     * raw elements only above a certain dimension, and larger below it.
+     *
+     * @param label The label to retrieve vector(s) elements for
+     * @param vectors_output Empty vector to be filled with vector(s)
+     */
+    virtual void getDataByLabel(labelType label,
+                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
+
 #ifdef BUILD_TESTS
     void replacePPContainer(PreprocessorsContainerAbstract *newPPContainer) {
         delete this->preprocessors;
@@ -340,24 +369,6 @@ public:
     // Test-only: override the disk flag to exercise disk-specific param resolution
     // without requiring an actual disk-based index implementation.
     void setIsDiskForTesting(bool v) { this->isDisk = v; }
-
-    /**
-     * @brief Used for testing - get only the vector elements associated with a given label.
-     * This function copies only the vector(s) elements into the output vector,
-     * without any additional metadata that might be stored with the vector.
-     *
-     * Important: This method returns ONLY the vector elements, even if the stored vector contains
-     * additional metadata. For example, with int8_t/uint8_t vectors using cosine similarity,
-     * this method will NOT return the norm that is stored with the vector(s).
-     *
-     * If you need the complete data including any metadata, use getStoredVectorDataByLabel()
-     * instead.
-     *
-     * @param label The label to retrieve vector(s) elements for
-     * @param vectors_output Empty vector to be filled with vector(s)
-     */
-    virtual void getDataByLabel(labelType label,
-                                std::vector<std::vector<DataType>> &vectors_output) const = 0;
 
     /**
      * @brief Used for testing - get the complete raw data associated with a given label.

@@ -261,7 +261,6 @@ public:
     }
 
 #ifdef BUILD_TESTS
-    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
     size_t indexMetaDataCapacity() const override {
         return this->backendIndex->indexMetaDataCapacity() +
                this->frontendIndex->indexMetaDataCapacity();
@@ -1343,12 +1342,3 @@ VecSimIndexBasicInfo TieredHNSWIndex<DataType, DistType>::basicInfo() const {
     info.algo = VecSimAlgo_HNSWLIB;
     return info;
 }
-
-#ifdef BUILD_TESTS
-template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::getDataByLabel(
-    labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
-    this->getHNSWIndex()->getDataByLabel(label, vectors_output);
-}
-
-#endif

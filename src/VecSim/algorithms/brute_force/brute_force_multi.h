@@ -40,20 +40,35 @@ public:
     }
     std::unordered_map<idType, std::pair<idType, labelType>>
     deleteVectorAndGetUpdatedIds(labelType label) override;
-#ifdef BUILD_TESTS
     void getDataByLabel(labelType label,
                         std::vector<std::vector<DataType>> &vectors_output) const override {
-
+        // A quantized element is not the elements: SQ8 keeps one byte per dimension plus FP32
+        // metadata, so copying `dim * sizeof(DataType)` out of it would reinterpret compression
+        // and metadata as values. Nothing here dequantizes, so the honest answer is none -- per
+        // the contract an empty output reads as "cannot tell".
+        //
+        // Asking the index rather than comparing sizes: the quantized element is only *smaller*
+        // than the raw elements above a certain dimension. At dim 4 with FP32/L2 it is larger
+        // (4 + 4*4 = 20 bytes against 16), so a size test concludes "not quantized" exactly where
+        // it matters most.
+        if (this->isQuantized) {
+            return;
+        }
         auto ids = labelToIdsLookup.find(label);
+        if (ids == labelToIdsLookup.end()) {
+            return;
+        }
 
         for (idType id : ids->second) {
             auto vec = std::vector<DataType>(this->dim);
             // Only copy the vector data (dim * sizeof(DataType)), not any additional metadata like
             // the norm
             memcpy(vec.data(), this->getDataByInternalId(id), this->dim * sizeof(DataType));
-            vectors_output.push_back(vec);
+            vectors_output.push_back(std::move(vec));
         }
     }
+
+#ifdef BUILD_TESTS
 
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
         std::vector<std::vector<char>> vectors_output;
