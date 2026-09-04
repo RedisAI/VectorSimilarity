@@ -93,17 +93,17 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     compareMetadataFile(folder_path + "/metadata");
 
     if constexpr (isMulti) {
-        auto loaded = svs::index::vamana::auto_multi_dynamic_assemble(
+        auto loaded = svs::concurrent::auto_multi_dynamic_assemble(
             folder_path + "/config",
             SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
                                            this->buildParams, this->getAllocator())),
             SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
                                             this->getAllocator())),
             distance_f(), std::move(threadpool_handle),
-            svs::index::vamana::MultiMutableVamanaLoad::FROM_MULTI, logger_);
+            svs::concurrent::MultiMutableVamanaLoad::FROM_MULTI, logger_);
         impl_ = std::make_unique<impl_type>(std::move(loaded));
     } else {
-        auto loaded = svs::index::vamana::auto_dynamic_assemble(
+        auto loaded = svs::concurrent::auto_dynamic_assemble(
             folder_path + "/config",
             SVS_LAZY(graph_builder_t::load(folder_path + "/graph", this->blockSize,
                                            this->buildParams, this->getAllocator())),
@@ -112,6 +112,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             distance_f(), std::move(threadpool_handle), false, logger_);
         impl_ = std::make_unique<impl_type>(std::move(loaded));
     }
+    setReady();
 }
 
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,

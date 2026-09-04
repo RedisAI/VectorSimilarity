@@ -298,7 +298,9 @@ typedef enum {
     HNSW_SWAP_JOB,
     HNSW_DISK_JOB,
     SVS_BATCH_UPDATE_JOB,
+    SVS_INSERT_VECTOR_JOB,
     SVS_GC_JOB,
+    SVS_CONSOLIDATE_JOB,
     INVALID_JOB // to indicate that finding a JobType >= INVALID_JOB is an error
 } JobType;
 

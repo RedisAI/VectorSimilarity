@@ -2328,7 +2328,7 @@ protected:
             }
         }
         // Submit the index update job.
-        tiered_index->scheduleSVSIndexUpdate();
+        tiered_index->scheduleSVSIndexInit();
         ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
         // Execute the job from the queue and validate that the index was updated properly.
@@ -2848,8 +2848,9 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
-    // Move the vector to SVS by executing the insert job.
-    mock_thread_pool.thread_iteration();
+    // Move the vector to SVS by executing the pending jobs.
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // Scalar quantization accuracy is insufficient for this check.
@@ -2896,7 +2897,9 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-    mock_thread_pool.thread_iteration();
+
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in the flat index.
@@ -2910,13 +2913,21 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVectorMulti) {
 
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in SVS index.
     this->GenerateAndAddVector(tiered_index, dim, vec_label, vec_label);
     this->GenerateAndAddVector(tiered_index, dim, vec_label, other_vec_val);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
     mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);

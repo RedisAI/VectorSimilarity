@@ -16,6 +16,10 @@
 #include "svs/core/distance.h"
 #include "svs/lib/float16.h"
 #include "svs/index/vamana/dynamic_index.h"
+// Pulls in `svs::index::vamana::concurrent` and the `svs::concurrent` alias. The concurrent
+// namespace redeclares only the entities it has to replace; every other name (build/search
+// parameters, extension points) still resolves to the enclosing `svs::index::vamana`.
+#include "svs/concurrent/concurrent.h"
 
 #if HAVE_SVS_LVQ
 #include "svs/cpuid.h"
@@ -204,6 +208,21 @@ inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuan
     // unreachable code, but to avoid compiler warning
     return std::make_pair(VecSimSvsQuant_NONE, false);
 }
+
+// The `svs::concurrent` counterpart of `svs::make_blocked_allocator_handle`.
+//
+// The upstream helper cannot be reused here: it hardcodes `svs::data::Blocked` in its return
+// type, so there is no way to ask it for the grow-stable tag. The type-erasing
+// `AllocatorHandle` wrapper is what makes the compressed datasets (which take an allocator
+// handle rather than a concrete allocator) work with VecSim's own allocator.
+template <typename Alloc>
+svs::concurrent::SegmentedBlocked<svs::AllocatorHandle<typename Alloc::value_type>>
+make_segmented_blocked_allocator_handle(const svs::data::BlockingParameters &parameters,
+                                       Alloc alloc) {
+    using handle_type = svs::AllocatorHandle<typename Alloc::value_type>;
+    return svs::concurrent::SegmentedBlocked<handle_type>{
+        parameters, svs::make_allocator_handle(std::move(alloc))};
+}
 } // namespace svs_details
 
 template <typename DataType, size_t QuantBits, size_t ResidualBits, bool IsLeanVec,
@@ -215,9 +234,14 @@ struct SVSStorageTraits {
     // allowing all structures to be allocated at once. In contrast,
     // the Blocked allocator supports dynamic allocations,
     // enabling memory to be allocated in blocks as needed when the index size grows.
-    using blocked_type = svs::data::Blocked<allocator_type>; // Used in creating storage
+    // `SegmentedBlocked` is a drop-in replacement for `svs::data::Blocked` (it derives from
+    // it and carries the same blocking parameters) that additionally keeps already-published
+    // elements at a stable address when the dataset grows, which is what allows a concurrent
+    // reader to keep a pointer into the data while a writer appends.
+    using blocked_type = svs::concurrent::SegmentedBlocked<allocator_type>;
     // svs::Dynamic means runtime dimensionality in opposite to compile-time dimensionality
-    using index_storage_type = svs::data::BlockedData<DataType, svs::Dynamic, allocator_type>;
+    using index_storage_type =
+        svs::concurrent::SegmentedBlockedData<DataType, svs::Dynamic, allocator_type>;
 
     static constexpr bool is_compressed() { return false; }
 
@@ -278,9 +302,13 @@ struct SVSStorageTraits {
 template <typename SVSIdType>
 struct SVSGraphBuilder {
     using allocator_type = svs_details::SVSAllocator<SVSIdType>;
-    using blocked_type = svs::data::Blocked<allocator_type>;
-    using graph_data_type = svs::data::BlockedData<SVSIdType, svs::Dynamic, allocator_type>;
-    using graph_type = svs::graphs::SimpleGraph<SVSIdType, blocked_type>;
+    using blocked_type = svs::concurrent::SegmentedBlocked<allocator_type>;
+    using graph_data_type =
+        svs::concurrent::SegmentedBlockedData<SVSIdType, svs::Dynamic, allocator_type>;
+    // The concurrent `SimpleGraph` has the same shape as the upstream one but guards each
+    // adjacency list with a sequence lock, so a reader can traverse an edge list that a
+    // writer is concurrently rewriting.
+    using graph_type = svs::concurrent::graphs::SimpleGraph<SVSIdType, blocked_type>;
 
     static blocked_type make_blocked_allocator(size_t block_size, size_t graph_max_degree,
                                                std::shared_ptr<VecSimAllocator> allocator) {
@@ -310,7 +338,7 @@ struct SVSGraphBuilder {
         // based on the data types, which we found to perform better through heuristic analysis.
         auto prefetch_parameters =
             svs::index::vamana::extensions::estimate_prefetch_parameters(data);
-        auto builder = svs::index::vamana::VamanaBuilder(
+        auto builder = svs::concurrent::VamanaBuilder(
             graph, data, std::move(distance), parameters, threadpool, prefetch_parameters, logger);
 
         // Specific to the Vamana algorithm:
