@@ -39,6 +39,28 @@ protected:
 
 TYPED_TEST_SUITE(BruteForceTest, DataTypeSet);
 
+// An absent label appends nothing rather than throwing. `labelToIdLookup.at()` used to be
+// used here, so asking about a label the index does not hold was an exception; the contract
+// now lets the output size answer whether it is held, which is what the tiered lookup and
+// RediSearch's vector comparison both rely on.
+TYPED_TEST(BruteForceTest, getDataByLabelAbsentLabel) {
+    size_t dim = 4;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    BruteForceIndex<TEST_DATA_T, TEST_DIST_T> *bf_index = this->CastToBF(index);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    bf_index->getDataByLabel(2, stored);
+    ASSERT_TRUE(stored.empty());
+
+    bf_index->getDataByLabel(1, stored);
+    ASSERT_EQ(stored.size(), 1);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(BruteForceTest, brute_force_vector_add_test) {
 
     size_t dim = 4;

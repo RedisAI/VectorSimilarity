@@ -135,6 +135,46 @@ void HNSWSQ8Test<index_type_t>::create_index_test() {
     EXPECT_EQ(index->basicInfo().algo, VecSimAlgo_HNSWLIB);
 }
 
+// A quantized element is not the elements, so reading it as values would hand back compression
+// and FP32 metadata reinterpreted as floats. `getDataByLabel` reports nothing instead, which
+// callers read as "cannot tell".
+//
+// dim 4 on purpose. SQ8 stores one byte per dimension plus metadata -- 4 slots for L2 -- so the
+// element is 20 bytes here against 16 for the raw elements: *larger*. The first version of this
+// guard compared sizes and so concluded "not quantized" for exactly these dimensions, and the
+// first version of this test used dim 40, where the comparison happens to hold. Both dimensions
+// are covered below for that reason.
+TYPED_TEST(HNSWSQ8Test, getDataByLabelReportsNothingForQuantizedStorage) {
+    // Small dim: the quantized element is *larger* than the raw elements, which is what defeats a
+    // size-based test.
+    HNSWParams small = {.dim = 4, .M = 16, .efConstruction = 200};
+    this->SetUp(small);
+    ASSERT_EQ(this->GenerateAndAddVector(0, 0.5f, 1.0f), 1);
+    auto *hnsw_index = this->CastToHNSW();
+    ASSERT_NE(hnsw_index, nullptr);
+    ASSERT_GT(hnsw_index->getStoredDataSize(), this->dim * sizeof(TEST_DATA_T))
+        << "premise: at dim 4 the quantized element is larger than the raw elements, so a size "
+           "comparison cannot identify it";
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    hnsw_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+}
+
+TYPED_TEST(HNSWSQ8Test, getDataByLabelReportsNothingForQuantizedStorageLargeDim) {
+    // Large dim: here the quantized element *is* smaller, the case the old size test handled.
+    HNSWParams large = {.dim = 40, .M = 16, .efConstruction = 200};
+    this->SetUp(large);
+    ASSERT_EQ(this->GenerateAndAddVector(0, 0.5f, 1.0f), 1);
+    auto *hnsw_index = this->CastToHNSW();
+    ASSERT_NE(hnsw_index, nullptr);
+    ASSERT_LT(hnsw_index->getStoredDataSize(), this->dim * sizeof(TEST_DATA_T));
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    hnsw_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+}
+
 TYPED_TEST(HNSWSQ8Test, CreateIndex) { this->create_index_test(); }
 
 TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {

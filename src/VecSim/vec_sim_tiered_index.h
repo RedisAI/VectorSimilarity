@@ -18,6 +18,11 @@
 
 #include <shared_mutex>
 
+#if HAVE_SVS
+// For the SVS special case in getDataByLabel; remove with it (MOD-17706).
+#include "VecSim/algorithms/svs/svs.h"
+#endif
+
 #define TIERED_LOG this->backendIndex->log
 
 /**
@@ -101,20 +106,81 @@ protected:
 public:
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
-    // For both topK and range, Use withSet=false if you can guarantee that shared ids between the
-    // two lists will also have identical scores. In this case, any duplicates will naturally align
-    // at the front of both lists during the merge, so they can be removed without explicitly
-    // tracking seen ids — enabling a more efficient merge.
-    template <bool WithSet>
     VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
                                    VecSimQueryParams *queryParams) const;
 
-    template <bool WithSet>
     VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
                                     VecSimQueryParams *queryParams,
                                     VecSimQueryReply_Order order) const;
 
 public:
+    /**
+     * @brief Get the vector elements stored under a label, in insertion order.
+     *
+     * Contract on `VecSimIndexAbstract::getDataByLabel`, including that `vectors_output` arrives
+     * empty, with two caveats a tiered index cannot
+     * avoid, both of which only ever make an equality-testing caller answer "different":
+     *
+     * - The vectors are the buffer's followed by the backend's, which for a multi-value label
+     *   split across the tiers is not insertion order.
+     * - An ingest job inserts into the backend before removing from the buffer, so a vector
+     *   caught inside that window is reported by both tiers and appears twice.
+     *
+     * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
+     * buffer is the whole answer, but a multi-value label's vectors are routinely split across
+     * the tiers while an ingest is pending, so there the backend is read as well. Reading only
+     * the backend, as this used to, reports nothing for a vector written recently enough to
+     * still be buffered -- which is exactly when a document is most likely to be written again.
+     *
+     * `flatIndexGuard` is held across both reads, in the order `relabelVector` and
+     * `acquireSharedLocks` take: it cannot prevent a duplicate, but it does stop the buffer's
+     * copy being removed between them. The backend's own data guard is deliberately not taken
+     * here -- its `getDataByLabel` takes it, because a shared main lock does not exclude an
+     * ingest mutating under `indexDataGuard`. Same division as
+     * `computeUnifiedIndexLabelsSetUnsafe`, which holds the outer locks and lets `getLabelsSet`
+     * take the inner one.
+     */
+    void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
+#ifdef BUILD_TESTS
+        // The base contract asks for an empty output. A caller reusing a vector would otherwise
+        // get this label's vectors appended to the previous label's, with nothing to notice it by.
+        assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
+#endif
+
+        // A quantized backend cannot report its stored vectors as values -- the stored form is
+        // compression plus metadata, and nothing here dequantizes -- so it would append nothing.
+        bool backend_can_report = true;
+#if HAVE_SVS
+        // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
+        // means deleting this block, the `backend_can_report` flag, and the guarded include of
+        // svs.h, then unwrapping the body below.
+        //
+        // Until then nothing is read at all for an SVS backend: the buffer alone would be a
+        // partial answer for a multi-value label split across the tiers, and a caller cannot tell
+        // a subset from the whole. Skipping the reads also avoids waiting on `mainIndexGuard`
+        // behind an SVS batch update to be told nothing.
+        //
+        // Here rather than as an override in TieredSVSIndex because this method is not virtual:
+        // `VecSimTieredIndex` derives from `VecSimIndexInterface`, which does not declare it, and
+        // callers reach it through a `VecSimTieredIndex *` (RediSearch dynamic_casts to exactly
+        // that), so a derived override would simply not be found. The type test is deliberately
+        // explicit rather than dressed up as a capability: it is a special case, not
+        // architecture.
+        backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
+#endif
+        if (backend_can_report) {
+            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+            const size_t before_flat = vectors_output.size();
+            this->frontendIndex->getDataByLabel(label, vectors_output);
+            // Whether the buffer held it, measured rather than read off emptiness, so the tier
+            // decision does not depend on an assertion that only exists in test builds.
+            if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
+                std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+                this->backendIndex->getDataByLabel(label, vectors_output);
+            }
+        }
+    }
+
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
                       BruteForceIndex<DataType, DistType> *frontendIndex_,
                       TieredIndexParams tieredParams, std::shared_ptr<VecSimAllocator> allocator)
@@ -167,7 +233,6 @@ public:
 };
 
 template <typename DataType, typename DistType>
-template <bool withSet>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
@@ -214,21 +279,14 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
             return main_results;
         }
 
-        return merge_result_lists<withSet>(main_results, flat_results, k);
+        return merge_result_lists(main_results, flat_results, k);
     }
 }
 template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->topKQueryImp<true>(queryBlob, k, queryParams); // Multi-value index
-    } else {
-        // Calling with withSet=false for optimized performance, assuming that shared IDs across
-        // lists also have identical scores — in which case duplicates are implicitly avoided by the
-        // merge logic.
-        return this->topKQueryImp<false>(queryBlob, k, queryParams);
-    }
+    return this->topKQueryImp(queryBlob, k, queryParams);
 }
 
 template <typename DataType, typename DistType>
@@ -236,19 +294,10 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    if (this->backendIndex->isMultiValue()) {
-        return this->rangeQueryImp<true>(queryBlob, radius, queryParams,
-                                         order); // Multi-value index
-    } else {
-        // Calling with withSet=false for optimized performance, assuming that shared IDs across
-        // lists also have identical scores — in which case duplicates are implicitly avoided by the
-        // merge logic.
-        return this->rangeQueryImp<false>(queryBlob, radius, queryParams, order);
-    }
+    return this->rangeQueryImp(queryBlob, radius, queryParams, order);
 }
 
 template <typename DataType, typename DistType>
-template <bool withSet>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
                                                      VecSimQueryParams *queryParams,
@@ -301,7 +350,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
             auto code = main_results->code;
 
             // Merge the sorted results with no limit (all the results are valid).
-            VecSimQueryReply *ret = merge_result_lists<withSet>(main_results, flat_results, -1);
+            VecSimQueryReply *ret = merge_result_lists(main_results, flat_results, -1);
             // Restore the return code and return.
             ret->code = code;
             return ret;
@@ -309,7 +358,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         } else { // BY_ID
             // Notice that we don't modify the return code of the main index in any step.
             concat_results(main_results, flat_results);
-            filter_results_by_id<withSet>(main_results);
+            filter_results_by_id(main_results);
             return main_results;
         }
     }
