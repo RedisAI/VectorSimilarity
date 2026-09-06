@@ -37,41 +37,40 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
     return bf_params;
 }
 
+static inline bool RequiresSQAccumulation(const TieredIndexParams *params) {
+    return params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE &&
+           params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
+}
+
+template <typename DataType, typename DistType>
+static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
+    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
+    if (hnsw_params.quantType == VecSimQuant_NONE) {
+        return true;
+    }
+
+    if constexpr (!QuantInput<DataType> || !std::is_same_v<DistType, float>) {
+        return false;
+    } else {
+        return hnsw_params.quantType == VecSimQuant_SQ8 &&
+               !(std::is_same_v<DataType, float16> && hnsw_params.metric == VecSimMetric_L2 &&
+                 RequiresSQAccumulation(params));
+    }
+}
+
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
+    if (!IsQuantizationSupported<DataType, DistType>(params)) {
+        return nullptr;
+    }
 
     const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-    bool defer_backend = false;
-
-    if (hnsw_params.quantType != VecSimQuant_NONE) {
-        constexpr bool supports_quantization =
-            std::is_same_v<DistType, float> &&
-            (std::is_same_v<DataType, float> || std::is_same_v<DataType, float16>);
-
-        if (!supports_quantization || hnsw_params.quantType != VecSimQuant_SQ8) {
-            return nullptr;
-        }
-
-        const bool with_norm =
-            params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
-        const bool supports_with_norm =
-            !(std::is_same_v<DataType, float16> && hnsw_params.metric == VecSimMetric_L2);
-
-        if (with_norm) {
-            if (!supports_with_norm) {
-                return nullptr;
-            } else {
-                defer_backend = true;
-            }
-        }
-    }
-
-    HNSWIndex<DataType, DistType> *hnsw_index = nullptr;
-    if (!defer_backend) {
-        // Normalization is done by the frontend index.
-        hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
-            HNSWFactory::NewIndex(params->primaryIndexParams, true));
-    }
+    const bool requires_accumulation = RequiresSQAccumulation(params);
+    // Normalization is done by the frontend index.
+    auto *hnsw_index = requires_accumulation
+                           ? nullptr
+                           : static_cast<HNSWIndex<DataType, DistType> *>(
+                                 HNSWFactory::NewIndex(params->primaryIndexParams, true));
 
     BFParams bf_params = NewBFParams(params);
 
@@ -104,11 +103,9 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     size_t est = 0;
 
-    const bool defer_backend =
-        hnsw_params.quantType != VecSimQuant_NONE &&
-        params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
+    const bool requires_accumulation = RequiresSQAccumulation(params);
 
-    if (defer_backend) {
+    if (requires_accumulation) {
         // Set quantParams non-null to indicate HNSW SQ8 with_norm index
         static char dummy;
         hnsw_params.quantParams = &dummy;
@@ -119,7 +116,7 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
-    if (defer_backend) {
+    if (requires_accumulation) {
         // Add size of SQ accumulation buffer
         est += allocations_overhead + hnsw_params.dim * sizeof(double);
     } else {
@@ -294,9 +291,7 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-        if (hnsw_params.quantType != VecSimQuant_NONE &&
-            params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0) {
-
+        if (TieredHNSWFactory::RequiresSQAccumulation(params)) {
             // Set quantParams non-null to indicate HNSW SQ8 with_norm index
             static char dummy;
             hnsw_params.quantParams = &dummy;
