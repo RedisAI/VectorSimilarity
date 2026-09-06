@@ -32,6 +32,22 @@ jobs:
     needs: start-runner # required to start the main job when the runner is ready
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
+      - name: Start resource telemetry
+        run: |
+          cat > /tmp/coverage-monitor.sh <<'MONITOR'
+          #!/bin/bash
+          while true; do
+            {
+              echo "VECSIM_DIAG $(date -u +%FT%TZ)"
+              free -m
+              df -m / /tmp
+              ps -eo comm,rss --sort=-rss | head -8
+              cat /proc/pressure/memory /proc/pressure/io
+            } | sed 's/^/VECSIM_DIAG /' | tee /dev/console
+            sleep 15
+          done
+          MONITOR
+          sudo env -u RUNNER_TRACKING_ID nohup bash /tmp/coverage-monitor.sh > /tmp/coverage-monitor.log 2>&1 &
       - name: Pre checkout deps
         run:  sudo apt-get update && sudo apt-get install -y git
       - name: checkout
@@ -87,6 +103,42 @@ jobs:
         with:
           name: san tests reports on intel
           path: ${{ steps.tests-artifact-path.outputs.path }}
+
+  diagnostics:
+    name: Observe EC2 health
+    needs: start-runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+      - name: Observe instance and console
+        env:
+          INSTANCE_ID: ${{ needs.start-runner.outputs.ec2-instance-id }}
+        run: |
+          aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[].Instances[].{Type:InstanceType,State:State,BlockDevices:BlockDeviceMappings,LaunchTime:LaunchTime}' || true
+          aws ec2 describe-images --image-ids ami-09fabd03bb09b3704 --query 'Images[].{Name:Name,BlockDevices:BlockDeviceMappings}' || true
+          for attempt in $(seq 1 45); do
+            date -u
+            aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --include-all-instances || true
+            aws ec2 get-console-output --instance-id "$INSTANCE_ID" --latest --output json > /tmp/console.json || true
+            python3 - <<'FILTER'
+          import json
+          try:
+              output = json.load(open('/tmp/console.json')).get('Output', '') or ''
+              for line in output.splitlines():
+                  if any(word in line.lower() for word in ['vecsim_diag', 'out of memory', 'oom-kill', 'killed process', 'no space left', 'i/o error', 'kernel panic']):
+                      print(line)
+          except (ValueError, OSError):
+              pass
+          FILTER
+            state=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].State.Name' --output text) || true
+            if [ "$state" = terminated ] || [ "$state" = shutting-down ]; then break; fi
+            sleep 60
+          done
 
   stop-runner:
     name: Stop self-hosted EC2 runner
