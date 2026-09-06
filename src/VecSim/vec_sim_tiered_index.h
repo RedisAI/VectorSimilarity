@@ -18,6 +18,11 @@
 
 #include <shared_mutex>
 
+#if HAVE_SVS
+// For the compressed-backend check in getDataByLabel.
+#include "VecSim/algorithms/svs/svs.h"
+#endif
+
 #define TIERED_LOG this->backendIndex->log
 
 /**
@@ -134,6 +139,13 @@ public:
      * ingest mutating under `indexDataGuard`. Same division as
      * `computeUnifiedIndexLabelsSetUnsafe`, which holds the outer locks and lets `getLabelsSet`
      * take the inner one.
+     *
+     * A compressed SVS backend cannot report its stored vectors as values -- unlike HNSW, whose
+     * tiered backend can never be quantized, SVS's routinely is. Appending nothing from it does
+     * not mean it doesn't hold the label, so for a multi-value label that already got a buffer
+     * contribution, that subset would look like the complete answer when the backend may hold
+     * the rest and simply can't say so. Membership (`isLabelExists`) is metadata, not the value
+     * read compression rules out, so it is checked before trusting the buffer alone.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
 #ifdef BUILD_TESTS
@@ -149,6 +161,18 @@ public:
         // decision does not depend on an assertion that only exists in test builds.
         if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+#if HAVE_SVS
+            if (const auto *svs_backend = dynamic_cast<const SVSIndexBase *>(this->backendIndex)) {
+                if (svs_backend->isCompressed() && vectors_output.size() > before_flat &&
+                    svs_backend->isLabelExists(label)) {
+                    // The buffer's contribution alone would look like the whole answer; report
+                    // nothing instead, the same rule `SVSIndex::getDataByLabel` applies to a
+                    // single tier.
+                    vectors_output.resize(before_flat);
+                    return;
+                }
+            }
+#endif
             this->backendIndex->getDataByLabel(label, vectors_output);
         }
     }

@@ -180,6 +180,17 @@ using SVSBasicDataTypeSet =
 
 TYPED_TEST_SUITE(SVSTieredIndexTestBasic, SVSBasicDataTypeSet);
 
+// A multi-value, compressed combination isn't in SVSDataTypeSet (compression there is only
+// paired with single-value), but it is exactly the combination that can leave a label split
+// across a non-empty flat buffer and a backend that cannot report its values.
+template <typename index_type_t>
+class SVSTieredIndexTestCompressedMulti : public SVSTieredIndexTest<index_type_t> {};
+
+using SVSCompressedMultiDataTypeSet =
+    ::testing::Types<SVSIndexType<VecSimType_FLOAT32, float, VecSimSvsQuant_8, true>>;
+
+TYPED_TEST_SUITE(SVSTieredIndexTestCompressedMulti, SVSCompressedMultiDataTypeSet);
+
 TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     // Set thread_pool_size to 4 or actual number of available CPUs
     const auto num_threads = std::min(4U, getAvailableCPUs());
@@ -542,6 +553,45 @@ TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelReadsSvsBackendWhenUncompresse
     tiered_index->getDataByLabel(0, stored);
     ASSERT_EQ(stored.size(), 1);
     EXPECT_EQ(stored[0], std::vector<TEST_DATA_T>(vector, vector + dim));
+}
+
+// A compressed SVS backend appends nothing to `getDataByLabel` regardless of whether it holds
+// part of the label, so a multi-value label split across a non-empty flat buffer and such a
+// backend must not be reported as the buffer's subset alone -- that subset would look like the
+// complete answer when the backend may hold the rest and simply can't say so. The whole label
+// must report nothing instead, the same rule `SVSIndex::getDataByLabel` already applies within
+// a single (compressed) tier.
+TYPED_TEST(SVSTieredIndexTestCompressedMulti, getDataByLabelReportsNothingForCompressedSplitLabel) {
+    const size_t dim = 4;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+
+    // Force the tiered index to submit the update job on every insert.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    // The label's first vector gets ingested into the compressed SVS backend...
+    TEST_DATA_T vector1[dim];
+    GenerateVector<TEST_DATA_T>(vector1, dim, 0);
+    VecSimIndex_AddVector(tiered_index, vector1, 0);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1)
+        << "premise: the first vector reached the compressed SVS backend";
+
+    // ...and, because the update job only fires on the next insert, the label's second vector is
+    // still sitting in the flat buffer: the label is now split across both tiers.
+    TEST_DATA_T vector2[dim];
+    GenerateVector<TEST_DATA_T>(vector2, dim, 1);
+    VecSimIndex_AddVector(tiered_index, vector2, 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1)
+        << "premise: the second vector is still in the flat buffer";
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty())
+        << "the buffer's one vector must not be reported as if it were the whole label";
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
