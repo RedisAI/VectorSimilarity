@@ -451,13 +451,15 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
     this->mainIndexGuard.lock_shared();
 
     VecSimIndexDebugInfo frontendInfo = this->frontendIndex->debugInfo();
-    VecSimIndexDebugInfo backendInfo{};
-    if (this->backendIndex) {
-        backendInfo = this->backendIndex->debugInfo();
-    } else {
-        backendInfo.commonInfo.basicInfo = this->basicInfo();
-        backendInfo.commonInfo.lastMode = frontendInfo.commonInfo.lastMode;
-    }
+    const VecSimIndexDebugInfo backendInfo = [this, &frontendInfo] {
+        if (this->backendIndex) {
+            return this->backendIndex->debugInfo();
+        }
+        VecSimIndexDebugInfo fallback{};
+        fallback.commonInfo.basicInfo = this->basicInfo();
+        fallback.commonInfo.lastMode = frontendInfo.commonInfo.lastMode;
+        return fallback;
+    }();
 
     info.commonInfo.indexLabelCount = this->computeUnifiedIndexLabelsSetUnsafe().size();
 
