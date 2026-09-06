@@ -12,24 +12,10 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
-      - name: Inspect coverage instances
+      - name: Inspect disconnected coverage instances
         run: |
-          aws ec2 describe-images --image-ids ami-09fabd03bb09b3704 --query 'Images[].{Name:Name,BlockDevices:BlockDeviceMappings}' || true
-          aws ec2 describe-instances --filters Name=image-id,Values=ami-09fabd03bb09b3704 Name=instance-state-name,Values=running,pending,stopped,stopping --query 'Reservations[].Instances[].{Id:InstanceId,Type:InstanceType,State:State,Launch:LaunchTime,Reason:StateTransitionReason}' || true
-          ids=$(aws ec2 describe-instances --filters Name=image-id,Values=ami-09fabd03bb09b3704 Name=instance-state-name,Values=running,pending --query 'Reservations[].Instances[].InstanceId' --output text) || true
+          ids=$(aws ec2 describe-instances --filters Name=image-id,Values=ami-09fabd03bb09b3704 --query "Reservations[].Instances[?LaunchTime>='2026-09-06T11:00:00Z'].InstanceId" --output text)
           for id in $ids; do
-            echo "Inspecting $id"
-            aws ec2 describe-instance-status --instance-ids "$id" --include-all-instances || true
-            aws ec2 get-console-output --instance-id "$id" --latest --output json > /tmp/console.json || true
-            python3 - <<'PY'
-          import json,base64
-          try:
-              output=json.load(open('/tmp/console.json')).get('Output','') or ''
-              if '\n' not in output:
-                  try: output=base64.b64decode(output).decode()
-                  except Exception: pass
-              for line in output.splitlines():
-                  if any(w in line.lower() for w in ['vecsim_diag','out of memory','oom-kill','killed process','no space left','i/o error','kernel panic']): print(line)
-          except (ValueError,OSError): pass
-          PY
+            aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].{Id:InstanceId,State:State,Launch:LaunchTime,Reason:StateTransitionReason,StateReason:StateReason}'
+            aws ec2 describe-instance-status --instance-ids "$id" --include-all-instances
           done
