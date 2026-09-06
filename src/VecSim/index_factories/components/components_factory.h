@@ -44,7 +44,7 @@ template <typename DataType, VecSimMetric Metric>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                          const float *mean_ptr) {
-    const bool with_norm = mean_ptr != nullptr;
+    const bool with_mean = mean_ptr != nullptr;
     unsigned char storage_alignment = 0, asym_storage_alignment = 0;
 
     // Graph construction compares two stored SQ8 blobs; search compares a stored blob with a
@@ -58,7 +58,7 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
     PreprocessorInterface *pp = nullptr;
     IndexCalculatorInterface<float> *calc = nullptr;
 
-    if (with_norm) {
+    if (with_mean) {
         vecsim_stl::vector<float> mean_vec(allocator);
         mean_vec.assign(mean_ptr, mean_ptr + dim);
 
