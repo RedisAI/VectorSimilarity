@@ -1,53 +1,35 @@
-name: temporary testing
-
-# This file is useful for triggering actions when you implement them.
-# When the `branches-ignore` line is commented out, this workflow will run on every push.
-# It is better to use this file for testing your new flows than creating a new one, to avoid cluttering the repo
-# action tab with unused workflows.
-# Don't worry about conflicts with other PRs - there is no "right" content of this file.
-# Make sure the `branches-ignore` line is not commented out when you merge your PR.
-
+name: Inspect coverage EC2 infrastructure
 on:
   push:
-    branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
+    branches: [debug/coverage-aws-observer]
+  workflow_dispatch:
 jobs:
-  # jammy:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: ubuntu:jammy
-  #     run-valgrind: true
-  alpine3:
-    uses: ./.github/workflows/alpine3.yml
-  # focal:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: ubuntu:focal
-  #     run-valgrind: false
-  # bionic:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: ubuntu:focal
-  #     run-valgrind: false
-  # bullseye:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: debian:bullseye
-  #     run-valgrind: false
-  # rocky8:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: rockylinux:8
-  #     run-valgrind: false
-  # rocky9:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: rockylinux:9
-  #     run-valgrind: false
-  # alpine3:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: alpine:3
-  #     pre-checkout-script: apk add bash
-  #     run-valgrind: false
-  # macos:
-  #   uses: ./.github/workflows/macos.yml
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+      - name: Inspect coverage instances
+        run: |
+          aws ec2 describe-images --image-ids ami-09fabd03bb09b3704 --query 'Images[].{Name:Name,BlockDevices:BlockDeviceMappings}' || true
+          aws ec2 describe-instances --filters Name=image-id,Values=ami-09fabd03bb09b3704 Name=instance-state-name,Values=running,pending,stopped,stopping --query 'Reservations[].Instances[].{Id:InstanceId,Type:InstanceType,State:State,Launch:LaunchTime,Reason:StateTransitionReason}' || true
+          ids=$(aws ec2 describe-instances --filters Name=image-id,Values=ami-09fabd03bb09b3704 Name=instance-state-name,Values=running,pending --query 'Reservations[].Instances[].InstanceId' --output text) || true
+          for id in $ids; do
+            echo "Inspecting $id"
+            aws ec2 describe-instance-status --instance-ids "$id" --include-all-instances || true
+            aws ec2 get-console-output --instance-id "$id" --latest --output json > /tmp/console.json || true
+            python3 - <<'PY'
+          import json,base64
+          try:
+              output=json.load(open('/tmp/console.json')).get('Output','') or ''
+              if '\n' not in output:
+                  try: output=base64.b64decode(output).decode()
+                  except Exception: pass
+              for line in output.splitlines():
+                  if any(w in line.lower() for w in ['vecsim_diag','out of memory','oom-kill','killed process','no space left','i/o error','kernel panic']): print(line)
+          except (ValueError,OSError): pass
+          PY
+          done
