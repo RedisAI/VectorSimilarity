@@ -16,11 +16,26 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+      - name: Prepare EC2 owner tag
+        id: ec2-tags
+        shell: bash
+        run: |
+          OWNER=$(printf '%s' "$GITHUB_ACTOR" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9_]+/_/g; s/_+/_/g' | cut -c1-63 | sed -E 's/^_+|_+$//g')
+          if [ -z "$OWNER" ]; then
+            echo "Cannot derive an EC2 owner tag from GITHUB_ACTOR" >&2
+            exit 1
+          fi
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2.6.1
         with:
           mode: start
+          aws-resource-tags: >-
+            [
+              {"Key": "team", "Value": "ai_and_search"},
+              {"Key": "owner", "Value": "${{ steps.ec2-tags.outputs.owner }}"}
+            ]
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 region AMI for ARM
           ec2-image-id: ami-062b37d89f25c958f
