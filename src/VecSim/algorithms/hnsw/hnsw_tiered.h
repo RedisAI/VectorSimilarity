@@ -947,6 +947,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
+    HNSWInsertJob *insert_job = nullptr;
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
         auto *old_job = this->labelToInsertJobs.at(label).at(0);
         ret = 0;
@@ -960,14 +961,12 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // it as-is (label and flat id are unchanged by an overwrite) and only fix the running
             // sum. Parking it in invalidJobs would leak it: nothing collects unsubmitted jobs.
             this->subtractFromSum(this->frontendIndex->getDataByInternalId(new_flat_id));
-            this->frontendIndex->addVector(blob, label);
-            this->addToSum(this->frontendIndex->getDataByInternalId(new_flat_id));
-            this->flatIndexGuard.unlock();
-            return ret;
+            insert_job = old_job;
+        } else {
+            // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
+            old_job->id = this->setAndSaveInvalidJob(old_job);
+            this->labelToInsertJobs.erase(label);
         }
-        // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
-        old_job->id = this->setAndSaveInvalidJob(old_job);
-        this->labelToInsertJobs.erase(label);
         // If we are adding a new element (rather than updating an exiting one) we may need to
         // increase index capacity.
     }
@@ -977,18 +976,20 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         this->addToSum(this->frontendIndex->getDataByInternalId(new_flat_id));
     }
 
-    AsyncJob *new_insert_job = new (this->allocator)
-        HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
-    // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
-    if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
-        // There's already a pending insert job for this label, add another one (without overwrite,
-        // only possible in multi index)
-        assert(this->frontendIndex->isMultiValue());
-        this->labelToInsertJobs.at(label).push_back((HNSWInsertJob *)new_insert_job);
-    } else {
-        vecsim_stl::vector<HNSWInsertJob *> new_jobs_vec(1, (HNSWInsertJob *)new_insert_job,
-                                                         this->allocator);
-        this->labelToInsertJobs.insert({label, new_jobs_vec});
+    if (!insert_job) {
+        insert_job = new (this->allocator)
+            HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
+        // Save a pointer to the job, so that if the vector is overwritten, we'll have an
+        // indication.
+        if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
+            // There's already a pending insert job for this label, add another one (without
+            // overwrite, only possible in multi index)
+            assert(this->frontendIndex->isMultiValue());
+            this->labelToInsertJobs.at(label).push_back(insert_job);
+        } else {
+            vecsim_stl::vector<HNSWInsertJob *> new_jobs_vec(1, insert_job, this->allocator);
+            this->labelToInsertJobs.insert({label, new_jobs_vec});
+        }
     }
     this->flatIndexGuard.unlock();
 
@@ -1011,7 +1012,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
     if (hnsw_index) {
         // Insert job to the queue and signal the workers' updater.
-        this->submitSingleJob(new_insert_job);
+        this->submitSingleJob(insert_job);
     } else if (this->frontendIndex->indexSize() >=
                this->sqAccumulationState->normalizationSetSize) {
         // If we are in the accumulation phase and we just reached the quantization set size, we

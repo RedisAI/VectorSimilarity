@@ -71,6 +71,9 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
                            ? nullptr
                            : static_cast<HNSWIndex<DataType, DistType> *>(
                                  HNSWFactory::NewIndex(params->primaryIndexParams, true));
+    if (!requires_accumulation && !hnsw_index) {
+        return nullptr;
+    }
 
     BFParams bf_params = NewBFParams(params);
 

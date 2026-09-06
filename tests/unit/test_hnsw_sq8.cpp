@@ -1131,6 +1131,31 @@ TEST(SQ8TieredHNSWTest, RejectsOutOfRangeMetric) {
     EXPECT_EQ(EstimateInitialSize(tiered_params), SIZE_MAX);
 }
 
+TEST(SQ8TieredHNSWTest, RejectsBackendCreationFailureWithoutAccumulation) {
+    constexpr size_t dim = 4;
+    const float mean[dim] = {1.0f, 1.0f, 1.0f, 1.0f};
+    for (bool multi : {false, true}) {
+        // The tiered accumulation check accepts N == 0, but the backend rejects a supplied mean
+        // for FLOAT16 L2. Index creation must report that failure to the caller.
+        HNSWParams hnsw_params = {.type = VecSimType_FLOAT16,
+                                  .dim = dim,
+                                  .metric = VecSimMetric_L2,
+                                  .multi = multi,
+                                  .quantType = VecSimQuant_SQ8,
+                                  .quantParams = mean};
+        VecSimParams primary_params = CreateParams(hnsw_params);
+        TieredIndexParams tiered_params = {
+            .primaryIndexParams = &primary_params,
+            .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = 0}}};
+        VecSimParams params = CreateParams(tiered_params);
+        auto *index = VecSimIndex_New(&params);
+        EXPECT_EQ(index, nullptr) << "multi = " << multi;
+        if (index) {
+            VecSimIndex_Free(index);
+        }
+    }
+}
+
 // Mean-centering a FLOAT16 L2 query can lose precision or overflow when it is narrowed back to
 // FLOAT16. Inner-product queries are not centered and remain supported.
 TEST(SQ8TieredHNSWTest, RejectsMeanCenteredFP16L2) {

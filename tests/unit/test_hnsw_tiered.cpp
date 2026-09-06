@@ -5518,6 +5518,58 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreationFailureRetainsVectorsAndRetrie
     EXPECT_TRUE(this->getInvalidJobs(tiered_index).empty());
 }
 
+TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteRetriesFailedBackendCreation) {
+    constexpr size_t dim = 4;
+    constexpr size_t normSetSize = 2;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+    ASSERT_NE(tiered_index, nullptr);
+
+    auto &backend_params = this->getSQBackendParams(tiered_index);
+    const VecSimType original_type = backend_params.type;
+    backend_params.type = VecSimType_FLOAT64;
+
+    TEST_DATA_T vec[dim];
+    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(1.0f));
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 0), 1);
+    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(3.0f));
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 1), 1);
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
+    ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+    auto *pending_job = this->getLabelToInsertJobs(tiered_index).at(0).at(0);
+
+    backend_params.type = original_type;
+    bool mean_checked = false;
+    tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
+        const auto *mean = static_cast<const float *>(backend_params.quantParams);
+        ASSERT_NE(mean, nullptr);
+        // Overwrite replaces the first vector: (5 + 3) / 2 = 4 in every dimension.
+        for (size_t d = 0; d < dim; ++d) {
+            EXPECT_FLOAT_EQ(mean[d], 4.0f);
+        }
+        mean_checked = true;
+    });
+    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(5.0f));
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 0), 0);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    EXPECT_TRUE(mean_checked);
+    EXPECT_FALSE(this->hasSQAccumulationState(tiered_index));
+    EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize);
+    EXPECT_EQ(this->getLabelToInsertJobs(tiered_index).at(0).at(0), pending_job);
+    EXPECT_EQ(this->getLabelToInsertJobs(tiered_index).at(0).size(), 1);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), normSetSize);
+    EXPECT_TRUE(this->getInvalidJobs(tiered_index).empty());
+
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    EXPECT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize);
+    EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    EXPECT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
+}
+
 TYPED_TEST(HNSWTieredIndexTestSQ8, MeanComputedCorrectly) {
     // Verify the mean vector computed during initializeQuantizedBackend.
     size_t dim = 4;
