@@ -833,36 +833,35 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
-    if constexpr (!std::is_same_v<DistType, float> ||
-                  !(std::is_same_v<DataType, float> ||
-                    std::is_same_v<DataType, vecsim_types::float16>)) {
-        return;
-    } else {
-        auto &accumulationState = *this->sqAccumulationState;
-        auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
-        vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
-        for (size_t i = 0; i < hnswParams.dim; i++) {
-            mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
-                                         static_cast<double>(this->quantNormalizationSetSize));
-        }
+    assert((QuantInput<DataType> && std::is_same_v<DistType, float>));
+    assert(this->sqAccumulationState);
+    assert(this->quantNormalizationSetSize > 0);
+    assert(this->frontendIndex->indexSize() == this->quantNormalizationSetSize);
 
-        hnswParams.quantParams = mean.data();
-        auto *new_backend = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
-            HNSWFactory::NewIndex(&accumulationState.backendIndexParams, true));
+    auto &accumulationState = *this->sqAccumulationState;
+    auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
+    vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
+    for (size_t i = 0; i < hnswParams.dim; i++) {
+        mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
+                                     static_cast<double>(this->quantNormalizationSetSize));
+    }
+
+    hnswParams.quantParams = mean.data();
+    auto *new_backend = static_cast<HNSWIndex<DataType, DistType> *>(
+        HNSWFactory::NewIndex(&accumulationState.backendIndexParams, true));
 
 #ifdef BUILD_TESTS
-        if (beforeQuantizedBackendReplacement) {
-            beforeQuantizedBackendReplacement();
-        }
+    if (beforeQuantizedBackendReplacement) {
+        beforeQuantizedBackendReplacement();
+    }
 #endif
 
-        {
-            auto main_index_lock = this->acquireMainIndexGuard();
-            this->backendIndex = new_backend;
-            this->backendPublished.store(true, std::memory_order_release);
-        }
-        this->sqAccumulationState.reset();
+    {
+        auto main_index_lock = this->acquireMainIndexGuard();
+        this->backendIndex = new_backend;
+        this->backendPublished.store(true, std::memory_order_release);
     }
+    this->sqAccumulationState.reset();
 }
 
 template <typename DataType, typename DistType>
@@ -1003,7 +1002,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
         // Submit all pending insert jobs to the job queue.
         vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
-        jobs.reserve(this->labelToInsertJobs.size());
+        jobs.reserve(this->frontendIndex->indexSize());
         for (auto &entry : this->labelToInsertJobs) {
             for (auto *job : entry.second) {
                 jobs.push_back(job);
