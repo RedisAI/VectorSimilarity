@@ -746,9 +746,9 @@ public:
     }
 
 private:
-    // appends the raw stored elements for `label` to `vectors_output`, one entry per stored vector -- zero if
-    // the label isn't held. Only meaningful when the caller has already excluded compressed
-    // storage; nothing here dequantizes.
+    // appends the raw stored elements for `label` to `vectors_output`, one entry per stored vector
+    // -- zero if the label isn't held. Only meaningful when the caller has already excluded
+    // compressed storage; nothing here dequantizes.
     template <typename OutputElement>
     void appendStoredDataByLabel(labelType label,
                                  std::vector<std::vector<OutputElement>> &vectors_output) const {
@@ -756,8 +756,7 @@ private:
             return;
         }
         auto append_datum = [&](auto indexed_span) {
-            std::vector<OutputElement> vec_data(this->getStoredDataSize() /
-                                                sizeof(OutputElement));
+            std::vector<OutputElement> vec_data(this->getStoredDataSize() / sizeof(OutputElement));
             const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
             std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
             vectors_output.push_back(std::move(vec_data));
