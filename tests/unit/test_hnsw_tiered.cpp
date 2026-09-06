@@ -5086,6 +5086,8 @@ protected:
         return idx->labelToInsertJobs;
     }
 
+    auto &getInvalidJobs(TieredHNSWIndex<data_t, dist_t> *idx) { return idx->invalidJobs; }
+
     void callExecuteReadySwapJobs(TieredHNSWIndex<data_t, dist_t> *idx) {
         idx->executeReadySwapJobs();
     }
@@ -5314,6 +5316,12 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteVectorDuringAccumulation) {
     // Verify index size.
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
     ASSERT_EQ(tiered_index->indexSize(), 1);
+
+    // The deleted label's pending insert job was never submitted to a worker, so it should have
+    // been freed directly instead of leaking into invalidJobs.
+    ASSERT_EQ(this->getInvalidJobs(tiered_index).size(), 0);
+    auto &label_to_insert_jobs = this->getLabelToInsertJobs(tiered_index);
+    ASSERT_EQ(label_to_insert_jobs.find(1), label_to_insert_jobs.end());
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteDuringAccumulation) {
@@ -5344,6 +5352,35 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteDuringAccumulation) {
         ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected, 1e-3f);
     }
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+
+    // Overwrite the same label many more times. Each overwrite during the accumulation phase
+    // should reuse the pending insert job in place, rather than leaking it into invalidJobs
+    // (nothing collects unsubmitted jobs from there), so the allocation size should stabilize
+    // after the first extra overwrite.
+    TEST_DATA_T last_vec[dim];
+    size_t allocation_size_after_first_extra_overwrite = 0;
+    for (size_t i = 0; i < 32; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(4 + i));
+        VecSimIndex_AddVector(tiered_index, vec, 1);
+        memcpy(last_vec, vec, sizeof(vec));
+        if (i == 0) {
+            allocation_size_after_first_extra_overwrite = tiered_index->getAllocationSize();
+        }
+    }
+    ASSERT_EQ(tiered_index->getAllocationSize(), allocation_size_after_first_extra_overwrite);
+
+    // No jobs should have leaked into invalidJobs, and only a single pending job (and vector)
+    // should remain for the label.
+    ASSERT_EQ(this->getInvalidJobs(tiered_index).size(), 0);
+    ASSERT_EQ(this->getLabelToInsertJobs(tiered_index).size(), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+
+    // Running sum should equal the last written vector (the only live vector under the label).
+    for (size_t d = 0; d < dim; d++) {
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], this->ToFloat(last_vec[d]), 1e-3f);
+    }
 }
 
 // -------------------------------------------------------------------
@@ -5358,17 +5395,45 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
     auto *tiered_index =
         this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
 
-    // Add vectors up to threshold - 1.
-    for (size_t i = 0; i < normSetSize - 1; i++) {
+    // Leave room for a temporary vector without reaching the threshold.
+    for (size_t i = 0; i < normSetSize - 2; i++) {
         TEST_DATA_T vec[dim];
         this->GenerateVectorData(vec, dim, static_cast<float>(i));
         VecSimIndex_AddVector(tiered_index, vec, i);
     }
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize - 2);
+
+    // Exercise an overwrite and an add+delete of a fresh label while still in the accumulation
+    // phase, before filling to the threshold, to make sure neither leaks a pending
+    // insert job into invalidJobs (nothing collects unsubmitted jobs from there).
+    if (!this->getFrontendIndex(tiered_index)->isMultiValue()) {
+        // Overwrite an existing label (added at i == 0 above). Overwrite semantics differ for
+        // multi-value indexes, so this part is single-only.
+        TEST_DATA_T overwrite_vec[dim];
+        this->GenerateVectorData(overwrite_vec, dim, static_cast<float>(normSetSize));
+        VecSimIndex_AddVector(tiered_index, overwrite_vec, 0);
+    }
+    TEST_DATA_T fresh_vec[dim];
+    labelType fresh_label = normSetSize + 1;
+    this->GenerateVectorData(fresh_vec, dim, static_cast<float>(fresh_label));
+    VecSimIndex_AddVector(tiered_index, fresh_vec, fresh_label);
+    VecSimIndex_DeleteVector(tiered_index, fresh_label);
+
+    // The overwrite doesn't change the flat buffer size, and the add+delete cancels out, so the
+    // flat buffer should be back to normSetSize - 2. Nothing should have leaked into invalidJobs.
+    ASSERT_EQ(this->getInvalidJobs(tiered_index).size(), 0);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize - 2);
+
+    // Fill to threshold - 1 and verify that jobs are still waiting for the backend.
+    TEST_DATA_T vec[dim];
+    this->GenerateVectorData(vec, dim, static_cast<float>(normSetSize - 2));
+    VecSimIndex_AddVector(tiered_index, vec, normSetSize - 2);
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize - 1);
+    ASSERT_TRUE(mock_thread_pool.jobQ.empty());
 
     // Add the threshold-triggering vector.
-    TEST_DATA_T vec[dim];
     this->GenerateVectorData(vec, dim, static_cast<float>(normSetSize - 1));
     VecSimIndex_AddVector(tiered_index, vec, normSetSize - 1);
 
@@ -5382,6 +5447,9 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize);
     // All vectors should have associated insert jobs.
     ASSERT_EQ(this->getLabelToInsertJobs(tiered_index).size(), normSetSize);
+    // Still nothing leaked into invalidJobs, and all pending jobs were submitted to the queue.
+    ASSERT_EQ(this->getInvalidJobs(tiered_index).size(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), normSetSize);
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, MeanComputedCorrectly) {
@@ -5709,6 +5777,12 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Multi, DeleteMultiLabelDuringAccumulation) {
         float expected = sum_before[d] - this->ToFloat(vec1[d]) - this->ToFloat(vec2[d]);
         ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected, 1e-2f);
     }
+
+    // Both pending insert jobs for the deleted label were never submitted to a worker, so they
+    // should have been freed directly instead of leaking into invalidJobs.
+    ASSERT_EQ(this->getInvalidJobs(tiered_index).size(), 0);
+    auto &label_to_insert_jobs = this->getLabelToInsertJobs(tiered_index);
+    ASSERT_EQ(label_to_insert_jobs.find(10), label_to_insert_jobs.end());
 }
 
 // -------------------------------------------------------------------

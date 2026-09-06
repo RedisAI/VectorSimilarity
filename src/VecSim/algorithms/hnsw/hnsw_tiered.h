@@ -201,7 +201,7 @@ public:
     class TieredHNSW_BatchIterator : public VecSimBatchIterator {
     private:
         const TieredHNSWIndex<DataType, DistType> *index;
-        std::optional<std::shared_lock<std::shared_mutex>> backend_index_lock;
+        std::shared_lock<std::shared_mutex> backend_index_lock;
         VecSimQueryParams *queryParams;
 
         VecSimQueryResultContainer flat_results;
@@ -269,7 +269,7 @@ public:
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
-        return this->isBackendPublished()
+        return this->hasBackend()
                    ? static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend())
                          .getNumMarkedDeleted()
                    : 0;
@@ -290,14 +290,14 @@ public:
             TieredHNSW_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
-        if (this->isBackendPublished()) {
+        if (this->hasBackend()) {
             this->publishedBackend().setLastSearchMode(mode);
         } else {
             this->frontendIndex->setLastSearchMode(mode);
         }
     }
     void runGC() override {
-        if (!this->isBackendPublished()) {
+        if (!this->hasBackend()) {
             return;
         }
         // Run no more than pendingSwapJobsThreshold value jobs.
@@ -331,7 +331,7 @@ public:
 #ifdef BUILD_TESTS
     size_t indexMetaDataCapacity() const override {
         size_t capacity = this->frontendIndex->indexMetaDataCapacity();
-        if (this->isBackendPublished()) {
+        if (this->hasBackend()) {
             capacity += this->publishedBackend().indexMetaDataCapacity();
         }
         return capacity;
@@ -868,7 +868,7 @@ template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
     size_t res = this->frontendIndex->indexSize();
-    if (this->isBackendPublished()) {
+    if (this->hasBackend()) {
         auto &hnsw_index = static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend());
         auto index_data_lock = hnsw_index.acquireSharedIndexDataGuard();
         res += hnsw_index.indexSize();
@@ -878,7 +878,7 @@ size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
-    return (this->isBackendPublished() ? this->publishedBackend().indexCapacity() : 0) +
+    return (this->hasBackend() ? this->publishedBackend().indexCapacity() : 0) +
            this->frontendIndex->indexCapacity();
 }
 
@@ -937,20 +937,26 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
-        // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
         auto *old_job = this->labelToInsertJobs.at(label).at(0);
-        if (!hnsw_index) {
-            const DataType *vector_data = this->frontendIndex->getDataByInternalId(old_job->id);
-            this->subtractFromSum(vector_data);
-        }
-        old_job->id = this->setAndSaveInvalidJob(old_job);
-        this->labelToInsertJobs.erase(label);
         ret = 0;
         // We are going to update the internal id that currently holds the vector associated with
         // the given label.
         new_flat_id =
             dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
                 ->getIdOfLabel(label);
+        if (!hnsw_index) {
+            // Accumulation phase: the job was never submitted, so no worker can hold it. Reuse
+            // it as-is (label and flat id are unchanged by an overwrite) and only fix the running
+            // sum. Parking it in invalidJobs would leak it: nothing collects unsubmitted jobs.
+            this->subtractFromSum(this->frontendIndex->getDataByInternalId(new_flat_id));
+            this->frontendIndex->addVector(blob, label);
+            this->addToSum(this->frontendIndex->getDataByInternalId(new_flat_id));
+            this->flatIndexGuard.unlock();
+            return ret;
+        }
+        // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
+        old_job->id = this->setAndSaveInvalidJob(old_job);
+        this->labelToInsertJobs.erase(label);
         // If we are adding a new element (rather than updating an exiting one) we may need to
         // increase index capacity.
     }
@@ -1026,10 +1032,14 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             auto &insert_jobs = this->labelToInsertJobs.at(label);
             for (auto *job : insert_jobs) {
                 if (!this->backendIndex) {
-                    const DataType *vector_data = this->frontendIndex->getDataByInternalId(job->id);
-                    this->subtractFromSum(vector_data);
+                    // Accumulation phase: the job was never submitted, so no worker can hold it.
+                    // Free it now instead of parking it in invalidJobs, where nothing would ever
+                    // collect it.
+                    this->subtractFromSum(this->frontendIndex->getDataByInternalId(job->id));
+                    delete job;
+                } else {
+                    job->id = this->setAndSaveInvalidJob(job);
                 }
-                job->id = this->setAndSaveInvalidJob(job);
             }
             num_deleted_vectors += insert_jobs.size();
             // Remove the pending insert job(s) from the labelToInsertJobs mapping.
@@ -1241,9 +1251,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
     // retrieves the blob from flat_iterator
     : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
-      index(index), flat_results(this->allocator), hnsw_results(this->allocator),
-      flat_iterator(UNINITIALIZED), hnsw_iterator(UNINITIALIZED),
-      returned_results_set(this->allocator) {
+      index(index), backend_index_lock(index->mainIndexGuard, std::defer_lock),
+      flat_results(this->allocator), hnsw_results(this->allocator), flat_iterator(UNINITIALIZED),
+      hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator) {
     {
         std::shared_lock<std::shared_mutex> flat_index_lock(this->index->flatIndexGuard);
         this->flat_iterator =
@@ -1296,10 +1306,10 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         VecSimQueryReply_Free(cur_flat_results);
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
-        this->backend_index_lock.emplace(this->index->mainIndexGuard);
+        this->backend_index_lock.lock();
         if (!this->index->backendIndex) {
             this->hnsw_iterator = DEPLETED;
-            this->backend_index_lock.reset();
+            this->backend_index_lock.unlock();
         } else {
             this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
                 this->flat_iterator->getQueryBlob(), queryParams);
@@ -1310,7 +1320,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             if (this->hnsw_iterator->isDepleted()) {
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
-                this->backend_index_lock.reset();
+                this->backend_index_lock.unlock();
             }
         }
     } else {
@@ -1350,7 +1360,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             if (this->hnsw_iterator->isDepleted()) {
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
-                this->backend_index_lock.reset();
+                this->backend_index_lock.unlock();
             }
         }
     }
@@ -1390,7 +1400,7 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
-        this->backend_index_lock.reset();
+        this->backend_index_lock.unlock();
     }
     this->resetResultsCount();
     this->flat_iterator->reset();

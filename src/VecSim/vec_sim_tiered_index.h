@@ -56,12 +56,12 @@ protected:
     // observes true with an acquire load may therefore safely read the plain pointer.
     std::atomic<bool> backendPublished;
 
-    bool isBackendPublished() const { return backendPublished.load(std::memory_order_acquire); }
+    bool hasBackend() const { return backendPublished.load(std::memory_order_acquire); }
 
-    // Callers must first observe isBackendPublished(). Returning a reference encodes the resulting
+    // Callers must first observe hasBackend() == true. Returning a reference encodes the resulting
     // non-null invariant at the call site without exposing atomic state through the index API.
     VecSimIndexAbstract<DataType, DistType> &publishedBackend() const {
-        assert(isBackendPublished());
+        assert(hasBackend());
         return *backendIndex;
     }
 
@@ -178,7 +178,7 @@ public:
         // tiers; if this load still sees false, migration cannot remove a flat vector until this
         // method returns.
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        const bool backend_published = this->isBackendPublished();
+        const bool backend_published = this->hasBackend();
 #if HAVE_SVS
         // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
         // means deleting this block and the guarded include of svs.h.
@@ -235,7 +235,7 @@ public:
 
     virtual inline uint64_t getAllocationSize() const override {
         return this->allocator->getAllocationSize() + this->frontendIndex->getAllocationSize() +
-               (this->isBackendPublished() ? this->publishedBackend().getAllocationSize() : 0);
+               (this->hasBackend() ? this->publishedBackend().getAllocationSize() : 0);
     }
     virtual size_t getNumMarkedDeleted() const = 0;
     size_t indexLabelCount() const override;
@@ -245,7 +245,7 @@ public:
 
     bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
         // For now, decide according to the bigger index.
-        if (this->isBackendPublished() &&
+        if (this->hasBackend() &&
             this->publishedBackend().indexSize() > this->frontendIndex->indexSize()) {
             return this->publishedBackend().preferAdHocSearch(subsetSize, k, initial_check);
         }
@@ -260,7 +260,7 @@ public:
     inline size_t getFlatBufferLimit() { return this->flatBufferLimit; }
 
     virtual void fitMemory() override {
-        if (this->isBackendPublished()) {
+        if (this->hasBackend()) {
             this->publishedBackend().fitMemory();
         }
         this->frontendIndex->fitMemory();
@@ -275,7 +275,7 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
     this->flatIndexGuard.lock_shared();
 
     // If the backend has not been published yet, every vector is still in the flat buffer.
-    if (!this->isBackendPublished()) {
+    if (!this->hasBackend()) {
         auto res = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
         this->flatIndexGuard.unlock_shared();
         return res;
@@ -348,7 +348,7 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
     this->flatIndexGuard.lock_shared();
 
     // If the backend has not been published yet, every vector is still in the flat buffer.
-    if (!this->isBackendPublished()) {
+    if (!this->hasBackend()) {
         auto res = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
         this->flatIndexGuard.unlock_shared();
         if (res) {
