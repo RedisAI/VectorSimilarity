@@ -99,20 +99,16 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
-    HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
+    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
     size_t est = 0;
 
     const bool requires_accumulation = RequiresSQAccumulation(params);
 
-    if (requires_accumulation) {
-        // Set quantParams non-null to indicate HNSW SQ8 with_norm index
-        static char dummy;
-        hnsw_params.quantParams = &dummy;
-    }
-
-    // HNSWFactory::EstimateInitialSize will throw if the parameters are invalid
-    size_t est_backend = HNSWFactory::EstimateInitialSize(&hnsw_params, true);
+    const bool with_mean = requires_accumulation || hnsw_params.quantParams != nullptr;
+    // During accumulation this call is only for validation; the backend size is not counted yet.
+    const size_t est_backend = HNSWFactory::EstimateInitialSize(
+        &hnsw_params, /* is_normalized = */ true, /* with_mean = */ with_mean);
 
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
@@ -290,13 +286,10 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     // Match HNSW's element estimator, which leaves validation to NewIndex.
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
-        HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-        if (TieredHNSWFactory::RequiresSQAccumulation(params)) {
-            // Set quantParams non-null to indicate HNSW SQ8 with_norm index
-            static char dummy;
-            hnsw_params.quantParams = &dummy;
-        }
-        est = HNSWFactory::EstimateElementSize(&hnsw_params);
+        const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
+        const bool with_mean =
+            TieredHNSWFactory::RequiresSQAccumulation(params) || hnsw_params.quantParams != nullptr;
+        est = HNSWFactory::EstimateElementSize(&hnsw_params, /* with_mean = */ with_mean);
     }
     if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {
         est = SVSFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.svsParams);
