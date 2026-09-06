@@ -5070,8 +5070,8 @@ protected:
         return idx->sqAccumulationState.has_value();
     }
 
-    size_t getQuantNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->quantNormalizationSetSize;
+    size_t getNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->sqAccumulationState->normalizationSetSize;
     }
 
     BruteForceIndex<data_t, dist_t> *getFrontendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
@@ -5155,7 +5155,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
     ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
     ASSERT_EQ(this->getRunningSumVec(tiered_index).size(), dim);
-    ASSERT_EQ(this->getQuantNormalizationSetSize(tiered_index), normSetSize);
+    ASSERT_EQ(this->getNormalizationSetSize(tiered_index), normSetSize);
 
     // Verify running sum is zero-initialized.
     for (size_t i = 0; i < dim; i++) {
@@ -5388,7 +5388,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteDuringAccumulation) {
 // -------------------------------------------------------------------
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
-    // When accumulation reaches quantNormalizationSetSize, backend is initialized.
+    // When accumulation reaches normalizationSetSize, backend is initialized.
     size_t dim = 4;
     size_t normSetSize = 10;
     auto mock_thread_pool = tieredIndexMock();

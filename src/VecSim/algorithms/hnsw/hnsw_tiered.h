@@ -105,15 +105,19 @@ private:
     // Not atomic since it's only accessed from the main thread.
     size_t directHNSWInsertions{0};
 
-    bool isQuantized{false};
-    size_t quantNormalizationSetSize;
+    bool isQuantized;
 
     struct SQAccumulationState {
+        size_t normalizationSetSize;
         vecsim_stl::vector<double> runningSumVec;
         VecSimParams backendIndexParams;
 
-        SQAccumulationState(std::shared_ptr<VecSimAllocator> allocator, const VecSimParams &params)
-            : runningSumVec(allocator), backendIndexParams(params) {}
+        SQAccumulationState(const std::shared_ptr<VecSimAllocator> &allocator,
+                            const VecSimParams &params, size_t normalizationSetSize)
+            : normalizationSetSize(
+                  std::min(normalizationSetSize, MAX_QUANT_NORMALIZATION_SET_SIZE)),
+              runningSumVec(params.algoParams.hnswParams.dim, 0.0, allocator),
+              backendIndexParams(params) {}
     };
     std::optional<SQAccumulationState> sqAccumulationState;
 
@@ -783,7 +787,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
-      readySwapJobs(0), quantNormalizationSetSize(0) {
+      readySwapJobs(0),
+      isQuantized(tiered_index_params.primaryIndexParams->algoParams.hnswParams.quantType !=
+                  VecSimQuant_NONE) {
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
@@ -793,16 +799,12 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
 
     // Initialize SQ accumulation phase if quantization is enabled.
-    auto &hnswParams = tiered_index_params.primaryIndexParams->algoParams.hnswParams;
-    if (hnswParams.quantType != VecSimQuant_NONE) {
-        isQuantized = true;
-        size_t normSize =
+    if (isQuantized) {
+        const size_t normSize =
             tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
         if (normSize > 0) {
-            this->quantNormalizationSetSize = std::min(normSize, MAX_QUANT_NORMALIZATION_SET_SIZE);
             this->sqAccumulationState.emplace(this->allocator,
-                                              *tiered_index_params.primaryIndexParams);
-            this->sqAccumulationState->runningSumVec.resize(hnswParams.dim, 0.0);
+                                              *tiered_index_params.primaryIndexParams, normSize);
         }
     }
 }
@@ -835,15 +837,15 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
     assert((QuantInput<DataType> && std::is_same_v<DistType, float>));
     assert(this->sqAccumulationState);
-    assert(this->quantNormalizationSetSize > 0);
-    assert(this->frontendIndex->indexSize() == this->quantNormalizationSetSize);
-
     auto &accumulationState = *this->sqAccumulationState;
+    assert(accumulationState.normalizationSetSize > 0);
+    assert(this->frontendIndex->indexSize() == accumulationState.normalizationSetSize);
+
     auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
     vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
     for (size_t i = 0; i < hnswParams.dim; i++) {
         mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
-                                     static_cast<double>(this->quantNormalizationSetSize));
+                                     static_cast<double>(accumulationState.normalizationSetSize));
     }
 
     hnswParams.quantParams = mean.data();
@@ -1001,7 +1003,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     if (hnsw_index) {
         // Insert job to the queue and signal the workers' updater.
         this->submitSingleJob(new_insert_job);
-    } else if (this->frontendIndex->indexSize() >= this->quantNormalizationSetSize) {
+    } else if (this->frontendIndex->indexSize() >=
+               this->sqAccumulationState->normalizationSetSize) {
         // If we are in the accumulation phase and we just reached the quantization set size, we
         // can initalize the backend index with accumulated mean and transition to the regular mode.
         this->initializeQuantizedBackend();
