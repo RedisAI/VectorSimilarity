@@ -414,8 +414,8 @@ void TieredHNSWIndex<DataType, DistType>::invalidateRepairJobs(idType deleted_id
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
-    // The pointer itself is plain storage. Callers must run on the write thread or hold
-    // mainIndexGuard; lock-free readers must first observe publication and use publishedBackend().
+    // Unsynchronized access; may return nullptr during accumulation.
+    // Concurrent queries should check hasBackend() and then use publishedBackend().
     return dynamic_cast<HNSWIndex<DataType, DistType> *>(this->backendIndex);
 }
 
