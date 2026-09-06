@@ -205,7 +205,6 @@ public:
     class TieredHNSW_BatchIterator : public VecSimBatchIterator {
     private:
         const TieredHNSWIndex<DataType, DistType> *index;
-        bool needsDedup;
         std::shared_lock<std::shared_mutex> backend_index_lock;
         VecSimQueryParams *queryParams;
 
@@ -1266,10 +1265,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
     // retrieves the blob from flat_iterator
     : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
-      index(index), needsDedup(index->frontendIndex->isMultiValue() || index->isQuantized),
-      backend_index_lock(index->mainIndexGuard, std::defer_lock), flat_results(this->allocator),
-      hnsw_results(this->allocator), flat_iterator(UNINITIALIZED), hnsw_iterator(UNINITIALIZED),
-      returned_results_set(this->allocator) {
+      index(index), backend_index_lock(index->mainIndexGuard, std::defer_lock),
+      flat_results(this->allocator), hnsw_results(this->allocator), flat_iterator(UNINITIALIZED),
+      hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator) {
     {
         std::shared_lock<std::shared_mutex> flat_index_lock(this->index->flatIndexGuard);
         this->flat_iterator =
@@ -1304,6 +1302,7 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::getNextResults(
     size_t n_res, VecSimQueryReply_Order order) {
 
+    const bool needsDedup = this->index->frontendIndex->isMultiValue() || this->index->isQuantized;
     auto hnsw_code = VecSim_QueryReply_OK;
 
     if (this->hnsw_iterator == UNINITIALIZED) {
@@ -1345,7 +1344,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
                                       tail->results.end());
             VecSimQueryReply_Free(tail);
 
-            if (!this->needsDedup) {
+            if (!needsDedup) {
                 // On single-value indexes, duplicates will never appear in the hnsw results before
                 // they appear in the flat results (at the same time or later if the approximation
                 // misses) so we don't need to try and filter the flat results (and recheck
@@ -1384,7 +1383,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
     }
 
     VecSimQueryReply *batch;
-    if (this->needsDedup)
+    if (needsDedup)
         batch = compute_current_batch<true>(n_res);
     else
         batch = compute_current_batch<false>(n_res);
