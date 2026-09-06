@@ -5172,6 +5172,93 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
     ASSERT_EQ(tiered_index->indexSize(), 0);
 }
 
+TYPED_TEST(HNSWTieredIndexTestSQ8Multi, getDataByLabelDoesNotReportPartialSQ8Label) {
+    constexpr size_t dim = 4;
+    for (size_t normSetSize : {0, 3}) {
+        SCOPED_TRACE(normSetSize);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index =
+            this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+        ASSERT_NE(tiered_index, nullptr);
+
+        TEST_DATA_T first[dim];
+        TEST_DATA_T second[dim];
+        this->GenerateVectorData(first, dim, 1.0f);
+        this->GenerateVectorData(second, dim, 2.0f);
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, first, 0), 1);
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, second, 0), 1);
+
+        std::vector<std::vector<TEST_DATA_T>> stored;
+        if (normSetSize > 0) {
+            // Before publication, the flat tier holds every vector for the label.
+            ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+            tiered_index->getDataByLabel(0, stored);
+            ASSERT_EQ(stored.size(), 2);
+            ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), first, dim));
+            ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[1].data(), second, dim));
+            stored.clear();
+        }
+
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, first, 0), 1);
+        ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 3);
+
+        // A published SQ8 backend cannot report values, so multi-value reads report nothing.
+        tiered_index->getDataByLabel(0, stored);
+        EXPECT_TRUE(stored.empty());
+        stored.clear();
+
+        mock_thread_pool.thread_iteration();
+        ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 1);
+        ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 2);
+        tiered_index->getDataByLabel(0, stored);
+        EXPECT_TRUE(stored.empty()) << "the two buffered vectors are only part of the label";
+        stored.clear();
+
+        while (!mock_thread_pool.jobQ.empty()) {
+            mock_thread_pool.thread_iteration();
+        }
+        ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 3);
+        ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+        tiered_index->getDataByLabel(0, stored);
+        EXPECT_TRUE(stored.empty());
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsBufferedSQ8Vector) {
+    constexpr size_t dim = 4;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, 0);
+    ASSERT_NE(tiered_index, nullptr);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+
+    TEST_DATA_T vector[dim];
+    this->GenerateVectorData(vector, dim, 1.0f);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 0), 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 1);
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+    stored.clear();
+
+    mock_thread_pool.thread_iteration();
+    ASSERT_TRUE(this->CastToHNSW(tiered_index)->isLabelExists(0));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+
+    // A buffered overwrite is still the complete current value for a single-value label.
+    this->GenerateVectorData(vector, dim, 2.0f);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 0), 0);
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 1);
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTestSQ8, RunningSumAccuracy) {
     // Verify that runningSumVec correctly accumulates vector values.
     size_t dim = 8;
