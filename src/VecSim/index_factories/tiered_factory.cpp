@@ -76,12 +76,9 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&bf_params, params->primaryIndexParams->logCtx, false);
-    if (hnsw_index) {
-        assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
-        if (hnsw_params.quantType == VecSimQuant_NONE) {
-            assert(hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
-        }
-    }
+    assert(!hnsw_index || hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
+    assert(!hnsw_index || hnsw_params.quantType != VecSimQuant_NONE ||
+           hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
