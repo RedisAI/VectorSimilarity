@@ -232,6 +232,8 @@ typedef struct {
     size_t QuantNormalizationSetSize; // Number of vectors to accumulate before SQ initialization.
                                       // 0 = skip accumulation phase (naive SQ8, no mean).
                                       // Max: 100 * DEFAULT_BLOCK_SIZE (102400).
+                                      // During accumulation, this threshold takes precedence over
+                                      // flatBufferLimit, so the flat index may exceed that limit.
 } TieredHNSWParams;
 
 // A struct that contains HNSW Disk tiered index specific params.

@@ -5074,6 +5074,10 @@ protected:
         return idx->sqAccumulationState->normalizationSetSize;
     }
 
+    HNSWParams &getSQBackendParams(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->sqAccumulationState->backendIndexParams.algoParams.hnswParams;
+    }
+
     BruteForceIndex<data_t, dist_t> *getFrontendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
         return idx->frontendIndex;
     }
@@ -5450,6 +5454,68 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
     // Still nothing leaked into invalidJobs, and all pending jobs were submitted to the queue.
     ASSERT_EQ(this->getInvalidJobs(tiered_index).size(), 0);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), normSetSize);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreationFailureRetainsVectorsAndRetries) {
+    constexpr size_t dim = 4;
+    constexpr size_t normSetSize = 2;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+    ASSERT_NE(tiered_index, nullptr);
+
+    // Simulate factory validation drift after the tiered index has accepted the configuration.
+    auto &backend_params = this->getSQBackendParams(tiered_index);
+    const VecSimType original_type = backend_params.type;
+    backend_params.type = VecSimType_FLOAT64;
+
+    TEST_DATA_T vec[dim];
+    for (size_t label = 0; label < 3; ++label) {
+        std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(static_cast<float>(2 * label + 1)));
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, label), 1);
+        ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+        ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
+        EXPECT_EQ(backend_params.quantParams, nullptr);
+        EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), label + 1);
+        EXPECT_EQ(this->getLabelToInsertJobs(tiered_index).size(), label + 1);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+    for (double sum : this->getRunningSumVec(tiered_index)) {
+        EXPECT_DOUBLE_EQ(sum, 9.0);
+    }
+
+    // Queries must still see every accepted vector after repeated initialization failures.
+    auto *reply = VecSimIndex_TopKQuery(tiered_index, vec, 3, nullptr, BY_SCORE);
+    ASSERT_NE(reply, nullptr);
+    EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
+    EXPECT_EQ(VecSimQueryReply_Len(reply), 3);
+    VecSimQueryReply_Free(reply);
+
+    backend_params.type = original_type;
+    bool mean_checked = false;
+    tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
+        const auto *mean = static_cast<const float *>(backend_params.quantParams);
+        ASSERT_NE(mean, nullptr);
+        // The mean includes all four vectors: (1 + 3 + 5 + 7) / 4, not / normSetSize.
+        for (size_t d = 0; d < dim; ++d) {
+            EXPECT_FLOAT_EQ(mean[d], 4.0f);
+        }
+        mean_checked = true;
+    });
+    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(7.0f));
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 3), 1);
+    EXPECT_TRUE(mean_checked);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    EXPECT_FALSE(this->hasSQAccumulationState(tiered_index));
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 4);
+
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    EXPECT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 4);
+    EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    EXPECT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
+    EXPECT_TRUE(this->getInvalidJobs(tiered_index).empty());
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, MeanComputedCorrectly) {
@@ -5913,7 +5979,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceAfterAccumulation) {
 // -------------------------------------------------------------------
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, BufferLimitWithAccumulation) {
-    // Flat buffer limit is respected during accumulation.
+    // The accumulation threshold takes precedence over the flat buffer limit.
     size_t dim = 4;
     size_t normSetSize = 100; // High normalization set size.
     size_t buffer_limit = 10; // Small buffer limit.
@@ -5922,8 +5988,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BufferLimitWithAccumulation) {
                                                     normSetSize, buffer_limit);
 
     // During accumulation, buffer limit should not trigger direct insert to backend
-    // (since backend is not ready). The addVector code checks isInAccumulationPhase
-    // before checking flatBufferLimit.
+    // (since backend is not ready).
     for (size_t i = 0; i < 15; i++) {
         TEST_DATA_T vec[dim];
         this->GenerateVectorData(vec, dim, static_cast<float>(i));

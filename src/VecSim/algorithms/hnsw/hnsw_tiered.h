@@ -126,7 +126,7 @@ private:
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
 #endif
 
-    void initializeQuantizedBackend();
+    [[nodiscard]] bool initializeQuantizedBackend();
 
     void executeInsertJob(HNSWInsertJob *job);
     void executeRepairJob(HNSWRepairJob *job);
@@ -834,23 +834,31 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
+bool TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
     assert((QuantInput<DataType> && std::is_same_v<DistType, float>));
     assert(this->sqAccumulationState);
     auto &accumulationState = *this->sqAccumulationState;
     assert(accumulationState.normalizationSetSize > 0);
-    assert(this->frontendIndex->indexSize() == accumulationState.normalizationSetSize);
+    // A retry after failed initialization may include more vectors than the threshold.
+    const size_t accumulated_count = this->frontendIndex->indexSize();
+    assert(accumulated_count >= accumulationState.normalizationSetSize);
 
     auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
     vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
     for (size_t i = 0; i < hnswParams.dim; i++) {
         mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
-                                     static_cast<double>(accumulationState.normalizationSetSize));
+                                     static_cast<double>(accumulated_count));
     }
 
     hnswParams.quantParams = mean.data();
     auto *new_backend = static_cast<HNSWIndex<DataType, DistType> *>(
         HNSWFactory::NewIndex(&accumulationState.backendIndexParams, true));
+    if (!new_backend) {
+        hnswParams.quantParams = nullptr;
+        TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
+                   "Failed to initialize SQ8 HNSW backend; retaining vectors in the flat index");
+        return false;
+    }
 
 #ifdef BUILD_TESTS
     if (beforeQuantizedBackendReplacement) {
@@ -864,6 +872,7 @@ void TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
         this->backendPublished.store(true, std::memory_order_release);
     }
     this->sqAccumulationState.reset();
+    return true;
 }
 
 template <typename DataType, typename DistType>
@@ -1007,7 +1016,9 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                this->sqAccumulationState->normalizationSetSize) {
         // If we are in the accumulation phase and we just reached the quantization set size, we
         // can initalize the backend index with accumulated mean and transition to the regular mode.
-        this->initializeQuantizedBackend();
+        if (!this->initializeQuantizedBackend()) {
+            return ret;
+        }
 
         // Submit all pending insert jobs to the job queue.
         vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
