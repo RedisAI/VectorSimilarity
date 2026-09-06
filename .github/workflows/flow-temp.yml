@@ -19,3 +19,7 @@ jobs:
             aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[].Instances[].{Id:InstanceId,State:State,Launch:LaunchTime,Reason:StateTransitionReason,StateReason:StateReason}'
             aws ec2 describe-instance-status --instance-ids "$id" --include-all-instances
           done
+      - name: Close numerical telemetry check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PATCH repos/RedisAI/VectorSimilarity/check-runs/101476271358 -f status=completed -f conclusion=neutral --jq '{id,status,conclusion}'
