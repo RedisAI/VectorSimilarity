@@ -878,7 +878,7 @@ private:
             }
 
             std::sort(ids_to_move.begin(), ids_to_move.end());
-            int total_deleted = 0;
+            [[maybe_unused]] int total_deleted = 0;
             for (auto it = ids_to_move.rbegin(); it != ids_to_move.rend(); ++it) {
                 idType id = *it;
                 auto label = this->frontendIndex->getVectorLabel(id);
