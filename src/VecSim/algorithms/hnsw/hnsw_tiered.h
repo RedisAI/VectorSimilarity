@@ -986,14 +986,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
         // Save a pointer to the job, so that if the vector is overwritten, we'll have an
         // indication.
-        if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
+        auto [it, inserted] =
+            this->labelToInsertJobs.try_emplace(label, 1, insert_job, this->allocator);
+        if (!inserted) {
             // There's already a pending insert job for this label, add another one (without
             // overwrite, only possible in multi index)
             assert(this->frontendIndex->isMultiValue());
-            this->labelToInsertJobs.at(label).push_back(insert_job);
-        } else {
-            vecsim_stl::vector<HNSWInsertJob *> new_jobs_vec(1, insert_job, this->allocator);
-            this->labelToInsertJobs.insert({label, new_jobs_vec});
+            it->second.push_back(insert_job);
         }
     }
     this->flatIndexGuard.unlock();
