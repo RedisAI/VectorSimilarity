@@ -37,23 +37,48 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
     return bf_params;
 }
 
+template <typename DataType, typename DistType>
+static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
+    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
+    if (hnsw_params.quantType == VecSimQuant_NONE) {
+        return true;
+    }
+
+    if constexpr (!QuantInput<DataType> || !std::is_same_v<DistType, float>) {
+        return false;
+    } else {
+        return hnsw_params.quantType == VecSimQuant_SQ8;
+    }
+}
+
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
+    if (!IsQuantizationSupported<DataType, DistType>(params)) {
+        return nullptr;
+    }
 
-    // initialize hnsw index
+    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
     // Normalization is done by the frontend index.
-    auto *hnsw_index = reinterpret_cast<HNSWIndex<DataType, DistType> *>(
+    auto *hnsw_index = static_cast<HNSWIndex<DataType, DistType> *>(
         HNSWFactory::NewIndex(params->primaryIndexParams, true));
-    // initialize brute force index
+    if (!hnsw_index) {
+        return nullptr;
+    }
 
     BFParams bf_params = NewBFParams(params);
 
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&bf_params, params->primaryIndexParams->logCtx, false);
     assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
-    assert(hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
+    assert(hnsw_params.quantType != VecSimQuant_NONE ||
+           hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
+
+    if (hnsw_params.quantType == VecSimQuant_SQ8 && hnsw_params.dim < 64) {
+        frontendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                           "SQ8 compression is not recommended for dimensions below 64");
+    }
 
     // Create new tiered hnsw index
     std::shared_ptr<VecSimAllocator> management_layer_allocator =
@@ -64,12 +89,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 }
 
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
-    HNSWParams hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-
-    // Keep size estimation consistent with NewIndex, which rejects quantized tiered indexes.
-    if (hnsw_params.quantType != VecSimQuant_NONE) {
-        throw std::invalid_argument("Quantization is not supported for tiered HNSW indexes");
-    }
+    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
     // Add size estimation of VecSimTieredIndex sub indexes.
     // Normalization is done by the frontend index.
@@ -100,12 +120,6 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 }
 
 VecSimIndex *NewIndex(const TieredIndexParams *params) {
-    // The brute-force frontend is not quantized, so an SQ8 primary index would use an incompatible
-    // stored-vector layout.
-    if (params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE) {
-        return nullptr;
-    }
-
     // Tiered index that contains HNSW index as primary index
     VecSimType type = params->primaryIndexParams->algoParams.hnswParams.type;
     if (type == VecSimType_FLOAT32) {

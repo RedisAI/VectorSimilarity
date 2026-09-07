@@ -126,6 +126,9 @@ public:
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
      *   caught inside that window is reported by both tiers and appears twice.
      *
+     * A quantized backend cannot report vector elements. Multi-value reads append nothing to
+     * avoid returning a buffered subset. Single-value reads can still report a buffered vector.
+     *
      * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
      * buffer is the whole answer, but a multi-value label's vectors are routinely split across
      * the tiers while an ingest is pending, so there the backend is read as well. Reading only
@@ -147,13 +150,15 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        // A quantized backend cannot report its stored vectors as values -- the stored form is
-        // compression plus metadata, and nothing here dequantizes -- so it would append nothing.
-        bool backend_can_report = true;
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        // The flat tier alone cannot give a complete multi-value answer once vectors can migrate
+        // to a backend that cannot report them. Empty output means "cannot tell" in this API.
+        if (this->backendIndex->usesQuantizedStorage() && this->frontendIndex->isMultiValue()) {
+            return;
+        }
 #if HAVE_SVS
         // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
-        // means deleting this block, the `backend_can_report` flag, and the guarded include of
-        // svs.h, then unwrapping the body below.
+        // means deleting this block and the guarded include of svs.h.
         //
         // Until then nothing is read at all for an SVS backend: the buffer alone would be a
         // partial answer for a multi-value label split across the tiers, and a caller cannot tell
@@ -166,18 +171,17 @@ public:
         // that), so a derived override would simply not be found. The type test is deliberately
         // explicit rather than dressed up as a capability: it is a special case, not
         // architecture.
-        backend_can_report = dynamic_cast<const SVSIndexBase *>(this->backendIndex) == nullptr;
+        if (dynamic_cast<const SVSIndexBase *>(this->backendIndex) != nullptr) {
+            return;
+        }
 #endif
-        if (backend_can_report) {
-            std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-            const size_t before_flat = vectors_output.size();
-            this->frontendIndex->getDataByLabel(label, vectors_output);
-            // Whether the buffer held it, measured rather than read off emptiness, so the tier
-            // decision does not depend on an assertion that only exists in test builds.
-            if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
-                std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
-                this->backendIndex->getDataByLabel(label, vectors_output);
-            }
+        const size_t before_flat = vectors_output.size();
+        this->frontendIndex->getDataByLabel(label, vectors_output);
+        // Whether the buffer held it, measured rather than read off emptiness, so the tier
+        // decision does not depend on an assertion that only exists in test builds.
+        if (this->frontendIndex->isMultiValue() || vectors_output.size() == before_flat) {
+            std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+            this->backendIndex->getDataByLabel(label, vectors_output);
         }
     }
 
@@ -236,26 +240,23 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
-    this->flatIndexGuard.lock_shared();
+    std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
-        this->flatIndexGuard.unlock_shared();
+        flat_lock.unlock();
 
         // Simply query the main index and return the results while holding the lock.
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
-        this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->topKQuery(processed_query, k, queryParams);
-        this->mainIndexGuard.unlock_shared();
-
-        return res;
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+        return this->backendIndex->topKQuery(processed_query, k, queryParams);
     } else {
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        flat_lock.unlock();
 
         // If the query failed (currently only on timeout), return the error code.
         if (flat_results->code != VecSim_QueryReply_OK) {
@@ -266,9 +267,9 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
-        this->mainIndexGuard.lock_shared();
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
         auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
-        this->mainIndexGuard.unlock_shared();
+        main_lock.unlock();
 
         // If the query failed (currently only on timeout), return the error code.
         if (main_results->code != VecSim_QueryReply_OK) {
