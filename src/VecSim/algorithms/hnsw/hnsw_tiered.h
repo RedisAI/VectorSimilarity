@@ -12,6 +12,7 @@
 #include <atomic>
 #include <functional>
 #include <optional>
+#include <span>
 
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/spaces/computer/preprocessors.h"
@@ -179,18 +180,20 @@ private:
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelFromHNSWInplace(labelType label);
 
-    void addToSum(const DataType *vector) {
+    void addToSum(std::span<const DataType> vector) {
         if constexpr (QuantInput<DataType>) {
             auto &runningSumVec = this->sqAccumulationState->runningSumVec;
+            assert(vector.size() == runningSumVec.size());
             for (size_t i = 0; i < runningSumVec.size(); i++) {
                 runningSumVec[i] += to_fp32(vector[i]);
             }
         }
     }
 
-    void subtractFromSum(const DataType *vector) {
+    void subtractFromSum(std::span<const DataType> vector) {
         if constexpr (QuantInput<DataType>) {
             auto &runningSumVec = this->sqAccumulationState->runningSumVec;
+            assert(vector.size() == runningSumVec.size());
             for (size_t i = 0; i < runningSumVec.size(); i++) {
                 runningSumVec[i] -= to_fp32(vector[i]);
             }
@@ -960,7 +963,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             // Accumulation phase: the job was never submitted, so no worker can hold it. Reuse
             // it as-is (label and flat id are unchanged by an overwrite) and only fix the running
             // sum. Parking it in invalidJobs would leak it: nothing collects unsubmitted jobs.
-            this->subtractFromSum(this->frontendIndex->getDataByInternalId(new_flat_id));
+            this->subtractFromSum({this->frontendIndex->getDataByInternalId(new_flat_id),
+                                   this->frontendIndex->getDim()});
             insert_job = old_job;
         } else {
             // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
@@ -973,7 +977,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // If this label already exists, this will do overwrite.
     this->frontendIndex->addVector(blob, label);
     if (!hnsw_index) {
-        this->addToSum(this->frontendIndex->getDataByInternalId(new_flat_id));
+        this->addToSum(
+            {this->frontendIndex->getDataByInternalId(new_flat_id), this->frontendIndex->getDim()});
     }
 
     if (!insert_job) {
@@ -1056,7 +1061,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
                     // Accumulation phase: the job was never submitted, so no worker can hold it.
                     // Free it now instead of parking it in invalidJobs, where nothing would ever
                     // collect it.
-                    this->subtractFromSum(this->frontendIndex->getDataByInternalId(job->id));
+                    this->subtractFromSum({this->frontendIndex->getDataByInternalId(job->id),
+                                           this->frontendIndex->getDim()});
                     delete job;
                 } else {
                     job->id = this->setAndSaveInvalidJob(job);
