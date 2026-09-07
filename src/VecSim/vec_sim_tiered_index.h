@@ -118,9 +118,7 @@ public:
      * @brief Get the vector elements stored under a label, in insertion order.
      *
      * Contract on `VecSimIndexAbstract::getDataByLabel`, including that `vectors_output` arrives
-     * empty, with two caveats a tiered index cannot
-     * avoid, both of which only ever make an equality-testing caller answer "different":
-     *
+     * empty, with two caveats:
      * - The vectors are the buffer's followed by the backend's, which for a multi-value label
      *   split across the tiers is not insertion order.
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
@@ -132,20 +130,9 @@ public:
      * the backend, as this used to, reports nothing for a vector written recently enough to
      * still be buffered -- which is exactly when a document is most likely to be written again.
      *
-     * `flatIndexGuard` is held across both reads, in the order `relabelVector` and
-     * `acquireSharedLocks` take: it cannot prevent a duplicate, but it does stop the buffer's
-     * copy being removed between them. The backend's own data guard is deliberately not taken
-     * here -- its `getDataByLabel` takes it, because a shared main lock does not exclude an
-     * ingest mutating under `indexDataGuard`. Same division as
-     * `computeUnifiedIndexLabelsSetUnsafe`, which holds the outer locks and lets `getLabelsSet`
-     * take the inner one.
-     *
-     * A compressed SVS backend cannot report its stored vectors as values -- unlike HNSW, whose
-     * tiered backend can never be quantized, SVS's routinely is. Appending nothing from it does
-     * not mean it doesn't hold the label, so for a multi-value label that already got a buffer
-     * contribution, that subset would look like the complete answer when the backend may hold
-     * the rest and simply can't say so. Membership (`isLabelExists`) is metadata, not the value
-     * read compression rules out, so it is checked before trusting the buffer alone.
+     * A compressed SVS backend cannot report its stored vectors as values. Hence, for
+     * a multi-value label that already got a buffer contribution, we check `isLabelExists`
+     * in the backend before trusting the buffer alone.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
 #ifdef BUILD_TESTS
@@ -154,23 +141,31 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
+#if HAVE_SVS
+        const auto *svs_backend = dynamic_cast<const SVSIndexBase *>(this->backendIndex);
+        const bool backend_cannot_report = svs_backend && svs_backend->isCompressed();
+#endif
+
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         const size_t before_flat = vectors_output.size();
         this->frontendIndex->getDataByLabel(label, vectors_output);
-        // Whether the buffer held it, measured rather than read off emptiness, so the tier
-        // decision does not depend on an assertion that only exists in test builds.
+#if HAVE_SVS
+        // no relevant data in flat and backend cannot function
+        if (backend_cannot_report && vectors_output.size() == before_flat) {
+            return;
+        }
+#endif
+        // continue to look the data in the backend
         if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
 #if HAVE_SVS
-            if (const auto *svs_backend = dynamic_cast<const SVSIndexBase *>(this->backendIndex)) {
-                if (svs_backend->isCompressed() && vectors_output.size() > before_flat &&
-                    svs_backend->isLabelExists(label)) {
-                    // The buffer's contribution alone would look like the whole answer; report
-                    // nothing instead, the same rule `SVSIndex::getDataByLabel` applies to a
-                    // single tier.
-                    vectors_output.resize(before_flat);
-                    return;
-                }
+            if (backend_cannot_report && vectors_output.size() > before_flat &&
+                svs_backend->isLabelExists(label)) {
+                // The buffer's contribution alone would look like the whole answer; report
+                // nothing instead, the same rule `SVSIndex::getDataByLabel` applies to a
+                // single tier.
+                vectors_output.resize(before_flat);
+                return;
             }
 #endif
             this->backendIndex->getDataByLabel(label, vectors_output);
