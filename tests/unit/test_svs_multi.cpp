@@ -23,6 +23,14 @@
         }                                                                                          \
     }
 
+
+static size_t EstimateBlockSize(const SVSParams &params, size_t block_size, size_t num_elements) {
+    const size_t reverse_edges_per_slot = SVSGraphBuilder<uint32_t>::reverse_edges_element_size();
+    const size_t reverse_edges_slots = svs::lib::SegmentedVector<uint8_t>(num_elements).capacity();
+    return (EstimateElementSize(params) - reverse_edges_per_slot) * block_size +
+           reverse_edges_per_slot * reverse_edges_slots;
+}
+
 // Log callback function to print non-debug log messages
 static void svsTestLogCallBackNoDebug(void *ctx, const char *level, const char *message) {
     if (level == nullptr || message == nullptr) {
@@ -748,7 +756,7 @@ TYPED_TEST(SVSMultiTest, testSizeEstimation) {
     size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
-    estimation = EstimateElementSize(params) * bs;
+    estimation = EstimateBlockSize(params, bs, 1);
 
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     actual = index->getAllocationSize() - actual; // get the delta

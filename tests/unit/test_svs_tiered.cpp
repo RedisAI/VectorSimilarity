@@ -28,6 +28,11 @@
         }                                                                                          \
     }
 
+static size_t EstimateReverseEdgesSize(size_t num_elements) {
+    return SVSGraphBuilder<uint32_t>::reverse_edges_element_size() *
+           svs::lib::SegmentedVector<uint8_t>(num_elements).capacity();
+}
+
 // Get available number of CPUs
 // Returns the number of logical processors on the process
 // Returns std::thread::hardware_concurrency() if the number of logical processors is not available
@@ -1706,8 +1711,9 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     }
     mock_thread_pool.thread_pool_wait();
 
-    // Estimate memory delta for filling up the first block and adding another block.
-    size_t estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    const size_t reverse_edges_per_slot = SVSGraphBuilder<uint32_t>::reverse_edges_element_size();
+    size_t estimation = (VecSimIndex_EstimateElementSize(&params) - reverse_edges_per_slot) * bs +
+                        EstimateReverseEdgesSize(n + 1) - EstimateReverseEdgesSize(n);
 
     size_t before = index->getAllocationSize();
     GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + n, bs + n);
