@@ -6060,24 +6060,79 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, DebugInfoDuringAccumulation) {
 // -------------------------------------------------------------------
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceDuringAccumulation) {
-    // WriteInPlace mode is ignored during accumulation phase.
-    size_t dim = 4;
-    size_t normSetSize = 100;
+    const size_t dim = 4;
+    const size_t normSetSize = 6;
+    VecSimIndexInterface::asyncWriteMode = VecSim_WriteInPlace;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index =
         this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
 
-    // Switch to write-in-place mode.
-    VecSimIndexInterface::asyncWriteMode = VecSim_WriteInPlace;
+    TEST_DATA_T vec[dim];
+    for (size_t i = 0; i < normSetSize; ++i) {
+        ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+        ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), i);
+        this->GenerateVectorData(vec, dim, static_cast<float>(i * 10));
+        // Multiple pending jobs per label must survive flat-id swaps during migration.
+        const labelType label = TypeParam::isMulti() ? i / 2 : i;
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, label), 1);
+        ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_FALSE(this->hasSQAccumulationState(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize);
+    ASSERT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
+    ASSERT_TRUE(this->getInvalidJobs(tiered_index).empty());
+
+    const size_t num_labels = TypeParam::isMulti() ? normSetSize / 2 : normSetSize;
+    auto *results = VecSimIndex_TopKQuery(tiered_index, vec, num_labels, nullptr, BY_ID);
+    EXPECT_EQ(VecSimQueryReply_Len(results), num_labels);
+    auto *iterator = VecSimQueryReply_GetIterator(results);
+    for (size_t i = 0; i < num_labels; ++i) {
+        auto *result = VecSimQueryReply_IteratorNext(iterator);
+        EXPECT_NE(result, nullptr);
+        if (result) {
+            EXPECT_EQ(VecSimQueryResult_GetId(result), i);
+        }
+    }
+    VecSimQueryReply_IteratorFree(iterator);
+    VecSimQueryReply_Free(results);
+
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, num_labels), 1);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize + 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, SwitchToWriteInPlaceDuringAccumulation) {
+    const size_t dim = 4;
+    const size_t normSetSize = 4;
+    VecSimIndexInterface::asyncWriteMode = VecSim_WriteAsync;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
 
     TEST_DATA_T vec[dim];
-    this->GenerateVectorData(vec, dim, 1.0f);
-    VecSimIndex_AddVector(tiered_index, vec, 0);
-
-    // During accumulation, WriteInPlace is ignored - vector goes to flat buffer.
+    for (size_t i = 0; i < normSetSize - 1; ++i) {
+        this->GenerateVectorData(vec, dim, static_cast<float>(i * 10));
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, i), 1);
+    }
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1);
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
-    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+
+    VecSimIndexInterface::asyncWriteMode = VecSim_WriteInPlace;
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 0), 1);
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, normSetSize - 1), 1);
+
+    ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize);
+    ASSERT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
+    ASSERT_TRUE(this->getInvalidJobs(tiered_index).empty());
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceAfterAccumulation) {

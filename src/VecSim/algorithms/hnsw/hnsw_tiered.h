@@ -904,7 +904,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     auto hnsw_index = this->getHNSWIndex();
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exclusively calling add/delete vector).
-    // VecSim_WriteInPlace is ignored during the accumulation phase
+    // Until the backend exists, all write modes must accumulate vectors in the frontend.
     if (hnsw_index && this->getWriteMode() == VecSim_WriteInPlace) {
         // First, check if we need to overwrite the vector in-place for single (from both indexes).
         if (!this->backendIndex->isMultiValue()) {
@@ -1021,7 +1021,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
             return ret;
         }
 
-        // Submit all pending insert jobs to the job queue.
+        // Snapshot the jobs because executing them erases entries from labelToInsertJobs.
         vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
         jobs.reserve(this->frontendIndex->indexSize());
         for (auto &entry : this->labelToInsertJobs) {
@@ -1029,7 +1029,13 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
                 jobs.push_back(job);
             }
         }
-        this->submitJobs(jobs);
+        if (this->getWriteMode() == VecSim_WriteInPlace) {
+            for (auto *job : jobs) {
+                executeInsertJobWrapper(job);
+            }
+        } else {
+            this->submitJobs(jobs);
+        }
     }
     return ret;
 }
