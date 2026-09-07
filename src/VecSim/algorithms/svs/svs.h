@@ -16,6 +16,7 @@
 #include <memory>
 #include <cassert>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 #include "svs/index/vamana/dynamic_index.h"
@@ -756,10 +757,19 @@ private:
             return;
         }
         auto append_datum = [&](auto indexed_span) {
-            std::vector<OutputElement> vec_data(this->getStoredDataSize() / sizeof(OutputElement));
-            const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
-            std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
-            vectors_output.push_back(std::move(vec_data));
+            if constexpr (std::is_same_v<OutputElement, DataType>) {
+                // The span's element type already is `OutputElement` here, so build the
+                // output vector directly from it instead of a raw byte copy.
+                vectors_output.emplace_back(indexed_span.begin(), indexed_span.end());
+            } else {
+                // FP16 and the test-only byte output: `OutputElement` differs from the
+                // span's element type but is bit-identical size, so copy the raw bytes.
+                std::vector<OutputElement> vec_data(this->getStoredDataSize() /
+                                                    sizeof(OutputElement));
+                const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
+                std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
+                vectors_output.push_back(std::move(vec_data));
+            }
         };
 
         if constexpr (isMulti) {
