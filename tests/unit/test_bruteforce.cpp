@@ -129,6 +129,33 @@ TYPED_TEST(BruteForceTest, brute_force_vector_update_test) {
     VecSimIndex_Free(index);
 }
 
+TYPED_TEST(BruteForceTest, brute_force_cosine_vector_overwrite_is_normalized) {
+    size_t dim = 4;
+    labelType label = 1;
+
+    BFParams params = {.dim = dim, .metric = VecSimMetric_Cosine};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *bf_single_index = this->CastToBF_Single(index);
+
+    TEST_DATA_T initial_vector[] = {1, 1, 1, 1};
+    TEST_DATA_T replacement_vector[] = {2, 2, 2, 2};
+    TEST_DATA_T normalized_replacement[dim];
+    memcpy(normalized_replacement, replacement_vector, sizeof(replacement_vector));
+    VecSim_Normalize(normalized_replacement, dim, TypeParam::get_index_type());
+
+    VecSimIndex_AddVector(index, initial_vector, label);
+    VecSimIndex_AddVector(index, replacement_vector, label);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored_vectors;
+    bf_single_index->getDataByLabel(label, stored_vectors);
+    ASSERT_EQ(stored_vectors.size(), 1);
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored_vectors[0].data(), normalized_replacement, dim));
+
+    VecSimIndex_Free(index);
+}
+
 /**** resizing cases ****/
 
 TYPED_TEST(BruteForceTest, resize_and_align_index) {
