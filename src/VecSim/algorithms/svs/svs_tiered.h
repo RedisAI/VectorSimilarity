@@ -864,10 +864,17 @@ private:
                 auto svs_index = GetSVSIndex();
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
-                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
-                                                  labels_to_move.size());
-                svs_index->setParallelism(1);
-                svs_index->setImpl(std::move(impl));
+                // The backend may already have been initialized while this job was queued
+                if (svs_index->ready()) {
+                    svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
+                                          labels_to_move.size());
+                    svs_index->setParallelism(1);
+                } else {
+                    auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
+                                                      labels_to_move.size());
+                    svs_index->setParallelism(1);
+                    svs_index->setImpl(std::move(impl));
+                }
             }
 
             std::sort(ids_to_move.begin(), ids_to_move.end());
@@ -1308,7 +1315,7 @@ public:
                 return main_results;
             }
 
-            return merge_result_lists<true>(main_results, flat_results, k);
+            return merge_result_lists(main_results, flat_results, k);
         }
     }
 
@@ -1345,12 +1352,12 @@ public:
                 sort_results_by_score_then_id(flat_results);
 
                 auto code = main_results->code;
-                VecSimQueryReply *ret = merge_result_lists<true>(main_results, flat_results, -1);
+                VecSimQueryReply *ret = merge_result_lists(main_results, flat_results, -1);
                 ret->code = code;
                 return ret;
             } else { // BY_ID
                 concat_results(main_results, flat_results);
-                filter_results_by_id<true>(main_results);
+                filter_results_by_id(main_results);
                 return main_results;
             }
         }

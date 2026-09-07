@@ -373,6 +373,13 @@ struct SVSGraphBuilder {
         // graph_max_degree neighbors
         return sizeof(SVSIdType) * (graph_max_degree + 1);
     }
+
+    // Per-node size of the concurrent graph's reverse-edge index.
+    //
+    static constexpr size_t reverse_edges_element_size() {
+        using reverse_edges_type = typename graph_type::reverse_edges_type;
+        return sizeof(typename reverse_edges_type::list_type) + sizeof(svs::concurrent::SpinLock);
+    }
 };
 
 // A slot in the shared SVS thread pool. Wraps an SVS Thread with an occupancy flag
