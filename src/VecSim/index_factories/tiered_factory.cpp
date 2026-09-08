@@ -52,9 +52,7 @@ static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
     if constexpr (!QuantInput<DataType> || !std::is_same_v<DistType, float>) {
         return false;
     } else {
-        return hnsw_params.quantType == VecSimQuant_SQ8 &&
-               !(std::is_same_v<DataType, float16> && hnsw_params.metric == VecSimMetric_L2 &&
-                 RequiresSQAccumulation(params));
+        return hnsw_params.quantType == VecSimQuant_SQ8;
     }
 }
 

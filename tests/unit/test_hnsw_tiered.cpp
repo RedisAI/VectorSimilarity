@@ -5172,6 +5172,80 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
     ASSERT_EQ(tiered_index->indexSize(), 0);
 }
 
+TYPED_TEST(HNSWTieredIndexTestSQ8, L2MeanTrainingWithBoundedValues) {
+    constexpr size_t dim = 65;
+    constexpr float values[] = {-1.0f, -0.7f, -0.35f, 0.1f, 0.25f, 0.6f, 1.0f};
+    constexpr size_t count = std::size(values);
+    for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+        SCOPED_TRACE(mode);
+        VecSimIndexInterface::asyncWriteMode = mode;
+        tieredIndexMock mock_thread_pool;
+        auto *tiered_index =
+            this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_L2, count);
+        if (!tiered_index) {
+            mock_thread_pool.reset_ctx();
+            FAIL() << "bounded FLOAT16 L2 mean training must construct";
+        }
+        ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+        std::vector<std::vector<TEST_DATA_T>> vectors(count, std::vector<TEST_DATA_T>(dim));
+        std::vector<double> sums(dim, 0.0);
+        for (size_t v = 0; v < count; ++v) {
+            for (size_t d = 0; d < dim; ++d) {
+                vectors[v][d] = from_fp32<TEST_DATA_T>(d % 2 ? values[v] : -values[v]);
+                sums[d] += this->ToFloat(vectors[v][d]);
+            }
+        }
+        bool mean_checked = false;
+        tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
+            const auto *mean =
+                static_cast<const float *>(this->getSQBackendParams(tiered_index).quantParams);
+            ASSERT_NE(mean, nullptr);
+            for (size_t d = 0; d < dim; ++d) {
+                EXPECT_FLOAT_EQ(mean[d], static_cast<float>(sums[d] / count));
+            }
+            mean_checked = true;
+        });
+        const auto verify_queries = [&](size_t inserted_count) {
+            for (size_t v = 0; v < inserted_count; ++v) {
+                const auto verify = [&](size_t id, double score, size_t) {
+                    EXPECT_EQ(id, TypeParam::isMulti() ? v / 2 : v);
+                    EXPECT_TRUE(std::isfinite(score));
+                    EXPECT_NEAR(score, 0.0, dim * 1e-4);
+                };
+                runTopKSearchTest(tiered_index, vectors[v].data(), 1, verify);
+            }
+        };
+        for (size_t v = 0; v < count - 1; ++v) {
+            ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vectors[v].data(),
+                                            TypeParam::isMulti() ? v / 2 : v),
+                      1);
+        }
+        ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+        ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+        verify_queries(count - 1);
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vectors.back().data(),
+                                        TypeParam::isMulti() ? (count - 1) / 2 : count - 1),
+                  1);
+        EXPECT_TRUE(mean_checked);
+        ASSERT_FALSE(this->hasSQAccumulationState(tiered_index));
+        ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+        if (mode == VecSim_WriteAsync) {
+            ASSERT_EQ(mock_thread_pool.jobQ.size(), count);
+            mock_thread_pool.thread_iteration();
+            ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 1);
+            verify_queries(count);
+            while (!mock_thread_pool.jobQ.empty()) {
+                mock_thread_pool.thread_iteration();
+            }
+        }
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        EXPECT_EQ(this->getBackendIndex(tiered_index)->indexSize(), count);
+        EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+        EXPECT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
+        verify_queries(count);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTestSQ8Multi, getDataByLabelDoesNotReportPartialSQ8Label) {
     constexpr size_t dim = 4;
     for (size_t normSetSize : {0, 3}) {

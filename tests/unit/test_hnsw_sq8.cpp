@@ -22,6 +22,7 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <memory>
 #include <random>
 #include <thread>
 #include <type_traits>
@@ -32,12 +33,11 @@ struct HNSWSQ8IndexType : IndexType<type, DataType, float> {
     static constexpr bool with_quant_params = WithQuantParams;
 };
 
-// Typed tests default to L2, where mean-centered FLOAT16 is unsupported. A parameter test below
-// covers both that restriction and the supported inner-product case.
 using HNSWSQ8DataTypeSet =
     ::testing::Types<HNSWSQ8IndexType<VecSimType_FLOAT32, float, false>,
                      HNSWSQ8IndexType<VecSimType_FLOAT32, float, true>,
-                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, false>>;
+                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, false>,
+                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, true>>;
 
 template <typename index_type_t>
 class HNSWSQ8Test : public ::testing::Test {
@@ -446,30 +446,56 @@ TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
     EXPECT_EQ(EstimateInitialSize(hnsw_params), SIZE_MAX);
 }
 
-// Mean-centering a FLOAT16 L2 query can lose precision or overflow when it is narrowed back to
-// FLOAT16. Inner-product queries are not centered and remain supported.
-TEST(HNSWSQ8ParamsTest, RejectsMeanCenteredFP16L2) {
-    std::vector<float> mean(4, 1.0f);
+// The caller guarantees bounded inputs and means. Exercise both endpoints, a mean that is
+// not representable in FP16, and odd dimensions that also cover SIMD residual handling.
+TEST(HNSWSQ8ParamsTest, MeanCenteredFP16L2BoundedValues) {
+    using data_t = vecsim_types::float16;
+    constexpr size_t count = 32;
+    for (size_t dim : {4, 65}) {
+        for (float mean_value : {-1.0f, 0.10001f, 1.0f}) {
+            for (bool multi : {false, true}) {
+                SCOPED_TRACE(::testing::Message()
+                             << "dim=" << dim << " mean=" << mean_value << " multi=" << multi);
+                std::vector<float> mean(dim, mean_value);
+                HNSWParams hnsw_params = {.type = VecSimType_FLOAT16,
+                                          .dim = dim,
+                                          .metric = VecSimMetric_L2,
+                                          .multi = multi,
+                                          .efConstruction = count,
+                                          .efRuntime = count,
+                                          .quantType = VecSimQuant_SQ8,
+                                          .quantParams = mean.data()};
+                VecSimParams params = CreateParams(hnsw_params);
+                std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> index(
+                    VecSimIndex_New(&params), VecSimIndex_Free);
+                ASSERT_NE(index, nullptr);
+                EXPECT_EQ(EstimateInitialSize(hnsw_params), index->getAllocationSize());
 
-    HNSWParams l2 = {.type = VecSimType_FLOAT16,
-                     .dim = 4,
-                     .metric = VecSimMetric_L2,
-                     .quantType = VecSimQuant_SQ8,
-                     .quantParams = mean.data()};
-    VecSimParams l2_params = CreateParams(l2);
-    EXPECT_EQ(VecSimIndex_New(&l2_params), nullptr);
-    EXPECT_EQ(EstimateInitialSize(l2), SIZE_MAX);
-
-    HNSWParams ip = {.type = VecSimType_FLOAT16,
-                     .dim = 4,
-                     .metric = VecSimMetric_IP,
-                     .quantType = VecSimQuant_SQ8,
-                     .quantParams = mean.data()};
-    VecSimParams ip_params = CreateParams(ip);
-    VecSimIndex *ip_index = VecSimIndex_New(&ip_params);
-    ASSERT_NE(ip_index, nullptr);
-    VecSimIndex_Free(ip_index);
-    EXPECT_NE(EstimateInitialSize(ip), SIZE_MAX);
+                std::mt19937 generator(42);
+                std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
+                std::vector<std::vector<data_t>> vectors(count, std::vector<data_t>(dim));
+                for (size_t v = 0; v < count; ++v) {
+                    for (size_t d = 0; d < dim; ++d) {
+                        const float value =
+                            v < 2 ? (v == 0 ? -1.0f : 1.0f) : distribution(generator);
+                        vectors[v][d] = vecsim_types::FP32_to_FP16(value);
+                    }
+                    ASSERT_EQ(
+                        VecSimIndex_AddVector(index.get(), vectors[v].data(), multi ? v / 2 : v),
+                        1);
+                }
+                for (size_t v = 0; v < count; ++v) {
+                    const auto verify = [&](size_t id, double score, size_t) {
+                        EXPECT_EQ(id, multi ? v / 2 : v);
+                        EXPECT_TRUE(std::isfinite(score));
+                        // SQ8 reconstruction and FP16 centering both contribute to self-distance.
+                        EXPECT_NEAR(score, 0.0, dim * 1e-4);
+                    };
+                    runTopKSearchTest(index.get(), vectors[v].data(), 1, verify);
+                }
+            }
+        }
+    }
 }
 
 // V4 cannot encode the quantization settings needed to reload an SQ8 index.
@@ -523,7 +549,8 @@ TYPED_TEST(HNSWSQ8Test, GraphConstructionIP) {
 using HNSWSQ8TieredDataTypeSet =
     ::testing::Types<HNSWSQ8IndexType<VecSimType_FLOAT32, float, false>,
                      HNSWSQ8IndexType<VecSimType_FLOAT32, float, true>,
-                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, false>>;
+                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, false>,
+                     HNSWSQ8IndexType<VecSimType_FLOAT16, vecsim_types::float16, true>>;
 
 template <typename index_type_t>
 class SQ8TieredHNSWTest : public HNSWSQ8Test<index_type_t> {
@@ -1133,16 +1160,14 @@ TEST(SQ8TieredHNSWTest, RejectsOutOfRangeMetric) {
 
 TEST(SQ8TieredHNSWTest, RejectsBackendCreationFailureWithoutAccumulation) {
     constexpr size_t dim = 4;
-    const float mean[dim] = {1.0f, 1.0f, 1.0f, 1.0f};
     for (bool multi : {false, true}) {
-        // The tiered accumulation check accepts N == 0, but the backend rejects a supplied mean
-        // for FLOAT16 L2. Index creation must report that failure to the caller.
+        // The tiered type check accepts FLOAT16, but the backend rejects an unknown metric.
+        // Tiered index creation must propagate that failure.
         HNSWParams hnsw_params = {.type = VecSimType_FLOAT16,
                                   .dim = dim,
-                                  .metric = VecSimMetric_L2,
+                                  .metric = static_cast<VecSimMetric>(3),
                                   .multi = multi,
-                                  .quantType = VecSimQuant_SQ8,
-                                  .quantParams = mean};
+                                  .quantType = VecSimQuant_SQ8};
         VecSimParams primary_params = CreateParams(hnsw_params);
         TieredIndexParams tiered_params = {
             .primaryIndexParams = &primary_params,
@@ -1156,36 +1181,60 @@ TEST(SQ8TieredHNSWTest, RejectsBackendCreationFailureWithoutAccumulation) {
     }
 }
 
-// Mean-centering a FLOAT16 L2 query can lose precision or overflow when it is narrowed back to
-// FLOAT16. Inner-product queries are not centered and remain supported.
-TEST(SQ8TieredHNSWTest, RejectsMeanCenteredFP16L2) {
-    std::vector<float> mean(4, 1.0f);
-
-    HNSWParams l2 = {.type = VecSimType_FLOAT16,
-                     .dim = 4,
-                     .metric = VecSimMetric_L2,
-                     .quantType = VecSimQuant_SQ8,
-                     .quantParams = mean.data()};
-    VecSimParams l2_params = CreateParams(l2);
-    TieredIndexParams l2_tiered_params = {
-        .primaryIndexParams = &l2_params,
-        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = 10}}};
-    VecSimParams l2_vecsim_params = CreateParams(l2_tiered_params);
-    EXPECT_EQ(VecSimIndex_New(&l2_vecsim_params), nullptr);
-    EXPECT_EQ(EstimateInitialSize(l2_tiered_params), SIZE_MAX);
-
-    HNSWParams ip = {.type = VecSimType_FLOAT16,
-                     .dim = 4,
-                     .metric = VecSimMetric_IP,
-                     .quantType = VecSimQuant_SQ8,
-                     .quantParams = mean.data()};
-    VecSimParams ip_params = CreateParams(ip);
-    TieredIndexParams ip_tiered_params = {
-        .primaryIndexParams = &ip_params,
-        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = 10}}};
-    VecSimParams ip_vecsim_params = CreateParams(ip_tiered_params);
-    VecSimIndex *ip_index = VecSimIndex_New(&ip_vecsim_params);
-    ASSERT_NE(ip_index, nullptr);
-    VecSimIndex_Free(ip_index);
-    EXPECT_NE(EstimateInitialSize(ip_tiered_params), SIZE_MAX);
+TEST(SQ8TieredHNSWTest, MeanCenteredFP16L2BufferedAndMigratedValues) {
+    using data_t = vecsim_types::float16;
+    constexpr size_t dim = 65;
+    constexpr size_t count = 8;
+    for (bool multi : {false, true}) {
+        tieredIndexMock mock_thread_pool;
+        std::vector<float> mean(dim, 0.10001f);
+        HNSWParams hnsw_params = {.type = VecSimType_FLOAT16,
+                                  .dim = dim,
+                                  .metric = VecSimMetric_L2,
+                                  .multi = multi,
+                                  .efRuntime = count,
+                                  .quantType = VecSimQuant_SQ8,
+                                  .quantParams = mean.data()};
+        VecSimParams primary_params = CreateParams(hnsw_params);
+        TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                           .jobQueueCtx = mock_thread_pool.ctx,
+                                           .submitCb = tieredIndexMock::submit_callback,
+                                           .flatBufferLimit = count,
+                                           .primaryIndexParams = &primary_params};
+        VecSimParams params = CreateParams(tiered_params);
+        auto *index = VecSimIndex_New(&params);
+        if (!index) {
+            mock_thread_pool.reset_ctx();
+            FAIL() << "bounded mean-centered FLOAT16 L2 must construct";
+        }
+        mock_thread_pool.ctx->index_strong_ref.reset(index);
+        EXPECT_EQ(EstimateInitialSize(tiered_params), index->getAllocationSize());
+        std::vector<std::vector<data_t>> vectors(count, std::vector<data_t>(dim));
+        for (size_t v = 0; v < count; ++v) {
+            for (size_t d = 0; d < dim; ++d) {
+                const float value = -1.0f + 2.0f * v / (count - 1);
+                vectors[v][d] = vecsim_types::FP32_to_FP16(d % 2 ? value : -value);
+            }
+            ASSERT_EQ(VecSimIndex_AddVector(index, vectors[v].data(), multi ? v / 2 : v), 1);
+        }
+        const auto verify_queries = [&] {
+            for (size_t v = 0; v < count; ++v) {
+                const auto verify = [&](size_t id, double score, size_t) {
+                    EXPECT_EQ(id, multi ? v / 2 : v);
+                    EXPECT_TRUE(std::isfinite(score));
+                    EXPECT_NEAR(score, 0.0, dim * 1e-4);
+                };
+                runTopKSearchTest(index, vectors[v].data(), 1, verify);
+            }
+        };
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), count);
+        verify_queries();
+        while (!mock_thread_pool.jobQ.empty()) {
+            mock_thread_pool.thread_iteration();
+        }
+        const auto info = VecSimIndex_DebugInfo(index);
+        ASSERT_EQ(info.tieredInfo.backendCommonInfo.indexSize, count);
+        ASSERT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
+        verify_queries();
+    }
 }
