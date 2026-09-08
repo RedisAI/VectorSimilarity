@@ -49,19 +49,13 @@ template <VecSimMetric Metric>
 }
 
 // Keep construction and initial-size validation in sync.
-[[nodiscard]] constexpr bool SQ8ParamsSupported(VecSimType type, VecSimMetric resolved_metric,
-                                                bool with_mean) {
+[[nodiscard]] constexpr bool SQ8ParamsSupported(VecSimType type, VecSimMetric resolved_metric) {
     // SQ8 kernels accept only FLOAT32 and FLOAT16 input.
     if (type != VecSimType_FLOAT32 && type != VecSimType_FLOAT16) {
         return false;
     }
     // Only L2 and inner product have SQ8 kernels.
     if (resolved_metric != VecSimMetric_L2 && resolved_metric != VecSimMetric_IP) {
-        return false;
-    }
-    // Mean-centered L2 queries are narrowed back to FLOAT16 while the stored metadata remains
-    // FLOAT32. Support requires a kernel that keeps the centered query in FLOAT32.
-    if (type == VecSimType_FLOAT16 && with_mean && resolved_metric == VecSimMetric_L2) {
         return false;
     }
     return true;
@@ -95,7 +89,7 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
         const VecSimMetric metric = ResolveSQ8Metric(hnswParams->metric, is_normalized);
         const float *mean_ptr = static_cast<const float *>(hnswParams->quantParams);
 
-        if (!SQ8ParamsSupported(hnswParams->type, metric, mean_ptr != nullptr)) {
+        if (!SQ8ParamsSupported(hnswParams->type, metric)) {
             return NULL;
         }
 
@@ -181,8 +175,7 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
     if (params->quantType != VecSimQuant_NONE) {
         // Keep construction and initial-size validation in sync.
         if (params->quantType != VecSimQuant_SQ8 ||
-            !SQ8ParamsSupported(params->type, ResolveSQ8Metric(params->metric, is_normalized),
-                                params->quantParams != nullptr)) {
+            !SQ8ParamsSupported(params->type, ResolveSQ8Metric(params->metric, is_normalized))) {
             throw std::invalid_argument("Unsupported quantization params for HNSW index");
         }
         // Template arguments do not affect these component sizes.
