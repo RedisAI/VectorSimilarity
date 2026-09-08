@@ -790,10 +790,7 @@ private:
         memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
         this->flatIndexGuard.unlock_shared();
 
-        {
-            std::shared_lock<std::shared_mutex> lock(updateJobMutex);
-            svs_index->addVector(blob_copy.get(), job->label);
-        }
+        svs_index->addVector(blob_copy.get(), job->label);
 
         // Remove the vector and the insert job from the flat buffer.
         this->flatIndexGuard.lock();
