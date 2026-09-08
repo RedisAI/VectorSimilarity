@@ -174,26 +174,29 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
     expectedAllocationSize = memory;
     expectedAllocationDelta = 0;
 
+    const size_t labels_capacity_before = bfIndex->idToLabelMapping.capacity();
+    const size_t buckets_before = bfIndex->labelToIdLookup.bucket_count();
+    const auto *blocks = dynamic_cast<DataBlocksContainer *>(bfIndex->vectors);
+    const size_t blocks_capacity_before = blocks->capacity();
     before = allocator->getAllocationSize();
     VecSimIndex_DeleteVector(bfIndex, 1);
     deleteCommandAllocationDelta = allocator->getAllocationSize() - before;
-    expectedAllocationDelta -=
-        (sizeof(DataBlock) + vecsimAllocationOverhead); // Free the vector block
-    expectedAllocationDelta -=
-        sizeof(DataBlock *) + vecsimAllocationOverhead; // remove from vectorBlocks vector
-    expectedAllocationDelta -=
-        sizeof(labelType) + vecsimAllocationOverhead; // resize idToLabelMapping
-    expectedAllocationDelta -= (sizeof(TEST_DATA_T) * dim +
-                                vecsimAllocationOverhead); // Free the vector in the vector block
-    expectedAllocationDelta -=
-        sizeof(std::pair<labelType, idType>) + vecsimAllocationOverhead; // remove one label:id pair
 
-    // Assert that the reclaiming of memory did occur, and it is limited, as some STL
-    // collection allocate additional structures for their internal implementation.
-    ASSERT_EQ(allocator->getAllocationSize(),
-              expectedAllocationSize + deleteCommandAllocationDelta);
-    ASSERT_LE(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
-    ASSERT_LE(expectedAllocationDelta, deleteCommandAllocationDelta);
+    // pop_back destroys the data block but retains the container's backing allocation.
+    ASSERT_EQ(blocks->capacity(), blocks_capacity_before);
+    ASSERT_EQ(bfIndex->idToLabelMapping.capacity(), 0);
+    expectedAllocationDelta -=
+        sizeof(TEST_DATA_T) * dim + vecsimAllocationOverhead + bfIndex->getAlignment();
+    expectedAllocationDelta -=
+        labels_capacity_before * sizeof(labelType) + vecsimAllocationOverhead;
+    expectedAllocationDelta -= hashTableNodeSize;
+    // reserve(0) may change the bucket count, depending on the standard library.
+    expectedAllocationDelta +=
+        (int64_t(bfIndex->labelToIdLookup.bucket_count()) - int64_t(buckets_before)) *
+        sizeof(size_t);
+
+    ASSERT_EQ(expectedAllocationDelta, deleteCommandAllocationDelta);
+    ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     memory = VecSimIndex_StatsInfo(bfIndex).memory;
     ASSERT_EQ(allocator->getAllocationSize(), memory);
     VecSimIndex_Free(bfIndex);
