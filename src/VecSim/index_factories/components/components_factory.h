@@ -40,25 +40,26 @@ template <typename DataType>
     return alignment;
 }
 
-template <typename DataType, VecSimMetric Metric>
+template <typename DataType, VecSimMetric Metric, bool WithMean>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                          const float *mean_ptr) {
-    const bool with_mean = mean_ptr != nullptr;
+    using Preprocessor = QuantPreprocessor<DataType, Metric, WithMean>;
+    using QueryType = typename Preprocessor::QueryType;
     unsigned char storage_alignment = 0, asym_storage_alignment = 0;
 
     // Graph construction compares two stored SQ8 blobs; search compares a stored blob with a
-    // DataType query. Both dispatchers report alignment for the stored operand.
+    // QueryType query. Both dispatchers report alignment for the stored operand.
     auto sym_func = spaces::GetDistFunc<vecsim_types::sq8, float>(Metric, dim, &storage_alignment);
-    auto asym_func = spaces::GetDistFunc<vecsim_types::sq8, float, DataType>(
+    auto asym_func = spaces::GetDistFunc<vecsim_types::sq8, float, QueryType>(
         Metric, dim, &asym_storage_alignment);
     storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
-    const unsigned char query_alignment = GetQueryAlignment<DataType>(Metric, dim);
+    const unsigned char query_alignment = GetQueryAlignment<QueryType>(Metric, dim);
 
     PreprocessorInterface *pp = nullptr;
     IndexCalculatorInterface<float> *calc = nullptr;
 
-    if (with_mean) {
+    if constexpr (WithMean) {
         vecsim_stl::vector<float> mean_vec(allocator);
         mean_vec.assign(mean_ptr, mean_ptr + dim);
 
@@ -67,11 +68,11 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
             mean_sum_squares += v * v;
         }
 
-        pp = new (allocator) QuantPreprocessor<DataType, Metric, true>(allocator, dim, mean_vec);
+        pp = new (allocator) Preprocessor(allocator, dim, mean_vec);
         calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, Metric>(
             allocator, asym_func, sym_func, mean_sum_squares);
     } else {
-        pp = new (allocator) QuantPreprocessor<DataType, Metric>(allocator, dim);
+        pp = new (allocator) Preprocessor(allocator, dim);
         calc = new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func);
     }
 
@@ -81,6 +82,16 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
     assert(ret != -1 && "SQ8 preprocessor was not added correctly");
 
     return {calc, container};
+}
+
+template <typename DataType, VecSimMetric Metric>
+IndexComponents<DataType, float>
+CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                         const float *mean_ptr) {
+    if (mean_ptr) {
+        return CreateSQ8IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr);
+    }
+    return CreateSQ8IndexComponents<DataType, Metric, false>(allocator, dim, mean_ptr);
 }
 
 template <typename DataType, typename DistType>

@@ -177,9 +177,7 @@ typedef struct {
     double epsilon;
     VecSimQuantType quantType; // Defaults to VecSimQuant_NONE.
     // SQ8 mean vector (float[dim]); NULL disables mean centering. Copied during construction.
-    // FLOAT16 L2 keeps centered queries in FLOAT16 and accepts the additional rounding.
-    // Callers must keep inputs, queries, and means small (e.g. coordinates in [-1, 1]);
-    // large centered queries can overflow FLOAT16. Values are not range-checked.
+    // L2 centering keeps queries in FLOAT32, including when the input type is FLOAT16.
     const void *quantParams;
 } HNSWParams;
 
