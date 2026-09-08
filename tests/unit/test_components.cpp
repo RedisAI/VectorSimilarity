@@ -1857,17 +1857,19 @@ protected:
 
     template <VecSimMetric Metric>
     size_t getExpectedQuerySize() const {
-        return dim * sizeof(DataType) + sq8::query_metadata_count<Metric, true>() * sizeof(float);
+        using QueryType = std::conditional_t<Metric == VecSimMetric_L2, float, DataType>;
+        return dim * sizeof(QueryType) + sq8::query_metadata_count<Metric, true>() * sizeof(float);
     }
 
     template <VecSimMetric Metric>
     void runQuantizationTest() {
+        using QueryType = std::conditional_t<Metric == VecSimMetric_L2, float, DataType>;
         const size_t expected_storage_size = getExpectedStorageSize<Metric>();
         const size_t expected_query_size = getExpectedQuerySize<Metric>();
         const size_t storage_meta_offset = dim * sizeof(uint8_t);
-        const size_t query_meta_offset = dim * sizeof(DataType);
+        const size_t query_meta_offset = dim * sizeof(QueryType);
         float centered[dim];
-        DataType expected_query_body[dim];
+        QueryType expected_query_body[dim];
         float expected_x_mean_ip = 0.0f;
         float expected_y_sum = 0.0f;
         float expected_y_sum_squares = 0.0f;
@@ -1875,11 +1877,11 @@ protected:
         for (size_t i = 0; i < dim; ++i) {
             centered[i] = widened_blob[i] - mean_vec[i];
             if constexpr (Metric == VecSimMetric_L2) {
-                expected_query_body[i] = from_fp32<DataType>(centered[i]);
+                expected_query_body[i] = centered[i];
             } else {
                 expected_query_body[i] = original_blob[i];
             }
-            const float query_value = to_fp32<DataType>(expected_query_body[i]);
+            const float query_value = to_fp32<QueryType>(expected_query_body[i]);
             expected_x_mean_ip += widened_blob[i] * mean_vec[i];
             expected_y_sum += query_value;
             expected_y_sum_squares += query_value * query_value;
@@ -1922,8 +1924,8 @@ protected:
                               storage_meta_offset + sq8::mean_ip_index<Metric>() * sizeof(float)),
                     expected_x_mean_ip);
             }
-            EXPECT_NO_FATAL_FAILURE(CompareVectors<DataType>(
-                static_cast<const DataType *>(query_blob), expected_query_body, dim));
+            EXPECT_NO_FATAL_FAILURE(CompareVectors<QueryType>(
+                static_cast<const QueryType *>(query_blob), expected_query_body, dim));
             ASSERT_FLOAT_EQ(
                 load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
                 expected_y_sum);
@@ -1957,8 +1959,8 @@ protected:
             quant_preprocessor->preprocessQuery(original_blob, blob, blob_size, alignment);
             ASSERT_NE(blob, nullptr);
             ASSERT_EQ(blob_size, expected_query_size);
-            EXPECT_NO_FATAL_FAILURE(CompareVectors<DataType>(static_cast<const DataType *>(blob),
-                                                             expected_query_body, dim));
+            EXPECT_NO_FATAL_FAILURE(CompareVectors<QueryType>(static_cast<const QueryType *>(blob),
+                                                              expected_query_body, dim));
             ASSERT_FLOAT_EQ(load_meta(blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
                             expected_y_sum);
             if constexpr (Metric == VecSimMetric_L2) {
@@ -1978,6 +1980,37 @@ protected:
         delete quant_preprocessor;
     }
 };
+
+TEST(QuantPreprocessorFP16WithNormTest, L2CenteringPreservesFP32RangeAndPrecision) {
+    using DataType = vecsim_types::float16;
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    for (size_t dim : {1, 4, 65}) {
+        for (const auto [input_value, mean_value] :
+             {std::pair{1.0f, 10000.0f}, std::pair{-40000.0f, 40000.0f},
+              std::pair{0.5f, 0.10001f}}) {
+            SCOPED_TRACE(::testing::Message()
+                         << "dim=" << dim << " input=" << input_value << " mean=" << mean_value);
+            std::vector<DataType> input(dim, vecsim_types::FP32_to_FP16(input_value));
+            vecsim_stl::vector<float> mean(dim, mean_value, allocator);
+            QuantPreprocessor<DataType, VecSimMetric_L2, true> preprocessor(allocator, dim, mean);
+            void *query_blob = nullptr;
+            size_t query_size = input.size() * sizeof(DataType);
+            preprocessor.preprocessQuery(input.data(), query_blob, query_size, 0);
+            const auto free_blob = [&](void *blob) { allocator->free_allocation(blob); };
+            std::unique_ptr<void, decltype(free_blob)> query(query_blob, free_blob);
+
+            ASSERT_EQ(query_size, (dim + 2) * sizeof(float));
+            const auto *values = static_cast<const float *>(query.get());
+            const float expected = input_value - mean_value;
+            for (size_t i = 0; i < dim; ++i) {
+                EXPECT_FLOAT_EQ(values[i], expected);
+            }
+            EXPECT_FLOAT_EQ(values[dim + sq8::SUM_QUERY], expected * dim);
+            EXPECT_NEAR(values[dim + sq8::SUM_SQUARES_QUERY], double(expected) * expected * dim,
+                        double(expected) * expected * dim * 1e-6);
+        }
+    }
+}
 
 using QuantPreprocessorWithNormMetricTest = QuantPreprocessorWithNormMetricTestBase<float>;
 
@@ -2348,7 +2381,7 @@ TEST(DistanceCalculatorWithNormTest, CalcDistanceForQuery_L2_FP16) {
     query_preprocessor->preprocessQuery(y, query_blob, query_size, 0);
     delete query_preprocessor;
 
-    auto asym_func = spaces::L2_SQ8_FP16_GetDistFunc(dim);
+    auto asym_func = spaces::L2_SQ8_FP32_GetDistFunc(dim);
     auto sym_func = spaces::L2_SQ8_SQ8_GetDistFunc(dim);
     auto *calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, VecSimMetric_L2>(
         allocator, asym_func, sym_func, computeMeanSumSquares(mean, dim));

@@ -5184,7 +5184,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, L2MeanTrainingWithBoundedValues) {
             this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_L2, count);
         if (!tiered_index) {
             mock_thread_pool.reset_ctx();
-            FAIL() << "bounded FLOAT16 L2 mean training must construct";
+            FAIL() << "FLOAT16 L2 mean training must construct";
         }
         ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
         std::vector<std::vector<TEST_DATA_T>> vectors(count, std::vector<TEST_DATA_T>(dim));

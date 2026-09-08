@@ -446,8 +446,8 @@ TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
     EXPECT_EQ(EstimateInitialSize(hnsw_params), SIZE_MAX);
 }
 
-// The caller guarantees bounded inputs and means. Exercise both endpoints, a mean that is
-// not representable in FP16, and odd dimensions that also cover SIMD residual handling.
+// Exercise both endpoints, a mean not representable in FP16, and odd dimensions that
+// also cover SIMD residual handling.
 TEST(HNSWSQ8ParamsTest, MeanCenteredFP16L2BoundedValues) {
     using data_t = vecsim_types::float16;
     constexpr size_t count = 32;
@@ -488,7 +488,7 @@ TEST(HNSWSQ8ParamsTest, MeanCenteredFP16L2BoundedValues) {
                     const auto verify = [&](size_t id, double score, size_t) {
                         EXPECT_EQ(id, multi ? v / 2 : v);
                         EXPECT_TRUE(std::isfinite(score));
-                        // SQ8 reconstruction and FP16 centering both contribute to self-distance.
+                        // SQ8 reconstruction contributes to self-distance.
                         EXPECT_NEAR(score, 0.0, dim * 1e-4);
                     };
                     runTopKSearchTest(index.get(), vectors[v].data(), 1, verify);
