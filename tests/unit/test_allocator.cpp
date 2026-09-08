@@ -195,6 +195,12 @@ TYPED_TEST(IndexAllocatorTest, test_bf_index_block_size_1) {
         (int64_t(bfIndex->labelToIdLookup.bucket_count()) - int64_t(buckets_before)) *
         sizeof(size_t);
 
+    // libc++ may release the bucket array entirely when the map becomes empty.
+    // Its allocation header is freed as well; libstdc++ may retain a bucket array.
+    if (buckets_before != 0 && bfIndex->labelToIdLookup.bucket_count() == 0) {
+        expectedAllocationDelta -= vecsimAllocationOverhead;
+    }
+
     ASSERT_EQ(expectedAllocationDelta, deleteCommandAllocationDelta);
     ASSERT_EQ(expectedAllocationSize + expectedAllocationDelta, allocator->getAllocationSize());
     memory = VecSimIndex_StatsInfo(bfIndex).memory;
