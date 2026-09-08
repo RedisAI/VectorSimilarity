@@ -126,8 +126,8 @@ public:
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
      *   caught inside that window is reported by both tiers and appears twice.
      *
-     * A quantized backend cannot report vector elements. Multi-value reads append nothing to
-     * avoid returning a buffered subset. Single-value reads can still report a buffered vector.
+     * A quantized backend cannot report vector elements. Reads append nothing, including when
+     * the requested label is still buffered in the flat tier.
      *
      * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
      * buffer is the whole answer, but a multi-value label's vectors are routinely split across
@@ -150,10 +150,8 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        // The flat tier alone cannot give a complete multi-value answer once vectors can migrate
-        // to a backend that cannot report them. Empty output means "cannot tell" in this API.
-        if (this->backendIndex->usesQuantizedStorage() && this->frontendIndex->isMultiValue()) {
+        // Empty output means "cannot tell" for every label in a quantized index.
+        if (this->backendIndex->usesQuantizedStorage()) {
             return;
         }
 #if HAVE_SVS
@@ -175,6 +173,7 @@ public:
             return;
         }
 #endif
+        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         const size_t before_flat = vectors_output.size();
         this->frontendIndex->getDataByLabel(label, vectors_output);
         // Whether the buffer held it, measured rather than read off emptiness, so the tier

@@ -5158,7 +5158,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Multi, getDataByLabelDoesNotReportPartialSQ8Lab
     EXPECT_TRUE(stored.empty());
 }
 
-TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsBufferedSQ8Vector) {
+TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsNothingForSQ8Backend) {
     constexpr size_t dim = 4;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP);
@@ -5168,12 +5168,11 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsBufferedSQ8Vector)
     TEST_DATA_T vector[dim];
     this->GenerateVectorData(vector, dim, 1.0f);
     ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 0), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
 
     std::vector<std::vector<TEST_DATA_T>> stored;
     tiered_index->getDataByLabel(0, stored);
-    ASSERT_EQ(stored.size(), 1);
-    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
-    stored.clear();
+    EXPECT_TRUE(stored.empty());
 
     mock_thread_pool.thread_iteration();
     ASSERT_TRUE(this->CastToHNSW(tiered_index)->isLabelExists(0));
@@ -5181,12 +5180,11 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsBufferedSQ8Vector)
     tiered_index->getDataByLabel(0, stored);
     EXPECT_TRUE(stored.empty());
 
-    // A buffered overwrite is still the complete current value for a single-value label.
+    // Buffered overwrites follow the same policy as migrated vectors.
     this->GenerateVectorData(vector, dim, 2.0f);
     ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 0), 0);
     tiered_index->getDataByLabel(0, stored);
-    ASSERT_EQ(stored.size(), 1);
-    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+    EXPECT_TRUE(stored.empty());
     while (!mock_thread_pool.jobQ.empty()) {
         mock_thread_pool.thread_iteration();
     }
