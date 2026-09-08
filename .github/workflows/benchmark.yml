@@ -46,11 +46,36 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+      - name: Prepare EC2 owner tag
+        id: ec2-tags
+        # Keep the original workflow actor as owner, including on reruns.
+        env:
+          OWNER_HANDLE: ${{ github.actor }}
+        shell: python
+        run: |
+          import os
+          import re
+
+          # Allow only lowercase ASCII letters, digits, and underscores.
+          owner = os.environ["OWNER_HANDLE"].lower()
+          owner = re.sub(r"[^a-z0-9_]", "_", owner)
+          # Collapse repeated separators, cap at 63 characters, and trim edges.
+          owner = re.sub(r"_+", "_", owner)[:63].strip("_")
+          if not owner:
+              raise SystemExit("Cannot derive an EC2 owner tag from github.actor")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"owner={owner}\n")
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2.4.2
         with:
           mode: start
+          aws-resource-tags: >-
+            [
+              {"Key": "team", "Value": "ai_and_search"},
+              {"Key": "owner", "Value": "${{ steps.ec2-tags.outputs.owner }}"}
+            ]
           github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
           # Ubuntu 22.04 128GB Storage AMI
           ec2-image-id: ami-0ba430d4b7b64de57
