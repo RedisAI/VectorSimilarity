@@ -2794,7 +2794,7 @@ TYPED_TEST(FP16SVSTieredIndexTest, BatchIterator) {
         }
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
-        // Query for (n*scale, n*scale, n*scale, n*scale) vector (recall that n-1 is the largest id in te index).
+        // Query for the scaled vector; n-1 is the largest label in the index.
         float16 query[d];
         this->GenerateVector(query, d, n * scale);
 
