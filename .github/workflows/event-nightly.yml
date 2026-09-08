@@ -25,8 +25,8 @@ jobs:
 #    uses: ./.github/workflows/task-unit-test.yml
 #    with:
 #      container: ubuntu:bionic
-  bullseye:
-    uses: ./.github/workflows/debian11.yml
+  trixie:
+    uses: ./.github/workflows/debian13.yml
   #  amazonlinux2:
   #    uses: ./.github/workflows/amazon2.yml
   mariner2:
@@ -43,7 +43,6 @@ jobs:
     uses: ./.github/workflows/macos.yml
   arm:
     uses: ./.github/workflows/arm.yml
-    secrets: inherit
   coverage:
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
