@@ -23,10 +23,10 @@ jobs:
 #    uses: ./.github/workflows/task-unit-test.yml
 #    with:
 #      container: ubuntu:bionic
-  bullseye:
+  trixie:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: debian:bullseye
+      container: gcc:14-trixie
 #  amazonlinux2:
 #    needs: [check-if-docs-only]
 #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -47,7 +47,6 @@ jobs:
     uses: ./.github/workflows/macos.yml
   arm:
     uses: ./.github/workflows/arm.yml
-    secrets: inherit
 
   coverage:
     uses: ./.github/workflows/coverage.yml
@@ -58,7 +57,7 @@ jobs:
       - jammy
       - focal
 #      - bionic
-      - bullseye
+      - trixie
 #      - amazonlinux2
       - mariner2
       - rocky8
