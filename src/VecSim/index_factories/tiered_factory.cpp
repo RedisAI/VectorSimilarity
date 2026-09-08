@@ -24,6 +24,27 @@ using float16 = vecsim_types::float16;
 
 namespace TieredFactory {
 
+template <typename DataType, typename DistType>
+static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
+    const auto *primary = params->primaryIndexParams;
+    constexpr bool supported_input = QuantInput<DataType> && std::is_same_v<DistType, float>;
+
+    switch (primary->algo) {
+    case VecSimAlgo_HNSWLIB: {
+        const auto quant_type = primary->algoParams.hnswParams.quantType;
+        return quant_type == VecSimQuant_NONE || (supported_input && quant_type == VecSimQuant_SQ8);
+    }
+#if HAVE_SVS
+    case VecSimAlgo_SVS:
+        // A supported fallback is valid; the SVS factory selects the effective mode.
+        return supported_input &&
+               svs_details::isSVSQuantBitsSupported(primary->algoParams.svsParams.quantBits).second;
+#endif
+    default:
+        return false;
+    }
+}
+
 namespace TieredHNSWFactory {
 
 static inline BFParams NewBFParams(const TieredIndexParams *params) {
@@ -40,20 +61,6 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
 static inline bool RequiresSQAccumulation(const TieredIndexParams *params) {
     return params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE &&
            params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
-}
-
-template <typename DataType, typename DistType>
-static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
-    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-    if (hnsw_params.quantType == VecSimQuant_NONE) {
-        return true;
-    }
-
-    if constexpr (!QuantInput<DataType> || !std::is_same_v<DistType, float>) {
-        return false;
-    } else {
-        return hnsw_params.quantType == VecSimQuant_SQ8;
-    }
 }
 
 template <typename DataType, typename DistType = DataType>
@@ -84,8 +91,10 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
     if (hnsw_params.quantType == VecSimQuant_SQ8 && hnsw_params.dim < 64) {
-        frontendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
-                           "SQ8 compression is not recommended for dimensions below 64");
+        frontendIndex->log(
+            VecSimCommonStrings::LOG_WARNING_STRING,
+            "HNSW SQ8 compression is not recommended for vectors with fewer than "
+            "64 dimensions because per-vector metadata overhead reduces memory savings");
     }
 
     // Create new tiered hnsw index
@@ -175,6 +184,9 @@ BFParams NewBFParams(const TieredIndexParams *params) {
 #if HAVE_SVS
 template <typename DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
+    if (!IsQuantizationSupported<DataType, float>(params)) {
+        return nullptr;
+    }
 
     // initialize svs index
     // Normalization is done by the frontend index.
