@@ -787,7 +787,9 @@ TEST(SQ8TieredHNSWTest, WarnsForDimensionsBelow64) {
     mock_thread_pool.ctx->index_strong_ref.reset(index);
 
     ASSERT_EQ(warnings.size(), 1);
-    EXPECT_NE(warnings.front().find("SQ8 compression is not recommended for dimensions below 64"),
+    EXPECT_NE(warnings.front().find(
+                  "HNSW SQ8 compression is not recommended for vectors with fewer than "
+                  "64 dimensions because per-vector metadata overhead reduces memory savings"),
               std::string::npos);
 
     auto allocator = index->getAllocator();
