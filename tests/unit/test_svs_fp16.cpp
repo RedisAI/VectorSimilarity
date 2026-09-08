@@ -2764,6 +2764,8 @@ TYPED_TEST(FP16SVSTieredIndexTest, BatchIterator) {
     }
     constexpr size_t d = 4;
     constexpr size_t n = 1000;
+    // Keep FP16 squared L2 distances below 65504: 4 * (1000 * 0.1)^2 = 40000.
+    constexpr float scale = 0.1f;
 
     // Create TieredSVS index instance with a mock queue.
     SVSParams params = {
@@ -2785,16 +2787,16 @@ TYPED_TEST(FP16SVSTieredIndexTest, BatchIterator) {
         auto *svs = tiered_index->GetBackendIndex();
         auto *flat = tiered_index->GetFlatIndex();
 
-        // For every i, add the vector (i,i,i,i) under the label i.
+        // For every i, add the vector (i*scale, i*scale, i*scale, i*scale) under the label i.
         for (size_t i = 0; i < n; i++) {
             auto cur = decider(i, n) ? svs : flat;
-            this->GenerateAndAddVector(cur, d, i, i);
+            this->GenerateAndAddVector(cur, d, i, i * scale);
         }
         ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), n) << decider_name;
 
-        // Query for (n,n,n,n) vector (recall that n-1 is the largest id in te index).
+        // Query for the scaled vector; n-1 is the largest label in the index.
         float16 query[d];
-        this->GenerateVector(query, d, n);
+        this->GenerateVector(query, d, n * scale);
 
         VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
         size_t iteration_num = 0;
