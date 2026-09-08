@@ -73,6 +73,24 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label);
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
 
 /**
+ * @brief Change the external label of an already-stored vector from @p old_label to @p new_label
+ * without re-inserting the vector or modifying the graph. Only the label<->internal-id mapping is
+ * updated; the internal id and all neighbor edges are left intact, so this is O(1) per stored
+ * vector and avoids the graph churn of a delete + re-insert.
+ *
+ * Use this when re-keying an unchanged vector (e.g. a document whose id changed on update but whose
+ * vector value did not). For the tiered index this also fixes up any pending insert job so a
+ * not-yet-ingested vector is ingested under @p new_label.
+ *
+ * @param index the index containing the vector.
+ * @param old_label the current label of the stored vector.
+ * @param new_label the label to assign. Must not already exist in the index.
+ * @return 1 if relabeled, 0 if @p old_label was not found, or VECSIM_RELABEL_NOT_SUPPORTED (-1) if
+ *         the index type does not support relabeling (caller should fall back to delete + add).
+ */
+int VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
+
+/**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
  * the vector fits the index - its type and dimension are the same as the index's, and if the
  * index's distance metric is cosine, the vector is already normalized.
