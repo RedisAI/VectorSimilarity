@@ -27,10 +27,10 @@ jobs:
 #    with:
 #      container: ubuntu:bionic
 #      run-valgrind: false
-  bullseye:
+  trixie:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: debian:bullseye
+      container: gcc:14-trixie
       run-valgrind: false
 #  amazonlinux2:
 #    uses: ./.github/workflows/amazon2.yml
@@ -52,7 +52,6 @@ jobs:
     uses: ./.github/workflows/macos.yml
   arm:
     uses: ./.github/workflows/arm.yml
-    secrets: inherit
 
   notify-on-failure:
     needs:
@@ -60,7 +59,7 @@ jobs:
       - jammy
       - focal
 #      - bionic
-      - bullseye
+      - trixie
 #      - amazonlinux2
       - mariner2
       - rocky8
