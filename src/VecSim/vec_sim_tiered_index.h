@@ -153,9 +153,9 @@ public:
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
      *   caught inside that window is reported by both tiers and appears twice.
      *
-     * A quantized backend cannot report vector elements. Once it is published, multi-value
-     * reads append nothing to avoid returning a buffered subset. Single-value reads can still
-     * report a buffered vector, which is the complete current value for that label.
+     * A quantized backend cannot report vector elements. Once it is published, reads append
+     * nothing, including when the requested label is still buffered. Before publication, the
+     * flat tier can report the complete label.
      *
      * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
      * buffer is the whole answer, but a multi-value label's vectors are routinely split across
@@ -178,15 +178,17 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        // Take the flat lock before sampling publication. If publication wins first, read both
-        // tiers; if this load still sees false, migration cannot remove a flat vector until this
-        // method returns.
+        // Published SQ8 indexes report no values without acquiring the flat lock.
+        if (this->hasBackend() && this->publishedBackend().usesQuantizedStorage()) {
+            return;
+        }
+
+        // Sample publication again under the flat lock. If the backend is still absent,
+        // migration cannot remove a flat vector until this method returns.
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         const bool backend_published = this->hasBackend();
-        // The flat tier alone cannot give a complete multi-value answer once vectors can migrate
-        // to a backend that cannot report them. Empty output means "cannot tell" in this API.
-        if (backend_published && this->publishedBackend().usesQuantizedStorage() &&
-            this->frontendIndex->isMultiValue()) {
+        // Publication may have completed while acquiring the flat lock.
+        if (backend_published && this->publishedBackend().usesQuantizedStorage()) {
             return;
         }
 #if HAVE_SVS
