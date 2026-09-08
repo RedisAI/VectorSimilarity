@@ -37,7 +37,6 @@ jobs:
     uses: ./.github/workflows/macos.yml
   arm:
     uses: ./.github/workflows/arm.yml
-    secrets: inherit
 
   coverage:
     uses: ./.github/workflows/coverage.yml
