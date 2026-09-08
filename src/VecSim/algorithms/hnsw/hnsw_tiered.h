@@ -127,6 +127,7 @@ private:
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
 #endif
 
+    [[nodiscard]] vecsim_stl::vector<float> calculateQuantizationMean() const;
     [[nodiscard]] bool initializeQuantizedBackend();
 
     void executeInsertJob(HNSWInsertJob *job);
@@ -837,25 +838,33 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 }
 
 template <typename DataType, typename DistType>
-bool TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
-    assert((QuantInput<DataType> && std::is_same_v<DistType, float>));
+vecsim_stl::vector<float> TieredHNSWIndex<DataType, DistType>::calculateQuantizationMean() const {
     assert(this->sqAccumulationState);
-    auto &accumulationState = *this->sqAccumulationState;
+    const auto &accumulationState = *this->sqAccumulationState;
     assert(accumulationState.normalizationSetSize > 0);
     // A retry after failed initialization may include more vectors than the threshold.
     const size_t accumulated_count = this->frontendIndex->indexSize();
     assert(accumulated_count >= accumulationState.normalizationSetSize);
 
-    auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
+    const auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
     vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
     for (size_t i = 0; i < hnswParams.dim; i++) {
         mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
                                      static_cast<double>(accumulated_count));
     }
 
+    return mean;
+}
+
+template <typename DataType, typename DistType>
+bool TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
+    assert((QuantInput<DataType> && std::is_same_v<DistType, float>));
+    const auto mean = this->calculateQuantizationMean();
+    auto &backendParams = this->sqAccumulationState->backendIndexParams;
+    auto &hnswParams = backendParams.algoParams.hnswParams;
     hnswParams.quantParams = mean.data();
-    auto *new_backend = static_cast<HNSWIndex<DataType, DistType> *>(
-        HNSWFactory::NewIndex(&accumulationState.backendIndexParams, true));
+    auto *new_backend =
+        static_cast<HNSWIndex<DataType, DistType> *>(HNSWFactory::NewIndex(&backendParams, true));
     if (!new_backend) {
         hnswParams.quantParams = nullptr;
         TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
