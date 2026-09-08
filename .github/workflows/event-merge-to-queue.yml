@@ -29,8 +29,8 @@ jobs:
 #    uses: ./.github/workflows/task-unit-test.yml
 #    with:
 #      container: ubuntu:xenial
-  bullseye:
-    uses: ./.github/workflows/debian11.yml
+  trixie:
+    uses: ./.github/workflows/debian13.yml
 #  amazonlinux2:
 #    needs: [check-if-docs-only]
 #    if: ${{ needs.check-if-docs-only.outputs.only-docs-changed == 'false' }}
@@ -66,7 +66,7 @@ jobs:
 #      - focal
 #      - bionic
 #      - xenial
-      - bullseye
+      - trixie
 #       - centos7
 #       - amazonlinux2
       - mariner2
