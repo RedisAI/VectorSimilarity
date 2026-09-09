@@ -93,6 +93,35 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX2, 16, a
 bool sse4_supported = opt.sse4_1;
 INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, SSE4, 16, sse4_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, SSE4, 16, sse4_supported);
+
+BENCHMARK_DEFINE_F(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32_SSE4_L2_focused)(benchmark::State &st) {
+    if (!sse4_supported) {
+        st.SkipWithError("This benchmark requires SSE4.1, which is not available");
+        return;
+    }
+    auto func = spaces::Choose_SQ8_FP32_L2_implementation_SSE4(dim);
+    for (auto _ : st) {
+        benchmark::DoNotOptimize(func(v1, v2, dim));
+    }
+}
+
+BENCHMARK_REGISTER_F(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32_SSE4_L2_focused)
+    ->ArgName("Dimension")
+    ->Unit(benchmark::kNanosecond)
+    ->Arg(8)
+    ->Arg(9)
+    ->Arg(15)
+    ->Arg(16)
+    ->Arg(17)
+    ->Arg(32)
+    ->Arg(64)
+    ->Arg(128)
+    ->Arg(129)
+    ->Arg(512)
+    ->Arg(513)
+    ->Arg(527)
+    ->Arg(768)
+    ->Arg(1024);
 #endif // SSE4
 #endif // x86_64
 

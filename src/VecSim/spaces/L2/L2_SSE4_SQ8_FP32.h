@@ -112,7 +112,7 @@ float SQ8_FP32_L2SqrSIMD16_SSE4(const void *pVect1v, const void *pVect2v, size_t
 
     // Horizontal sum to get Σ(diff_i²)
     __m128 sum = _mm_add_ps(_mm_add_ps(sum0, sum1), _mm_add_ps(sum2, sum3));
-    float PORTABLE_ALIGN16 TmpRes[4];
-    _mm_store_ps(TmpRes, sum);
-    return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3];
+    sum = _mm_add_ps(sum, _mm_movehl_ps(sum, sum));
+    sum = _mm_add_ss(sum, _mm_shuffle_ps(sum, sum, _MM_SHUFFLE(1, 1, 1, 1)));
+    return _mm_cvtss_f32(sum);
 }
