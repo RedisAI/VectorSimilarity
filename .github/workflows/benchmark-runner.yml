@@ -50,7 +50,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          submodules: recursive
+          submodules: ${{ inputs.setup != 'bm-spaces' && 'recursive' || 'false' }}
       - name: Print runner info
         run: |
           printf "Runner lscpu:\n$(lscpu)\n"
@@ -59,21 +59,39 @@ jobs:
           printf "Runner uname:\n$(uname -a)\n"
           printf "Runner arch:\n$(arch)\n"
       - name: Install benchmark dependencies
+        if: ${{ inputs.setup != 'bm-spaces' }}
         run: |
           sudo .install/install_script.sh
           sudo apt install python3-pip -y
           pip3 install --upgrade pip PyYAML setuptools redisbench-admin
           pip3 install -r requirements.txt
+      - name: Install paired SQ8 comparison dependencies
+        if: ${{ inputs.setup == 'bm-spaces' }}
+        run: sudo apt-get install -y build-essential cmake ninja-build python3
+      - name: Build, verify and compare SQ8 baseline and candidate
+        if: ${{ inputs.setup == 'bm-spaces' }}
+        timeout-minutes: 90
+        run: python3 .github/scripts/compare-sq8.py
+      - name: Upload paired SQ8 comparison
+        if: ${{ always() && inputs.setup == 'bm-spaces' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: sq8-comparison-${{ inputs.architecture }}
+          path: sq8-comparison-results/
+          if-no-files-found: error
       - name: Download pre-generated indices
+        if: ${{ inputs.setup != 'bm-spaces' }}
         timeout-minutes: 20
         run: ./tests/benchmark/bm_files.sh ${{ inputs.setup }}
       - name: Run Benchmark
+        if: ${{ inputs.setup != 'bm-spaces' }}
         env:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 300
         run: |
           make benchmark BM_FILTER=${{ inputs.setup }}
       - name: Collect results
+        if: ${{ inputs.setup != 'bm-spaces' }}
         run: |
           ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export \
           --redistimeseries_host ${{ secrets.PERFORMANCE_RTS_HOST }} \
