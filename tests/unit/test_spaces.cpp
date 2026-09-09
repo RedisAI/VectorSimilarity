@@ -2577,8 +2577,8 @@ TEST_F(SpacesTest, SQ8_FP32_L2_AVX512F_OnlyDispatch) {
         }
         auto pair = BuildSQ8_FP32_L2_ShiftedPair(dim, 1.0f, 10000.0f, 4242);
         const auto &shifted = pair.second;
-        const double expected = SQ8_FP32_L2Sqr_DoubleReference(
-            shifted.storage.data(), shifted.query.data(), dim);
+        const double expected =
+            SQ8_FP32_L2Sqr_DoubleReference(shifted.storage.data(), shifted.query.data(), dim);
         EXPECT_NEAR(func(shifted.storage.data(), shifted.query.data(), dim), expected,
                     1e-3 * std::max(1.0, expected))
             << "dim=" << dim;

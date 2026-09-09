@@ -66,8 +66,7 @@ cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
 #ifdef OPT_AVX512F
 bool avx512f_supported = opt.avx512f;
-INITIALIZE_BENCHMARKS_SET_L2(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F, 16,
-                            avx512f_supported);
+INITIALIZE_BENCHMARKS_SET_L2(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F, 16, avx512f_supported);
 #endif
 
 BENCHMARK_DEFINE_F(BM_VecSimSpaces_SQ8_FP32, L2_Dispatch_NoVNNI)(benchmark::State &st) {
@@ -100,7 +99,7 @@ BENCHMARK_REGISTER_F(BM_VecSimSpaces_SQ8_FP32, L2_Dispatch_NoVNNI)
 #ifdef OPT_AVX512_F_BW_VL_VNNI
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
 INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F_BW_VL_VNNI, 16,
-                                avx512_f_bw_vl_vnni_supported);
+                             avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F_BW_VL_VNNI, 16,
                                  avx512_f_bw_vl_vnni_supported);
 #endif // AVX512_F_BW_VL_VNNI
