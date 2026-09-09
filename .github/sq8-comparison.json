@@ -1,0 +1,5 @@
+{
+  "baseline": "63a23092799f21befcb5f95fe9293bebdcb26f42",
+  "experiment": "skip-query-sums",
+  "filter": "^BM_SQ8_FP32_L2_PreprocessQuery"
+}
