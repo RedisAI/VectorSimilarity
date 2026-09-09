@@ -2770,31 +2770,83 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     VecSimIndex_Free(index);
 }
 
-// SVS keeps its vectors in the SVS library's own form -- quantized, and for LeanVec reduced --
-// and does not hand them back, so `getDataByLabel` appends nothing. Per the contract on
-// `VecSimIndexAbstract::getDataByLabel` an empty output reads as "cannot tell", which is the
-// answer a caller comparing against stored data needs.
+// An uncompressed SVS index can hand back exactly what it stored, in insertion order, per the
+// contract on `VecSimIndexAbstract::getDataByLabel`. A compressed or LeanVec-reduced one keeps
+// vectors in the SVS library's own form and does not dequantize, so it must append nothing --
+// an empty output reads as "cannot tell", which is the answer a caller comparing against stored
+// data needs; anything else risks a dequantized reconstruction reading as a match or a
+// difference that isn't real. Checked across both the single- and multi-value index variants,
+// since the multi case reads through a different lookup (`get_label_to_external_lookup` +
+// `get_parent_index`) than the single case's direct `get_datum`.
 //
-// Pinned because the alternative is silence: while this was left to a default in the base class,
-// a tiered SVS index reached a not-implemented stub through `VecSimTieredIndex::getDataByLabel`
-// as soon as a vector had been ingested.
-TEST(SVSTest, getDataByLabelReportsNothing) {
-    size_t dim = 4;
-    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams index_params = CreateParams(params);
-    VecSimIndex *index = VecSimIndex_New(&index_params);
-    ASSERT_NE(index, nullptr);
+// Also covers a label the index does not hold at all, which must report nothing regardless of
+// compression.
+TEST(SVSTest, getDataByLabel) {
+    // Limit VecSim log level to avoid printing too much information
+    VecSimIndexInterface::setLogCallbackFunction(svsTestLogCallBackNoDebug);
+    const size_t dim = 4;
+    const size_t present_label = 1;
+    const size_t absent_label = 999;
 
-    GenerateAndAddVector<float>(index, dim, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+    for (bool is_multi : {false, true}) {
+        for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
+                                VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
+                                VecSimSvsQuant_4x8_LeanVec, VecSimSvsQuant_8x8_LeanVec}) {
+            SVSParams params = {
+                .type = VecSimType_FLOAT32,
+                .dim = dim,
+                .metric = VecSimMetric_L2,
+                .multi = is_multi,
+                .quantBits = quant_bits,
+            };
+            VecSimParams index_params = CreateParams(params);
+            VecSimIndex *index = VecSimIndex_New(&index_params);
+            if (index == nullptr) {
+                // Unsupported quant_bits on this build/CPU; `quant_modes` already covers that.
+                continue;
+            }
+            const std::string case_msg = "is_multi: " + std::to_string(is_multi) +
+                                         ", quant_bits: " + std::to_string(quant_bits);
 
-    auto *typed = dynamic_cast<VecSimIndexAbstract<float, float> *>(index);
-    ASSERT_NE(typed, nullptr);
-    std::vector<std::vector<float>> stored;
-    typed->getDataByLabel(1, stored);
-    EXPECT_TRUE(stored.empty()) << "SVS cannot report stored vectors, and must not pretend to";
+            // `VecSimSvsQuant_NONE` is the only mode `isSVSQuantBitsSupported` ever falls back
+            // to (an unsupported non-NONE mode falls back to Scalar, never to NONE), so the
+            // requested mode alone tells us whether storage ended up compressed.
+            const bool is_compressed = quant_bits != VecSimSvsQuant_NONE;
 
-    VecSimIndex_Free(index);
+            std::vector<float> v1(dim), v2(dim);
+            GenerateVector<float>(v1.data(), dim, 1.0f);
+            GenerateVector<float>(v2.data(), dim, 2.0f);
+            ASSERT_EQ(VecSimIndex_AddVector(index, v1.data(), present_label), 1) << case_msg;
+            if (is_multi) {
+                // A second vector under the same label, to exercise the multi-value lookup path.
+                ASSERT_EQ(VecSimIndex_AddVector(index, v2.data(), present_label), 1) << case_msg;
+            }
+
+            auto *typed = dynamic_cast<VecSimIndexAbstract<float, float> *>(index);
+            ASSERT_NE(typed, nullptr) << case_msg;
+
+            std::vector<std::vector<float>> stored;
+            typed->getDataByLabel(present_label, stored);
+            if (is_compressed) {
+                EXPECT_TRUE(stored.empty())
+                    << "a compressed index must not report stored vectors: " << case_msg;
+            } else if (is_multi) {
+                ASSERT_EQ(stored.size(), 2) << case_msg;
+                EXPECT_EQ(stored[0], v1) << case_msg;
+                EXPECT_EQ(stored[1], v2) << case_msg;
+            } else {
+                ASSERT_EQ(stored.size(), 1) << case_msg;
+                EXPECT_EQ(stored[0], v1) << case_msg;
+            }
+
+            std::vector<std::vector<float>> stored_absent;
+            typed->getDataByLabel(absent_label, stored_absent);
+            EXPECT_TRUE(stored_absent.empty())
+                << "a label the index does not hold must report nothing: " << case_msg;
+
+            VecSimIndex_Free(index);
+        }
+    }
 }
 
 TEST(SVSTest, quant_modes) {

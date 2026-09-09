@@ -23,8 +23,8 @@ jobs:
   #    uses: ./.github/workflows/task-unit-test.yml
   #    with:
   #      container: ubuntu:bionic
-  bullseye:
-    uses: ./.github/workflows/debian11.yml
+  trixie:
+    uses: ./.github/workflows/debian13.yml
   rocky8:
     uses: ./.github/workflows/rocky8.yml
   rocky9:
@@ -35,7 +35,6 @@ jobs:
     uses: ./.github/workflows/macos.yml
   arm:
     uses: ./.github/workflows/arm.yml
-    secrets: inherit
   coverage:
     uses: ./.github/workflows/coverage.yml
     secrets: inherit
@@ -50,7 +49,7 @@ jobs:
       - jammy
 #      - focal
 #      - bionic
-      - bullseye
+      - trixie
       - rocky8
       - rocky9
       - alpine3
