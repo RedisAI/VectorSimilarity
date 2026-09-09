@@ -176,6 +176,17 @@ public:
     virtual VecSimDebugInfoIterator *debugInfoIterator() const = 0;
 
     /**
+     * @brief Return the HNSW graph neighbors for a label, grouped by level.
+     *
+     * Non-HNSW indexes return VecSimDebugCommandCode_BadIndex. The caller owns successful
+     * output and must release it with VecSimDebug_ReleaseElementNeighborsInHNSWGraph.
+     */
+    virtual VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData) {
+        *neighborsData = nullptr;
+        return VecSimDebugCommandCode_BadIndex;
+    }
+
+    /**
      * @brief A function to be implemented by the inheriting index and called by rangeQuery.
      * @param queryBlob binary representation of the query vector. Blob size should match the index
      * data type and dimension. The index is responsible to process the query vector.
