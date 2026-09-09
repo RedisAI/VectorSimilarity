@@ -36,7 +36,9 @@ def main():
     run(["git", "fetch", "--depth=1", "origin", baseline_sha], "fetch-baseline")
     experiment = Path(tempfile.mkdtemp(prefix="sq8-paired-", dir=os.environ["RUNNER_TEMP"]))
     baseline = experiment / "baseline"
-    run(["git", "worktree", "add", "--detach", baseline, baseline_sha], "checkout-baseline")
+    run(["git", "clone", "--shared", "--no-checkout", root, baseline], "clone-baseline")
+    run(["git", "checkout", "--detach", baseline_sha], "checkout-baseline", cwd=baseline)
+    run(["git", "submodule", "update", "--init", "--recursive"], "baseline-submodules", cwd=baseline)
 
     # Both libraries receive the candidate's exact benchmark workload. AVX512F's new
     # direct chooser registration is unrelated to the measured dispatcher workload,
@@ -59,7 +61,7 @@ def main():
         build = experiment / (name + "-build")
         build_dirs[name] = build
         run(["cmake", "-S", source, "-B", build, "-G", "Ninja",
-             "-DCMAKE_BUILD_TYPE=Release", "-DUSE_SVS=OFF",
+             "-DCMAKE_BUILD_TYPE=Release", "-DUSE_SVS=ON",
              "-DVECSIM_BUILD_TESTS=ON", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"],
             name + "-configure")
         targets = ["bm_spaces_sq8_fp32", "test_spaces"]
@@ -78,7 +80,7 @@ def main():
     cpu = affinity[-1]
     metadata = {
         **config, "candidate": candidate_sha, "cpu": cpu, "affinity": affinity,
-        "rounds": 9, "min_time_seconds": 0.15, "build_type": "Release", "use_svs": False,
+        "rounds": 9, "min_time_seconds": 0.15, "build_type": "Release", "use_svs": True,
         "compiler": subprocess.check_output(["c++", "--version"], text=True),
         "lscpu": subprocess.check_output(["lscpu"], text=True),
         "run_url": "https://github.com/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/"
@@ -142,7 +144,7 @@ def main():
         low, high = row["paired_bootstrap_95pct"]
         lines.append(f"| {row['name']} | {row['baseline_ns']:.2f} | {row['candidate_ns']:.2f} | "
                      f"{row['latency_change_pct']:+.1f}% | [{low:+.1f}%, {high:+.1f}%] | {row['verdict']} |")
-    lines.extend(["", "SVS disabled in both focused builds. This is a hot-cache microbenchmark, not end-to-end query latency.",
+    lines.extend(["", "SVS enabled in both focused builds. This is a hot-cache microbenchmark, not end-to-end query latency.",
                   "The no-VNNI dispatch experiment masks a feature on this runner; it does not measure older CPUs."])
     report = "\n".join(lines) + "\n"
     (results / "summary.md").write_text(report)

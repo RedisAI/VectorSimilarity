@@ -50,7 +50,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          submodules: ${{ inputs.setup != 'bm-spaces' && 'recursive' || 'false' }}
+          submodules: recursive
       - name: Print runner info
         run: |
           printf "Runner lscpu:\n$(lscpu)\n"
