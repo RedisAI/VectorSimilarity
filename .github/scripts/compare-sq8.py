@@ -37,6 +37,8 @@ def main():
     experiment = Path(tempfile.mkdtemp(prefix="sq8-paired-", dir=os.environ["RUNNER_TEMP"]))
     baseline = experiment / "baseline"
     run(["git", "clone", "--shared", "--no-checkout", root, baseline], "clone-baseline")
+    run(["git", "fetch", "--depth=1", "https://github.com/" + os.environ["GITHUB_REPOSITORY"],
+         baseline_sha], "fetch-isolated-baseline", cwd=baseline)
     run(["git", "checkout", "--detach", baseline_sha], "checkout-baseline", cwd=baseline)
     run(["git", "submodule", "update", "--init", "--recursive"], "baseline-submodules", cwd=baseline)
 
