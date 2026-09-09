@@ -3539,11 +3539,76 @@ TEST(SVSTest, ThreadPoolLazyInit) {
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
 }
 
-// SVS delegates label management to the external library, so it does not implement relabelVector
-// and inherits the VecSimIndexInterface default that reports "unsupported". The source label exists
-// and the target is free here, so a 0 return can only come from that default - which is the
-// contract callers must handle, and the reason the interface provides a default instead of a pure
-// virtual.
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+
+TEST(SVSTest, relabelVector) {
+    size_t dim = 4;
+    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams index_params = CreateParams(params);
+    VecSimIndex *index = VecSimIndex_New(&index_params);
+    ASSERT_NE(index, nullptr);
+
+    GenerateAndAddVector<float>(index, dim, 1, 1);
+    GenerateAndAddVector<float>(index, dim, 2, 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+
+    float query[dim];
+    GenerateVector<float>(query, dim, 1);
+    // Distance from the label's own vector, to prove below that the data did not move.
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query), 0);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 100), VecSimRelabel_OK);
+
+    // Nothing was added or removed, and the vector answers to the new label only.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 100, query), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query)));
+
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 100);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+TEST(SVSTest, relabelVectorRejects) {
+    size_t dim = 4;
+    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams index_params = CreateParams(params);
+    VecSimIndex *index = VecSimIndex_New(&index_params);
+    ASSERT_NE(index, nullptr);
+
+    // An index that never held a vector has no SVS impl yet - still a clean rejection, not a crash.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_OldLabelMissing);
+
+    GenerateAndAddVector<float>(index, dim, 1, 1);
+    GenerateAndAddVector<float>(index, dim, 2, 2);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    for (labelType label : {1, 2}) {
+        float v[dim];
+        GenerateVector<float>(v, dim, label);
+        ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, label, v), 0)
+            << "label " << label << " was modified";
+    }
+
+    VecSimIndex_Free(index);
+}
+
+#else // HAVE_SVS_REPLACE_EXTERNAL_ID
+
+// Built against an SVS without `replace_external_id`, so SVSIndex leaves relabelVector to the
+// interface default. Asserting the code here rather than skipping keeps the contract covered in
+// this configuration too: a caller has to be able to tell "this index never relabels" from a
+// rejection it could resolve itself.
 TEST(SVSTest, relabelVectorUnsupported) {
     size_t dim = 4;
     SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
@@ -3551,15 +3616,17 @@ TEST(SVSTest, relabelVectorUnsupported) {
     VecSimIndex *index = VecSimIndex_New(&index_params);
     ASSERT_NE(index, nullptr);
 
-    GenerateAndAddVector<float>(index, dim, 1);
+    GenerateAndAddVector<float>(index, dim, 1, 1);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
+    // The label exists and the target is free, so only the unsupported default can produce this.
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_Unsupported);
-    // The rejected call left the index untouched.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
 
     VecSimIndex_Free(index);
 }
+
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
 #else // HAVE_SVS
 
