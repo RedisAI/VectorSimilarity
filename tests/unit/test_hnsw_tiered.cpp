@@ -8,6 +8,7 @@
  */
 
 #include "VecSim/index_factories/tiered_factory.h"
+#include "VecSim/spaces/computer/sq8_quantization_trainer.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
@@ -183,6 +184,10 @@ TYPED_TEST(HNSWTieredIndexTest, testIndexesAttributes) {
     PreprocessorInterface *bf_pp = pp_arr[0];
     const std::type_info &bf_pp_actual_type = typeid(*bf_pp);
     ASSERT_EQ(bf_pp_actual_type, bf_pp_expected_type);
+
+    // Ordinary HNSW does not enter quantization training.
+    EXPECT_FALSE(hnsw_index->needsTraining());
+    EXPECT_EQ(hnsw_index->getQuantizationTrainer(), nullptr);
 
     // hnsw - simple
     IndexComponents<TEST_DATA_T, TEST_DIST_T> hnsw_components = hnsw_index->get_components();
@@ -5028,14 +5033,15 @@ protected:
     CreateSQ8TieredIndex(tieredIndexMock &mock_thread_pool, size_t dim = 16,
                          VecSimMetric metric = VecSimMetric_IP, size_t normSetSize = 100,
                          size_t flat_buffer_limit = SIZE_MAX, size_t M = 16,
-                         size_t efConstruction = 200) {
+                         size_t efConstruction = 200, const float *mean = nullptr) {
         HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
                                   .dim = dim,
                                   .metric = metric,
                                   .multi = index_type_t::isMulti(),
                                   .M = M,
                                   .efConstruction = efConstruction,
-                                  .quantType = VecSimQuant_SQ8};
+                                  .quantType = VecSimQuant_SQ8,
+                                  .quantParams = mean};
         VecSimParams vecsim_params = CreateParams(hnsw_params);
         TieredIndexParams tiered_params = {
             .jobQueue = &mock_thread_pool.jobQ,
@@ -5059,23 +5065,69 @@ protected:
     // --- Accessor helpers (HNSWTieredIndexTestSQ8 is a friend of TieredHNSWIndex) ---
 
     bool getIsInAccumulationPhase(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return !idx->backendIndex;
+        return idx->getHNSWIndex()->needsTraining();
+    }
+
+    template <typename Callback>
+    decltype(auto) inspectTrainer(TieredHNSWIndex<data_t, dist_t> *idx, Callback callback) {
+        const auto *trainer = idx->getHNSWIndex()->getQuantizationTrainer();
+        assert(trainer);
+        if (idx->getHNSWIndex()->getMetric() == VecSimMetric_L2) {
+            return callback(
+                *static_cast<const SQ8QuantizationTrainer<data_t, VecSimMetric_L2> *>(trainer));
+        }
+        return callback(
+            *static_cast<const SQ8QuantizationTrainer<data_t, VecSimMetric_IP> *>(trainer));
     }
 
     const vecsim_stl::vector<double> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->runningSumVec;
+        return inspectTrainer(
+            idx, [](const auto &trainer) -> const auto & { return trainer.getRunningSum(); });
     }
 
-    bool hasSQAccumulationState(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState.has_value();
+    bool hasQuantizationTrainer(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->getHNSWIndex()->getQuantizationTrainer() != nullptr;
     }
 
     size_t getNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->normalizationSetSize;
+        return inspectTrainer(idx, [](const auto &trainer) { return trainer.getThreshold(); });
     }
 
-    HNSWParams &getSQBackendParams(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->backendIndexParams.algoParams.hnswParams;
+    // Compare the actual cached dispatches and preprocessing with a backend constructed with
+    // the expected mean. Stored-to-stored IP specifically exercises mean_sum_squares.
+    void checkTrainedComponents(TieredHNSWIndex<data_t, dist_t> *idx,
+                                const std::vector<float> &mean) {
+        const size_t dim = mean.size();
+        auto *backend = idx->getHNSWIndex();
+        HNSWParams params = {.type = index_type_t::get_index_type(),
+                             .dim = dim,
+                             .metric = backend->getMetric(),
+                             .multi = index_type_t::isMulti(),
+                             .quantType = VecSimQuant_SQ8,
+                             .quantParams = mean.data()};
+        VecSimParams vecsim_params = CreateParams(params);
+        std::unique_ptr<HNSWIndex<data_t, dist_t>, decltype(&VecSimIndex_Free)> reference(
+            static_cast<HNSWIndex<data_t, dist_t> *>(HNSWFactory::NewIndex(&vecsim_params, true)),
+            VecSimIndex_Free);
+        ASSERT_NE(reference, nullptr);
+        ASSERT_EQ(backend->getStoredDataSize(), reference->getStoredDataSize());
+        std::vector<data_t> x(dim), y(dim);
+        for (size_t d = 0; d < dim; ++d) {
+            x[d] = from_fp32<data_t>(0.2f + float(d % 5) * 0.1f);
+            y[d] = from_fp32<data_t>(-0.3f + float(d % 7) * 0.07f);
+        }
+        auto actual_x = backend->preprocessForStorage(x.data());
+        auto actual_y = backend->preprocessForStorage(y.data());
+        auto actual_query = backend->preprocessQuery(y.data());
+        auto expected_x = reference->preprocessForStorage(x.data());
+        auto expected_y = reference->preprocessForStorage(y.data());
+        auto expected_query = reference->preprocessQuery(y.data());
+        EXPECT_EQ(memcmp(actual_x.get(), expected_x.get(), backend->getStoredDataSize()), 0);
+        EXPECT_EQ(memcmp(actual_y.get(), expected_y.get(), backend->getStoredDataSize()), 0);
+        EXPECT_FLOAT_EQ(backend->calcDistance(actual_x.get(), actual_y.get()),
+                        reference->calcDistance(expected_x.get(), expected_y.get()));
+        EXPECT_FLOAT_EQ(backend->calcDistanceForQuery(actual_x.get(), actual_query.get()),
+                        reference->calcDistanceForQuery(expected_x.get(), expected_query.get()));
     }
 
     BruteForceIndex<data_t, dist_t> *getFrontendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
@@ -5157,7 +5209,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
 
     // Verify accumulation phase state.
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
+    ASSERT_TRUE(this->hasQuantizationTrainer(tiered_index));
     ASSERT_EQ(this->getRunningSumVec(tiered_index).size(), dim);
     ASSERT_EQ(this->getNormalizationSetSize(tiered_index), normSetSize);
 
@@ -5166,10 +5218,52 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
         ASSERT_DOUBLE_EQ(this->getRunningSumVec(tiered_index)[i], 0.0);
     }
 
-    // Backend is not published until accumulation completes.
-    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    // The real SQ8 backend exists and remains empty until training completes.
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, InitialMemoryAndSuppliedMeanWithOptionalTraining) {
+    constexpr size_t dim = 17;
+    const std::vector<float> supplied_mean(dim, -0.25f);
+    for (auto metric : {VecSimMetric_IP, VecSimMetric_L2, VecSimMetric_Cosine}) {
+        for (size_t threshold : {0, 2}) {
+            for (bool supply_mean : {false, true}) {
+                SCOPED_TRACE(::testing::Message()
+                             << metric << " threshold=" << threshold << " mean=" << supply_mean);
+                auto mock_thread_pool = tieredIndexMock();
+                auto *tiered_index = this->CreateSQ8TieredIndex(
+                    mock_thread_pool, dim, metric, threshold, SIZE_MAX, 16, 200,
+                    supply_mean ? supplied_mean.data() : nullptr);
+                HNSWParams hnsw_params = {.type = TypeParam::get_index_type(),
+                                          .dim = dim,
+                                          .metric = metric,
+                                          .multi = TypeParam::isMulti(),
+                                          .M = 16,
+                                          .efConstruction = 200,
+                                          .quantType = VecSimQuant_SQ8,
+                                          .quantParams =
+                                              supply_mean ? supplied_mean.data() : nullptr};
+                VecSimParams primary = CreateParams(hnsw_params);
+                TieredIndexParams tiered_params = {
+                    .primaryIndexParams = &primary,
+                    .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = threshold}}};
+                EXPECT_EQ(TieredFactory::EstimateInitialSize(&tiered_params),
+                          tiered_index->getAllocationSize());
+                EXPECT_EQ(this->hasQuantizationTrainer(tiered_index), threshold > 0);
+                if (threshold > 0) {
+                    // A requested training set takes precedence over a supplied mean.
+                    ASSERT_NO_FATAL_FAILURE(
+                        this->checkTrainedComponents(tiered_index, std::vector<float>(dim, 0.0f)));
+                } else if (supply_mean) {
+                    ASSERT_NO_FATAL_FAILURE(
+                        this->checkTrainedComponents(tiered_index, supplied_mean));
+                }
+            }
+        }
+    }
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, L2MeanTrainingWithBoundedValues) {
@@ -5196,13 +5290,12 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, L2MeanTrainingWithBoundedValues) {
             }
         }
         bool mean_checked = false;
-        tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
-            const auto *mean =
-                static_cast<const float *>(this->getSQBackendParams(tiered_index).quantParams);
-            ASSERT_NE(mean, nullptr);
+        tiered_index->setAfterQuantizationFinalizationHook([&] {
+            std::vector<float> mean(dim);
             for (size_t d = 0; d < dim; ++d) {
-                EXPECT_FLOAT_EQ(mean[d], static_cast<float>(sums[d] / count));
+                mean[d] = static_cast<float>(sums[d] / count);
             }
+            this->checkTrainedComponents(tiered_index, mean);
             mean_checked = true;
         });
         const auto verify_queries = [&](size_t inserted_count) {
@@ -5220,14 +5313,15 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, L2MeanTrainingWithBoundedValues) {
                                             TypeParam::isMulti() ? v / 2 : v),
                       1);
         }
-        ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+        ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+        ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
         ASSERT_TRUE(mock_thread_pool.jobQ.empty());
         verify_queries(count - 1);
         ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vectors.back().data(),
                                         TypeParam::isMulti() ? (count - 1) / 2 : count - 1),
                   1);
         EXPECT_TRUE(mean_checked);
-        ASSERT_FALSE(this->hasSQAccumulationState(tiered_index));
+        ASSERT_FALSE(this->hasQuantizationTrainer(tiered_index));
         ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
         if (mode == VecSim_WriteAsync) {
             ASSERT_EQ(mock_thread_pool.jobQ.size(), count);
@@ -5264,12 +5358,11 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Multi, getDataByLabelDoesNotReportPartialSQ8Lab
 
         std::vector<std::vector<TEST_DATA_T>> stored;
         if (normSetSize > 0) {
-            // Before publication, the flat tier holds every vector for the label.
-            ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+            // Retrieval follows the SQ8 policy during training as well.
+            ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+            ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
             tiered_index->getDataByLabel(0, stored);
-            ASSERT_EQ(stored.size(), 2);
-            ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), first, dim));
-            ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[1].data(), second, dim));
+            EXPECT_TRUE(stored.empty());
             stored.clear();
         }
 
@@ -5277,7 +5370,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Multi, getDataByLabelDoesNotReportPartialSQ8Lab
         ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
         ASSERT_EQ(mock_thread_pool.jobQ.size(), 3);
 
-        // A published SQ8 backend cannot report values, so multi-value reads report nothing.
+        // SQ8 retrieval reports nothing after finalization as well.
         tiered_index->getDataByLabel(0, stored);
         EXPECT_TRUE(stored.empty());
         stored.clear();
@@ -5315,11 +5408,11 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsNothingForSQ8Backe
 
         std::vector<std::vector<TEST_DATA_T>> stored;
         if (normSetSize > 0) {
-            // During accumulation, the flat tier is still the complete index.
-            ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+            // SQ8 retrieval also reports nothing while all vectors are still in FLAT.
+            ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+            ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
             tiered_index->getDataByLabel(0, stored);
-            ASSERT_EQ(stored.size(), 1);
-            ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+            EXPECT_TRUE(stored.empty());
             stored.clear();
             ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 1), 1);
         }
@@ -5395,7 +5488,8 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, QueryDuringAccumulation) {
 
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), n);
-    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
 
     // Run TopK query.
     TEST_DATA_T query[dim];
@@ -5454,7 +5548,8 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AddVectorDuringAccumulation) {
 
     // Vector should be in flat buffer.
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
-    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), 1);
 
     // Job should be created in labelToInsertJobs but NOT submitted to queue.
@@ -5469,7 +5564,8 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteVectorDuringAccumulation) {
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index =
         this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
-    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
 
     // Add two vectors.
     TEST_DATA_T vec1[dim], vec2[dim];
@@ -5566,7 +5662,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteDuringAccumulation) {
 // Backend Index Initialization Tests
 // -------------------------------------------------------------------
 
-TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
+TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingFinishesAtThreshold) {
     // When accumulation reaches normalizationSetSize, backend is initialized.
     size_t dim = 4;
     size_t normSetSize = 10;
@@ -5618,8 +5714,8 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
 
     // Accumulation phase should be over.
     ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_FALSE(this->hasSQAccumulationState(tiered_index));
-    // Backend should be initialized (still empty since jobs haven't run).
+    ASSERT_FALSE(this->hasQuantizationTrainer(tiered_index));
+    // The backend is trained and still empty because the jobs have not run.
     ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
     ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
     // Flat buffer should hold all vectors.
@@ -5631,137 +5727,62 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreatedAtThreshold) {
     ASSERT_EQ(mock_thread_pool.jobQ.size(), normSetSize);
 }
 
-TYPED_TEST(HNSWTieredIndexTestSQ8, BackendCreationFailureRetainsVectorsAndRetries) {
-    constexpr size_t dim = 4;
-    constexpr size_t normSetSize = 2;
-    auto mock_thread_pool = tieredIndexMock();
-    auto *tiered_index =
-        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
-    ASSERT_NE(tiered_index, nullptr);
-
-    // Simulate factory validation drift after the tiered index has accepted the configuration.
-    auto &backend_params = this->getSQBackendParams(tiered_index);
-    const VecSimType original_type = backend_params.type;
-    backend_params.type = VecSimType_FLOAT64;
-
-    TEST_DATA_T vec[dim];
-    for (size_t label = 0; label < 3; ++label) {
-        std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(static_cast<float>(2 * label + 1)));
-        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, label), 1);
-        ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
-        ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
-        EXPECT_EQ(backend_params.quantParams, nullptr);
-        EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), label + 1);
-        EXPECT_EQ(this->getLabelToInsertJobs(tiered_index).size(), label + 1);
-        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
-    }
-    for (double sum : this->getRunningSumVec(tiered_index)) {
-        EXPECT_DOUBLE_EQ(sum, 9.0);
-    }
-
-    // Queries must still see every accepted vector after repeated initialization failures.
-    auto *reply = VecSimIndex_TopKQuery(tiered_index, vec, 3, nullptr, BY_SCORE);
-    ASSERT_NE(reply, nullptr);
-    EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
-    EXPECT_EQ(VecSimQueryReply_Len(reply), 3);
-    VecSimQueryReply_Free(reply);
-
-    backend_params.type = original_type;
-    bool mean_checked = false;
-    tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
-        const auto *mean = static_cast<const float *>(backend_params.quantParams);
-        ASSERT_NE(mean, nullptr);
-        // The mean includes all four vectors: (1 + 3 + 5 + 7) / 4, not / normSetSize.
-        for (size_t d = 0; d < dim; ++d) {
-            EXPECT_FLOAT_EQ(mean[d], 4.0f);
-        }
-        mean_checked = true;
-    });
-    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(7.0f));
-    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 3), 1);
-    EXPECT_TRUE(mean_checked);
-    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
-    EXPECT_FALSE(this->hasSQAccumulationState(tiered_index));
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 4);
-
-    while (!mock_thread_pool.jobQ.empty()) {
-        mock_thread_pool.thread_iteration();
-    }
-    EXPECT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 4);
-    EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
-    EXPECT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
-    EXPECT_TRUE(this->getInvalidJobs(tiered_index).empty());
-}
-
-TYPED_TEST(HNSWTieredIndexTestSQ8Single, OverwriteRetriesFailedBackendCreation) {
-    constexpr size_t dim = 4;
-    constexpr size_t normSetSize = 2;
-    auto mock_thread_pool = tieredIndexMock();
-    auto *tiered_index =
-        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
-    ASSERT_NE(tiered_index, nullptr);
-
-    auto &backend_params = this->getSQBackendParams(tiered_index);
-    const VecSimType original_type = backend_params.type;
-    backend_params.type = VecSimType_FLOAT64;
-
-    TEST_DATA_T vec[dim];
-    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(1.0f));
-    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 0), 1);
-    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(3.0f));
-    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 1), 1);
-    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_TRUE(this->hasSQAccumulationState(tiered_index));
-    ASSERT_TRUE(mock_thread_pool.jobQ.empty());
-    auto *pending_job = this->getLabelToInsertJobs(tiered_index).at(0).at(0);
-
-    backend_params.type = original_type;
-    bool mean_checked = false;
-    tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
-        const auto *mean = static_cast<const float *>(backend_params.quantParams);
-        ASSERT_NE(mean, nullptr);
-        // Overwrite replaces the first vector: (5 + 3) / 2 = 4 in every dimension.
-        for (size_t d = 0; d < dim; ++d) {
-            EXPECT_FLOAT_EQ(mean[d], 4.0f);
-        }
-        mean_checked = true;
-    });
-    std::fill_n(vec, dim, from_fp32<TEST_DATA_T>(5.0f));
-    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, 0), 0);
-    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
-    EXPECT_TRUE(mean_checked);
-    EXPECT_FALSE(this->hasSQAccumulationState(tiered_index));
-    EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), normSetSize);
-    EXPECT_EQ(this->getLabelToInsertJobs(tiered_index).at(0).at(0), pending_job);
-    EXPECT_EQ(this->getLabelToInsertJobs(tiered_index).at(0).size(), 1);
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), normSetSize);
-    EXPECT_TRUE(this->getInvalidJobs(tiered_index).empty());
-
-    while (!mock_thread_pool.jobQ.empty()) {
-        mock_thread_pool.thread_iteration();
-    }
-    EXPECT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize);
-    EXPECT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
-    EXPECT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
-}
-
-TYPED_TEST(HNSWTieredIndexTestSQ8, MeanComputedCorrectly) {
-    // Verify the mean vector computed during initializeQuantizedBackend.
-    size_t dim = 4;
-    size_t normSetSize = 5;
-    auto mock_thread_pool = tieredIndexMock();
-    auto *tiered_index =
-        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
-
-    // Track expected sum.
-    std::vector<float> expected_sum(dim, 0.0f);
-    for (size_t i = 0; i < normSetSize - 1; i++) {
+TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingFinalizesExistingComponentsOnce) {
+    constexpr size_t dim = 17;
+    constexpr size_t count = 3;
+    for (auto metric : {VecSimMetric_IP, VecSimMetric_L2, VecSimMetric_Cosine}) {
+        SCOPED_TRACE(metric);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, metric, count);
+        auto *backend = this->CastToHNSW(tiered_index);
+        ASSERT_NE(backend, nullptr);
+        const auto components = backend->get_components();
+        ASSERT_NO_FATAL_FAILURE(
+            this->checkTrainedComponents(tiered_index, std::vector<float>(dim, 0.0f)));
+        std::vector<float> mean(dim);
+        size_t finalizations = 0;
+        tiered_index->setBeforeQuantizationFinalizationHook([&] {
+            ASSERT_TRUE(backend->needsTraining());
+            ASSERT_EQ(backend->indexSize(), 0);
+            ASSERT_TRUE(mock_thread_pool.jobQ.empty());
+            const auto &sum = this->getRunningSumVec(tiered_index);
+            for (size_t d = 0; d < dim; ++d) {
+                mean[d] = static_cast<float>(sum[d] / count);
+            }
+        });
+        tiered_index->setAfterQuantizationFinalizationHook([&] {
+            ++finalizations;
+            EXPECT_FALSE(backend->needsTraining());
+            EXPECT_EQ(backend, this->CastToHNSW(tiered_index));
+            EXPECT_EQ(components.indexCalculator, backend->get_components().indexCalculator);
+            EXPECT_EQ(components.preprocessors, backend->get_components().preprocessors);
+            EXPECT_EQ(backend->indexSize(), 0);
+            EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+            ASSERT_NO_FATAL_FAILURE(this->checkTrainedComponents(tiered_index, mean));
+        });
         TEST_DATA_T vec[dim];
-        this->GenerateVectorData(vec, dim, static_cast<float>(i + 1));
-        VecSimIndex_AddVector(tiered_index, vec, i);
-        for (size_t d = 0; d < dim; d++) {
-            expected_sum[d] += this->ToFloat(vec[d]);
+        for (size_t i = 0; i < count; ++i) {
+            for (size_t d = 0; d < dim; ++d) {
+                vec[d] = from_fp32<TEST_DATA_T>(0.05f * float(i + d % 5 + 1));
+            }
+            ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, i), 1);
         }
+        EXPECT_EQ(finalizations, 1);
+        while (!mock_thread_pool.jobQ.empty()) {
+            mock_thread_pool.thread_iteration();
+        }
+        // An empty trained graph must not re-enter training, including when write mode changes.
+        VecSimIndexInterface::asyncWriteMode = VecSim_WriteInPlace;
+        for (size_t i = 0; i < count; ++i) {
+            ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, i), 1);
+        }
+        ASSERT_EQ(backend->indexSize(), 0);
+        EXPECT_FALSE(backend->needsTraining());
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, count), 1);
+        EXPECT_EQ(backend->indexSize(), 1);
+        EXPECT_EQ(finalizations, 1);
+        ASSERT_NO_FATAL_FAILURE(this->checkTrainedComponents(tiered_index, mean));
+        VecSimIndexInterface::asyncWriteMode = VecSim_WriteAsync;
     }
 }
 
@@ -5942,7 +5963,8 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, IndexSizeDuringAccumulation) {
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
     ASSERT_EQ(tiered_index->indexSize(), 10);
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 10);
-    ASSERT_EQ(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, CapacityDuringAccumulation) {
@@ -5960,7 +5982,9 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, CapacityDuringAccumulation) {
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
     // Capacity should come from flat buffer (at least DEFAULT_BLOCK_SIZE after first insert).
     ASSERT_GE(tiered_index->indexCapacity(), 1);
-    ASSERT_EQ(tiered_index->indexCapacity(), this->getFrontendIndex(tiered_index)->indexCapacity());
+    ASSERT_EQ(tiered_index->indexCapacity(),
+              this->getFrontendIndex(tiered_index)->indexCapacity() +
+                  this->getBackendIndex(tiered_index)->indexCapacity());
 }
 
 // -------------------------------------------------------------------
@@ -6167,7 +6191,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceDuringAccumulation) {
     }
 
     ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_FALSE(this->hasSQAccumulationState(tiered_index));
+    ASSERT_FALSE(this->hasQuantizationTrainer(tiered_index));
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize);
     ASSERT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
@@ -6239,7 +6263,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceAfterAccumulation) {
     }
     ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
 
-    // Execute all pending jobs (submitted by initializeQuantizedBackend).
+    // Execute all pending jobs (submitted after finalizing training).
     while (!mock_thread_pool.jobQ.empty()) {
         mock_thread_pool.thread_iteration();
     }

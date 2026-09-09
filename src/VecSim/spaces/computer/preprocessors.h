@@ -257,6 +257,9 @@ static inline T from_fp32(float x) {
 
 template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
 class QuantPreprocessor : public PreprocessorInterface {
+    template <typename, VecSimMetric>
+    friend class SQ8QuantizationTrainer;
+
 public:
     // Center L2 queries in FP32 even when the original input is FP16.
     using QueryType = std::conditional_t<WithNorm && Metric == VecSimMetric_L2, float, DataType>;

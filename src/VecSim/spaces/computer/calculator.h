@@ -151,6 +151,8 @@ public:
  */
 template <typename DataType, typename DistType, VecSimMetric Metric>
 class DistanceCalculatorWithNorm : public IndexCalculatorInterface<DistType> {
+    template <typename, VecSimMetric>
+    friend class SQ8QuantizationTrainer;
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP,
                   "DistanceCalculatorWithNorm only supports L2 and IP metrics");
 
@@ -163,7 +165,8 @@ private:
         float mean_sum_squares;
     };
 
-    const WithNormDistanceContext context_;
+    // Initialized once by the optional SQ8 trainer before the first stored vector.
+    WithNormDistanceContext context_;
 
     static DistType calcStoredWithContext(const void *opaque_context, const void *v1,
                                           const void *v2, size_t dim) {

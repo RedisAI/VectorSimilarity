@@ -23,9 +23,12 @@ namespace HNSWFactory {
  * where the blobs are normalized by the frontend index.
  */
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
+// Internal tiered construction: allocate final SQ8 components and an initial trainer.
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized, size_t training_threshold);
 VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized = false);
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized = false);
-size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean);
+size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean,
+                           bool with_training = false);
 size_t EstimateElementSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params, bool with_mean);
 

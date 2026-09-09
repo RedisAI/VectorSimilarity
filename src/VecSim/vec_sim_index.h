@@ -15,6 +15,7 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/spaces/computer/quantization_trainer.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "info_iterator_struct.h"
 #include "containers/data_blocks_container.h"
@@ -66,6 +67,8 @@ template <typename DataType, typename DistType>
 struct IndexComponents {
     IndexCalculatorInterface<DistType> *indexCalculator;
     PreprocessorsContainerAbstract *preprocessors;
+    // Optional training state, owned by HNSW along with its quantization components.
+    QuantizationTrainer<DataType> *quantizationTrainer = nullptr;
 };
 
 /**

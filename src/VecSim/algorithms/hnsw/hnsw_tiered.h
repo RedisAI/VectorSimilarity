@@ -108,27 +108,15 @@ private:
 
     bool isQuantized;
 
-    struct SQAccumulationState {
-        size_t normalizationSetSize;
-        vecsim_stl::vector<double> runningSumVec;
-        VecSimParams backendIndexParams;
-
-        SQAccumulationState(const std::shared_ptr<VecSimAllocator> &allocator,
-                            const VecSimParams &params, size_t normalizationSetSize)
-            : normalizationSetSize(
-                  std::min(normalizationSetSize, MAX_QUANT_NORMALIZATION_SET_SIZE)),
-              runningSumVec(params.algoParams.hnswParams.dim, 0.0, allocator),
-              backendIndexParams(params) {}
-    };
-    std::optional<SQAccumulationState> sqAccumulationState;
-
 #ifdef BUILD_TESTS
-    std::function<void()> beforeQuantizedBackendReplacement;
+    std::function<void()> beforeQuantizationFinalization;
+    std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
 #endif
 
-    [[nodiscard]] vecsim_stl::vector<float> calculateQuantizationMean() const;
-    [[nodiscard]] bool initializeQuantizedBackend();
+    int addVectorDuringTraining(const void *blob, labelType label);
+    int deleteVectorDuringTraining(labelType label);
+    void finalizeTrainingAndSubmitJobs();
 
     void executeInsertJob(HNSWInsertJob *job);
     void executeRepairJob(HNSWRepairJob *job);
@@ -180,26 +168,6 @@ private:
 
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelFromHNSWInplace(labelType label);
-
-    void addToSum(std::span<const DataType> vector) {
-        if constexpr (QuantInput<DataType>) {
-            auto &runningSumVec = this->sqAccumulationState->runningSumVec;
-            assert(vector.size() == runningSumVec.size());
-            for (size_t i = 0; i < runningSumVec.size(); i++) {
-                runningSumVec[i] += to_fp32(vector[i]);
-            }
-        }
-    }
-
-    void subtractFromSum(std::span<const DataType> vector) {
-        if constexpr (QuantInput<DataType>) {
-            auto &runningSumVec = this->sqAccumulationState->runningSumVec;
-            assert(vector.size() == runningSumVec.size());
-            for (size_t i = 0; i < runningSumVec.size(); i++) {
-                runningSumVec[i] -= to_fp32(vector[i]);
-            }
-        }
-    }
 
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
@@ -264,8 +232,12 @@ public:
     virtual ~TieredHNSWIndex();
 
 #ifdef BUILD_TESTS
-    void setBeforeQuantizedBackendReplacementHook(std::function<void()> hook) {
-        beforeQuantizedBackendReplacement = std::move(hook);
+    void setBeforeQuantizationFinalizationHook(std::function<void()> hook) {
+        beforeQuantizationFinalization = std::move(hook);
+    }
+
+    void setAfterQuantizationFinalizationHook(std::function<void()> hook) {
+        afterQuantizationFinalization = std::move(hook);
     }
 
     void setAfterBackendInsertBeforeFlatRemovalHook(std::function<void()> hook) {
@@ -276,12 +248,7 @@ public:
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
-    size_t getNumMarkedDeleted() const override {
-        return this->hasBackend()
-                   ? static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend())
-                         .getNumMarkedDeleted()
-                   : 0;
-    }
+    size_t getNumMarkedDeleted() const override { return getHNSWIndex()->getNumMarkedDeleted(); }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
@@ -298,16 +265,9 @@ public:
             TieredHNSW_BatchIterator(queryBlob, this, queryParams, this->allocator);
     }
     inline void setLastSearchMode(VecSearchMode mode) override {
-        if (this->hasBackend()) {
-            this->publishedBackend().setLastSearchMode(mode);
-        } else {
-            this->frontendIndex->setLastSearchMode(mode);
-        }
+        this->backendIndex->setLastSearchMode(mode);
     }
     void runGC() override {
-        if (!this->hasBackend()) {
-            return;
-        }
         // Run no more than pendingSwapJobsThreshold value jobs.
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered HNSW index");
@@ -316,33 +276,24 @@ public:
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
         this->mainIndexGuard.lock_shared();
-        if (this->backendIndex) {
-            this->getHNSWIndex()->lockSharedIndexDataGuard();
-        }
+        this->getHNSWIndex()->lockSharedIndexDataGuard();
     }
 
     void releaseSharedLocks() override {
-        if (this->backendIndex) {
-            this->getHNSWIndex()->unlockSharedIndexDataGuard();
-        }
+        this->getHNSWIndex()->unlockSharedIndexDataGuard();
         this->flatIndexGuard.unlock_shared();
         this->mainIndexGuard.unlock_shared();
     }
 
     VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData) {
         std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-        return this->backendIndex
-                   ? this->getHNSWIndex()->getHNSWElementNeighbors(label, neighborsData)
-                   : VecSimDebugCommandCode_LabelNotExists;
+        return this->getHNSWIndex()->getHNSWElementNeighbors(label, neighborsData);
     }
 
 #ifdef BUILD_TESTS
     size_t indexMetaDataCapacity() const override {
-        size_t capacity = this->frontendIndex->indexMetaDataCapacity();
-        if (this->hasBackend()) {
-            capacity += this->publishedBackend().indexMetaDataCapacity();
-        }
-        return capacity;
+        return this->frontendIndex->indexMetaDataCapacity() +
+               this->backendIndex->indexMetaDataCapacity();
     }
 #endif
 };
@@ -418,8 +369,6 @@ void TieredHNSWIndex<DataType, DistType>::invalidateRepairJobs(idType deleted_id
 
 template <typename DataType, typename DistType>
 HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex() const {
-    // Unsynchronized access; may return nullptr during accumulation.
-    // Concurrent queries should check hasBackend() and then use publishedBackend().
     return dynamic_cast<HNSWIndex<DataType, DistType> *>(this->backendIndex);
 }
 
@@ -801,16 +750,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
             ? DEFAULT_PENDING_SWAP_JOBS_THRESHOLD
             : std::min(tiered_index_params.specificParams.tieredHnswParams.swapJobThreshold,
                        MAX_PENDING_SWAP_JOBS_THRESHOLD);
-
-    // Initialize SQ accumulation phase if quantization is enabled.
-    if (isQuantized) {
-        const size_t normSize =
-            tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
-        if (normSize > 0) {
-            this->sqAccumulationState.emplace(this->allocator,
-                                              *tiered_index_params.primaryIndexParams, normSize);
-        }
-    }
 }
 
 template <typename DataType, typename DistType>
@@ -837,72 +776,107 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
     }
 }
 
+// Training writes stay in FLAT in both write modes, even beyond flatBufferLimit.
+// No worker can own an insertion job until finalization submits the whole pending set.
 template <typename DataType, typename DistType>
-vecsim_stl::vector<float> TieredHNSWIndex<DataType, DistType>::calculateQuantizationMean() const {
-    assert(this->sqAccumulationState);
-    const auto &accumulationState = *this->sqAccumulationState;
-    assert(accumulationState.normalizationSetSize > 0);
-    // A retry after failed initialization may include more vectors than the threshold.
-    const size_t accumulated_count = this->frontendIndex->indexSize();
-    assert(accumulated_count >= accumulationState.normalizationSetSize);
-
-    const auto &hnswParams = accumulationState.backendIndexParams.algoParams.hnswParams;
-    vecsim_stl::vector<float> mean(hnswParams.dim, this->allocator);
-    for (size_t i = 0; i < hnswParams.dim; i++) {
-        mean[i] = static_cast<float>(accumulationState.runningSumVec[i] /
-                                     static_cast<double>(accumulated_count));
+int TieredHNSWIndex<DataType, DistType>::addVectorDuringTraining(const void *blob,
+                                                                 labelType label) {
+    auto *backend = getHNSWIndex();
+    std::unique_lock flat_lock(this->flatIndexGuard);
+    idType id = this->frontendIndex->indexSize();
+    HNSWInsertJob *job = nullptr;
+    if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
+        id = static_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
+                 ->getIdOfLabel(label);
+        backend->trainingVectorRemoved(
+            {this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
+        job = labelToInsertJobs.at(label).front();
     }
-
-    return mean;
+    const int result = this->frontendIndex->addVector(blob, label);
+    backend->trainingVectorAdded(
+        {this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
+    if (!job) {
+        job = new (this->allocator)
+            HNSWInsertJob(this->allocator, label, id, executeInsertJobWrapper, this);
+        auto [it, inserted] = labelToInsertJobs.try_emplace(label, 1, job, this->allocator);
+        if (!inserted) {
+            it->second.push_back(job);
+        }
+    }
+    flat_lock.unlock();
+    if (backend->canFinalizeTraining()) {
+        finalizeTrainingAndSubmitJobs();
+    }
+    return result;
 }
 
 template <typename DataType, typename DistType>
-bool TieredHNSWIndex<DataType, DistType>::initializeQuantizedBackend() {
-    assert((QuantInput<DataType> && std::is_same_v<DistType, float>));
-    const auto mean = this->calculateQuantizationMean();
-    auto &backendParams = this->sqAccumulationState->backendIndexParams;
-    auto &hnswParams = backendParams.algoParams.hnswParams;
-    hnswParams.quantParams = mean.data();
-    auto *new_backend =
-        static_cast<HNSWIndex<DataType, DistType> *>(HNSWFactory::NewIndex(&backendParams, true));
-    if (!new_backend) {
-        hnswParams.quantParams = nullptr;
-        TIERED_LOG(VecSimCommonStrings::LOG_WARNING_STRING,
-                   "Failed to initialize SQ8 HNSW backend; retaining vectors in the flat index");
-        return false;
+int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringTraining(labelType label) {
+    std::unique_lock flat_lock(this->flatIndexGuard);
+    auto it = labelToInsertJobs.find(label);
+    if (it == labelToInsertJobs.end()) {
+        return 0;
     }
+    const int removed = it->second.size();
+    for (auto *job : it->second) {
+        getHNSWIndex()->trainingVectorRemoved(
+            {this->frontendIndex->getDataByInternalId(job->id), this->frontendIndex->getDim()});
+        delete job; // Never submitted, so no worker can still reference this job.
+    }
+    labelToInsertJobs.erase(it);
+    auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
+    for (const auto &[new_id, previous] : updated_ids) {
+        updateInsertJobInternalId(previous.first, new_id, previous.second);
+    }
+    return removed;
+}
 
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::finalizeTrainingAndSubmitJobs() {
+    // Allocate the snapshot before consuming the trainer. Synchronous execution removes jobs
+    // from labelToInsertJobs, so iterating the map while dispatching would invalidate iterators.
+    vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
+    jobs.reserve(this->frontendIndex->indexSize());
+    for (const auto &[label, pending] : labelToInsertJobs) {
+        jobs.insert(jobs.end(), pending.begin(), pending.end());
+    }
 #ifdef BUILD_TESTS
-    if (beforeQuantizedBackendReplacement) {
-        beforeQuantizedBackendReplacement();
+    if (beforeQuantizationFinalization) {
+        beforeQuantizationFinalization();
     }
 #endif
-
     {
-        auto main_index_lock = this->acquireMainIndexGuard();
-        this->backendIndex = new_backend;
-        this->backendPublished.store(true, std::memory_order_release);
+        this->lockMainIndexGuard();
+        std::unique_lock lock(this->mainIndexGuard, std::adopt_lock);
+        getHNSWIndex()->finalizeQuantizationTraining();
     }
-    this->sqAccumulationState.reset();
-    return true;
+#ifdef BUILD_TESTS
+    if (afterQuantizationFinalization) {
+        afterQuantizationFinalization();
+    }
+#endif
+    if (this->getWriteMode() == VecSim_WriteInPlace) {
+        for (auto *job : jobs) {
+            executeInsertJobWrapper(job);
+        }
+    } else {
+        this->submitJobs(jobs);
+    }
 }
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
     std::shared_lock<std::shared_mutex> flat_index_lock(this->flatIndexGuard);
     size_t res = this->frontendIndex->indexSize();
-    if (this->hasBackend()) {
-        auto &hnsw_index = static_cast<HNSWIndex<DataType, DistType> &>(this->publishedBackend());
-        auto index_data_lock = hnsw_index.acquireSharedIndexDataGuard();
-        res += hnsw_index.indexSize();
-    }
+    auto *hnsw_index = getHNSWIndex();
+    auto index_data_lock = hnsw_index->acquireSharedIndexDataGuard();
+    res += hnsw_index->indexSize();
     return res;
 }
 
 template <typename DataType, typename DistType>
 size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
-    return (this->hasBackend() ? this->publishedBackend().indexCapacity() : 0) +
-           this->frontendIndex->indexCapacity();
+    return this->backendIndex->indexCapacity() + this->frontendIndex->indexCapacity();
 }
 
 // In the tiered index, we assume that the blobs are processed by the flat buffer
@@ -912,12 +886,14 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 // parameters.
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
+    if (getHNSWIndex()->needsTraining()) {
+        return addVectorDuringTraining(blob, label);
+    }
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exclusively calling add/delete vector).
-    // Until the backend exists, all write modes must accumulate vectors in the frontend.
-    if (hnsw_index && this->getWriteMode() == VecSim_WriteInPlace) {
+    if (this->getWriteMode() == VecSim_WriteInPlace) {
         // First, check if we need to overwrite the vector in-place for single (from both indexes).
         if (!this->backendIndex->isMultiValue()) {
             ret -= this->deleteVector(label);
@@ -935,7 +911,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         ++this->directHNSWInsertions;
         return ret;
     }
-    if (hnsw_index && this->frontendIndex->indexSize() >= this->flatBufferLimit) {
+    if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
         // Handle overwrite situation.
         if (!this->backendIndex->isMultiValue()) {
             // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
@@ -959,57 +935,38 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
-    HNSWInsertJob *insert_job = nullptr;
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
+        // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
         auto *old_job = this->labelToInsertJobs.at(label).at(0);
+        old_job->id = this->setAndSaveInvalidJob(old_job);
+        this->labelToInsertJobs.erase(label);
         ret = 0;
         // We are going to update the internal id that currently holds the vector associated with
         // the given label.
         new_flat_id =
             dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
                 ->getIdOfLabel(label);
-        if (!hnsw_index) {
-            // Accumulation phase: the job was never submitted, so no worker can hold it. Reuse
-            // it as-is (label and flat id are unchanged by an overwrite) and only fix the running
-            // sum. Parking it in invalidJobs would leak it: nothing collects unsubmitted jobs.
-            this->subtractFromSum({this->frontendIndex->getDataByInternalId(new_flat_id),
-                                   this->frontendIndex->getDim()});
-            insert_job = old_job;
-        } else {
-            // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
-            old_job->id = this->setAndSaveInvalidJob(old_job);
-            this->labelToInsertJobs.erase(label);
-        }
         // If we are adding a new element (rather than updating an exiting one) we may need to
         // increase index capacity.
     }
     // If this label already exists, this will do overwrite.
     this->frontendIndex->addVector(blob, label);
-    if (!hnsw_index) {
-        this->addToSum(
-            {this->frontendIndex->getDataByInternalId(new_flat_id), this->frontendIndex->getDim()});
-    }
 
-    if (!insert_job) {
-        insert_job = new (this->allocator)
-            HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
-        // Save a pointer to the job, so that if the vector is overwritten, we'll have an
-        // indication.
-        auto [it, inserted] =
-            this->labelToInsertJobs.try_emplace(label, 1, insert_job, this->allocator);
-        if (!inserted) {
-            // There's already a pending insert job for this label, add another one (without
-            // overwrite, only possible in multi index)
-            assert(this->frontendIndex->isMultiValue());
-            it->second.push_back(insert_job);
-        }
+    auto *new_insert_job = new (this->allocator)
+        HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
+    // Construct the job vector only for a new label; multi-value labels append to the existing one.
+    auto [it, inserted] =
+        this->labelToInsertJobs.try_emplace(label, 1, new_insert_job, this->allocator);
+    if (!inserted) {
+        assert(this->backendIndex->isMultiValue());
+        it->second.push_back(new_insert_job);
     }
     this->flatIndexGuard.unlock();
 
     // Here, a worker might ingest the previous vector that was stored under "label"
     // (in case of override in non-MULTI index) - so if it's there, we remove it (and create the
     // required repair jobs), *before* we submit the insert job.
-    if (hnsw_index && !this->backendIndex->isMultiValue()) {
+    if (!this->backendIndex->isMultiValue()) {
         // If we removed the previous vector from both HNSW and flat in the overwrite process,
         // we still return 0 (not -1).
         ret = std::max(ret - this->deleteLabelFromHNSW(label), 0);
@@ -1023,38 +980,16 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
     }
 
-    if (hnsw_index) {
-        // Insert job to the queue and signal the workers' updater.
-        this->submitSingleJob(insert_job);
-    } else if (this->frontendIndex->indexSize() >=
-               this->sqAccumulationState->normalizationSetSize) {
-        // If we are in the accumulation phase and we just reached the quantization set size, we
-        // can initalize the backend index with accumulated mean and transition to the regular mode.
-        if (!this->initializeQuantizedBackend()) {
-            return ret;
-        }
-
-        // Snapshot the jobs because executing them erases entries from labelToInsertJobs.
-        vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
-        jobs.reserve(this->frontendIndex->indexSize());
-        for (auto &entry : this->labelToInsertJobs) {
-            for (auto *job : entry.second) {
-                jobs.push_back(job);
-            }
-        }
-        if (this->getWriteMode() == VecSim_WriteInPlace) {
-            for (auto *job : jobs) {
-                executeInsertJobWrapper(job);
-            }
-        } else {
-            this->submitJobs(jobs);
-        }
-    }
+    // Insert job to the queue and signal the workers' updater.
+    this->submitSingleJob(new_insert_job);
     return ret;
 }
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
+    if (getHNSWIndex()->needsTraining()) {
+        return deleteVectorDuringTraining(label);
+    }
     int num_deleted_vectors = 0;
     this->flatIndexGuard.lock_shared();
     if (this->frontendIndex->isLabelExists(label)) {
@@ -1065,16 +1000,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
             // Invalidate the pending insert job(s) into HNSW associated with this label
             auto &insert_jobs = this->labelToInsertJobs.at(label);
             for (auto *job : insert_jobs) {
-                if (!this->backendIndex) {
-                    // Accumulation phase: the job was never submitted, so no worker can hold it.
-                    // Free it now instead of parking it in invalidJobs, where nothing would ever
-                    // collect it.
-                    this->subtractFromSum({this->frontendIndex->getDataByInternalId(job->id),
-                                           this->frontendIndex->getDim()});
-                    delete job;
-                } else {
-                    job->id = this->setAndSaveInvalidJob(job);
-                }
+                job->id = this->setAndSaveInvalidJob(job);
             }
             num_deleted_vectors += insert_jobs.size();
             // Remove the pending insert job(s) from the labelToInsertJobs mapping.
@@ -1093,10 +1019,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         this->flatIndexGuard.unlock();
     } else {
         this->flatIndexGuard.unlock_shared();
-    }
-
-    if (!this->backendIndex) {
-        return num_deleted_vectors;
     }
 
     // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
@@ -1156,11 +1078,11 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
     const bool source_exists =
         this->frontendIndex->isLabelExists(old_label) ||
         this->labelToInsertJobs.find(old_label) != this->labelToInsertJobs.end() ||
-        (hnsw_index && hnsw_index->isLabelExists(old_label));
+        hnsw_index->isLabelExists(old_label);
     const bool target_taken =
         this->frontendIndex->isLabelExists(new_label) ||
         this->labelToInsertJobs.find(new_label) != this->labelToInsertJobs.end() ||
-        (hnsw_index && hnsw_index->isLabelExists(new_label));
+        hnsw_index->isLabelExists(new_label);
 
     // Each home is asked to move the label only once it reported holding it, and the checks above
     // ruled out every other rejection - the label is present, the target is free everywhere, and
@@ -1193,7 +1115,7 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
 
         // `relabelVector` takes the HNSW index data guard internally, which is the same
         // main-guard-then-data-guard order that `insertVectorToHNSW` uses.
-        if (hnsw_index && hnsw_index->isLabelExists(old_label)) {
+        if (hnsw_index->isLabelExists(old_label)) {
             const VecSimRelabelCode hnsw_ret = hnsw_index->relabelVector(old_label, new_label);
 #ifdef BUILD_TESTS
             assert(hnsw_ret == VecSimRelabel_OK && "HNSW just reported holding this label");
@@ -1244,10 +1166,6 @@ double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType lab
     // Try to get the distance from the flat buffer.
     // If the label doesn't exist, the distance will be NaN.
     auto flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
-
-    if (!this->backendIndex) {
-        return flat_dist;
-    }
 
     // Optimization. TODO: consider having different implementations for single and multi indexes,
     // to avoid checking the index type on every query.
@@ -1341,21 +1259,16 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->backend_index_lock.lock();
-        if (!this->index->backendIndex) {
+        this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
+            this->flat_iterator->getQueryBlob(), queryParams);
+        auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
+        hnsw_code = cur_hnsw_results->code;
+        this->hnsw_results.swap(cur_hnsw_results->results);
+        VecSimQueryReply_Free(cur_hnsw_results);
+        if (this->hnsw_iterator->isDepleted()) {
+            delete this->hnsw_iterator;
             this->hnsw_iterator = DEPLETED;
             this->backend_index_lock.unlock();
-        } else {
-            this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
-                this->flat_iterator->getQueryBlob(), queryParams);
-            auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
-            hnsw_code = cur_hnsw_results->code;
-            this->hnsw_results.swap(cur_hnsw_results->results);
-            VecSimQueryReply_Free(cur_hnsw_results);
-            if (this->hnsw_iterator->isDepleted()) {
-                delete this->hnsw_iterator;
-                this->hnsw_iterator = DEPLETED;
-                this->backend_index_lock.unlock();
-            }
         }
     } else {
         while (this->flat_results.size() < n_res && !this->flat_iterator->isDepleted()) {

@@ -13,6 +13,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/index_factories/components/preprocessors_factory.h"
 #include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/spaces/computer/sq8_quantization_trainer.h"
 
 template <typename DataType, typename DistType>
 IndexComponents<DataType, DistType>
@@ -43,7 +44,7 @@ template <typename DataType>
 template <typename DataType, VecSimMetric Metric, bool WithMean>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
-                         const float *mean_ptr) {
+                         const float *mean_ptr, size_t training_threshold = 0) {
     using Preprocessor = QuantPreprocessor<DataType, Metric, WithMean>;
     using QueryType = typename Preprocessor::QueryType;
     unsigned char storage_alignment = 0, asym_storage_alignment = 0;
@@ -56,40 +57,53 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
     storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
     const unsigned char query_alignment = GetQueryAlignment<QueryType>(Metric, dim);
 
-    PreprocessorInterface *pp = nullptr;
-    IndexCalculatorInterface<float> *calc = nullptr;
+    std::unique_ptr<PreprocessorInterface> pp;
+    std::unique_ptr<IndexCalculatorInterface<float>> calc;
+    std::unique_ptr<QuantizationTrainer<DataType>> trainer;
 
     if constexpr (WithMean) {
         vecsim_stl::vector<float> mean_vec(allocator);
-        mean_vec.assign(mean_ptr, mean_ptr + dim);
+        if (training_threshold > 0) {
+            mean_vec.resize(dim, 0.0f);
+        } else {
+            mean_vec.assign(mean_ptr, mean_ptr + dim);
+        }
 
         float mean_sum_squares = 0.0f;
         for (float v : mean_vec) {
             mean_sum_squares += v * v;
         }
 
-        pp = new (allocator) Preprocessor(allocator, dim, mean_vec);
-        calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, Metric>(
-            allocator, asym_func, sym_func, mean_sum_squares);
+        auto *quant_preprocessor = new (allocator) Preprocessor(allocator, dim, mean_vec);
+        pp.reset(quant_preprocessor);
+        auto *quant_calculator = new (allocator)
+            DistanceCalculatorWithNorm<DataType, float, Metric>(allocator, asym_func, sym_func,
+                                                                mean_sum_squares);
+        calc.reset(quant_calculator);
+        if (training_threshold > 0) {
+            trainer.reset(new (allocator) SQ8QuantizationTrainer<DataType, Metric>(
+                allocator, dim, training_threshold, *quant_preprocessor, *quant_calculator));
+        }
     } else {
-        pp = new (allocator) Preprocessor(allocator, dim);
-        calc = new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func);
+        pp.reset(new (allocator) Preprocessor(allocator, dim));
+        calc.reset(new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func));
     }
 
     auto *container = new (allocator)
         MultiPreprocessorsContainer<DataType, 1>(allocator, query_alignment, storage_alignment);
-    [[maybe_unused]] const int ret = container->addPreprocessor(pp);
+    [[maybe_unused]] const int ret = container->addPreprocessor(pp.release());
     assert(ret != -1 && "SQ8 preprocessor was not added correctly");
 
-    return {calc, container};
+    return {calc.release(), container, trainer.release()};
 }
 
 template <typename DataType, VecSimMetric Metric>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
-                         const float *mean_ptr) {
-    if (mean_ptr) {
-        return CreateSQ8IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr);
+                         const float *mean_ptr, size_t training_threshold = 0) {
+    if (mean_ptr || training_threshold > 0) {
+        return CreateSQ8IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr,
+                                                                training_threshold);
     }
     return CreateSQ8IndexComponents<DataType, Metric, false>(allocator, dim, mean_ptr);
 }

@@ -37,8 +37,8 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
     return bf_params;
 }
 
-static inline bool RequiresSQAccumulation(const TieredIndexParams *params) {
-    return params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE &&
+static inline bool RequiresQuantizationTraining(const TieredIndexParams *params) {
+    return params->primaryIndexParams->algoParams.hnswParams.quantType == VecSimQuant_SQ8 &&
            params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
 }
 
@@ -63,13 +63,17 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     }
 
     const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-    const bool requires_accumulation = RequiresSQAccumulation(params);
-    // Normalization is done by the frontend index.
-    auto *hnsw_index = requires_accumulation
-                           ? nullptr
-                           : static_cast<HNSWIndex<DataType, DistType> *>(
-                                 HNSWFactory::NewIndex(params->primaryIndexParams, true));
-    if (!requires_accumulation && !hnsw_index) {
+    const bool requires_training = RequiresQuantizationTraining(params);
+    const size_t training_threshold =
+        requires_training
+            ? std::min(params->specificParams.tieredHnswParams.QuantNormalizationSetSize,
+                       MAX_QUANT_NORMALIZATION_SET_SIZE)
+            : 0;
+    // Allocate the final backend and component layouts now. The optional trainer initially
+    // leaves their mean at zero, and tiered writes keep the graph empty until it finalizes.
+    auto *hnsw_index = static_cast<HNSWIndex<DataType, DistType> *>(
+        HNSWFactory::NewIndex(params->primaryIndexParams, true, training_threshold));
+    if (!hnsw_index) {
         return nullptr;
     }
 
@@ -77,8 +81,8 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&bf_params, params->primaryIndexParams->logCtx, false);
-    assert(!hnsw_index || hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
-    assert(!hnsw_index || hnsw_params.quantType != VecSimQuant_NONE ||
+    assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
+    assert(hnsw_params.quantType != VecSimQuant_NONE ||
            hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
@@ -101,25 +105,10 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
 inline size_t EstimateInitialSize(const TieredIndexParams *params) {
     const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
 
-    size_t est = 0;
-
-    const bool requires_accumulation = RequiresSQAccumulation(params);
-
-    const bool with_mean = requires_accumulation || hnsw_params.quantParams != nullptr;
-    // During accumulation this call is only for validation; the backend size is not counted yet.
-    const size_t est_backend = HNSWFactory::EstimateInitialSize(
-        &hnsw_params, /* is_normalized = */ true, /* with_mean = */ with_mean);
-
+    const bool requires_training = RequiresQuantizationTraining(params);
+    const bool with_mean = requires_training || hnsw_params.quantParams != nullptr;
+    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true, with_mean, requires_training);
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
-
-    if (requires_accumulation) {
-        // Add size of SQ accumulation buffer
-        est += allocations_overhead + hnsw_params.dim * sizeof(double);
-    } else {
-        // Add size estimation of VecSimTieredIndex sub indexes.
-        // Normalization is done by the frontend index.
-        est += est_backend;
-    }
 
     // Management layer allocator overhead.
     est += sizeof(VecSimAllocator) + allocations_overhead;
@@ -287,8 +276,8 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
     size_t est = 0;
     if (params->primaryIndexParams->algo == VecSimAlgo_HNSWLIB) {
         const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-        const bool with_mean =
-            TieredHNSWFactory::RequiresSQAccumulation(params) || hnsw_params.quantParams != nullptr;
+        const bool with_mean = TieredHNSWFactory::RequiresQuantizationTraining(params) ||
+                               hnsw_params.quantParams != nullptr;
         est = HNSWFactory::EstimateElementSize(&hnsw_params, /* with_mean = */ with_mean);
     }
     if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {

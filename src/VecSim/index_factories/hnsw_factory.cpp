@@ -63,19 +63,23 @@ template <VecSimMetric Metric>
 
 template <typename DataType, VecSimMetric Metric>
 VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams abstractInitParams,
-                          const float *mean_ptr) {
-    const bool with_norm = mean_ptr != nullptr;
+                          const float *mean_ptr, size_t training_threshold) {
+    const bool with_norm = mean_ptr != nullptr || training_threshold > 0;
     abstractInitParams.storedDataSize =
         GetSQ8StoredDataSize<Metric>(abstractInitParams.dim, with_norm);
     abstractInitParams.isQuantized = true;
 
     IndexComponents<DataType, float> components = CreateSQ8IndexComponents<DataType, Metric>(
-        abstractInitParams.allocator, abstractInitParams.dim, mean_ptr);
+        abstractInitParams.allocator, abstractInitParams.dim, mean_ptr, training_threshold);
     return NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams,
                                                          components);
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
+    return NewIndex(params, is_normalized, 0);
+}
+
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized, size_t training_threshold) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
@@ -96,18 +100,18 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
         if (hnswParams->type == VecSimType_FLOAT32) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_SQ8<float, VecSimMetric_L2>(hnswParams, abstractInitParams,
-                                                            mean_ptr);
+                                                            mean_ptr, training_threshold);
             } else if (metric == VecSimMetric_IP) {
                 return NewIndex_SQ8<float, VecSimMetric_IP>(hnswParams, abstractInitParams,
-                                                            mean_ptr);
+                                                            mean_ptr, training_threshold);
             }
         } else if (hnswParams->type == VecSimType_FLOAT16) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_SQ8<float16, VecSimMetric_L2>(hnswParams, abstractInitParams,
-                                                              mean_ptr);
+                                                              mean_ptr, training_threshold);
             } else if (metric == VecSimMetric_IP) {
                 return NewIndex_SQ8<float16, VecSimMetric_IP>(hnswParams, abstractInitParams,
-                                                              mean_ptr);
+                                                              mean_ptr, training_threshold);
             }
         }
 
@@ -172,7 +176,8 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
                                /* with_mean = */ params->quantParams != nullptr);
 }
 
-size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean) {
+size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean,
+                           bool with_training) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
@@ -182,6 +187,12 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool wi
         if (params->quantType != VecSimQuant_SQ8 ||
             !SQ8ParamsSupported(params->type, ResolveSQ8Metric(params->metric, is_normalized))) {
             throw std::invalid_argument("Unsupported quantization params for HNSW index");
+        }
+        if (with_training) {
+            assert(with_mean);
+            // The trainer layout is independent of input type and metric.
+            est += allocations_overhead + sizeof(SQ8QuantizationTrainer<float, VecSimMetric_L2>);
+            est += allocations_overhead + params->dim * sizeof(double);
         }
         // Template arguments do not affect these component sizes.
         if (with_mean) {

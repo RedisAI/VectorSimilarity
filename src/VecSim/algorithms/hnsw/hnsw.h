@@ -89,6 +89,39 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public HNSWSerializer
 #endif
 {
+private:
+    template <typename, typename>
+    friend class TieredHNSWIndex;
+    std::unique_ptr<QuantizationTrainer<DataType>> quantizationTrainer;
+
+    // Only the tiered writer can change training state. Backend queries never inspect it.
+    void trainingVectorAdded(std::span<const DataType> vector) {
+        assert(quantizationTrainer);
+        quantizationTrainer->addVector(vector);
+    }
+    void trainingVectorRemoved(std::span<const DataType> vector) {
+        assert(quantizationTrainer);
+        quantizationTrainer->removeVector(vector);
+    }
+    bool canFinalizeTraining() const { return quantizationTrainer && quantizationTrainer->ready(); }
+    // Caller holds the tiered main lock exclusively and has not submitted insertion jobs.
+    void finalizeQuantizationTraining() noexcept {
+        assert(curElementCount == 0);
+        assert(canFinalizeTraining());
+        quantizationTrainer->finalize();
+        // Consuming the trainer makes this a one-time operation, even after deleting every vector.
+        quantizationTrainer.reset();
+    }
+
+public:
+    // Writer-only lifecycle query; false for NONE, SQ8 without training and completed training.
+    bool needsTraining() const { return quantizationTrainer != nullptr; }
+#ifdef BUILD_TESTS
+    const QuantizationTrainer<DataType> *getQuantizationTrainer() const {
+        return quantizationTrainer.get();
+    }
+#endif
+
 protected:
     // Index build parameters
     size_t maxElements;
@@ -1674,9 +1707,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const IndexComponents<DataType, DistType> &components,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
-      elementLocks(this->allocator), idToMetaData(this->allocator),
-      visitedNodesHandlerPool(0, this->allocator) {
+      VecSimIndexTombstone(), quantizationTrainer(components.quantizationTrainer), maxElements(0),
+      graphDataBlocks(this->allocator), elementLocks(this->allocator),
+      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;

@@ -670,7 +670,7 @@ TYPED_TEST(SQ8TieredHNSWTest, GetDistanceMultiIP) {
 
 TYPED_TEST(SQ8TieredHNSWTest, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
 
-TEST(SQ8TieredHNSWTest, PhaseZeroAccessorsAndRelabelDoNotRequireBackend) {
+TEST(SQ8TieredHNSWTest, TrainingAccessorsAndRelabelUseEmptyBackend) {
     constexpr size_t dim = 4;
     constexpr size_t normalization_set_size = 4;
     HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
@@ -710,16 +710,14 @@ TEST(SQ8TieredHNSWTest, PhaseZeroAccessorsAndRelabelDoNotRequireBackend) {
 
     std::vector<std::vector<float>> stored;
     tiered_index->getDataByLabel(7, stored);
-    ASSERT_EQ(stored.size(), 1);
-    EXPECT_EQ(stored[0], std::vector<float>(vector, vector + dim));
+    EXPECT_TRUE(stored.empty());
 
     EXPECT_EQ(VecSimIndex_RelabelVector(index, 7, 70), VecSimRelabel_OK);
     stored.clear();
     tiered_index->getDataByLabel(7, stored);
     EXPECT_TRUE(stored.empty());
     tiered_index->getDataByLabel(70, stored);
-    ASSERT_EQ(stored.size(), 1);
-    EXPECT_EQ(stored[0], std::vector<float>(vector, vector + dim));
+    EXPECT_TRUE(stored.empty());
 
     auto allocator = index->getAllocator();
     mock_thread_pool.reset_ctx();
@@ -887,69 +885,83 @@ TEST(SQ8TieredHNSWTest, BatchIteratorDoesNotRepeatLabelsDuringMigrationOverlap) 
 }
 
 TEST(SQ8TieredHNSWTest, BatchIteratorCreatedBeforeNormalizationSeesMigratedLabels) {
-    constexpr size_t dim = 4;
-    constexpr size_t normalization_set_size = 4;
-    HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
-                              .dim = dim,
-                              .metric = VecSimMetric_L2,
-                              .quantType = VecSimQuant_SQ8};
-    VecSimParams primary_index_params = CreateParams(hnsw_params);
-    tieredIndexMock mock_thread_pool;
-    TieredIndexParams tiered_params = {
-        .jobQueue = &mock_thread_pool.jobQ,
-        .jobQueueCtx = mock_thread_pool.ctx,
-        .submitCb = tieredIndexMock::submit_callback,
-        .primaryIndexParams = &primary_index_params,
-        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = normalization_set_size}}};
-    VecSimParams params = CreateParams(tiered_params);
-    auto *index = VecSimIndex_New(&params);
-    ASSERT_NE(index, nullptr);
-    mock_thread_pool.ctx->index_strong_ref.reset(index);
+    for (bool consume_before_training : {false, true}) {
+        SCOPED_TRACE(consume_before_training);
+        constexpr size_t dim = 4;
+        constexpr size_t normalization_set_size = 4;
+        HNSWParams hnsw_params = {.type = VecSimType_FLOAT32,
+                                  .dim = dim,
+                                  .metric = VecSimMetric_L2,
+                                  .quantType = VecSimQuant_SQ8};
+        VecSimParams primary_index_params = CreateParams(hnsw_params);
+        tieredIndexMock mock_thread_pool;
+        TieredIndexParams tiered_params = {
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .primaryIndexParams = &primary_index_params,
+            .specificParams = {
+                TieredHNSWParams{.QuantNormalizationSetSize = normalization_set_size}}};
+        VecSimParams params = CreateParams(tiered_params);
+        auto *index = VecSimIndex_New(&params);
+        ASSERT_NE(index, nullptr);
+        mock_thread_pool.ctx->index_strong_ref.reset(index);
 
-    float vectors[normalization_set_size][dim] = {
-        {1.0f, 1.0f, 1.0f, 1.0f},
-        {2.0f, 2.0f, 2.0f, 2.0f},
-        {3.0f, 3.0f, 3.0f, 3.0f},
-        {4.0f, 4.0f, 4.0f, 4.0f},
-    };
-    for (size_t label = 0; label < normalization_set_size - 1; label++) {
-        ASSERT_EQ(VecSimIndex_AddVector(index, vectors[label], label), 1);
-    }
+        float vectors[normalization_set_size][dim] = {
+            {1.0f, 1.0f, 1.0f, 1.0f},
+            {2.0f, 2.0f, 2.0f, 2.0f},
+            {3.0f, 3.0f, 3.0f, 3.0f},
+            {4.0f, 4.0f, 4.0f, 4.0f},
+        };
+        for (size_t label = 0; label < normalization_set_size - 1; label++) {
+            ASSERT_EQ(VecSimIndex_AddVector(index, vectors[label], label), 1);
+        }
 
-    VecSimBatchIterator *iterator = VecSimBatchIterator_New(index, vectors[0], nullptr);
-    ASSERT_NE(iterator, nullptr);
-
-    ASSERT_EQ(VecSimIndex_AddVector(index, vectors[normalization_set_size - 1],
-                                    normalization_set_size - 1),
-              1);
-    while (!mock_thread_pool.jobQ.empty()) {
-        mock_thread_pool.thread_iteration();
-    }
-
-    std::unordered_set<labelType> returned_labels;
-    size_t batch_count = 0;
-    while (VecSimBatchIterator_HasNext(iterator)) {
-        auto *batch = VecSimBatchIterator_Next(iterator, 1, BY_SCORE);
-        ASSERT_NE(batch, nullptr);
-        const size_t batch_len = VecSimQueryReply_Len(batch);
-        if (batch_len == 0) {
+        VecSimBatchIterator *iterator = VecSimBatchIterator_New(index, vectors[0], nullptr);
+        ASSERT_NE(iterator, nullptr);
+        if (consume_before_training) {
+            auto *batch = VecSimBatchIterator_Next(iterator, 1, BY_SCORE);
+            ASSERT_EQ(VecSimQueryReply_Len(batch), 1);
             VecSimQueryReply_Free(batch);
-            break;
         }
-        ASSERT_EQ(batch_len, 1);
-        for (const auto &result : batch->results) {
-            EXPECT_TRUE(returned_labels.insert(VecSimQueryResult_GetId(&result)).second);
-        }
-        VecSimQueryReply_Free(batch);
-        ASSERT_LE(++batch_count, normalization_set_size);
-    }
-    for (labelType label = 0; label < normalization_set_size - 1; label++) {
-        EXPECT_NE(returned_labels.find(label), returned_labels.end());
-    }
-    VecSimBatchIterator_Free(iterator);
 
-    auto allocator = index->getAllocator();
-    mock_thread_pool.reset_ctx();
+        ASSERT_EQ(VecSimIndex_AddVector(index, vectors[normalization_set_size - 1],
+                                        normalization_set_size - 1),
+                  1);
+        while (!mock_thread_pool.jobQ.empty()) {
+            mock_thread_pool.thread_iteration();
+        }
+
+        if (consume_before_training) {
+            // Reset must discard the empty backend iterator and use the finalized mean.
+            VecSimBatchIterator_Reset(iterator);
+        }
+        std::unordered_set<labelType> returned_labels;
+        size_t batch_count = 0;
+        while (VecSimBatchIterator_HasNext(iterator)) {
+            auto *batch = VecSimBatchIterator_Next(iterator, 1, BY_SCORE);
+            ASSERT_NE(batch, nullptr);
+            const size_t batch_len = VecSimQueryReply_Len(batch);
+            if (batch_len == 0) {
+                VecSimQueryReply_Free(batch);
+                break;
+            }
+            ASSERT_EQ(batch_len, 1);
+            for (const auto &result : batch->results) {
+                EXPECT_TRUE(returned_labels.insert(VecSimQueryResult_GetId(&result)).second);
+            }
+            VecSimQueryReply_Free(batch);
+            ASSERT_LE(++batch_count, normalization_set_size);
+        }
+        EXPECT_EQ(returned_labels.size(), normalization_set_size);
+        for (labelType label = 0; label < normalization_set_size; label++) {
+            EXPECT_NE(returned_labels.find(label), returned_labels.end());
+        }
+        VecSimBatchIterator_Free(iterator);
+
+        auto allocator = index->getAllocator();
+        mock_thread_pool.reset_ctx();
+    }
 }
 
 TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
@@ -982,20 +994,20 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
 
     std::mutex transition_mutex;
     std::condition_variable transition_cv;
-    bool replacement_entered = false;
-    bool allow_replacement = false;
-    tiered_index->setBeforeQuantizedBackendReplacementHook([&] {
+    bool finalization_entered = false;
+    bool allow_finalization = false;
+    tiered_index->setBeforeQuantizationFinalizationHook([&] {
         std::unique_lock lock(transition_mutex);
-        replacement_entered = true;
+        finalization_entered = true;
         transition_cv.notify_all();
-        transition_cv.wait(lock, [&] { return allow_replacement; });
+        transition_cv.wait(lock, [&] { return allow_finalization; });
     });
 
     std::thread writer([&] { EXPECT_EQ(VecSimIndex_AddVector(index, second_vector, 1), 1); });
     {
         std::unique_lock lock(transition_mutex);
         ASSERT_TRUE(transition_cv.wait_for(lock, std::chrono::seconds(10),
-                                           [&] { return replacement_entered; }));
+                                           [&] { return finalization_entered; }));
     }
 
     std::atomic_bool keep_reading = true;
@@ -1066,7 +1078,7 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
 
     {
         std::lock_guard lock(transition_mutex);
-        allow_replacement = true;
+        allow_finalization = true;
     }
     transition_cv.notify_all();
     writer.join();
