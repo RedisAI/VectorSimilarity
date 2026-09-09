@@ -1043,7 +1043,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
 
 // Tests the quantization preprocessor with a single preprocessor in the chain.
 // The QuantPreprocessor allocates and processes both the storage blob (quantized) and the query
-// blob (original values + precomputed sum_squares for L2).
+// blob (original values + zeroed unused metadata for FP32 L2).
 TEST(PreprocessorsTest, QuantizationTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t n_preprocessors = 1;
@@ -1060,17 +1060,12 @@ TEST(PreprocessorsTest, QuantizationTest) {
     ComputeSQ8Quantization(original_blob, dim, expected_storage_blob);
 
     // === Query blob expected values ===
-    // Query layout: | query_values[dim] | y_sum_squares (for L2) |
+    // Query layout: | query_values[dim] | unused sum | unused sum_squares |
     constexpr size_t query_blob_bytes_count =
         (dim + sq8::query_metadata_count<VecSimMetric_L2>()) * sizeof(float);
 
-    // Compute expected sum and sum of squares for L2:
-    float expected_query_sum = 0;
-    float expected_query_sum_squares = 0;
-    for (size_t i = 0; i < dim; ++i) {
-        expected_query_sum += original_blob[i];
-        expected_query_sum_squares += original_blob[i] * original_blob[i];
-    }
+    constexpr float expected_query_sum = 0;
+    constexpr float expected_query_sum_squares = 0;
 
     auto quant_preprocessor =
         new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
@@ -1113,12 +1108,12 @@ TEST(PreprocessorsTest, QuantizationTest) {
                                     expected_storage_blob, quantized_blob_bytes_count));
     }
 
-    // Test preprocessQuery (query values + precomputed sum_squares for L2)
+    // Test preprocessQuery
     {
         auto query_blob = multiPPContainer.preprocessQuery(original_blob, original_blob_size);
         ASSERT_NE(query_blob.get(), nullptr);
 
-        // Verify query blob content: original floats followed by sum_squares
+        // Verify query blob content, including the retained metadata slots.
         const float *query_floats = static_cast<const float *>(query_blob.get());
         EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
         ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
@@ -1467,8 +1462,7 @@ protected:
 
     // === Query blob helpers ===
 
-    // Query layout: | query_values[dim] | y_sum (IP/Cosine) OR y_sum_squares (L2) |
-    // All metrics: (dim + 1) floats
+    // FP32 L2 retains two unused metadata slots; IP/Cosine retain their query sum.
     template <VecSimMetric Metric>
     static constexpr size_t getExpectedQuerySize() {
         return (dim + sq8::query_metadata_count<Metric>()) * sizeof(float);
@@ -1482,9 +1476,10 @@ protected:
 
         float expected_query_sum = 0;
         float expected_query_sum_squares = 0;
-        for (size_t i = 0; i < dim; ++i) {
-            expected_query_sum += original_blob[i];
-            expected_query_sum_squares += original_blob[i] * original_blob[i];
+        if constexpr (Metric != VecSimMetric_L2) {
+            for (size_t i = 0; i < dim; ++i) {
+                expected_query_sum += original_blob[i];
+            }
         }
 
         auto quant_preprocessor = new (allocator) QuantPreprocessor<float, Metric>(allocator, dim);
@@ -1524,7 +1519,7 @@ protected:
             const float *query_floats = static_cast<const float *>(query_blob);
             EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
 
-            // Verify precomputed value (sum for IP/Cosine, sum and sum_squares for L2)
+            // L2 metadata slots are unused and zeroed; IP/Cosine still require their sum.
             ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
             if constexpr (Metric == VecSimMetric_L2) {
                 ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY],
@@ -1560,7 +1555,7 @@ protected:
             const float *query_floats = static_cast<const float *>(blob);
             EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
 
-            // Verify precomputed value (sum for IP/Cosine, sum and sum_squares for L2)
+            // L2 metadata slots are unused and zeroed; IP/Cosine still require their sum.
             ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
             if constexpr (Metric == VecSimMetric_L2) {
                 ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY],
@@ -1881,8 +1876,10 @@ protected:
             }
             const float query_value = to_fp32<DataType>(expected_query_body[i]);
             expected_x_mean_ip += widened_blob[i] * mean_vec[i];
-            expected_y_sum += query_value;
-            expected_y_sum_squares += query_value * query_value;
+            if constexpr (!(std::is_same_v<DataType, float> && Metric == VecSimMetric_L2)) {
+                expected_y_sum += query_value;
+                expected_y_sum_squares += query_value * query_value;
+            }
             expected_y_mean_ip += widened_blob[i] * mean_vec[i];
         }
 

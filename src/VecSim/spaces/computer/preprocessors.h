@@ -497,8 +497,8 @@ public:
      * Storage vectors are quantized to uint8_t values, with metadata (min, delta, sum, and
      * sum_squares for L2) appended for distance reconstruction.
      *
-     * Query vectors remain as DataType for asymmetric distance computation, with a precomputed
-     * sum (for IP/Cosine) or sum of squares (for L2) appended for efficient distance calculation.
+     * Query vectors remain as DataType for asymmetric distance computation, with
+     * metadata appended by preprocessQuery for efficient distance calculation.
      *
      * Possible scenarios (currently only CASE 1 is implemented):
      * - CASE 1: STORAGE BLOB AND QUERY BLOB NEED ALLOCATION (storage_blob == query_blob == nullptr)
@@ -558,6 +558,7 @@ public:
      * - For IP/Cosine: y_sum = Σy_i (sum of query values)
      * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query
      *                                                                      values)
+     *   FP32 L2 kernels do not use these sums; their slots are retained and zeroed.
      *
      * Query blob layout:
      * - For IP/Cosine: | query_values[dim] | y_sum |
@@ -587,7 +588,14 @@ public:
         // Compute and write FP32 query metadata after the query body. The metadata offset is
         // body_bytes, which is not guaranteed to be 4-byte aligned for FP16 query bodies.
         void *metadata_dst = static_cast<uint8_t *>(blob) + body_bytes;
-        assign_query_metadata(query_values, input, metadata_dst);
+        if constexpr (std::is_same_v<DataType, float> && Metric == VecSimMetric_L2) {
+            // Direct FP32 L2 kernels need only query values. Keep the existing blob layout
+            // without traversing the query again to calculate unused sums.
+            memset(metadata_dst, 0,
+                   sq8::query_metadata_count<Metric, WithNorm>() * sizeof(MetadataType));
+        } else {
+            assign_query_metadata(query_values, input, metadata_dst);
+        }
 
         query_blob_size = this->query_bytes_count;
     }

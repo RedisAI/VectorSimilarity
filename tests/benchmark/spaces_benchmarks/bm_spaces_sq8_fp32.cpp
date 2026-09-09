@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "bm_spaces.h"
+#include "VecSim/spaces/computer/preprocessors.h"
 #include "utils/tests_utils.h"
 
 using sq8 = vecsim_types::sq8;
@@ -102,6 +103,52 @@ INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, InnerProduct, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, Cosine, 16);
 INITIALIZE_NAIVE_BM(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, L2Sqr, 16);
 
-// Naive
+template <bool WithNorm>
+static void BM_SQ8_FP32_L2_PreprocessQuery(benchmark::State &state) {
+    const size_t dim = state.range(0);
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    vecsim_stl::vector<float> query(allocator);
+    vecsim_stl::vector<float> mean(allocator);
+    std::mt19937 rng(47);
+    std::uniform_real_distribution<float> distribution(-1.0f, 1.0f);
+    for (size_t i = 0; i < dim; ++i) {
+        query.push_back(distribution(rng));
+        mean.push_back(distribution(rng));
+    }
+    auto *preprocessor = [&]() {
+        if constexpr (WithNorm) {
+            return new (allocator)
+                QuantPreprocessor<float, VecSimMetric_L2, true>(allocator, dim, mean);
+        } else {
+            return new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
+        }
+    }();
+    for (auto _ : state) {
+        void *blob = nullptr;
+        size_t blob_size = dim * sizeof(float);
+        benchmark::DoNotOptimize(query.data());
+        preprocessor->preprocessQuery(query.data(), blob, blob_size, 32);
+        benchmark::DoNotOptimize(blob);
+        benchmark::ClobberMemory();
+        allocator->free_allocation(blob);
+    }
+    delete preprocessor;
+    state.SetItemsProcessed(state.iterations());
+}
+
+BENCHMARK_TEMPLATE(BM_SQ8_FP32_L2_PreprocessQuery, false)
+    ->Arg(128)
+    ->Arg(384)
+    ->Arg(768)
+    ->Arg(1536)
+    ->ArgName("Dimension")
+    ->Unit(benchmark::kNanosecond);
+BENCHMARK_TEMPLATE(BM_SQ8_FP32_L2_PreprocessQuery, true)
+    ->Arg(128)
+    ->Arg(384)
+    ->Arg(768)
+    ->Arg(1536)
+    ->ArgName("Dimension")
+    ->Unit(benchmark::kNanosecond);
 
 BENCHMARK_MAIN();
