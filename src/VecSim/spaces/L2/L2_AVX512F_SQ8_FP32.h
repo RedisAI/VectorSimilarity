@@ -52,8 +52,7 @@ static inline void L2StepSQ8_FP32_AVX512(const uint8_t *&pVec1, const float *&pV
 
 // pVec1v = SQ8 storage, pVec2v = FP32 query
 template <unsigned char residual> // 0..31
-float SQ8_FP32_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *pVec1v, const void *pVec2v,
-                                              size_t dimension) {
+float SQ8_FP32_L2SqrSIMD16_AVX512F(const void *pVec1v, const void *pVec2v, size_t dimension) {
     const uint8_t *pVec1 = static_cast<const uint8_t *>(pVec1v); // SQ8 storage
     const float *pVec2 = static_cast<const float *>(pVec2v);     // FP32 query
     const uint8_t *pEnd1 = pVec1 + dimension;

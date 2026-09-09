@@ -12,6 +12,7 @@
 #include "VecSim/spaces/L2/L2_AVX512F_FP32.h"
 #include "VecSim/spaces/L2/L2_AVX512F_FP64.h"
 #include "VecSim/spaces/L2/L2_AVX512F_SQ8_FP16.h"
+#include "VecSim/spaces/L2/L2_AVX512F_SQ8_FP32.h"
 
 #include "VecSim/spaces/IP/IP_AVX512F_FP16.h"
 #include "VecSim/spaces/IP/IP_AVX512F_FP32.h"
@@ -74,6 +75,12 @@ dist_func_t<float> Choose_SQ8_FP16_Cosine_implementation_AVX512F(size_t dim) {
 dist_func_t<float> Choose_SQ8_FP16_L2_implementation_AVX512F(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_L2SqrSIMD16_AVX512F);
+    return ret_dist_func;
+}
+
+dist_func_t<float> Choose_SQ8_FP32_L2_implementation_AVX512F(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP32_L2SqrSIMD16_AVX512F);
     return ret_dist_func;
 }
 

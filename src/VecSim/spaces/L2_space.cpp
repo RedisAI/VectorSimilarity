@@ -75,11 +75,11 @@ dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+#ifdef OPT_AVX512F
+    if (features.avx512f) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes; no point in aligning if there's a residual
             *alignment = 16 * sizeof(uint8_t);
-        return Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+        return Choose_SQ8_FP32_L2_implementation_AVX512F(dim);
     }
 #endif
 #ifdef OPT_AVX2_FMA

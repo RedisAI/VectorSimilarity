@@ -456,11 +456,9 @@ void ExpectSQ8_FP32_L2SqrNear(const uint8_t *storage, const float *query, size_t
     // smaller query blob. aarch64 has no such floor, so those tiers stay ungated to match
     // production.
     const bool x86_simd_reachable = dim >= 8;
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (x86_simd_reachable && optimization.avx512f && optimization.avx512bw &&
-        optimization.avx512vl && optimization.avx512vnni) {
-        check(Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim)(storage, query, dim),
-              "AVX512F_BW_VL_VNNI");
+#ifdef OPT_AVX512F
+    if (x86_simd_reachable && optimization.avx512f) {
+        check(Choose_SQ8_FP32_L2_implementation_AVX512F(dim)(storage, query, dim), "AVX512F");
     }
 #endif
 #ifdef OPT_AVX2_FMA
@@ -2561,6 +2559,33 @@ TEST_F(SpacesTest, UINT8_DispatcherCapFallback) {
     ASSERT_EQ(static_cast<float>(1 - total), UINT8_InnerProduct(v1.data(), v1.data(), above));
 }
 
+#ifdef OPT_AVX512F
+TEST_F(SpacesTest, SQ8_FP32_L2_AVX512F_OnlyDispatch) {
+    if (!getCpuOptimizationFeatures().avx512f) {
+        GTEST_SKIP() << "AVX512F is not supported";
+    }
+    cpu_features::X86Features features{};
+    features.avx512f = 1;
+    for (size_t dim = 1; dim <= 160; ++dim) {
+        unsigned char alignment = 0;
+        auto func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &features);
+        if (dim < 8) {
+            EXPECT_EQ(func, SQ8_FP32_L2Sqr);
+        } else {
+            EXPECT_EQ(func, Choose_SQ8_FP32_L2_implementation_AVX512F(dim));
+            EXPECT_EQ(alignment, dim % 16 == 0 ? 16 : 0);
+        }
+        auto pair = BuildSQ8_FP32_L2_ShiftedPair(dim, 1.0f, 10000.0f, 4242);
+        const auto &shifted = pair.second;
+        const double expected = SQ8_FP32_L2Sqr_DoubleReference(
+            shifted.storage.data(), shifted.query.data(), dim);
+        EXPECT_NEAR(func(shifted.storage.data(), shifted.query.data(), dim), expected,
+                    1e-3 * std::max(1.0, expected))
+            << "dim=" << dim;
+    }
+}
+#endif
+
 class SQ8_FP32_SpacesOptimizationTest : public testing::TestWithParam<size_t> {};
 
 TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_L2SqrTest) {
@@ -2588,12 +2613,11 @@ TEST_P(SQ8_FP32_SpacesOptimizationTest, SQ8_FP32_L2SqrTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_FP32_L2Sqr(v2_compressed.data(), v1_orig.data(), dim);
 // Test different optimizations based on CPU features
-#ifdef OPT_AVX512_F_BW_VL_VNNI
-    if (optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
-        optimization.avx512vnni) {
+#ifdef OPT_AVX512F
+    if (optimization.avx512f) {
         unsigned char alignment = 0;
         arch_opt_func = L2_SQ8_FP32_GetDistFunc(dim, &alignment, &optimization);
-        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_L2_implementation_AVX512F_BW_VL_VNNI(dim))
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP32_L2_implementation_AVX512F(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_orig.data(), dim), 0.01)
             << "AVX512 with dim " << dim;

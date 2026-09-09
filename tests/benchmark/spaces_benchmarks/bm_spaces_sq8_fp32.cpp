@@ -64,10 +64,42 @@ INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, SVE2, 16, s
 #ifdef CPU_FEATURES_ARCH_X86_64
 cpu_features::X86Features opt = cpu_features::GetX86Info().features;
 
+#ifdef OPT_AVX512F
+bool avx512f_supported = opt.avx512f;
+INITIALIZE_BENCHMARKS_SET_L2(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F, 16,
+                            avx512f_supported);
+#endif
+
+BENCHMARK_DEFINE_F(BM_VecSimSpaces_SQ8_FP32, L2_Dispatch_NoVNNI)(benchmark::State &st) {
+    if (!opt.avx512f) {
+        st.SkipWithError("AVX512F is not supported");
+        return;
+    }
+    auto features = opt;
+    features.avx512vnni = 0;
+    auto distance = spaces::L2_SQ8_FP32_GetDistFunc(dim, nullptr, &features);
+    for (auto _ : st) {
+        benchmark::DoNotOptimize(distance(v1, v2, dim));
+    }
+}
+BENCHMARK_REGISTER_F(BM_VecSimSpaces_SQ8_FP32, L2_Dispatch_NoVNNI)
+    ->ArgName("Dimension")
+    ->Unit(benchmark::kNanosecond)
+    ->Arg(8)
+    ->Arg(16)
+    ->Arg(64)
+    ->Arg(128)
+    ->Arg(129)
+    ->Arg(512)
+    ->Arg(513)
+    ->Arg(768)
+    ->Arg(1024)
+    ->Arg(1536);
+
 // AVX512_F_BW_VL_VNNI functions
 #ifdef OPT_AVX512_F_BW_VL_VNNI
 bool avx512_f_bw_vl_vnni_supported = opt.avx512f && opt.avx512bw && opt.avx512vl && opt.avx512vnni;
-INITIALIZE_BENCHMARKS_SET_L2_IP(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F_BW_VL_VNNI, 16,
+INITIALIZE_BENCHMARKS_SET_IP(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F_BW_VL_VNNI, 16,
                                 avx512_f_bw_vl_vnni_supported);
 INITIALIZE_BENCHMARKS_SET_Cosine(BM_VecSimSpaces_SQ8_FP32, SQ8_FP32, AVX512F_BW_VL_VNNI, 16,
                                  avx512_f_bw_vl_vnni_supported);
