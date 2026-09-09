@@ -105,11 +105,9 @@ public:
 
     void preprocessStorageInPlace(void *blob, size_t input_blob_size) const override;
 
-#ifdef BUILD_TESTS
     std::array<PreprocessorInterface *, n_preprocessors> getPreprocessors() const {
         return preprocessors;
     }
-#endif
 
 private:
     using Base = PreprocessorsContainerAbstract;

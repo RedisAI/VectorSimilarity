@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <type_traits>
 #include <variant>
 
@@ -257,9 +258,6 @@ static inline T from_fp32(float x) {
 
 template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
 class QuantPreprocessor : public PreprocessorInterface {
-    template <typename, VecSimMetric>
-    friend class SQ8QuantizationTrainer;
-
 public:
     // Center L2 queries in FP32 even when the original input is FP16.
     using QueryType = std::conditional_t<WithNorm && Metric == VecSimMetric_L2, float, DataType>;
@@ -480,6 +478,14 @@ private:
     }
 
 public:
+    // Install the final mean before any vectors are stored, with queries excluded by the caller.
+    void setMean(std::span<const float> values) noexcept
+        requires(WithNorm)
+    {
+        assert(values.size() == mean.size());
+        std::copy(values.begin(), values.end(), mean.begin());
+    }
+
     // Standard constructor (WithNorm == false): no mean vector.
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         requires(!WithNorm)

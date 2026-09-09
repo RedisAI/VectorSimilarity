@@ -151,8 +151,6 @@ public:
  */
 template <typename DataType, typename DistType, VecSimMetric Metric>
 class DistanceCalculatorWithNorm : public IndexCalculatorInterface<DistType> {
-    template <typename, VecSimMetric>
-    friend class SQ8QuantizationTrainer;
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP,
                   "DistanceCalculatorWithNorm only supports L2 and IP metrics");
 
@@ -165,7 +163,7 @@ private:
         float mean_sum_squares;
     };
 
-    // Initialized once by the optional SQ8 trainer before the first stored vector.
+    // HNSW may install the accumulated mean before storing the first vector.
     WithNormDistanceContext context_;
 
     static DistType calcStoredWithContext(const void *opaque_context, const void *v1,
@@ -214,6 +212,10 @@ public:
                                                              .query_func = asym_func,
                                                              .mean_sum_squares = mean_sum_squares,
                                                          }) {}
+
+    // Keep the context address stable for cached distance dispatches. Caller excludes queries
+    // and updates the preprocessor's mean before storing any vectors.
+    void setMeanSumSquares(float value) noexcept { context_.mean_sum_squares = value; }
 
     // Symmetric: both v1 and v2 are stored SQ8-of-x' blobs.
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {

@@ -63,16 +63,17 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     }
 
     const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-    const bool requires_training = RequiresQuantizationTraining(params);
-    const size_t training_threshold =
-        requires_training
-            ? std::min(params->specificParams.tieredHnswParams.QuantNormalizationSetSize,
-                       MAX_QUANT_NORMALIZATION_SET_SIZE)
-            : 0;
-    // Allocate the final backend and component layouts now. The optional trainer initially
-    // leaves their mean at zero, and tiered writes keep the graph empty until it finalizes.
-    auto *hnsw_index = static_cast<HNSWIndex<DataType, DistType> *>(
-        HNSWFactory::NewIndex(params->primaryIndexParams, true, training_threshold));
+    auto management_layer_allocator = VecSimAllocator::newVecsimAllocator();
+    VecSimParams backend_params = *params->primaryIndexParams;
+    vecsim_stl::vector<float> initial_mean(management_layer_allocator);
+    if (RequiresQuantizationTraining(params)) {
+        // Allocate the final SQ8 WithMean layout now. The factory copies this temporary mean;
+        // tiered keeps the graph empty until it installs the mean accumulated from FLAT.
+        initial_mean.resize(hnsw_params.dim, 0.0f);
+        backend_params.algoParams.hnswParams.quantParams = initial_mean.data();
+    }
+    auto *hnsw_index =
+        static_cast<HNSWIndex<DataType, DistType> *>(HNSWFactory::NewIndex(&backend_params, true));
     if (!hnsw_index) {
         return nullptr;
     }
@@ -94,10 +95,6 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
             "64 dimensions because per-vector metadata overhead reduces memory savings");
     }
 
-    // Create new tiered hnsw index
-    std::shared_ptr<VecSimAllocator> management_layer_allocator =
-        VecSimAllocator::newVecsimAllocator();
-
     return new (management_layer_allocator) TieredHNSWIndex<DataType, DistType>(
         hnsw_index, frontendIndex, *params, management_layer_allocator);
 }
@@ -107,8 +104,12 @@ inline size_t EstimateInitialSize(const TieredIndexParams *params) {
 
     const bool requires_training = RequiresQuantizationTraining(params);
     const bool with_mean = requires_training || hnsw_params.quantParams != nullptr;
-    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true, with_mean, requires_training);
+    size_t est = HNSWFactory::EstimateInitialSize(&hnsw_params, true, with_mean);
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
+
+    if (requires_training) {
+        est += allocations_overhead + hnsw_params.dim * sizeof(double);
+    }
 
     // Management layer allocator overhead.
     est += sizeof(VecSimAllocator) + allocations_overhead;

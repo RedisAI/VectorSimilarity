@@ -18,7 +18,6 @@
 #include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
-#include "VecSim/index_factories/hnsw_factory.h"
 
 /**
  * Definition of a job that inserts a new vector from flat into HNSW Index.
@@ -108,15 +107,50 @@ private:
 
     bool isQuantized;
 
+    // Writer-owned state exists only while SQ8 vectors are accumulating in FLAT.
+    // Reads and maintenance always use the real, initially empty backend.
+    struct SQAccumulationState {
+        size_t normalizationSetSize;
+        vecsim_stl::vector<double> runningSumVec;
+
+        SQAccumulationState(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                            size_t normalizationSetSize)
+            : normalizationSetSize(
+                  std::min(normalizationSetSize, MAX_QUANT_NORMALIZATION_SET_SIZE)),
+              runningSumVec(dim, 0.0, allocator) {}
+    };
+    std::optional<SQAccumulationState> sqAccumulationState;
+
 #ifdef BUILD_TESTS
     std::function<void()> beforeQuantizationFinalization;
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
 #endif
 
-    int addVectorDuringTraining(const void *blob, labelType label);
-    int deleteVectorDuringTraining(labelType label);
-    void finalizeTrainingAndSubmitJobs();
+    void addToSum(std::span<const DataType> vector) {
+        if constexpr (QuantInput<DataType>) {
+            auto &sum = sqAccumulationState->runningSumVec;
+            assert(vector.size() == sum.size());
+            for (size_t i = 0; i < vector.size(); ++i) {
+                sum[i] += to_fp32(vector[i]);
+            }
+        }
+    }
+
+    void subtractFromSum(std::span<const DataType> vector) {
+        if constexpr (QuantInput<DataType>) {
+            auto &sum = sqAccumulationState->runningSumVec;
+            assert(vector.size() == sum.size());
+            for (size_t i = 0; i < vector.size(); ++i) {
+                sum[i] -= to_fp32(vector[i]);
+            }
+        }
+    }
+
+    [[nodiscard]] vecsim_stl::vector<float> calculateQuantizationMean() const;
+    int addVectorDuringAccumulation(const void *blob, labelType label);
+    int deleteVectorDuringAccumulation(labelType label);
+    void finalizeQuantizationAndSubmitJobs();
 
     void executeInsertJob(HNSWInsertJob *job);
     void executeRepairJob(HNSWRepairJob *job);
@@ -743,6 +777,12 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
       readySwapJobs(0),
       isQuantized(tiered_index_params.primaryIndexParams->algoParams.hnswParams.quantType !=
                   VecSimQuant_NONE) {
+    const auto &hnsw_params = tiered_index_params.primaryIndexParams->algoParams.hnswParams;
+    const size_t normalization_set_size =
+        tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
+    if (hnsw_params.quantType == VecSimQuant_SQ8 && normalization_set_size > 0) {
+        sqAccumulationState.emplace(this->allocator, hnsw_params.dim, normalization_set_size);
+    }
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
     this->pendingSwapJobsThreshold =
@@ -779,22 +819,20 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 // Training writes stay in FLAT in both write modes, even beyond flatBufferLimit.
 // No worker can own an insertion job until finalization submits the whole pending set.
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::addVectorDuringTraining(const void *blob,
-                                                                 labelType label) {
-    auto *backend = getHNSWIndex();
+int TieredHNSWIndex<DataType, DistType>::addVectorDuringAccumulation(const void *blob,
+                                                                     labelType label) {
     std::unique_lock flat_lock(this->flatIndexGuard);
     idType id = this->frontendIndex->indexSize();
     HNSWInsertJob *job = nullptr;
     if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
         id = static_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
                  ->getIdOfLabel(label);
-        backend->trainingVectorRemoved(
+        subtractFromSum(
             {this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
         job = labelToInsertJobs.at(label).front();
     }
     const int result = this->frontendIndex->addVector(blob, label);
-    backend->trainingVectorAdded(
-        {this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
+    addToSum({this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
     if (!job) {
         job = new (this->allocator)
             HNSWInsertJob(this->allocator, label, id, executeInsertJobWrapper, this);
@@ -804,14 +842,14 @@ int TieredHNSWIndex<DataType, DistType>::addVectorDuringTraining(const void *blo
         }
     }
     flat_lock.unlock();
-    if (backend->canFinalizeTraining()) {
-        finalizeTrainingAndSubmitJobs();
+    if (this->frontendIndex->indexSize() >= sqAccumulationState->normalizationSetSize) {
+        finalizeQuantizationAndSubmitJobs();
     }
     return result;
 }
 
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringTraining(labelType label) {
+int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringAccumulation(labelType label) {
     std::unique_lock flat_lock(this->flatIndexGuard);
     auto it = labelToInsertJobs.find(label);
     if (it == labelToInsertJobs.end()) {
@@ -819,7 +857,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringTraining(labelType la
     }
     const int removed = it->second.size();
     for (auto *job : it->second) {
-        getHNSWIndex()->trainingVectorRemoved(
+        subtractFromSum(
             {this->frontendIndex->getDataByInternalId(job->id), this->frontendIndex->getDim()});
         delete job; // Never submitted, so no worker can still reference this job.
     }
@@ -832,8 +870,22 @@ int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringTraining(labelType la
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::finalizeTrainingAndSubmitJobs() {
-    // Allocate the snapshot before consuming the trainer. Synchronous execution removes jobs
+vecsim_stl::vector<float> TieredHNSWIndex<DataType, DistType>::calculateQuantizationMean() const {
+    assert(sqAccumulationState);
+    const size_t count = this->frontendIndex->indexSize();
+    assert(count >= sqAccumulationState->normalizationSetSize);
+    const auto &sum = sqAccumulationState->runningSumVec;
+    vecsim_stl::vector<float> mean(sum.size(), this->allocator);
+    for (size_t i = 0; i < sum.size(); ++i) {
+        mean[i] = static_cast<float>(sum[i] / static_cast<double>(count));
+    }
+    return mean;
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs() {
+    const auto mean = calculateQuantizationMean();
+    // Allocate the snapshot before finishing accumulation. Synchronous execution removes jobs
     // from labelToInsertJobs, so iterating the map while dispatching would invalidate iterators.
     vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
     jobs.reserve(this->frontendIndex->indexSize());
@@ -848,7 +900,9 @@ void TieredHNSWIndex<DataType, DistType>::finalizeTrainingAndSubmitJobs() {
     {
         this->lockMainIndexGuard();
         std::unique_lock lock(this->mainIndexGuard, std::adopt_lock);
-        getHNSWIndex()->finalizeQuantizationTraining();
+        getHNSWIndex()->setQuantizationMean(mean);
+        // The optional state is consumed once. Emptying a trained index never restarts training.
+        sqAccumulationState.reset();
     }
 #ifdef BUILD_TESTS
     if (afterQuantizationFinalization) {
@@ -886,8 +940,8 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
 // parameters.
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
-    if (getHNSWIndex()->needsTraining()) {
-        return addVectorDuringTraining(blob, label);
+    if (sqAccumulationState) {
+        return addVectorDuringAccumulation(blob, label);
     }
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
@@ -987,8 +1041,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
-    if (getHNSWIndex()->needsTraining()) {
-        return deleteVectorDuringTraining(label);
+    if (sqAccumulationState) {
+        return deleteVectorDuringAccumulation(label);
     }
     int num_deleted_vectors = 0;
     this->flatIndexGuard.lock_shared();

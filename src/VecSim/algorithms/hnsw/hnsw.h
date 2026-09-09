@@ -20,6 +20,8 @@
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
+#include "VecSim/spaces/computer/preprocessors.h"
+#include <span>
 #include "VecSim/tombstone_interface.h"
 
 #ifdef BUILD_TESTS
@@ -92,35 +94,41 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
 private:
     template <typename, typename>
     friend class TieredHNSWIndex;
-    std::unique_ptr<QuantizationTrainer<DataType>> quantizationTrainer;
 
-    // Only the tiered writer can change training state. Backend queries never inspect it.
-    void trainingVectorAdded(std::span<const DataType> vector) {
-        assert(quantizationTrainer);
-        quantizationTrainer->addVector(vector);
-    }
-    void trainingVectorRemoved(std::span<const DataType> vector) {
-        assert(quantizationTrainer);
-        quantizationTrainer->removeVector(vector);
-    }
-    bool canFinalizeTraining() const { return quantizationTrainer && quantizationTrainer->ready(); }
-    // Caller holds the tiered main lock exclusively and has not submitted insertion jobs.
-    void finalizeQuantizationTraining() noexcept {
-        assert(curElementCount == 0);
-        assert(canFinalizeTraining());
-        quantizationTrainer->finalize();
-        // Consuming the trainer makes this a one-time operation, even after deleting every vector.
-        quantizationTrainer.reset();
+    template <VecSimMetric Metric>
+    void setSQ8Mean(std::span<const float> mean) noexcept {
+        auto *container = static_cast<MultiPreprocessorsContainer<DataType, 1> *>(
+            this->getPreprocessorsContainer());
+        auto *preprocessor = dynamic_cast<QuantPreprocessor<DataType, Metric, true> *>(
+            container->getPreprocessors()[0]);
+        auto *calculator = dynamic_cast<DistanceCalculatorWithNorm<DataType, float, Metric> *>(
+            this->getIndexCalculator());
+        assert(preprocessor && calculator);
+        preprocessor->setMean(mean);
+        float mean_sum_squares = 0.0f;
+        for (size_t i = 0; i < mean.size(); ++i) {
+            mean_sum_squares += mean[i] * mean[i];
+        }
+        // Cached distance dispatches reference this context, so update its value in place.
+        calculator->setMeanSumSquares(mean_sum_squares);
     }
 
-public:
-    // Writer-only lifecycle query; false for NONE, SQ8 without training and completed training.
-    bool needsTraining() const { return quantizationTrainer != nullptr; }
-#ifdef BUILD_TESTS
-    const QuantizationTrainer<DataType> *getQuantizationTrainer() const {
-        return quantizationTrainer.get();
+    // Only tiered finalization calls this: the backend has its final WithMean components but
+    // no stored vectors. Caller holds the tiered main lock exclusively, before submitting jobs.
+    void setQuantizationMean(std::span<const float> mean) noexcept {
+        assert(this->isQuantized && curElementCount == 0 && mean.size() == this->dim);
+        if constexpr (QuantInput<DataType> && std::is_same_v<DistType, float>) {
+            if (this->metric == VecSimMetric_L2) {
+                setSQ8Mean<VecSimMetric_L2>(mean);
+            } else {
+                // Tiered cosine inputs are already normalized, and use IP SQ8 components.
+                assert(this->metric == VecSimMetric_IP || this->metric == VecSimMetric_Cosine);
+                setSQ8Mean<VecSimMetric_IP>(mean);
+            }
+        } else {
+            assert(false && "Unsupported SQ8 data type");
+        }
     }
-#endif
 
 protected:
     // Index build parameters
@@ -1707,9 +1715,9 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
                                          const IndexComponents<DataType, DistType> &components,
                                          size_t random_seed)
     : VecSimIndexAbstract<DataType, DistType>(abstractInitParams, components),
-      VecSimIndexTombstone(), quantizationTrainer(components.quantizationTrainer), maxElements(0),
-      graphDataBlocks(this->allocator), elementLocks(this->allocator),
-      idToMetaData(this->allocator), visitedNodesHandlerPool(0, this->allocator) {
+      VecSimIndexTombstone(), maxElements(0), graphDataBlocks(this->allocator),
+      elementLocks(this->allocator), idToMetaData(this->allocator),
+      visitedNodesHandlerPool(0, this->allocator) {
 
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;

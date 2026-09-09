@@ -8,7 +8,7 @@
  */
 
 #include "VecSim/index_factories/tiered_factory.h"
-#include "VecSim/spaces/computer/sq8_quantization_trainer.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
@@ -50,14 +50,17 @@ protected:
     TieredHNSWIndex<data_t, dist_t> *CreateTieredHNSWIndex(VecSimParams &hnsw_params,
                                                            tieredIndexMock &mock_thread_pool,
                                                            size_t swap_job_threshold = 0,
-                                                           size_t flat_buffer_limit = SIZE_MAX) {
+                                                           size_t flat_buffer_limit = SIZE_MAX,
+                                                           size_t normalization_set_size = 0) {
         TieredIndexParams tiered_params = {
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
             .submitCb = tieredIndexMock::submit_callback,
             .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &hnsw_params,
-            .specificParams = {TieredHNSWParams{.swapJobThreshold = swap_job_threshold}}};
+            .specificParams = {
+                TieredHNSWParams{.swapJobThreshold = swap_job_threshold,
+                                 .QuantNormalizationSetSize = normalization_set_size}}};
         auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(
             TieredFactory::NewIndex(&tiered_params));
 
@@ -138,6 +141,25 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 }
 
+TYPED_TEST(HNSWTieredIndexTest, UnquantizedIndexIgnoresNormalizationThreshold) {
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 0, SIZE_MAX, 100);
+    auto *backend = this->CastToHNSW(tiered_index);
+    ASSERT_NE(backend, nullptr);
+    TEST_DATA_T vector[4] = {};
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    EXPECT_EQ(backend->indexSize(), 1);
+    EXPECT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 0);
+}
+
 TYPED_TEST(HNSWTieredIndexTest, testIndexesAttributes) {
     // Create TieredHNSW index instance with a mock queue.
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -184,10 +206,6 @@ TYPED_TEST(HNSWTieredIndexTest, testIndexesAttributes) {
     PreprocessorInterface *bf_pp = pp_arr[0];
     const std::type_info &bf_pp_actual_type = typeid(*bf_pp);
     ASSERT_EQ(bf_pp_actual_type, bf_pp_expected_type);
-
-    // Ordinary HNSW does not enter quantization training.
-    EXPECT_FALSE(hnsw_index->needsTraining());
-    EXPECT_EQ(hnsw_index->getQuantizationTrainer(), nullptr);
 
     // hnsw - simple
     IndexComponents<TEST_DATA_T, TEST_DIST_T> hnsw_components = hnsw_index->get_components();
@@ -5065,32 +5083,15 @@ protected:
     // --- Accessor helpers (HNSWTieredIndexTestSQ8 is a friend of TieredHNSWIndex) ---
 
     bool getIsInAccumulationPhase(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->getHNSWIndex()->needsTraining();
-    }
-
-    template <typename Callback>
-    decltype(auto) inspectTrainer(TieredHNSWIndex<data_t, dist_t> *idx, Callback callback) {
-        const auto *trainer = idx->getHNSWIndex()->getQuantizationTrainer();
-        assert(trainer);
-        if (idx->getHNSWIndex()->getMetric() == VecSimMetric_L2) {
-            return callback(
-                *static_cast<const SQ8QuantizationTrainer<data_t, VecSimMetric_L2> *>(trainer));
-        }
-        return callback(
-            *static_cast<const SQ8QuantizationTrainer<data_t, VecSimMetric_IP> *>(trainer));
+        return idx->sqAccumulationState.has_value();
     }
 
     const vecsim_stl::vector<double> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return inspectTrainer(
-            idx, [](const auto &trainer) -> const auto & { return trainer.getRunningSum(); });
-    }
-
-    bool hasQuantizationTrainer(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->getHNSWIndex()->getQuantizationTrainer() != nullptr;
+        return idx->sqAccumulationState->runningSumVec;
     }
 
     size_t getNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return inspectTrainer(idx, [](const auto &trainer) { return trainer.getThreshold(); });
+        return idx->sqAccumulationState->normalizationSetSize;
     }
 
     // Compare the actual cached dispatches and preprocessing with a backend constructed with
@@ -5209,7 +5210,6 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
 
     // Verify accumulation phase state.
     ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_TRUE(this->hasQuantizationTrainer(tiered_index));
     ASSERT_EQ(this->getRunningSumVec(tiered_index).size(), dim);
     ASSERT_EQ(this->getNormalizationSetSize(tiered_index), normSetSize);
 
@@ -5252,7 +5252,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, InitialMemoryAndSuppliedMeanWithOptionalTrain
                     .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = threshold}}};
                 EXPECT_EQ(TieredFactory::EstimateInitialSize(&tiered_params),
                           tiered_index->getAllocationSize());
-                EXPECT_EQ(this->hasQuantizationTrainer(tiered_index), threshold > 0);
+                EXPECT_EQ(this->getIsInAccumulationPhase(tiered_index), threshold > 0);
                 if (threshold > 0) {
                     // A requested training set takes precedence over a supplied mean.
                     ASSERT_NO_FATAL_FAILURE(
@@ -5321,7 +5321,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, L2MeanTrainingWithBoundedValues) {
                                         TypeParam::isMulti() ? (count - 1) / 2 : count - 1),
                   1);
         EXPECT_TRUE(mean_checked);
-        ASSERT_FALSE(this->hasQuantizationTrainer(tiered_index));
+        ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
         ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
         if (mode == VecSim_WriteAsync) {
             ASSERT_EQ(mock_thread_pool.jobQ.size(), count);
@@ -5714,7 +5714,6 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingFinishesAtThreshold) {
 
     // Accumulation phase should be over.
     ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_FALSE(this->hasQuantizationTrainer(tiered_index));
     // The backend is trained and still empty because the jobs have not run.
     ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
     ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
@@ -5742,7 +5741,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingFinalizesExistingComponentsOnce) {
         std::vector<float> mean(dim);
         size_t finalizations = 0;
         tiered_index->setBeforeQuantizationFinalizationHook([&] {
-            ASSERT_TRUE(backend->needsTraining());
+            ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
             ASSERT_EQ(backend->indexSize(), 0);
             ASSERT_TRUE(mock_thread_pool.jobQ.empty());
             const auto &sum = this->getRunningSumVec(tiered_index);
@@ -5752,7 +5751,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingFinalizesExistingComponentsOnce) {
         });
         tiered_index->setAfterQuantizationFinalizationHook([&] {
             ++finalizations;
-            EXPECT_FALSE(backend->needsTraining());
+            EXPECT_FALSE(this->getIsInAccumulationPhase(tiered_index));
             EXPECT_EQ(backend, this->CastToHNSW(tiered_index));
             EXPECT_EQ(components.indexCalculator, backend->get_components().indexCalculator);
             EXPECT_EQ(components.preprocessors, backend->get_components().preprocessors);
@@ -5777,7 +5776,7 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingFinalizesExistingComponentsOnce) {
             ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, i), 1);
         }
         ASSERT_EQ(backend->indexSize(), 0);
-        EXPECT_FALSE(backend->needsTraining());
+        EXPECT_FALSE(this->getIsInAccumulationPhase(tiered_index));
         ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec, count), 1);
         EXPECT_EQ(backend->indexSize(), 1);
         EXPECT_EQ(finalizations, 1);
@@ -6191,7 +6190,6 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, WriteInPlaceDuringAccumulation) {
     }
 
     ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
-    ASSERT_FALSE(this->hasQuantizationTrainer(tiered_index));
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), normSetSize);
     ASSERT_TRUE(this->getLabelToInsertJobs(tiered_index).empty());
