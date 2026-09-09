@@ -26,7 +26,8 @@ def main():
         args = [str(arg) for arg in args]
         print("Running:", " ".join(args), flush=True)
         with (results / (name + ".log")).open("w") as log:
-            subprocess.run(args, cwd=cwd, stdout=log, stderr=subprocess.STDOUT, check=True)
+            subprocess.run(args, cwd=cwd, env={**os.environ, "ROOT": str(cwd)},
+                           stdout=log, stderr=subprocess.STDOUT, check=True)
 
     baseline_sha = config["baseline"]
     if not re.fullmatch(r"[0-9a-f]{40}", baseline_sha):
@@ -71,7 +72,7 @@ def main():
         for target in targets[1:]:
             run([build / "unit_tests" / target,
                  "--gtest_output=xml:" + str(results / (name + "-" + target + ".xml"))],
-                name + "-" + target)
+                name + "-" + target, cwd=source)
 
     affinity = sorted(os.sched_getaffinity(0))
     cpu = affinity[-1]
