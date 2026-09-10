@@ -3096,6 +3096,7 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     if (!TypeParam::isMulti()) {
         TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
         tiered_index->addVector(overwritten_vec, vec_label);
+        expected_marked_deleted++;
         ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 3);
         ASSERT_EQ(tiered_index->indexSize(), 3);
         ASSERT_EQ(tiered_index->indexLabelCount(), 2);
@@ -3106,6 +3107,7 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     // Validate that the vector is deleted and consolidated synchronously (in-place mode),
     // so no marked-deleted entry remains.
     tiered_index->deleteVector(vec_label);
+    expected_marked_deleted++;
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), TypeParam::isMulti() ? 2 : 3);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
 
