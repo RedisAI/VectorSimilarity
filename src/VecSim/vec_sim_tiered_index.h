@@ -21,7 +21,7 @@
 #include <shared_mutex>
 
 #if HAVE_SVS
-// For the SVS special case in getDataByLabel; remove with it (MOD-17706).
+// For the compressed-backend check in getDataByLabel.
 #include "VecSim/algorithms/svs/svs.h"
 #endif
 
@@ -126,15 +126,13 @@ public:
      * @brief Get the vector elements stored under a label, in insertion order.
      *
      * Contract on `VecSimIndexAbstract::getDataByLabel`, including that `vectors_output` arrives
-     * empty, with two caveats a tiered index cannot
-     * avoid, both of which only ever make an equality-testing caller answer "different":
-     *
+     * empty, with two caveats:
      * - The vectors are the buffer's followed by the backend's, which for a multi-value label
      *   split across the tiers is not insertion order.
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
      *   caught inside that window is reported by both tiers and appears twice.
      *
-     * A quantized backend cannot report vector elements. Reads append nothing, including while
+     * An SQ8 HNSW backend cannot report vector elements. Reads append nothing, including during
      * training, when the requested label is still buffered in the flat tier.
      *
      * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
@@ -143,13 +141,9 @@ public:
      * the backend, as this used to, reports nothing for a vector written recently enough to
      * still be buffered -- which is exactly when a document is most likely to be written again.
      *
-     * `flatIndexGuard` is held across both reads, in the order `relabelVector` and
-     * `acquireSharedLocks` take: it cannot prevent a duplicate, but it does stop the buffer's
-     * copy being removed between them. The backend's own data guard is deliberately not taken
-     * here -- its `getDataByLabel` takes it, because a shared main lock does not exclude an
-     * ingest mutating under `indexDataGuard`. Same division as
-     * `computeUnifiedIndexLabelsSetUnsafe`, which holds the outer locks and lets `getLabelsSet`
-     * take the inner one.
+     * A compressed SVS backend cannot report its stored vectors as values. Hence, for
+     * a multi-value label that already got a buffer contribution, we check `isLabelExists`
+     * in the backend before trusting the buffer alone.
      */
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const {
 #ifdef BUILD_TESTS
@@ -158,38 +152,38 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
-        // SQ8 indexes report no values, including during training, without acquiring the flat lock.
+        // SQ8 HNSW indexes report no values, including during training.
         if (this->backendIndex->usesQuantizedStorage()) {
             return;
         }
 
 #if HAVE_SVS
-        // TODO(MOD-17706): remove once SVSIndex::getDataByLabel reports real data. Removing it
-        // means deleting this block and the guarded include of svs.h.
-        //
-        // Until then nothing is read at all for an SVS backend: the buffer alone would be a
-        // partial answer for a multi-value label split across the tiers, and a caller cannot tell
-        // a subset from the whole. Skipping the reads also avoids waiting on `mainIndexGuard`
-        // behind an SVS batch update to be told nothing.
-        //
-        // Here rather than as an override in TieredSVSIndex because this method is not virtual:
-        // `VecSimTieredIndex` derives from `VecSimIndexInterface`, which does not declare it, and
-        // callers reach it through a `VecSimTieredIndex *` (RediSearch dynamic_casts to exactly
-        // that), so a derived override would simply not be found. The type test is deliberately
-        // explicit rather than dressed up as a capability: it is a special case, not
-        // architecture.
-        if (dynamic_cast<const SVSIndexBase *>(this->backendIndex) != nullptr) {
-            return;
-        }
+        const auto *svs_backend = dynamic_cast<const SVSIndexBase *>(this->backendIndex);
+        const bool backend_cannot_report = svs_backend && svs_backend->isCompressed();
 #endif
+
         std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
         const size_t before_flat = vectors_output.size();
         this->frontendIndex->getDataByLabel(label, vectors_output);
-        // Whether the buffer held it, measured rather than read off emptiness, so the tier
-        // decision does not depend on an assertion that only exists in test builds. The frontend
-        // and backend have the same multi-value configuration.
+#if HAVE_SVS
+        // There is no buffer contribution, and the compressed backend cannot report values.
+        if (backend_cannot_report && vectors_output.size() == before_flat) {
+            return;
+        }
+#endif
+        // Read the backend for multi-value labels or labels absent from FLAT.
         if (this->frontendIndex->isMultiValue() || vectors_output.size() == before_flat) {
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+#if HAVE_SVS
+            if (backend_cannot_report && vectors_output.size() > before_flat &&
+                svs_backend->isLabelExists(label)) {
+                // The buffer's contribution alone would look like the whole answer; report
+                // nothing instead, the same rule `SVSIndex::getDataByLabel` applies to a
+                // single tier.
+                vectors_output.resize(before_flat);
+                return;
+            }
+#endif
             this->backendIndex->getDataByLabel(label, vectors_output);
         }
     }
