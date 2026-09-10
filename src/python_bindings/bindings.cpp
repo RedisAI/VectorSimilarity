@@ -215,16 +215,7 @@ public:
 
     void runGC() { VecSimTieredIndex_GC(index.get()); }
 
-    // Deliberately unguarded, like `addVector` and `deleteVector` beside it: this binding leaves
-    // serialisation to the caller. Taking `indexGuard` here instead would deadlock, because
-    // `PyHNSWLibIndex::createBatchIterator` holds that same mutex in shared mode for as long as
-    // the iterator lives, and `std::shared_mutex` is neither recursive nor upgradeable -- a
-    // relabel issued while an iterator is alive would block on a lock its own thread holds.
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) {
-        // Released for the same reason `addVector` and `knn` release it: on a tiered index this
-        // blocks on `mainIndexGuard`, which a live batch iterator holds shared until it is
-        // depleted or freed. Holding the GIL while blocking there would stop the Python thread
-        // that owns the iterator from ever running to release it.
         py::gil_scoped_release py_gil;
         return VecSimIndex_RelabelVector(index.get(), old_label, new_label);
     }
