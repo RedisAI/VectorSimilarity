@@ -23,7 +23,6 @@
         }                                                                                          \
     }
 
-
 static size_t EstimateBlockSize(const SVSParams &params, size_t block_size, size_t num_elements) {
     const size_t reverse_edges_per_slot = SVSGraphBuilder<uint32_t>::reverse_edges_element_size();
     const size_t reverse_edges_slots = svs::lib::SegmentedVector<uint8_t>(num_elements).capacity();

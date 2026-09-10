@@ -1583,7 +1583,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_combinations_and_defaults) {
         // Test: All default parameters (zeros/unset)
         {"all_defaults",
          {
-             .dim = dim, .metric = VecSimMetric_L2,
+             .dim = dim,
+             .metric = VecSimMetric_L2,
              // All other parameters left as default (0/unset)
          },
          {.quantBits = get<0>(svs_details::isSVSQuantBitsSupported(TypeParam::get_quant_bits())),
@@ -1768,7 +1769,8 @@ TYPED_TEST(SVSTest, test_svs_parameter_consistency_across_metrics) {
 
         // Create index with default parameters for this metric
         SVSParams params = {
-            .dim = dim, .metric = metric,
+            .dim = dim,
+            .metric = metric,
             // All other parameters use defaults
         };
 
@@ -3369,7 +3371,9 @@ TEST(SVSTest, NumThreadsParamIgnored) {
     // Verify: creating an index without setting num_threads produces no warning.
     captured_log.clear();
     SVSParams svs_params_default = {
-        .type = VecSimType_FLOAT32, .dim = 4, .metric = VecSimMetric_L2,
+        .type = VecSimType_FLOAT32,
+        .dim = 4,
+        .metric = VecSimMetric_L2,
         // num_threads left as 0 (default / unset)
     };
     VecSimParams params_default{.algo = VecSimAlgo_SVS,
