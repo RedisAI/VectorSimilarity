@@ -19,12 +19,7 @@ using sq8 = vecsim_types::sq8;
  *   ||x - y||² = Σ(dequant(x_i) - y_i)²
  *   where dequant(x_i) = min_val + delta * q_i
  *
- * This avoids the algebraic-identity/cancellation approach, which catastrophically cancels in
- * FP32 when x and y share a large common offset relative to their spread.
- *
- * This version uses FMA instructions. Critically, the subtract is fused into the FMA
- * (diff = fma(delta, q, min - y)) rather than computed separately, which matters for
- * performance.
+ * The subtract is fused into the FMA: diff = fma(delta, q, min - y).
  */
 
 // Helper: compute Σ(diff_i²) for 8 elements, where diff_i = dequant(x_i) - y_i.

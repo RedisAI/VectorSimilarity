@@ -17,9 +17,6 @@ using sq8 = vecsim_types::sq8;
  * Asymmetric SQ8-FP32 L2 squared distance via direct residual accumulation:
  *
  *   ||x - y||² = Σ(dequant(x_i) - y_i)², where dequant(x_i) = min_val + delta * q_i
- *
- * Not the ||x||² + ||y||² - 2*IP identity, which cancels catastrophically in FP32 when x and y
- * share a large common offset relative to their spread (MOD-17526).
  */
 
 // 4 elements of Σ(diff_i²). Used for the tail; the main loop uses the 16-element form below.

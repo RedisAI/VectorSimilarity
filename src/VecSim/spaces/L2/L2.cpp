@@ -19,16 +19,16 @@ using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
 
 /*
- * Asymmetric SQ8-FP32 L2 squared distance computed via direct residual accumulation:
+ * Asymmetric SQ8-FP32 L2 squared distance, accumulated directly per component:
  *   ||x - y||² = Σ(dequant(x_i) - y_i)²
  *   where dequant(x_i) = min_val + delta * q_i
  *
- * This avoids the algebraic-identity/cancellation approach (||x||² + ||y||² - 2*IP(x, y)),
- * which catastrophically cancels in FP32 when x and y share a large common offset relative to
- * their spread.
+ * Accumulating residuals keeps each component's rounding at the scale of |x_i - y_i|. Expanding
+ * to ||x||² + ||y||² - 2*IP(x, y) would round at the scale of the norms, which loses the
+ * distance when x and y share a large common offset relative to their spread.
  *
- * The operand order below relies on FP addition NOT being reassociated, so `-ffast-math` /
- * `-Ofast` would reinstate the bug. The repo's -O3 builds are safe.
+ * The operand order in the loop is load-bearing and relies on FP addition not being
+ * reassociated; this file must not be built with -ffast-math / -Ofast.
  *
  * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
  * pVect2 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
@@ -44,9 +44,11 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
 
     float res = 0;
     for (size_t i = 0; i < dimension; i++) {
-        // Order matters: min_val - y_i is exact (Sterbenz) since both are large and close, so
-        // adding the small delta*q_i correction afterward preserves the residual. Computing
-        // (min_val + delta*q_i) - y_i instead rounds it away at the large offset's precision.
+        // Order matters. When the stored range sits far from zero, min_val and y_i are within a
+        // factor of two of each other, so min_val - y_i is exact (Sterbenz) and rounding happens
+        // only at the scale of the residual. Forming (min_val + delta*q_i) first would round at
+        // the scale of min_val and wipe out small residuals. When min_val and y_i are not close,
+        // the residual is large and either order is fine.
         float diff = delta * static_cast<float>(pVect1[i]) + (min_val - pVect2[i]);
         res += diff * diff;
     }
