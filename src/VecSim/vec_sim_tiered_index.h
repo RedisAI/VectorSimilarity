@@ -65,7 +65,13 @@ protected:
     }
 
     void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+
+    [[nodiscard]] std::lock_guard<std::shared_mutex> acquireMainIndexGuard() const {
+        lockMainIndexGuard();
+        return std::lock_guard<std::shared_mutex>(mainIndexGuard, std::adopt_lock);
+    }
 #ifdef BUILD_TESTS
+    // Cumulative exclusive acquisitions; unlocking does not decrement this counter.
     mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
 #endif
     size_t flatBufferLimit;

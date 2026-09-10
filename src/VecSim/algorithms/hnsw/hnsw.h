@@ -106,12 +106,7 @@ private:
             this->getIndexCalculator());
         assert(preprocessor && calculator);
         preprocessor->setMean(mean);
-        float mean_sum_squares = 0.0f;
-        for (size_t i = 0; i < mean.size(); ++i) {
-            mean_sum_squares += mean[i] * mean[i];
-        }
-        // Cached distance dispatches reference this context, so update its value in place.
-        calculator->setMeanSumSquares(mean_sum_squares);
+        calculator->setMeanSumSquares(mean);
     }
 
 public:

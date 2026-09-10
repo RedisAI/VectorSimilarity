@@ -231,7 +231,7 @@ typedef struct {
     size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
                              // all the ready swap jobs in a batch.
     size_t QuantNormalizationSetSize; // Number of vectors to accumulate before SQ initialization.
-                                      // 0 = skip accumulation phase (naive SQ8, no mean).
+                                      // 0 = skip training; use quantParams as the mean if supplied.
                                       // Max: 100 * DEFAULT_BLOCK_SIZE (102400).
                                       // During accumulation, this threshold takes precedence over
                                       // flatBufferLimit, so the flat index may exceed that limit.
