@@ -994,6 +994,12 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
 #endif
             UNUSED(hnsw_ret);
         }
+
+        // Announce the move while both guards are still held, so a two-phase query whose window
+        // overlapped it sees the change and re-reads. Without this the query keeps a flat result
+        // under `old_label` alongside a main-index result under `new_label`, and the label-keyed
+        // merge reports one vector twice.
+        this->bumpRelabelEpoch();
     }
 
     this->unlockMainIndexGuard();

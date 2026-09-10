@@ -17,6 +17,11 @@
 #include "VecSim/utils/alignment.h"
 
 #include <shared_mutex>
+#include <atomic>
+#include <cstdint>
+#ifdef BUILD_TESTS
+#include <functional>
+#endif
 
 #if HAVE_SVS
 // For the compressed-backend check in getDataByLabel.
@@ -66,6 +71,49 @@ protected:
 #ifdef BUILD_TESTS
     mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
 #endif
+
+    // Bumped by every relabel that moves a label. A two-phase query compares it across the
+    // window between its two reads: `merge_result_lists` collapses a vector that both tiers
+    // report by matching labels, which a relabel inside that window defeats, so a query that
+    // sees this change cannot trust the pair it just read. Relabels are rare, so the cost this
+    // puts on the query path is two relaxed loads.
+    mutable std::atomic<uint64_t> relabelEpoch = 0;
+
+    // Call while holding the guards that made the move, so the bump is visible to any query
+    // whose window overlapped it.
+    void bumpRelabelEpoch() const { relabelEpoch.fetch_add(1, std::memory_order_acq_rel); }
+
+    // Releases the flat guard on scope exit when a query pinned it across both reads. The
+    // pinned path has several early returns, so this cannot be a statement at the end.
+    struct FlatGuardRelease {
+        const VecSimTieredIndex *index;
+        explicit FlatGuardRelease(const VecSimTieredIndex *index) : index(index) {}
+        ~FlatGuardRelease() {
+            if (index) {
+                index->flatIndexGuard.unlock_shared();
+            }
+        }
+        FlatGuardRelease(const FlatGuardRelease &) = delete;
+        FlatGuardRelease &operator=(const FlatGuardRelease &) = delete;
+    };
+
+#ifdef BUILD_TESTS
+    // Runs between a two-phase query's flat read and its main read, which is the window a
+    // relabel has to hit to produce a cross-tier duplicate. Tests use it to land one there.
+    mutable std::function<void()> testHookBetweenFlatAndMainRead;
+
+public:
+    void setTestHookBetweenFlatAndMainRead(std::function<void()> hook) const {
+        testHookBetweenFlatAndMainRead = std::move(hook);
+    }
+
+    // How many times a query re-read because a relabel landed in its window. Lets a test assert
+    // it actually exercised the retry rather than silently passing on the fast path.
+    mutable std::atomic<size_t> relabelRetryCount = 0;
+
+protected:
+#endif
+
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
@@ -106,12 +154,14 @@ protected:
 public:
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
-    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
-                                   VecSimQueryParams *queryParams) const;
+    // `pin_flat` keeps the flat guard held across both reads, which shuts the relabel window
+    // at the cost of blocking flat writers for the main read. Only the retry uses it.
+    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k, VecSimQueryParams *queryParams,
+                                   bool pin_flat = false) const;
 
     VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
-                                    VecSimQueryParams *queryParams,
-                                    VecSimQueryReply_Order order) const;
+                                    VecSimQueryParams *queryParams, VecSimQueryReply_Order order,
+                                    bool pin_flat = false) const;
 
 public:
     /**
@@ -224,9 +274,8 @@ public:
 };
 
 template <typename DataType, typename DistType>
-VecSimQueryReply *
-VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) const {
+VecSimQueryReply *VecSimTieredIndex<DataType, DistType>::topKQueryImp(
+    const void *queryBlob, size_t k, VecSimQueryParams *queryParams, bool pin_flat) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -246,7 +295,16 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        if (!pin_flat) {
+            this->flatIndexGuard.unlock_shared();
+        }
+        FlatGuardRelease flat_release{pin_flat ? this : nullptr};
+
+#ifdef BUILD_TESTS
+        if (!pin_flat && testHookBetweenFlatAndMainRead) {
+            testHookBetweenFlatAndMainRead();
+        }
+#endif
 
         // If the query failed (currently only on timeout), return the error code.
         if (flat_results->code != VecSim_QueryReply_OK) {
@@ -277,7 +335,18 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    return this->topKQueryImp(queryBlob, k, queryParams);
+    const uint64_t epoch = this->relabelEpoch.load(std::memory_order_acquire);
+    VecSimQueryReply *res = this->topKQueryImp(queryBlob, k, queryParams);
+    if (this->relabelEpoch.load(std::memory_order_acquire) == epoch) {
+        return res;
+    }
+    // A relabel landed between the two reads, so the pair may hold one vector under both its
+    // old and its new label. Redo the read with the flat buffer pinned, which excludes relabel.
+    VecSimQueryReply_Free(res);
+#ifdef BUILD_TESTS
+    this->relabelRetryCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+    return this->topKQueryImp(queryBlob, k, queryParams, /*pin_flat=*/true);
 }
 
 template <typename DataType, typename DistType>
@@ -285,14 +354,23 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    return this->rangeQueryImp(queryBlob, radius, queryParams, order);
+    const uint64_t epoch = this->relabelEpoch.load(std::memory_order_acquire);
+    VecSimQueryReply *res = this->rangeQueryImp(queryBlob, radius, queryParams, order);
+    if (this->relabelEpoch.load(std::memory_order_acquire) == epoch) {
+        return res;
+    }
+    // See topKQuery: the label-keyed merge cannot collapse a vector whose label moved mid-read.
+    VecSimQueryReply_Free(res);
+#ifdef BUILD_TESTS
+    this->relabelRetryCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+    return this->rangeQueryImp(queryBlob, radius, queryParams, order, /*pin_flat=*/true);
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryReply *
-VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams,
-                                                     VecSimQueryReply_Order order) const {
+VecSimQueryReply *VecSimTieredIndex<DataType, DistType>::rangeQueryImp(
+    const void *queryBlob, double radius, VecSimQueryParams *queryParams,
+    VecSimQueryReply_Order order, bool pin_flat) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -315,7 +393,16 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        if (!pin_flat) {
+            this->flatIndexGuard.unlock_shared();
+        }
+        FlatGuardRelease flat_release{pin_flat ? this : nullptr};
+
+#ifdef BUILD_TESTS
+        if (!pin_flat && testHookBetweenFlatAndMainRead) {
+            testHookBetweenFlatAndMainRead();
+        }
+#endif
 
         // If the query failed (currently only on timeout), return the error code and the partial
         // results.

@@ -4990,3 +4990,103 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
             << "label " << i + relabel_offset << " does not hold its original vector";
     }
 }
+
+// A two-phase query reads the flat buffer, releases its guard, then reads the main index, and
+// `merge_result_lists` collapses a vector both tiers report by matching labels. A relabel landing
+// in that window defeats that: the flat half of the pair still says `old_label` while the main half
+// now says `new_label`, so the merge keeps both and one vector is reported twice under a pair of
+// labels the index never held at the same time. Drive a relabel into the window and assert the
+// query still reports the vector once.
+//
+// The retry count is asserted so this fails loudly rather than passing on the fast path if the hook
+// stops firing or the window moves.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelDuringQueryDoesNotDuplicate) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Both tiers must hold the label, so that both halves of the query report the same vector and
+    // the merge has a pair to collapse. This is the ingestion window `relabelVectorBothTiers`
+    // describes, built directly for determinism.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    bool relabeled = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (relabeled) {
+            return;
+        }
+        relabeled = true;
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimQueryReply *reply = VecSimIndex_TopKQuery(tiered_index, query, 10, nullptr, BY_SCORE);
+
+    ASSERT_TRUE(relabeled) << "the hook never ran, so the window was not exercised";
+    // The defect first: one vector, not one per label it passed through.
+    ASSERT_EQ(VecSimQueryReply_Len(reply), 1) << "one vector reported under two labels";
+    ASSERT_EQ(tiered_index->relabelRetryCount, 1) << "the relabel in the window went undetected";
+
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+    ASSERT_EQ(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)), 70);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(reply);
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
+
+// Same window, same reasoning, for the range query: it merges by score through
+// `merge_result_lists` and by id through `filter_results_by_id`, and both key on the label.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelDuringRangeQueryDoesNotDuplicate) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    bool relabeled = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (relabeled) {
+            return;
+        }
+        relabeled = true;
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimQueryReply *reply = VecSimIndex_RangeQuery(tiered_index, query, 1.0, nullptr, BY_SCORE);
+
+    ASSERT_TRUE(relabeled) << "the hook never ran, so the window was not exercised";
+    // The defect first: one vector, not one per label it passed through.
+    ASSERT_EQ(VecSimQueryReply_Len(reply), 1) << "one vector reported under two labels";
+    ASSERT_EQ(tiered_index->relabelRetryCount, 1) << "the relabel in the window went undetected";
+
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+    ASSERT_EQ(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)), 70);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(reply);
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
