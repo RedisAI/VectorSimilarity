@@ -27,6 +27,7 @@
 #include <thread>
 #include <type_traits>
 #include <unordered_set>
+#include <utility>
 
 template <VecSimType type, typename DataType, bool WithQuantParams>
 struct HNSWSQ8IndexType : IndexType<type, DataType, float> {
@@ -420,6 +421,130 @@ void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
 }
 
 TYPED_TEST(HNSWSQ8Test, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
+
+// Deferred mean initialization
+
+// Tiered accumulation constructs the SQ8 backend with a zero mean and installs the learned mean
+// through `setQuantizationMean()` before the first insertion. The contract under test is that the
+// setter alone is enough: an index that received its mean this way must be indistinguishable from
+// one constructed with the same mean, in stored bytes, query preprocessing, both distance modes,
+// search results, and label distances. Standalone SQ8 rejects cosine, so the tiered cosine path
+// is covered through its resolved metric, IP.
+TYPED_TEST(HNSWSQ8Test, SetQuantizationMeanMatchesConstructedMean) {
+    using data_t = typename TestFixture::data_t;
+    using index_ptr = std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)>;
+    constexpr size_t dim = 37; // Not a multiple of any SIMD width, so kernel tails run as well.
+    constexpr size_t count = 64;
+    constexpr size_t k = 10;
+
+    for (auto metric : {VecSimMetric_L2, VecSimMetric_IP}) {
+        SCOPED_TRACE(metric == VecSimMetric_L2 ? "L2" : "IP");
+        std::vector<float> mean(dim);
+        for (size_t d = 0; d < dim; d++) {
+            mean[d] = 0.1f * static_cast<float>(d % 7) - 0.3f;
+        }
+        const std::vector<float> zero_mean(dim, 0.0f);
+
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = metric,
+                             .initialCapacity = count,
+                             .M = 16,
+                             .efConstruction = 100,
+                             .efRuntime = count,
+                             .quantType = VecSimQuant_SQ8,
+                             .quantParams = mean.data()};
+        // The indexes are declared before the preprocessed blobs below: the blobs are released
+        // through the index allocators, so they must go out of scope first.
+        VecSimParams reference_params = CreateParams(params);
+        index_ptr reference(VecSimIndex_New(&reference_params), VecSimIndex_Free);
+        ASSERT_NE(reference, nullptr);
+
+        params.quantParams = zero_mean.data();
+        VecSimParams deferred_params = CreateParams(params);
+        index_ptr deferred(VecSimIndex_New(&deferred_params), VecSimIndex_Free);
+        ASSERT_NE(deferred, nullptr);
+
+        auto *reference_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(reference.get());
+        auto *deferred_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(deferred.get());
+        ASSERT_NE(reference_hnsw, nullptr);
+        ASSERT_NE(deferred_hnsw, nullptr);
+        ASSERT_TRUE(deferred_hnsw->usesQuantizedStorage());
+        ASSERT_EQ(deferred_hnsw->getStoredDataSize(), reference_hnsw->getStoredDataSize());
+        const size_t stored_size = reference_hnsw->getStoredDataSize();
+
+        deferred_hnsw->setQuantizationMean(mean);
+
+        // Component level: identical stored blobs and identical distances in both modes.
+        std::vector<data_t> x(dim), y(dim);
+        for (size_t d = 0; d < dim; d++) {
+            x[d] = TestFixture::ToDataType(0.2f + 0.1f * static_cast<float>(d % 5));
+            y[d] = TestFixture::ToDataType(-0.3f + 0.07f * static_cast<float>(d % 7));
+        }
+        auto reference_x = reference_hnsw->preprocessForStorage(x.data());
+        auto reference_y = reference_hnsw->preprocessForStorage(y.data());
+        auto reference_query = reference_hnsw->preprocessQuery(y.data());
+        auto deferred_x = deferred_hnsw->preprocessForStorage(x.data());
+        auto deferred_y = deferred_hnsw->preprocessForStorage(y.data());
+        auto deferred_query = deferred_hnsw->preprocessQuery(y.data());
+        EXPECT_EQ(std::memcmp(reference_x.get(), deferred_x.get(), stored_size), 0);
+        EXPECT_EQ(std::memcmp(reference_y.get(), deferred_y.get(), stored_size), 0);
+        EXPECT_EQ(reference_hnsw->calcDistance(reference_x.get(), reference_y.get()),
+                  deferred_hnsw->calcDistance(deferred_x.get(), deferred_y.get()));
+        EXPECT_EQ(reference_hnsw->calcDistanceForQuery(reference_x.get(), reference_query.get()),
+                  deferred_hnsw->calcDistanceForQuery(deferred_x.get(), deferred_query.get()));
+
+        // Index level: the same insertion order yields the same internal ids and, with the same
+        // random seed, the same graph. Stored elements must then match byte for byte.
+        std::vector<data_t> vec(dim);
+        for (size_t i = 0; i < count; i++) {
+            for (size_t d = 0; d < dim; d++) {
+                vec[d] = TestFixture::ToDataType(0.05f * static_cast<float>((i * 7 + d * 3) % 41) -
+                                                 1.0f);
+            }
+            ASSERT_EQ(VecSimIndex_AddVector(reference.get(), vec.data(), i), 1);
+            ASSERT_EQ(VecSimIndex_AddVector(deferred.get(), vec.data(), i), 1);
+        }
+        ASSERT_EQ(VecSimIndex_IndexSize(deferred.get()), count);
+        for (size_t id = 0; id < count; id++) {
+            EXPECT_EQ(std::memcmp(reference_hnsw->getDataByInternalId(id),
+                                  deferred_hnsw->getDataByInternalId(id), stored_size),
+                      0)
+                << "internal id " << id;
+        }
+
+        // Search level: identical top-k ids and scores, and identical label distances.
+        auto collect = [](VecSimQueryReply *reply) {
+            std::vector<std::pair<int64_t, double>> out;
+            auto *iterator = VecSimQueryReply_GetIterator(reply);
+            while (VecSimQueryReply_IteratorHasNext(iterator)) {
+                auto *item = VecSimQueryReply_IteratorNext(iterator);
+                out.emplace_back(VecSimQueryResult_GetId(item), VecSimQueryResult_GetScore(item));
+            }
+            VecSimQueryReply_IteratorFree(iterator);
+            VecSimQueryReply_Free(reply);
+            return out;
+        };
+        std::vector<data_t> query(dim);
+        for (size_t q = 0; q < 5; q++) {
+            for (size_t d = 0; d < dim; d++) {
+                query[d] = TestFixture::ToDataType(
+                    0.04f * static_cast<float>((q * 11 + d * 5) % 47) - 0.9f);
+            }
+            auto expected =
+                collect(VecSimIndex_TopKQuery(reference.get(), query.data(), k, nullptr, BY_SCORE));
+            auto actual =
+                collect(VecSimIndex_TopKQuery(deferred.get(), query.data(), k, nullptr, BY_SCORE));
+            ASSERT_EQ(expected.size(), k);
+            EXPECT_EQ(actual, expected) << "query " << q;
+            for (size_t label = 0; label < count; label += 9) {
+                EXPECT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(reference.get(), label, query.data()),
+                          VecSimIndex_GetDistanceFrom_Unsafe(deferred.get(), label, query.data()))
+                    << "label " << label;
+            }
+        }
+    }
+}
 
 // SQ8 kernels support only FLOAT32 and FLOAT16 input vectors.
 TEST(HNSWSQ8ParamsTest, RejectsUnsupportedDataType) {
