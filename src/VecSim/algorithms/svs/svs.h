@@ -325,8 +325,7 @@ protected:
         if (!ready())
             return;
 
-        size_t n_consolidated = impl_->consolidate(labels);
-        num_marked_deleted.fetch_sub(n_consolidated, std::memory_order_relaxed);
+        impl_->consolidate(labels);
     }
 
     int deleteVectorImpl(const labelType label) {
