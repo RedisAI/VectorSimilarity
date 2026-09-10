@@ -1122,16 +1122,26 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         // the distances and access the BF index. We take the lock on this call.
         this->index->flatIndexGuard.lock_shared();
         auto cur_flat_results = this->flat_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
-        this->index->flatIndexGuard.unlock_shared();
         // This is also the only time `getNextResults` on the BF iterator can fail.
         if (VecSim_OK != cur_flat_results->code) {
+            this->index->flatIndexGuard.unlock_shared();
             return cur_flat_results;
         }
         this->flat_results.swap(cur_flat_results->results);
         VecSimQueryReply_Free(cur_flat_results);
+#ifdef BUILD_TESTS
+        if (this->index->testHookBetweenFlatAndMainRead) {
+            this->index->testHookBetweenFlatAndMainRead();
+        }
+#endif
         // We also take the lock on the main index on the first call to getNextResults, and we hold
-        // it until the iterator is depleted or freed.
+        // it until the iterator is depleted or freed. That is what keeps a relabel out for the
+        // rest of the iteration -- it needs this guard exclusively -- so the only window it could
+        // use is between the two acquisitions here. Taking the main guard *before* releasing the
+        // flat one closes it: a relabel needs both, and cannot have either. The flat->main order
+        // is the same one every other acquisition uses, so overlapping them cannot deadlock.
         this->index->mainIndexGuard.lock_shared();
+        this->index->flatIndexGuard.unlock_shared();
         this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
             this->flat_iterator->getQueryBlob(), queryParams);
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);

@@ -5184,3 +5184,76 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelLogOverflowFallsBackToPinnedRead) {
 
     tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
 }
+
+// The batch iterator holds `mainIndexGuard` shared from its first call until the HNSW iterator
+// depletes, so a relabel -- which needs that guard exclusively -- cannot run for the rest of the
+// iteration. Its one window is between releasing the flat guard and taking the main one on the
+// first call: a relabel there moves a label out from under the flat snapshot already taken, and
+// the iterator then reports the same vector once per label across its batches. Unlike a query it
+// cannot start over, so the window is closed by taking the main guard before releasing the flat
+// one.
+//
+// The relabel has to come from another thread: the hook now runs while the flat guard is held, so
+// relabeling inline would deadlock against it.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelCannotSplitABatchIteratorSnapshot) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // The label must be in both tiers, so that both halves of the iteration report it and the
+    // per-label dedup has something to collapse.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    std::thread relabel_thread;
+    std::atomic<bool> relabel_entered{false};
+    bool hooked = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (hooked) {
+            return;
+        }
+        hooked = true;
+        relabel_thread = std::thread([&]() {
+            relabel_entered = true;
+            VecSimIndex_RelabelVector(tiered_index, 7, 70);
+        });
+        // Wait until the relabel is actually attempting the move, then leave it time to complete
+        // if the window were open. It cannot: this thread holds the flat guard.
+        while (!relabel_entered) {
+            std::this_thread::yield();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+    std::vector<size_t> seen;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        VecSimQueryReply *batch = VecSimBatchIterator_Next(batchIterator, 2, BY_SCORE);
+        VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(batch);
+        while (auto *res = VecSimQueryReply_IteratorNext(it)) {
+            seen.push_back(VecSimQueryResult_GetId(res));
+        }
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(batch);
+    }
+    // Frees the HNSW iterator and releases the main guard, letting the relabel through.
+    VecSimBatchIterator_Free(batchIterator);
+    ASSERT_TRUE(hooked) << "the hook never ran, so the window was not exercised";
+    relabel_thread.join();
+
+    ASSERT_EQ(seen.size(), 1) << "one vector reported once per label it passed through";
+    ASSERT_EQ(seen[0], 7) << "the iteration should be consistent with the snapshot it took";
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
