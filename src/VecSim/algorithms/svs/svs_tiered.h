@@ -957,7 +957,7 @@ public:
                 // initSVSIndexWrapper() is called.
                 {
                     std::lock_guard lock(this->flatIndexGuard);
-                    if (this->frontendIndex->isLabelExists(label)) {
+                    if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
                         deleteAndUpdateInitIds(label);
                     }
                     ids_to_init_.insert(this->frontendIndex->indexSize());
