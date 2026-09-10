@@ -1,7 +1,7 @@
 # Tiered SQ8 accumulation with an always-present backend
 
-This alternative targets PR #1029 at `5079b7a7`. Its changes belong in #1029;
-PR #1035 can remain unchanged.
+This implementation was developed in PR #1046 and folded into PR #1029 at `fa472126`.
+PR #1035 remains unchanged.
 
 ## Ownership
 
@@ -20,6 +20,22 @@ The existing HNSW classes and templates serve both NONE and SQ8. The factory sel
 quantization components using `quantType`. Tiered owns accumulation because it owns the
 FLAT vectors and decides when they migrate. HNSW receives only the calculated mean through
 `setQuantizationMean()`; each component exposes a small setter for its own data.
+
+`setQuantizationMean()` is public and writer-only: called once, before any stored vector,
+under the exclusive tiered main lock and before submitting insertion jobs. Assertions check
+quantized storage, the empty graph, mean dimension, and component types; tiered enforces the
+one-time transition.
+
+## Scope and extension
+
+`setQuantizationMean()` and its `setSQ8Mean()` helper are SQ8-specific. They assume exactly
+one preprocessor, SQ8 WithNorm in slot 0. Cosine normalization happens in the FLAT frontend;
+a pipeline with a preceding normalizer is unsupported by these setters. Introduce a trainer
+interface when a second quantizer needs training, replacing the concrete component casts.
+
+SQ8's stored layout is known at construction. A quantizer that determines `storedDataSize`
+from training data needs deferred backend creation instead of this fixed-layout construction
+path. That lifecycle is outside this implementation's scope.
 
 ## Where state is checked
 
@@ -60,6 +76,10 @@ count. Finalization snapshots the jobs, takes the exclusive main lock, installs 
 HNSW, and clears the optional accumulation state. It then submits the jobs, or executes them
 synchronously in write-in-place mode. Deleting every vector later does not restart accumulation.
 
+Known behavior: in write-in-place mode, including the zero-worker synchronous fallback,
+finalization migrates the whole accumulation set inside the threshold-crossing `addVector()`.
+One call can execute up to 102400 inserts (100 default blocks) before returning.
+
 ## Synchronization
 
 The existing tiered contract serializes writers. No background insertion job is submitted
@@ -83,13 +103,24 @@ returns no values during accumulation and after migration.
 
 ## Validation
 
-On x86_64 with GCC 13.3 and SVS v0.3.2 enabled, all 529 selected Debug tests passed:
-`test_hnsw` (341), `test_hnsw_sq8` (129), `test_components` (52), and `test_allocator` (7).
-Coverage includes NONE ignoring the threshold, exact initial memory estimates, overwrites and
-deletes during accumulation, mean/calculator agreement, component stability, migration,
-iterator transitions, and concurrent queries.
+Full CTest validation of `fa472126` ran on `dorer-intel` with GCC 13.3 and SVS v0.3.2 enabled:
 
-The Release `VectorSimilarity` library also built with `VECSIM_BUILD_TESTS=OFF`.
-Changed-line formatting and `git diff --check` passed.
+| Configuration | Passed | Expected skips | Remaining failures |
+| --- | ---: | ---: | ---: |
+| Debug | 3050 | 8 | 0 |
+| Debug, `FP64_TESTS=ON` (`FP_64=1`) | 3316 | 9 | 0 |
+
+The default full run initially found four unbuilt `cpu_features` test executables. After
+building them, all four passed through `ctest --rerun-failed`. The eight SVS skips are explicit
+conditions in the existing tests; FP64 adds the FP32-only HNSW serialization skip.
+
+[`tests/unit/CMakeLists.txt`](tests/unit/CMakeLists.txt) compiles `test_hnsw_tiered.cpp` into
+the `test_hnsw` executable alongside `test_hnsw.cpp` and `test_hnsw_multi.cpp`; there is no
+separate `test_hnsw_tiered` binary. Both configurations covered tiered accumulation writes,
+migration, iterator transitions, and concurrent queries, as well as the rest of the suite.
+
+SHA-256 checks confirmed all 396 tracked source, test, and build files matched `fa472126`.
+Changed-line formatting and `git diff --check` passed. Subsequent changes to this document
+and the setter comments do not change executable code.
 
 Set `ROOT` to the source directory when running the tests; serialization tests require it.
