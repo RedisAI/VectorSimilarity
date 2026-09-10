@@ -23,9 +23,6 @@ using sq8 = vecsim_types::sq8;
  * Asymmetric SQ8-FP32 L2 squared distance via direct residual accumulation:
  *
  *   ||x - y||² = Σ(dequant(x_i) - y_i)², where dequant(x_i) = min_val + delta * q_i
- *
- * Not the ||x||² + ||y||² - 2*IP identity, which cancels catastrophically in FP32 when x and y
- * share a large common offset relative to their spread (MOD-17526).
  */
 
 // One SVE vector width of Σ(diff_i²). pVect1 = SQ8 storage, pVect2 = FP32 query.
@@ -72,8 +69,10 @@ float SQ8_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
 
     // Full vectors first, predicated tail last, bounds compared rather than divided: `chunk` is
     // runtime (svcntw), so `dimension % chunk` would emit a real udiv, and the chooser already
-    // divided once to produce `partial_chunk`/`additional_steps`. Deliberately unlike the
-    // prefix-first sibling SQ8 SVE kernels; see MOD-17526 for the measured trade-off.
+    // divided once to produce `partial_chunk`/`additional_steps`. Unlike the prefix-first sibling
+    // SQ8 SVE kernels: on Graviton4 this shape is faster under SVE2 at every dimension and under
+    // plain SVE only when the dimension is a multiple of the vector length (about 8% slower
+    // otherwise); SVE2 wins dispatch when both tiers are present.
     // A bitmask cannot replace the modulo here: SVE vector length is a multiple of 128 bits,
     // not necessarily a power of two.
     const size_t chunk_size = 4 * chunk;
