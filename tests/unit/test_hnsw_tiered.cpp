@@ -4990,3 +4990,202 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
             << "label " << i + relabel_offset << " does not hold its original vector";
     }
 }
+
+using float16 = vecsim_types::float16;
+
+// -------------------------------------------------------------------
+// Type definitions for parameterized tests (float32 and float16)
+// -------------------------------------------------------------------
+
+template <VecSimType type, bool IsMulti, typename DataType, typename DistType = float>
+struct SQ8IndexType {
+    static VecSimType get_index_type() { return type; }
+    static bool isMulti() { return IsMulti; }
+    typedef DataType data_t;
+    typedef DistType dist_t;
+};
+
+// -------------------------------------------------------------------
+// Test fixture
+// -------------------------------------------------------------------
+
+template <typename index_type_t>
+class HNSWTieredIndexTestSQ8 : public ::testing::Test {
+public:
+    using data_t = typename index_type_t::data_t;
+    using dist_t = typename index_type_t::dist_t;
+
+protected:
+    VecSimWriteMode original_mode;
+
+    void SetUp() override { original_mode = VecSimIndexInterface::asyncWriteMode; }
+    void TearDown() override { VecSimIndexInterface::asyncWriteMode = original_mode; }
+
+    // Create a tiered HNSW index with SQ8 quantization.
+    TieredHNSWIndex<data_t, dist_t> *
+    CreateSQ8TieredIndex(tieredIndexMock &mock_thread_pool, size_t dim = 16,
+                         VecSimMetric metric = VecSimMetric_IP, size_t flat_buffer_limit = SIZE_MAX,
+                         size_t M = 16, size_t efConstruction = 200) {
+        HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
+                                  .dim = dim,
+                                  .metric = metric,
+                                  .multi = index_type_t::isMulti(),
+                                  .M = M,
+                                  .efConstruction = efConstruction,
+                                  .quantType = VecSimQuant_SQ8};
+        VecSimParams vecsim_params = CreateParams(hnsw_params);
+        TieredIndexParams tiered_params = {
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = flat_buffer_limit,
+            .primaryIndexParams = &vecsim_params,
+            .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+        auto *tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(
+            TieredFactory::NewIndex(&tiered_params));
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+        return tiered_index;
+    }
+
+    HNSWIndex<data_t, dist_t> *CastToHNSW(VecSimIndex *index) {
+        auto tiered_index = reinterpret_cast<TieredHNSWIndex<data_t, dist_t> *>(index);
+        return tiered_index->getHNSWIndex();
+    }
+
+    // --- Accessor helpers (HNSWTieredIndexTestSQ8 is a friend of TieredHNSWIndex) ---
+
+    BruteForceIndex<data_t, dist_t> *getFrontendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->frontendIndex;
+    }
+
+    VecSimIndexAbstract<data_t, dist_t> *getBackendIndex(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->backendIndex;
+    }
+
+    auto &getLabelToInsertJobs(TieredHNSWIndex<data_t, dist_t> *idx) {
+        return idx->labelToInsertJobs;
+    }
+
+    auto &getInvalidJobs(TieredHNSWIndex<data_t, dist_t> *idx) { return idx->invalidJobs; }
+
+    void callExecuteReadySwapJobs(TieredHNSWIndex<data_t, dist_t> *idx) {
+        idx->executeReadySwapJobs();
+    }
+
+    // Generate a vector with a pattern based on label.
+    void GenerateVectorData(data_t *output, size_t dim, float base_value) {
+        const float angle = base_value * 0.01f;
+        for (size_t i = 0; i < dim; i++) {
+            float val = 0.0f;
+            if (i == 0) {
+                val = std::cos(angle);
+            } else if (i == 1) {
+                val = std::sin(angle);
+            }
+            if constexpr (std::is_same_v<data_t, float>) {
+                output[i] = val;
+            } else if constexpr (std::is_same_v<data_t, float16>) {
+                output[i] = vecsim_types::FP32_to_FP16(val);
+            }
+        }
+    }
+
+    // Get value as float from data type.
+    float ToFloat(data_t val) {
+        if constexpr (std::is_same_v<data_t, float>) {
+            return val;
+        } else {
+            return vecsim_types::FP16_to_FP32(val);
+        }
+    }
+};
+
+using SQ8FP32Single = SQ8IndexType<VecSimType_FLOAT32, false, float>;
+using SQ8FP32Multi = SQ8IndexType<VecSimType_FLOAT32, true, float>;
+using SQ8FP16Single = SQ8IndexType<VecSimType_FLOAT16, false, float16, float>;
+using SQ8FP16Multi = SQ8IndexType<VecSimType_FLOAT16, true, float16, float>;
+
+using SQ8DataTypeSet = ::testing::Types<SQ8FP32Single, SQ8FP32Multi, SQ8FP16Single, SQ8FP16Multi>;
+using SQ8SingleDataTypeSet = ::testing::Types<SQ8FP32Single, SQ8FP16Single>;
+using SQ8MultiDataTypeSet = ::testing::Types<SQ8FP32Multi, SQ8FP16Multi>;
+
+template <typename index_type_t>
+class HNSWTieredIndexTestSQ8Single : public HNSWTieredIndexTestSQ8<index_type_t> {};
+
+template <typename index_type_t>
+class HNSWTieredIndexTestSQ8Multi : public HNSWTieredIndexTestSQ8<index_type_t> {};
+
+TYPED_TEST_SUITE(HNSWTieredIndexTestSQ8, SQ8DataTypeSet);
+TYPED_TEST_SUITE(HNSWTieredIndexTestSQ8Single, SQ8SingleDataTypeSet);
+TYPED_TEST_SUITE(HNSWTieredIndexTestSQ8Multi, SQ8MultiDataTypeSet);
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Multi, getDataByLabelDoesNotReportPartialSQ8Label) {
+    constexpr size_t dim = 4;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP);
+    ASSERT_NE(tiered_index, nullptr);
+
+    TEST_DATA_T first[dim];
+    TEST_DATA_T second[dim];
+    this->GenerateVectorData(first, dim, 1.0f);
+    this->GenerateVectorData(second, dim, 2.0f);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, first, 0), 1);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, second, 0), 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, first, 0), 1);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 3);
+
+    // A published SQ8 backend cannot report values, so multi-value reads report nothing.
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+    stored.clear();
+
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 2);
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty()) << "the two buffered vectors are only part of the label";
+    stored.clear();
+
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 3);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8Single, getDataByLabelReportsNothingForSQ8Backend) {
+    constexpr size_t dim = 4;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP);
+    ASSERT_NE(tiered_index, nullptr);
+    ASSERT_NE(this->getBackendIndex(tiered_index), nullptr);
+
+    TEST_DATA_T vector[dim];
+    this->GenerateVectorData(vector, dim, 1.0f);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 0), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+
+    mock_thread_pool.thread_iteration();
+    ASSERT_TRUE(this->CastToHNSW(tiered_index)->isLabelExists(0));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+
+    // Buffered overwrites follow the same policy as migrated vectors.
+    this->GenerateVectorData(vector, dim, 2.0f);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 0), 0);
+    tiered_index->getDataByLabel(0, stored);
+    EXPECT_TRUE(stored.empty());
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+}

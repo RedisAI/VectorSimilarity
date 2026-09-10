@@ -124,6 +124,9 @@ public:
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
      *   caught inside that window is reported by both tiers and appears twice.
      *
+     * An SQ8 HNSW backend cannot report vector elements. Reads append nothing, including when
+     * the requested label is still buffered in the flat tier.
+     *
      * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
      * buffer is the whole answer, but a multi-value label's vectors are routinely split across
      * the tiers while an ingest is pending, so there the backend is read as well. Reading only
@@ -141,6 +144,10 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
+        // SQ8 HNSW indexes report no values, including vectors still buffered in FLAT.
+        if (this->backendIndex->usesQuantizedStorage()) {
+            return;
+        }
 #if HAVE_SVS
         const auto *svs_backend = dynamic_cast<const SVSIndexBase *>(this->backendIndex);
         const bool backend_cannot_report = svs_backend && svs_backend->isCompressed();
@@ -156,7 +163,7 @@ public:
         }
 #endif
         // continue to look the data in the backend
-        if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
+        if (this->frontendIndex->isMultiValue() || vectors_output.size() == before_flat) {
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
 #if HAVE_SVS
             if (backend_cannot_report && vectors_output.size() > before_flat &&
@@ -227,26 +234,23 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
-    this->flatIndexGuard.lock_shared();
+    std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
-        this->flatIndexGuard.unlock_shared();
+        flat_lock.unlock();
 
         // Simply query the main index and return the results while holding the lock.
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
-        this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->topKQuery(processed_query, k, queryParams);
-        this->mainIndexGuard.unlock_shared();
-
-        return res;
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+        return this->backendIndex->topKQuery(processed_query, k, queryParams);
     } else {
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        flat_lock.unlock();
 
         // If the query failed (currently only on timeout), return the error code.
         if (flat_results->code != VecSim_QueryReply_OK) {
@@ -257,9 +261,9 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
-        this->mainIndexGuard.lock_shared();
+        std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
         auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
-        this->mainIndexGuard.unlock_shared();
+        main_lock.unlock();
 
         // If the query failed (currently only on timeout), return the error code.
         if (main_results->code != VecSim_QueryReply_OK) {
