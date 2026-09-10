@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include "L2.h"
+#include "L2_SQ8_exact.h"
 #include "VecSim/spaces/IP/IP.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
@@ -19,21 +20,22 @@ using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
 
 /*
- * Asymmetric SQ8-FP32 L2 squared distance, accumulated directly per component:
+ * Asymmetric SQ8-FP32 L2 squared distance, rounded once to FP32 (nearest, ties to even):
  *   ||x - y||² = Σ(dequant(x_i) - y_i)²
  *   where dequant(x_i) = min_val + delta * q_i
  *
- * Accumulating residuals keeps each component's rounding at the scale of |x_i - y_i|. Expanding
- * to ||x||² + ||y||² - 2*IP(x, y) would round at the scale of the norms, which loses the
- * distance when x and y share a large common offset relative to their spread.
- *
- * The operand order in the loop is load-bearing and relies on FP addition not being
- * reassociated; this file must not be built with -ffast-math / -Ofast.
+ * A certified FP64 path handles ordinary inputs; an exact fixed-point fallback preserves
+ * arbitrarily small residuals relative to the stored range. All architecture choosers use
+ * this implementation until they have an equivalent certification step.
+ * Finite metadata is required. Invalid metadata or a NaN query gives NaN; an infinite query
+ * gives +infinity. Final underflow/overflow follows FP32 round-to-nearest, ties-to-even.
  *
  * pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [x_sum] [x_sum_squares]
  * pVect2 is query (FP32): [float values (dim)] [y_sum] [y_sum_squares]
  */
 float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    if (!dimension)
+        return 0.0f;
     // Storage metadata follows a byte payload and is not necessarily float-aligned.
     const auto *pVect1 = static_cast<const uint8_t *>(pVect1v);
     const auto *pVect2 = static_cast<const float *>(pVect2v);
@@ -42,17 +44,10 @@ float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
     const float min_val = load_unaligned<float>(params1 + sq8::MIN_VAL * sizeof(float));
     const float delta = load_unaligned<float>(params1 + sq8::DELTA * sizeof(float));
 
-    float res = 0;
-    for (size_t i = 0; i < dimension; i++) {
-        // Order matters. When the stored range sits far from zero, min_val and y_i are within a
-        // factor of two of each other, so min_val - y_i is exact (Sterbenz) and rounding happens
-        // only at the scale of the residual. Forming (min_val + delta*q_i) first would round at
-        // the scale of min_val and wipe out small residuals. When min_val and y_i are not close,
-        // the residual is large and either order is fine.
-        float diff = delta * static_cast<float>(pVect1[i]) + (min_val - pVect2[i]);
-        res += diff * diff;
-    }
-    return res;
+    float result;
+    if (sq8_l2_detail::certified(pVect1, pVect2, dimension, min_val, delta, result))
+        return result;
+    return sq8_l2_detail::exact(pVect1, pVect2, dimension, min_val, delta);
 }
 
 /*

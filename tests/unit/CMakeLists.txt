@@ -39,7 +39,7 @@ add_executable(test_hnsw_parallel ../utils/test_main_with_timeout.cpp test_hnsw_
 add_executable(test_hnsw_sq8 ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_hnsw_sq8.cpp unit_test_utils.cpp)
 add_executable(test_bruteforce ../utils/test_main_with_timeout.cpp test_bruteforce.cpp test_bruteforce_multi.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
 add_executable(test_allocator ../utils/test_main_with_timeout.cpp test_allocator.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
-add_executable(test_spaces ../utils/test_main_with_timeout.cpp test_spaces.cpp)
+add_executable(test_spaces ../utils/test_main_with_timeout.cpp test_spaces.cpp test_sq8_exact.cpp)
 add_executable(test_types ../utils/test_main_with_timeout.cpp test_types.cpp)
 add_executable(test_common ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_common.cpp unit_test_utils.cpp)
 add_executable(test_components ../utils/test_main_with_timeout.cpp test_components.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)

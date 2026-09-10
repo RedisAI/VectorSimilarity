@@ -1,53 +1,44 @@
-name: temporary testing
-
-# This file is useful for triggering actions when you implement them.
-# When the `branches-ignore` line is commented out, this workflow will run on every push.
-# It is better to use this file for testing your new flows than creating a new one, to avoid cluttering the repo
-# action tab with unused workflows.
-# Don't worry about conflicts with other PRs - there is no "right" content of this file.
-# Make sure the `branches-ignore` line is not commented out when you merge your PR.
+name: SQ8 exact L2 verification and benchmark
 
 on:
   push:
-    branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
+    branches: [omer-lerman-sq8-exact-l2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
-  # jammy:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: ubuntu:jammy
-  #     run-valgrind: true
-  alpine3:
-    uses: ./.github/workflows/alpine3.yml
-  # focal:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: ubuntu:focal
-  #     run-valgrind: false
-  # bionic:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: ubuntu:focal
-  #     run-valgrind: false
-  # bullseye:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: debian:bullseye
-  #     run-valgrind: false
-  # rocky8:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: rockylinux:8
-  #     run-valgrind: false
-  # rocky9:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: rockylinux:9
-  #     run-valgrind: false
-  # alpine3:
-  #   uses: ./.github/workflows/task-unit-test.yml
-  #   with:
-  #     container: alpine:3
-  #     pre-checkout-script: apk add bash
-  #     run-valgrind: false
-  # macos:
-  #   uses: ./.github/workflows/macos.yml
+  compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: google/cpu_features
+          ref: v0.10.1
+          path: .repro-deps/cpu_features
+          persist-credentials: false
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y g++ clang cmake ninja-build
+      - name: Verify then benchmark sequentially
+        run: python3 .github/scripts/run-sq8-exact-ci.py
+      - name: Retain all evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sq8-exact-${{ matrix.runner }}
+          path: |
+            sq8-exact-results/*.log
+            sq8-exact-results/*.json
+            sq8-exact-results/*.xml
+            sq8-exact-results/*.md
+          if-no-files-found: error
