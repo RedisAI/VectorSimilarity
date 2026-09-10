@@ -92,6 +92,7 @@ def main():
         for target in targets:
             run([build / "unit_tests" / target, "--gtest_output=xml:" + str(results / (label + "-" + target + ".xml"))],
                 label + "-" + target, source)
+        run(["ctest", "--test-dir", build, "-R", "^tier_linkage$", "--output-on-failure"], label + "-tier-linkage", source)
         full[label] = results / (label + "-full.so")
         compile_probe(source, full[label], label == "candidate", build=build)
     run(["python3", check, "full", full["candidate"], full["baseline"], results], "full-oracle")

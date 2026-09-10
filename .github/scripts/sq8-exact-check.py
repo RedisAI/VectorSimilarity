@@ -115,9 +115,17 @@ def verify(candidate, baseline, results, prefix):
         max_distance_terms.extend([2**(exponent // 2)] * (2 if exponent % 2 else 1))
     for query in (max_distance_terms, max_distance_terms + [2**51, 2**51]):
         fixtures.append((blob([0] * len(query), 0, bits(1)), list(map(bits, query))))
+    for query in ([2**-87, 2**-63], [2**-87, 2**-63 - 2**-75]):
+        fixtures.append((blob([0, 0], bits(2**-63), bits(1)), list(map(bits, query))))
+    for dim in (1, 160, 65536):
+        fixtures.append((blob([255] * dim, 0xff7fffff, 0x7f7fffff), [0xff7fffff] * dim))
+
+    def finite():
+        raw = rng.getrandbits(32)
+        return raw ^ 0x00800000 if (raw & 0x7f800000) == 0x7f800000 else raw
+
     for _ in range(6000):
         dim = rng.choice([1, 2, 3, 8, 9, 16, 31, 32, 65, 128])
-        finite = lambda: rng.getrandbits(32) & 0xfeffffff
         fixtures.append((blob([rng.randrange(256) for _ in range(dim)], finite(), finite()),
                          [finite() for _ in range(dim)]))
     for _ in range(3000):

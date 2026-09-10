@@ -10,8 +10,12 @@
 
 #include "VecSim/spaces/L2/L2.h"
 
+namespace {
+
 template <unsigned char residual>
 float SQ8_FP32_L2SqrSIMD16_AVX512F_BW_VL_VNNI(const void *storage, const void *query,
                                               size_t dimension) {
     return SQ8_FP32_L2Sqr(storage, query, dimension);
 }
+
+} // namespace
