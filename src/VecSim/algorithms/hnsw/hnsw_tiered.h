@@ -821,27 +821,29 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVectorDuringAccumulation(const void *blob,
                                                                      labelType label) {
-    std::unique_lock flat_lock(this->flatIndexGuard);
-    idType id = this->frontendIndex->indexSize();
-    HNSWInsertJob *job = nullptr;
-    if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
-        id = static_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
-                 ->getIdOfLabel(label);
-        subtractFromSum(
-            {this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
-        job = labelToInsertJobs.at(label).front();
-    }
-    const int result = this->frontendIndex->addVector(blob, label);
-    addToSum({this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
-    if (!job) {
-        job = new (this->allocator)
-            HNSWInsertJob(this->allocator, label, id, executeInsertJobWrapper, this);
-        auto [it, inserted] = labelToInsertJobs.try_emplace(label, 1, job, this->allocator);
-        if (!inserted) {
-            it->second.push_back(job);
+    int result;
+    {
+        std::unique_lock flat_lock(this->flatIndexGuard);
+        idType id = this->frontendIndex->indexSize();
+        HNSWInsertJob *job = nullptr;
+        if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
+            id = static_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
+                     ->getIdOfLabel(label);
+            subtractFromSum(
+                {this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
+            job = labelToInsertJobs.at(label).front();
+        }
+        result = this->frontendIndex->addVector(blob, label);
+        addToSum({this->frontendIndex->getDataByInternalId(id), this->frontendIndex->getDim()});
+        if (!job) {
+            job = new (this->allocator)
+                HNSWInsertJob(this->allocator, label, id, executeInsertJobWrapper, this);
+            auto [it, inserted] = labelToInsertJobs.try_emplace(label, 1, job, this->allocator);
+            if (!inserted) {
+                it->second.push_back(job);
+            }
         }
     }
-    flat_lock.unlock();
     if (this->frontendIndex->indexSize() >= sqAccumulationState->normalizationSetSize) {
         finalizeQuantizationAndSubmitJobs();
     }
