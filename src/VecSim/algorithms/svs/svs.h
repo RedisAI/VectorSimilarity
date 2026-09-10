@@ -558,12 +558,12 @@ public:
         if (old_label == new_label) {
             return VecSimRelabel_SameLabel;
         }
-        // `impl_` is only created on the first insertion, so an index that never held a vector
-        // trivially has nothing under `old_label`.
-        if (!impl_ || !impl_->has_id(old_label)) {
+        // `isLabelExists` also covers the index that never held a vector, where `impl_` has not
+        // been created yet and so trivially holds nothing.
+        if (!isLabelExists(old_label)) {
             return VecSimRelabel_OldLabelMissing;
         }
-        if (impl_->has_id(new_label)) {
+        if (isLabelExists(new_label)) {
             return VecSimRelabel_NewLabelTaken;
         }
 

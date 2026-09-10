@@ -215,7 +215,7 @@ public:
 
     void runGC() { VecSimTieredIndex_GC(index.get()); }
 
-    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) {
+    virtual VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) {
         return VecSimIndex_RelabelVector(index.get(), old_label, new_label);
     }
 
@@ -370,6 +370,21 @@ public:
         // We return 2D numpy array of results (labels and distances), use padding of "-1" in the
         // empty entries of the matrices.
         return wrap_results(results, max_results_num, n_queries);
+    }
+
+    // Plain HNSW leaves synchronisation to its caller: `relabelVector` takes `indexDataGuard`
+    // exclusively, but `topKQuery` does not take it at all, so that guard orders relabel only
+    // against other writers -- not against a reader resolving ids through `getExternalLabel`.
+    // `ElementMetaData` is `#pragma pack(1)`, so the label store is unaligned and a racing reader
+    // can see a torn value, not merely a stale one. `indexGuard` is this binding's stand-in for
+    // the caller's lock, and `knn_parallel` takes it shared, so a relabel has to take it
+    // exclusively to be excluded from those workers.
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override {
+        // The GIL is released before blocking on the mutex, as everything else that takes this
+        // guard does: a worker that already holds it needs the GIL back to finish.
+        py::gil_scoped_release py_gil;
+        std::unique_lock<std::shared_mutex> lock(*indexGuard);
+        return VecSimIndex_RelabelVector(index.get(), old_label, new_label);
     }
 
     void addVectorsParallel(const py::object &input, const py::object &vectors_labels,
