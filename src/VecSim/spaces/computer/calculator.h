@@ -213,8 +213,8 @@ public:
                                                              .mean_sum_squares = mean_sum_squares,
                                                          }) {}
 
-    // Keep the context address stable for cached distance dispatches. Caller excludes queries
-    // and updates the preprocessor's mean before storing any vectors.
+    // Written once, before any stored vector, under the exclusive tiered main lock. The caller
+    // also updates the preprocessor's mean; cached distance dispatches keep this context address.
     void setMeanSumSquares(float value) noexcept { context_.mean_sum_squares = value; }
 
     // Symmetric: both v1 and v2 are stored SQ8-of-x' blobs.

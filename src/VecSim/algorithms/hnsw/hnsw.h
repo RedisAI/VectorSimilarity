@@ -92,11 +92,10 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
 #endif
 {
 private:
-    template <typename, typename>
-    friend class TieredHNSWIndex;
-
     template <VecSimMetric Metric>
     void setSQ8Mean(std::span<const float> mean) noexcept {
+        // Assumes exactly one preprocessor: SQ8 WithNorm in slot 0. Tiered cosine inputs
+        // are normalized by the frontend; a pipeline with a preceding normalizer is unsupported.
         auto *container = static_cast<MultiPreprocessorsContainer<DataType, 1> *>(
             this->getPreprocessorsContainer());
         auto *preprocessor = dynamic_cast<QuantPreprocessor<DataType, Metric, true> *>(
@@ -113,8 +112,10 @@ private:
         calculator->setMeanSumSquares(mean_sum_squares);
     }
 
-    // Only tiered finalization calls this: the backend has its final WithMean components but
-    // no stored vectors. Caller holds the tiered main lock exclusively, before submitting jobs.
+public:
+    // Writer-only operation: install the mean once, before any stored vector, under the
+    // exclusive tiered main lock and before submitting insertion jobs. The backend must have
+    // its final SQ8 WithNorm components; the caller owns and enforces the one-time transition.
     void setQuantizationMean(std::span<const float> mean) noexcept {
         assert(this->isQuantized && curElementCount == 0 && mean.size() == this->dim);
         if constexpr (QuantInput<DataType> && std::is_same_v<DistType, float>) {
