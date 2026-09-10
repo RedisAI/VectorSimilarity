@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <type_traits>
 #include <variant>
 
@@ -477,6 +478,14 @@ private:
     }
 
 public:
+    // Install the final mean before any vectors are stored, with queries excluded by the caller.
+    void setMean(std::span<const float> values) noexcept
+        requires(WithNorm)
+    {
+        assert(values.size() == mean.size());
+        std::copy(values.begin(), values.end(), mean.begin());
+    }
+
     // Standard constructor (WithNorm == false): no mean vector.
     QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         requires(!WithNorm)

@@ -8,6 +8,7 @@
  */
 #pragma once
 #include <cstddef>
+#include <span>
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
@@ -163,7 +164,8 @@ private:
         float mean_sum_squares;
     };
 
-    const WithNormDistanceContext context_;
+    // HNSW may install the accumulated mean before storing the first vector.
+    WithNormDistanceContext context_;
 
     static DistType calcStoredWithContext(const void *opaque_context, const void *v1,
                                           const void *v2, size_t dim) {
@@ -211,6 +213,18 @@ public:
                                                              .query_func = asym_func,
                                                              .mean_sum_squares = mean_sum_squares,
                                                          }) {}
+
+    // Written once, before any stored vector, under the exclusive tiered main lock. The caller
+    // also updates the preprocessor's mean; cached distance dispatches keep this context address.
+    void setMeanSumSquares(std::span<const float> mean) noexcept {
+        if constexpr (Metric == VecSimMetric_IP) {
+            float mean_sum_squares = 0.0f;
+            for (float value : mean) {
+                mean_sum_squares += value * value;
+            }
+            context_.mean_sum_squares = mean_sum_squares;
+        }
+    }
 
     // Symmetric: both v1 and v2 are stored SQ8-of-x' blobs.
     DistType calcDistance(const void *v1, const void *v2, size_t dim) const override {
