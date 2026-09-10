@@ -1,4 +1,4 @@
-name: temporary testing
+name: SQ8 Sterbenz reproduction
 
 # This file is useful for triggering actions when you implement them.
 # When the `branches-ignore` line is commented out, this workflow will run on every push.
@@ -9,15 +9,57 @@ name: temporary testing
 
 on:
   push:
-    branches-ignore: ['**'] # ignore all branches. Comment this line to run your workflow below on every push.
+    branches: [omer-lerman-sq8-sterbenz-repro]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   # jammy:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
   #     container: ubuntu:jammy
   #     run-valgrind: true
-  alpine3:
-    uses: ./.github/workflows/alpine3.yml
+  reproduce:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Get the CPU feature headers used by the production preprocessor
+        uses: actions/checkout@v6
+        with:
+          repository: google/cpu_features
+          ref: v0.10.1
+          path: .repro-deps/cpu_features
+          persist-credentials: false
+      - name: Build unchanged production quantizer and scalar kernel
+        shell: bash
+        run: |
+          set -o pipefail
+          git rev-parse HEAD
+          g++ --version
+          g++ -std=c++20 -O3 -fno-fast-math -ffp-contract=off \
+            -Isrc -I.repro-deps/cpu_features/include \
+            .github/scripts/sq8-sterbenz-repro.cpp \
+            src/VecSim/spaces/L2/L2.cpp \
+            src/VecSim/spaces/IP/IP.cpp \
+            src/VecSim/memory/vecsim_malloc.cpp \
+            src/VecSim/memory/vecsim_base.cpp \
+            -o /tmp/sq8-sterbenz-repro 2>&1 | tee /tmp/sq8-sterbenz-build.log
+      - name: Verify the numerical counterexample
+        shell: bash
+        run: |
+          set -o pipefail
+          /tmp/sq8-sterbenz-repro 1 33554432 66846720 2>&1 | tee /tmp/sq8-sterbenz-result.log
+          {
+            echo 'The job succeeds only if both predicted numerical discrepancies are reproduced.'
+            echo '```text'
+            cat /tmp/sq8-sterbenz-result.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
   # focal:
   #   uses: ./.github/workflows/task-unit-test.yml
   #   with:
