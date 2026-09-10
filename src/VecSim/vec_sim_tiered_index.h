@@ -17,6 +17,13 @@
 #include "VecSim/utils/alignment.h"
 
 #include <shared_mutex>
+#include <mutex>
+#include <atomic>
+#include <array>
+#include <cstdint>
+#ifdef BUILD_TESTS
+#include <functional>
+#endif
 
 #if HAVE_SVS
 // For the compressed-backend check in getDataByLabel.
@@ -66,6 +73,126 @@ protected:
 #ifdef BUILD_TESTS
     mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
 #endif
+
+    // Bumped by every relabel that moves a label. A two-phase query compares it across the
+    // window between its two reads: `merge_result_lists` collapses a vector that both tiers
+    // report by matching labels, which a relabel inside that window defeats, so a query that
+    // sees this change cannot trust the pair it just read. Relabels are rare, so the cost this
+    // puts on the query path is two relaxed loads.
+    mutable std::atomic<uint64_t> relabelEpoch = 0;
+
+    // One recorded move, stamped with the epoch it happened at so a query can tell whether it
+    // post-dates its own flat snapshot.
+    struct RelabelRecord {
+        labelType old_label;
+        labelType new_label;
+        uint64_t epoch;
+    };
+
+    // The log lets a query map a stale label forward instead of re-reading, which is what makes
+    // it usable by readers that cannot simply retry. It is a fixed ring so it never allocates
+    // and never grows: past this many moves the oldest are dropped, and a query whose snapshot
+    // is no longer covered falls back to the pinned re-read, which is always correct.
+    static constexpr size_t kRelabelLogCapacity = 128;
+
+    mutable std::mutex relabelLogGuard;
+    mutable std::array<RelabelRecord, kRelabelLogCapacity> relabelLog;
+    mutable size_t relabelLogSize = 0;
+    mutable size_t relabelLogHead = 0;
+    // Highest epoch dropped from the ring. A query whose snapshot epoch is below this cannot be
+    // served from the log, because a move it needed to know about is gone.
+    mutable uint64_t relabelLogEvictedThrough = 0;
+
+    // Call while holding the guards that made the move, so both the bump and the record are
+    // visible to any query whose window overlapped it.
+    void recordRelabel(labelType old_label, labelType new_label) const {
+        const uint64_t epoch = relabelEpoch.fetch_add(1, std::memory_order_acq_rel) + 1;
+        std::lock_guard<std::mutex> lock(relabelLogGuard);
+        if (relabelLogSize == kRelabelLogCapacity) {
+            relabelLogEvictedThrough = relabelLog[relabelLogHead].epoch;
+            relabelLogHead = (relabelLogHead + 1) % kRelabelLogCapacity;
+            relabelLogSize--;
+        }
+        relabelLog[(relabelLogHead + relabelLogSize) % kRelabelLogCapacity] = {old_label, new_label,
+                                                                               epoch};
+        relabelLogSize++;
+    }
+
+    // Copies out the moves later than `since`. Returns false if the log cannot answer for that
+    // point, leaving the caller to re-read with the flat buffer pinned.
+    bool collectRelabelsSince(uint64_t since, std::array<RelabelRecord, kRelabelLogCapacity> &out,
+                              size_t &out_count) const {
+        std::lock_guard<std::mutex> lock(relabelLogGuard);
+        if (since < relabelLogEvictedThrough) {
+            return false;
+        }
+        out_count = 0;
+        for (size_t i = 0; i < relabelLogSize; i++) {
+            const RelabelRecord &record = relabelLog[(relabelLogHead + i) % kRelabelLogCapacity];
+            if (record.epoch > since) {
+                out[out_count++] = record;
+            }
+        }
+        return true;
+    }
+
+    // Rewrites every label that has since moved to the label it moved to, following chains
+    // (A->B->C) so a label that moved twice inside one window still lands on its current value.
+    // Bounded by the number of moves, which also stops a cycle (A->B then B->A) from spinning.
+    static void canonicalizeLabels(VecSimQueryReply *reply,
+                                   const std::array<RelabelRecord, kRelabelLogCapacity> &moves,
+                                   size_t move_count) {
+        for (auto &result : reply->results) {
+            for (size_t step = 0; step < move_count; step++) {
+                bool moved = false;
+                for (size_t i = 0; i < move_count; i++) {
+                    if (moves[i].old_label == result.id) {
+                        result.id = moves[i].new_label;
+                        moved = true;
+                        break;
+                    }
+                }
+                if (!moved) {
+                    break;
+                }
+            }
+        }
+    }
+
+    // Releases the flat guard on scope exit when a query pinned it across both reads. The
+    // pinned path has several early returns, so this cannot be a statement at the end.
+    struct FlatGuardRelease {
+        const VecSimTieredIndex *index;
+        explicit FlatGuardRelease(const VecSimTieredIndex *index) : index(index) {}
+        ~FlatGuardRelease() {
+            if (index) {
+                index->flatIndexGuard.unlock_shared();
+            }
+        }
+        FlatGuardRelease(const FlatGuardRelease &) = delete;
+        FlatGuardRelease &operator=(const FlatGuardRelease &) = delete;
+    };
+
+#ifdef BUILD_TESTS
+    // Runs between a two-phase query's flat read and its main read, which is the window a
+    // relabel has to hit to produce a cross-tier duplicate. Tests use it to land one there.
+    mutable std::function<void()> testHookBetweenFlatAndMainRead;
+
+public:
+    void setTestHookBetweenFlatAndMainRead(std::function<void()> hook) const {
+        testHookBetweenFlatAndMainRead = std::move(hook);
+    }
+
+    // How many times a query reconciled a relabel out of the log rather than re-reading.
+    mutable std::atomic<size_t> relabelLogHitCount = 0;
+
+    // How many times a query re-read because a relabel landed in its window. Lets a test assert
+    // it actually exercised the retry rather than silently passing on the fast path.
+    mutable std::atomic<size_t> relabelRetryCount = 0;
+
+protected:
+#endif
+
     size_t flatBufferLimit;
 
     void submitSingleJob(AsyncJob *job) {
@@ -106,12 +233,42 @@ protected:
 public:
     int getMainIndexGuardWriteLockCount() const { return mainIndexGuard_write_lock_count; }
 #endif
-    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k,
-                                   VecSimQueryParams *queryParams) const;
+    // `pin_flat` keeps the flat guard held across both reads, which shuts the relabel window
+    // at the cost of blocking flat writers for the main read. Only the retry uses it.
+    // `pin_flat` keeps the flat guard held across both reads, shutting the relabel window at the
+    // cost of blocking flat writers for the main read. Used only when the log cannot cover the
+    // window. `needs_pin` reports exactly that.
+    VecSimQueryReply *topKQueryImp(const void *queryBlob, size_t k, VecSimQueryParams *queryParams,
+                                   bool pin_flat = false, bool *needs_pin = nullptr) const;
 
     VecSimQueryReply *rangeQueryImp(const void *queryBlob, double radius,
-                                    VecSimQueryParams *queryParams,
-                                    VecSimQueryReply_Order order) const;
+                                    VecSimQueryParams *queryParams, VecSimQueryReply_Order order,
+                                    bool pin_flat = false, bool *needs_pin = nullptr) const;
+
+    // Reconciles a flat snapshot taken at `snapshot_epoch` with a main read taken after it. If
+    // nothing moved, there is nothing to do. Otherwise the moves are replayed onto both lists so
+    // the label-keyed merge can still collapse a vector both tiers reported. Returns false when
+    // the log cannot cover the window and the caller must re-read pinned.
+    bool reconcileRelabels(uint64_t snapshot_epoch, VecSimQueryReply *first,
+                           VecSimQueryReply *second) const {
+        if (this->relabelEpoch.load(std::memory_order_acquire) == snapshot_epoch) {
+            return true;
+        }
+        std::array<RelabelRecord, kRelabelLogCapacity> moves;
+        size_t move_count = 0;
+        if (!collectRelabelsSince(snapshot_epoch, moves, move_count)) {
+            return false;
+        }
+        canonicalizeLabels(first, moves, move_count);
+        canonicalizeLabels(second, moves, move_count);
+        // Rewriting labels can break the by-id tie-break the merge relies on, so restore it.
+        sort_results_by_score_then_id(first);
+        sort_results_by_score_then_id(second);
+#ifdef BUILD_TESTS
+        this->relabelLogHitCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+        return true;
+    }
 
 public:
     /**
@@ -226,7 +383,8 @@ public:
 template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
-                                                    VecSimQueryParams *queryParams) const {
+                                                    VecSimQueryParams *queryParams, bool pin_flat,
+                                                    bool *needs_pin) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -246,7 +404,19 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        // Sampled while the guard still covers the snapshot, so it names exactly the state these
+        // results came from.
+        const uint64_t snapshot_epoch = this->relabelEpoch.load(std::memory_order_acquire);
+        if (!pin_flat) {
+            this->flatIndexGuard.unlock_shared();
+        }
+        FlatGuardRelease flat_release{pin_flat ? this : nullptr};
+
+#ifdef BUILD_TESTS
+        if (!pin_flat && testHookBetweenFlatAndMainRead) {
+            testHookBetweenFlatAndMainRead();
+        }
+#endif
 
         // If the query failed (currently only on timeout), return the error code.
         if (flat_results->code != VecSim_QueryReply_OK) {
@@ -270,6 +440,15 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
             return main_results;
         }
 
+        if (!reconcileRelabels(snapshot_epoch, main_results, flat_results)) {
+            VecSimQueryReply_Free(main_results);
+            VecSimQueryReply_Free(flat_results);
+            if (needs_pin) {
+                *needs_pin = true;
+            }
+            return nullptr;
+        }
+
         return merge_result_lists(main_results, flat_results, k);
     }
 }
@@ -277,7 +456,18 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
                                                  VecSimQueryParams *queryParams) const {
-    return this->topKQueryImp(queryBlob, k, queryParams);
+    bool needs_pin = false;
+    VecSimQueryReply *res =
+        this->topKQueryImp(queryBlob, k, queryParams, /*pin_flat=*/false, &needs_pin);
+    if (!needs_pin) {
+        return res;
+    }
+    // More moves happened than the log retains, so it cannot say what the stale labels became.
+    // Re-read with the flat buffer pinned, which excludes relabel outright.
+#ifdef BUILD_TESTS
+    this->relabelRetryCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+    return this->topKQueryImp(queryBlob, k, queryParams, /*pin_flat=*/true);
 }
 
 template <typename DataType, typename DistType>
@@ -285,14 +475,23 @@ VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double radius,
                                                   VecSimQueryParams *queryParams,
                                                   VecSimQueryReply_Order order) const {
-    return this->rangeQueryImp(queryBlob, radius, queryParams, order);
+    bool needs_pin = false;
+    VecSimQueryReply *res =
+        this->rangeQueryImp(queryBlob, radius, queryParams, order, /*pin_flat=*/false, &needs_pin);
+    if (!needs_pin) {
+        return res;
+    }
+    // See topKQuery: the log no longer covers this window, so fall back to pinning.
+#ifdef BUILD_TESTS
+    this->relabelRetryCount.fetch_add(1, std::memory_order_relaxed);
+#endif
+    return this->rangeQueryImp(queryBlob, radius, queryParams, order, /*pin_flat=*/true);
 }
 
 template <typename DataType, typename DistType>
-VecSimQueryReply *
-VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, double radius,
-                                                     VecSimQueryParams *queryParams,
-                                                     VecSimQueryReply_Order order) const {
+VecSimQueryReply *VecSimTieredIndex<DataType, DistType>::rangeQueryImp(
+    const void *queryBlob, double radius, VecSimQueryParams *queryParams,
+    VecSimQueryReply_Order order, bool pin_flat, bool *needs_pin) const {
     this->flatIndexGuard.lock_shared();
 
     // If the flat buffer is empty, we can simply query the main index.
@@ -315,7 +514,18 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        // See topKQueryImp: sampled while the guard still covers the snapshot.
+        const uint64_t snapshot_epoch = this->relabelEpoch.load(std::memory_order_acquire);
+        if (!pin_flat) {
+            this->flatIndexGuard.unlock_shared();
+        }
+        FlatGuardRelease flat_release{pin_flat ? this : nullptr};
+
+#ifdef BUILD_TESTS
+        if (!pin_flat && testHookBetweenFlatAndMainRead) {
+            testHookBetweenFlatAndMainRead();
+        }
+#endif
 
         // If the query failed (currently only on timeout), return the error code and the partial
         // results.
@@ -329,6 +539,15 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         this->mainIndexGuard.lock_shared();
         auto main_results = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
         this->mainIndexGuard.unlock_shared();
+
+        if (!reconcileRelabels(snapshot_epoch, main_results, flat_results)) {
+            VecSimQueryReply_Free(main_results);
+            VecSimQueryReply_Free(flat_results);
+            if (needs_pin) {
+                *needs_pin = true;
+            }
+            return nullptr;
+        }
 
         // Merge the results and return, avoiding duplicates.
         // At this point, the return code of the FLAT index is OK, and the return code of the MAIN

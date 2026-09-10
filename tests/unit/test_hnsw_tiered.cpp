@@ -4990,3 +4990,270 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
             << "label " << i + relabel_offset << " does not hold its original vector";
     }
 }
+
+// A two-phase query reads the flat buffer, releases its guard, then reads the main index, and
+// `merge_result_lists` collapses a vector both tiers report by matching labels. A relabel landing
+// in that window defeats that: the flat half of the pair still says `old_label` while the main half
+// now says `new_label`, so the merge keeps both and one vector is reported twice under a pair of
+// labels the index never held at the same time. Drive a relabel into the window and assert the
+// query still reports the vector once.
+//
+// The retry count is asserted so this fails loudly rather than passing on the fast path if the hook
+// stops firing or the window moves.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelDuringQueryDoesNotDuplicate) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Both tiers must hold the label, so that both halves of the query report the same vector and
+    // the merge has a pair to collapse. This is the ingestion window `relabelVectorBothTiers`
+    // describes, built directly for determinism.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    bool relabeled = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (relabeled) {
+            return;
+        }
+        relabeled = true;
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimQueryReply *reply = VecSimIndex_TopKQuery(tiered_index, query, 10, nullptr, BY_SCORE);
+
+    ASSERT_TRUE(relabeled) << "the hook never ran, so the window was not exercised";
+    // The defect first: one vector, not one per label it passed through.
+    ASSERT_EQ(VecSimQueryReply_Len(reply), 1) << "one vector reported under two labels";
+    ASSERT_EQ(tiered_index->relabelLogHitCount, 1) << "the relabel in the window went undetected";
+    ASSERT_EQ(tiered_index->relabelRetryCount, 0)
+        << "the log should have served this without a re-read";
+
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+    ASSERT_EQ(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)), 70);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(reply);
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
+
+// Same window, same reasoning, for the range query: it merges by score through
+// `merge_result_lists` and by id through `filter_results_by_id`, and both key on the label.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelDuringRangeQueryDoesNotDuplicate) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    bool relabeled = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (relabeled) {
+            return;
+        }
+        relabeled = true;
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimQueryReply *reply = VecSimIndex_RangeQuery(tiered_index, query, 1.0, nullptr, BY_SCORE);
+
+    ASSERT_TRUE(relabeled) << "the hook never ran, so the window was not exercised";
+    // The defect first: one vector, not one per label it passed through.
+    ASSERT_EQ(VecSimQueryReply_Len(reply), 1) << "one vector reported under two labels";
+    ASSERT_EQ(tiered_index->relabelLogHitCount, 1) << "the relabel in the window went undetected";
+    ASSERT_EQ(tiered_index->relabelRetryCount, 0)
+        << "the log should have served this without a re-read";
+
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+    ASSERT_EQ(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)), 70);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(reply);
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
+
+// A label can move more than once inside a single query's window, so the log has to be replayed
+// as a chain: a flat result under A must land on C when A moved to B and B then moved to C.
+// Resolving only one step would leave B, which matches nothing in the main results and duplicates.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelChainDuringQueryResolvesToCurrentLabel) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+
+    bool relabeled = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (relabeled) {
+            return;
+        }
+        relabeled = true;
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 70, 700), VecSimRelabel_OK);
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimQueryReply *reply = VecSimIndex_TopKQuery(tiered_index, query, 10, nullptr, BY_SCORE);
+
+    ASSERT_TRUE(relabeled);
+    ASSERT_EQ(VecSimQueryReply_Len(reply), 1) << "the chain was not followed to the end";
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+    ASSERT_EQ(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)), 700);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(reply);
+    ASSERT_EQ(tiered_index->relabelRetryCount, 0);
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
+
+// The log is a fixed ring, so a window containing more moves than it retains cannot be answered
+// from it -- the move that a stale label needs has been dropped. That is what the pinned re-read
+// is for, and this drives the log past its capacity to prove the fallback is reached and correct.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelLogOverflowFallsBackToPinnedRead) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+
+    // Comfortably past the ring's capacity, so the earliest moves are evicted.
+    const size_t moves = 300;
+    const labelType final_label = 1000 + moves;
+    bool relabeled = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (relabeled) {
+            return;
+        }
+        relabeled = true;
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 1000), VecSimRelabel_OK);
+        for (size_t i = 0; i < moves; i++) {
+            ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1000 + i, 1000 + i + 1),
+                      VecSimRelabel_OK);
+        }
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimQueryReply *reply = VecSimIndex_TopKQuery(tiered_index, query, 10, nullptr, BY_SCORE);
+
+    ASSERT_TRUE(relabeled);
+    ASSERT_EQ(tiered_index->relabelRetryCount, 1) << "the overflow fallback was not taken";
+    ASSERT_EQ(VecSimQueryReply_Len(reply), 1) << "one vector reported under two labels";
+    VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+    ASSERT_EQ(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)), final_label);
+    VecSimQueryReply_IteratorFree(it);
+    VecSimQueryReply_Free(reply);
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
+
+// The batch iterator holds `mainIndexGuard` shared from its first call until the HNSW iterator
+// depletes, so a relabel -- which needs that guard exclusively -- cannot run for the rest of the
+// iteration. Its one window is between releasing the flat guard and taking the main one on the
+// first call: a relabel there moves a label out from under the flat snapshot already taken, and
+// the iterator then reports the same vector once per label across its batches. Unlike a query it
+// cannot start over, so the window is closed by taking the main guard before releasing the flat
+// one.
+//
+// The relabel has to come from another thread: the hook now runs while the flat guard is held, so
+// relabeling inline would deadlock against it.
+TYPED_TEST(HNSWTieredIndexTestBasic, relabelCannotSplitABatchIteratorSnapshot) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // The label must be in both tiers, so that both halves of the iteration report it and the
+    // per-label dedup has something to collapse.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    hnsw_index->addVector(vector, 7);
+    ASSERT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    std::thread relabel_thread;
+    std::atomic<bool> relabel_entered{false};
+    bool hooked = false;
+    tiered_index->setTestHookBetweenFlatAndMainRead([&]() {
+        if (hooked) {
+            return;
+        }
+        hooked = true;
+        relabel_thread = std::thread([&]() {
+            relabel_entered = true;
+            VecSimIndex_RelabelVector(tiered_index, 7, 70);
+        });
+        // Wait until the relabel is actually attempting the move, then leave it time to complete
+        // if the window were open. It cannot: this thread holds the flat guard.
+        while (!relabel_entered) {
+            std::this_thread::yield();
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    });
+
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 7);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+
+    std::vector<size_t> seen;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        VecSimQueryReply *batch = VecSimBatchIterator_Next(batchIterator, 2, BY_SCORE);
+        VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(batch);
+        while (auto *res = VecSimQueryReply_IteratorNext(it)) {
+            seen.push_back(VecSimQueryResult_GetId(res));
+        }
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(batch);
+    }
+    // Frees the HNSW iterator and releases the main guard, letting the relabel through.
+    VecSimBatchIterator_Free(batchIterator);
+    ASSERT_TRUE(hooked) << "the hook never ran, so the window was not exercised";
+    relabel_thread.join();
+
+    ASSERT_EQ(seen.size(), 1) << "one vector reported once per label it passed through";
+    ASSERT_EQ(seen[0], 7) << "the iteration should be consistent with the snapshot it took";
+
+    tiered_index->setTestHookBetweenFlatAndMainRead(nullptr);
+}
