@@ -1282,7 +1282,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
 
     // Move vectors to the backend
-    while (mock_thread_pool.jobQ.size() > 0) mock_thread_pool.thread_iteration();
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), n);

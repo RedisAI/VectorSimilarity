@@ -218,7 +218,7 @@ inline std::pair<VecSimSvsQuantBits, bool> isSVSQuantBitsSupported(VecSimSvsQuan
 template <typename Alloc>
 svs::concurrent::SegmentedBlocked<svs::AllocatorHandle<typename Alloc::value_type>>
 make_segmented_blocked_allocator_handle(const svs::data::BlockingParameters &parameters,
-                                       Alloc alloc) {
+                                        Alloc alloc) {
     using handle_type = svs::AllocatorHandle<typename Alloc::value_type>;
     return svs::concurrent::SegmentedBlocked<handle_type>{
         parameters, svs::make_allocator_handle(std::move(alloc))};
@@ -338,8 +338,8 @@ struct SVSGraphBuilder {
         // based on the data types, which we found to perform better through heuristic analysis.
         auto prefetch_parameters =
             svs::index::vamana::extensions::estimate_prefetch_parameters(data);
-        auto builder = svs::concurrent::VamanaBuilder(
-            graph, data, std::move(distance), parameters, threadpool, prefetch_parameters, logger);
+        auto builder = svs::concurrent::VamanaBuilder(graph, data, std::move(distance), parameters,
+                                                      threadpool, prefetch_parameters, logger);
 
         // Specific to the Vamana algorithm:
         // It builds in two rounds, one with alpha=1 and the second time with the user/config

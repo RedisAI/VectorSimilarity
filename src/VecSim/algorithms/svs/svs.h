@@ -41,7 +41,7 @@ struct SVSIndexBase
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
     virtual int deleteVector(labelType label) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
-    virtual void consolidate(const std::vector<labelType>& labels) = 0;
+    virtual void consolidate(const std::vector<labelType> &labels) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
     virtual size_t getParallelism() const = 0;
@@ -126,13 +126,9 @@ protected:
 
     std::atomic<bool> impl_ready_{false};
 
-    void setReady() {
-        this->impl_ready_.store(true, std::memory_order_release);
-    }
+    void setReady() { this->impl_ready_.store(true, std::memory_order_release); }
 
-    void setUnready() {
-        this->impl_ready_.store(false, std::memory_order_release);
-    }
+    void setUnready() { this->impl_ready_.store(false, std::memory_order_release); }
 
     static double toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
 
@@ -271,7 +267,8 @@ protected:
         {
             std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
             this->impl_ = std::move(svs_handler->impl);
-            if (this->impl_) setReady();
+            if (this->impl_)
+                setReady();
         }
     }
 
@@ -323,7 +320,7 @@ protected:
         return n - deleted_num;
     }
 
-    void consolidate(const std::vector<labelType>& labels) override {
+    void consolidate(const std::vector<labelType> &labels) override {
         std::shared_lock lock(this->pimplGuard_);
         if (!ready())
             return;
@@ -421,9 +418,7 @@ public:
 
     ~SVSIndex() = default;
 
-    bool ready() const override {
-        return this->impl_ready_.load(std::memory_order_acquire);
-    }
+    bool ready() const override { return this->impl_ready_.load(std::memory_order_acquire); }
 
     size_t indexSize() const override { return indexStorageSize(); }
 
@@ -670,7 +665,6 @@ public:
             }
         }
 
-
         auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
         {
             std::shared_lock lock(this->pimplGuard_);
@@ -743,7 +737,7 @@ public:
             auto processed_query_ptr = this->preprocessQuery(queryBlob);
             const void *processed_query = processed_query_ptr.get();
             std::span<const data_type> query{static_cast<const data_type *>(processed_query),
-                                            this->dim};
+                                             this->dim};
 
             // Base search parameters for the SVS iterator schedule.
             auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
@@ -763,8 +757,8 @@ public:
 
             // range search using epsilon
             const auto epsilon = queryParams && queryParams->svsRuntimeParams.epsilon != 0
-                                    ? queryParams->svsRuntimeParams.epsilon
-                                    : this->epsilon;
+                                     ? queryParams->svsRuntimeParams.epsilon
+                                     : this->epsilon;
 
             const auto range_search_boundaries = radius * (1.0 + std::abs(epsilon));
             bool keep_searching = true;
@@ -780,8 +774,8 @@ public:
                         keep_searching = false;
                     }
                 }
-                // If search radius + epsilon is not exceeded, request SVS BatchIterator for the next
-                // batch
+                // If search radius + epsilon is not exceeded, request SVS BatchIterator for the
+                // next batch
                 if (keep_searching) {
                     svs_it.next(batch_size, cancel);
                     if (cancel()) {

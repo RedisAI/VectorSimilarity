@@ -21,7 +21,7 @@ struct SVSInsertJob : public AsyncJob {
     idType id;
 
     SVSInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
-                  JobCallback insertCb, VecSimIndex *index_)
+                 JobCallback insertCb, VecSimIndex *index_)
         : AsyncJob(allocator, SVS_INSERT_VECTOR_JOB, insertCb, index_), label(label_), id(id_) {}
 };
 
@@ -31,8 +31,9 @@ struct SVSInsertJob : public AsyncJob {
 struct SVSConsolidateJob : public AsyncJob {
     std::vector<labelType> labels;
 
-    SVSConsolidateJob(std::shared_ptr<VecSimAllocator> allocator, const std::vector<labelType>& labels_,
-                  JobCallback insertCb, VecSimIndex *index_)
+    SVSConsolidateJob(std::shared_ptr<VecSimAllocator> allocator,
+                      const std::vector<labelType> &labels_, JobCallback insertCb,
+                      VecSimIndex *index_)
         : AsyncJob(allocator, SVS_CONSOLIDATE_JOB, insertCb, index_), labels(labels_) {}
 };
 
@@ -40,11 +41,9 @@ struct SVSConsolidateJob : public AsyncJob {
  * Definition of a job that launches GC on SVS Index.
  */
 struct SVSGCJob : public AsyncJob {
-    SVSGCJob(std::shared_ptr<VecSimAllocator> allocator,
-                  JobCallback insertCb, VecSimIndex *index_)
-        : AsyncJob(allocator, SVS_GC_JOB, insertCb, index_)  {}
+    SVSGCJob(std::shared_ptr<VecSimAllocator> allocator, JobCallback insertCb, VecSimIndex *index_)
+        : AsyncJob(allocator, SVS_GC_JOB, insertCb, index_) {}
 };
-
 
 /**
  * @class SVSMultiThreadJob
@@ -422,8 +421,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                                   std::move(allocator)),
               index(index), flat_results(this->allocator), svs_results(this->allocator),
               flat_iterator(index->frontendIndex->newBatchIterator(query_vector, queryParams)),
-              svs_iterator(nullptr),
-              returned_results_set(this->allocator) {
+              svs_iterator(nullptr), returned_results_set(this->allocator) {
             if (queryParams) {
                 this->queryParams =
                     (VecSimQueryParams *)this->allocator->allocate(sizeof(VecSimQueryParams));
@@ -771,7 +769,8 @@ private:
         auto svs_index = GetSVSIndex();
         assert(svs_index->ready());
 
-        // Note that accessing the job fields should occur with flat index guard held (here and later).
+        // Note that accessing the job fields should occur with flat index guard held (here and
+        // later).
         this->flatIndexGuard.lock_shared();
         if (!job->isValid) {
             this->flatIndexGuard.unlock_shared();
@@ -817,12 +816,14 @@ private:
                 this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
             int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
             if (deleted && job->id != this->frontendIndex->indexSize()) {
-                // If the vector removal caused a swap with the last id, update the relevant insert job.
+                // If the vector removal caused a swap with the last id, update the relevant insert
+                // job.
                 this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id,
                                                 last_vec_label);
             }
         } else {
-            // Remove the current job from the invalid jobs' lookup, as we are about to delete it now.
+            // Remove the current job from the invalid jobs' lookup, as we are about to delete it
+            // now.
             this->invalidJobsLookupGuard.lock();
             this->invalidJobs.erase(job->id);
             this->invalidJobsLookupGuard.unlock();
@@ -860,7 +861,8 @@ private:
             if (!labels_to_move.empty()) {
                 auto svs_index = GetSVSIndex();
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
-                assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+                assert(labels_to_move.size() ==
+                       vectors_to_move.size() / this->frontendIndex->getDim());
                 // The backend may already have been initialized while this job was queued
                 if (svs_index->ready()) {
                     svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
@@ -885,7 +887,8 @@ private:
                         this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
                     int deleted = this->frontendIndex->deleteVectorById(label, id);
                     if (deleted && id != this->frontendIndex->indexSize()) {
-                        // If the vector removal caused a swap with the last id, update the relevant insert job.
+                        // If the vector removal caused a swap with the last id, update the relevant
+                        // insert job.
                         this->updateInsertJobInternalId(this->frontendIndex->indexSize(), id,
                                                         last_vec_label);
                     }
@@ -893,8 +896,9 @@ private:
                 }
             }
 
-            assert(total_deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
-                                                  [](labelType label) { return label != SKIP_LABEL; }) &&
+            assert(total_deleted ==
+                       std::count_if(labels_to_move.begin(), labels_to_move.end(),
+                                     [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
         } // release frontend index
         executeTracingCallback("UpdateJob::after_add_to_svs");
@@ -905,16 +909,14 @@ public:
                    const TieredIndexParams &tiered_index_params,
                    std::shared_ptr<VecSimAllocator> allocator)
         : Base(svs_index, bf_index, tiered_index_params, allocator),
-          uncompletedJobs(this->allocator),
-          labelToInsertJobs(this->allocator),
-          invalidJobs(this->allocator),
-          currInvalidJobId(0) {
+          uncompletedJobs(this->allocator), labelToInsertJobs(this->allocator),
+          invalidJobs(this->allocator), currInvalidJobId(0) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
         flat_buffer_bound = tiered_index_params.flatBufferLimit == 0
-                                             ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
-                                             : tiered_index_params.flatBufferLimit;
+                                ? SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD
+                                : tiered_index_params.flatBufferLimit;
 
         this->updateTriggerThreshold =
             tiered_svs_params.updateTriggerThreshold == 0
@@ -951,13 +953,15 @@ public:
             // so make the minimal needed lock here.
             // Backend index initialization data have to be buffered for proper
             // compression/training.
-            if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
+            if ((!svs_index->ready()) &&
+                (!this->backendInitSubmited.load(std::memory_order_acquire))) {
                 // If backend index size is 0, first collect vectors in frontend index
                 // lock in scope to ensure that these will be released before
                 // initSVSIndexWrapper() is called.
                 {
                     std::lock_guard lock(this->flatIndexGuard);
-                    if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
+                    if (!this->frontendIndex->isMultiValue() &&
+                        this->frontendIndex->isLabelExists(label)) {
                         deleteAndUpdateInitIds(label);
                     }
                     ids_to_init_.insert(this->frontendIndex->indexSize());
@@ -998,8 +1002,10 @@ public:
         if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
             // Add vector to the frontend index.
             std::lock_guard lock(this->flatIndexGuard);
-            if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
-                if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
+            if ((!svs_index->ready()) &&
+                (!this->backendInitSubmited.load(std::memory_order_acquire))) {
+                if (!this->frontendIndex->isMultiValue() &&
+                    this->frontendIndex->isLabelExists(label)) {
                     deleteAndUpdateInitIds(label);
                 }
                 ids_to_init_.insert(this->frontendIndex->indexSize());
@@ -1041,20 +1047,21 @@ public:
                     return ret;
                 }
 
-                // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
-                // Label exists, but job doesn't. It means the label is used for initialization.
-                // Just create new job, this job will remove duplicate from the backend.
+                // Overwrite the vector and invalidate its only pending job (since we are not in
+                // MULTI). Label exists, but job doesn't. It means the label is used for
+                // initialization. Just create new job, this job will remove duplicate from the
+                // backend.
                 auto *old_job = this->labelToInsertJobs.at(label).at(0);
                 old_job->id = this->setAndSaveInvalidJob(old_job);
                 this->labelToInsertJobs.erase(label);
                 ret = 0;
-                // We are going to update the internal id that currently holds the vector associated with
-                // the given label.
+                // We are going to update the internal id that currently holds the vector associated
+                // with the given label.
                 new_flat_id =
                     dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
                         ->getIdOfLabel(label);
-                // If we are adding a new element (rather than updating an exiting one) we may need to
-                // increase index capacity.
+                // If we are adding a new element (rather than updating an exiting one) we may need
+                // to increase index capacity.
             }
             // If this label already exists, this will do overwrite.
             ret += this->frontendIndex->addVector(blob, label);
@@ -1062,10 +1069,11 @@ public:
             AsyncJob *new_insert_job = new (this->allocator)
                 SVSInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
 
-            // Save a pointer to the job, so that if the vector is overwritten, we'll have an indication.
+            // Save a pointer to the job, so that if the vector is overwritten, we'll have an
+            // indication.
             if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
-                // There's already a pending insert job for this label, add another one (without overwrite,
-                // only possible in multi index)
+                // There's already a pending insert job for this label, add another one (without
+                // overwrite, only possible in multi index)
                 assert(this->backendIndex->isMultiValue());
                 this->labelToInsertJobs.at(label).push_back((SVSInsertJob *)new_insert_job);
             } else {
@@ -1080,8 +1088,8 @@ public:
             //  we submit the insert job.
             if (!this->backendIndex->isMultiValue()) {
                 if (svs_index->ready()) {
-                    // If we removed the previous vector from both svs and flat in the overwrite process,
-                    // we still return 0 (not -1).
+                    // If we removed the previous vector from both svs and flat in the overwrite
+                    // process, we still return 0 (not -1).
                     auto deleted = svs_index->deleteVector(label);
                     if (deleted > 0)
                         scheduleSVSIndexConsolidate(label);
@@ -1137,14 +1145,17 @@ public:
         if (this->frontendIndex->isLabelExists(label)) {
             this->flatIndexGuard.unlock_shared();
             std::lock_guard flat_lock{this->flatIndexGuard};
-            // Check again if the label exists, as it may have been removed while we released the lock.
+            // Check again if the label exists, as it may have been removed while we released the
+            // lock.
             if (this->frontendIndex->isLabelExists(label)) {
                 auto deleting_ids = this->frontendIndex->getElementIds(label);
-                if (deleting_ids.size() == 0) return 0;
+                if (deleting_ids.size() == 0)
+                    return 0;
 
                 // assert if all elements of deleting_ids are unique
-                assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
-                    "deleting_ids should contain unique ids");
+                assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() ==
+                           deleting_ids.size() &&
+                       "deleting_ids should contain unique ids");
 
                 // If id is deleted, don't use it for initialization
                 for (idType id : deleting_ids) {
@@ -1391,11 +1402,7 @@ public:
         scheduleSVSIndexGC();
     }
 
-    void acquireSharedLocks() override {
-        this->flatIndexGuard.lock_shared();
-    }
+    void acquireSharedLocks() override { this->flatIndexGuard.lock_shared(); }
 
-    void releaseSharedLocks() override {
-        this->flatIndexGuard.unlock_shared();
-    }
+    void releaseSharedLocks() override { this->flatIndexGuard.unlock_shared(); }
 };
