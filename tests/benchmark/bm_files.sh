@@ -1,8 +1,18 @@
-BM_TYPE=$1
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Download each URL once and suppress noisy progress logs.
+download_indices() {
+    cat "$@" | sed '/^[[:space:]]*$/d' | sort -u | \
+        xargs -r -n 1 -P 0 wget --no-check-certificate --no-verbose \
+            --timeout=60 --tries=3 --waitretry=5 -P tests/benchmark/data
+}
+
+BM_TYPE=${1:-}
 alg="hnsw"
 
 if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
-    cat tests/benchmark/data/hnsw_indices/*.txt tests/benchmark/data/svs_indices/*.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
+    download_indices tests/benchmark/data/hnsw_indices/*.txt tests/benchmark/data/svs_indices/*.txt
     exit 0
 elif [ "$BM_TYPE" = "benchmarks-default" ] \
 || [ "$BM_TYPE" = "bm-basics-fp32-single" ] \
@@ -57,4 +67,4 @@ else
     exit 0
 fi
 
-cat tests/benchmark/data/${alg}_indices/${alg}_indices_$file_name.txt | xargs -n 1 -P 0 wget --no-check-certificate -P tests/benchmark/data
+download_indices "tests/benchmark/data/${alg}_indices/${alg}_indices_$file_name.txt"

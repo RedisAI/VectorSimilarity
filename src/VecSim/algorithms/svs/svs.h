@@ -16,6 +16,7 @@
 #include <memory>
 #include <cassert>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 #include "svs/index/vamana/dynamic_index.h"
@@ -841,6 +842,49 @@ public:
         num_marked_deleted.store(0, std::memory_order_relaxed);
     }
 
+private:
+    // appends the raw stored elements for `label` to `vectors_output`, one entry per stored vector
+    // -- zero if the label isn't held. Only meaningful when the caller has already excluded
+    // compressed storage; nothing here dequantizes.
+    template <typename OutputElement>
+    void appendStoredDataByLabel(labelType label,
+                                 std::vector<std::vector<OutputElement>> &vectors_output) const {
+        if (!impl_) {
+            return;
+        }
+        auto append_datum = [&](auto indexed_span) {
+            if constexpr (std::is_same_v<OutputElement, DataType>) {
+                // The span's element type already is `OutputElement` here, so build the
+                // output vector directly from it instead of a raw byte copy.
+                vectors_output.emplace_back(indexed_span.begin(), indexed_span.end());
+            } else {
+                // FP16 and the test-only byte output: `OutputElement` differs from the
+                // span's element type but is bit-identical size, so copy the raw bytes.
+                std::vector<OutputElement> vec_data(this->getStoredDataSize() /
+                                                    sizeof(OutputElement));
+                const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
+                std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
+                vectors_output.push_back(std::move(vec_data));
+            }
+        };
+
+        if constexpr (isMulti) {
+            auto it = impl_->get_label_to_external_lookup().find(label);
+            if (it == impl_->get_label_to_external_lookup().end()) {
+                return;
+            }
+            for (auto external_id : it->second) {
+                append_datum(impl_->get_parent_index().get_datum(external_id));
+            }
+        } else {
+            if (!impl_->has_id(label)) {
+                return;
+            }
+            append_datum(impl_->get_datum(label));
+        }
+    }
+
+public:
 #ifdef BUILD_TESTS
 
 private:
@@ -856,75 +900,33 @@ public:
     void fitMemory() override {}
     size_t indexMetaDataCapacity() const override { return this->indexCapacity(); }
     std::vector<std::vector<char>> getStoredVectorDataByLabel(labelType label) const override {
-
         // For compressed/quantized indices, this function is not meaningful
         // since the stored data is in compressed format and not directly accessible
-        if constexpr (QuantBits > 0 || ResidualBits > 0) {
+        if constexpr (storage_traits_t::is_compressed()) {
             throw std::runtime_error(
                 "getStoredVectorDataByLabel is not supported for compressed/quantized indices");
         } else {
-
             std::vector<std::vector<char>> vectors_output;
-
-            if constexpr (isMulti) {
-                // Multi-index case: get all vectors for this label
-                auto it = impl_->get_label_to_external_lookup().find(label);
-                if (it != impl_->get_label_to_external_lookup().end()) {
-                    const auto &external_ids = it->second;
-                    for (auto external_id : external_ids) {
-                        auto indexed_span = impl_->get_parent_index().get_datum(external_id);
-
-                        // For uncompressed data, indexed_span should be a simple span
-                        const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
-                        std::vector<char> vec_data(this->getStoredDataSize());
-                        std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
-                        vectors_output.push_back(std::move(vec_data));
-                    }
-                }
-            } else {
-                // Single-index case
-                auto indexed_span = impl_->get_datum(label);
-
-                // For uncompressed data, indexed_span should be a simple span
-                const char *data_ptr = reinterpret_cast<const char *>(indexed_span.data());
-                std::vector<char> vec_data(this->getStoredDataSize());
-                std::memcpy(vec_data.data(), data_ptr, this->getStoredDataSize());
-                vectors_output.push_back(std::move(vec_data));
-            }
-
+            appendStoredDataByLabel(label, vectors_output);
             return vectors_output;
         }
     }
     svs::logging::logger_ptr getLogger() const override { return logger_; }
 #endif
 
-    // TODO(MOD-17706): implement, and remove the SVSIndexBase check in
-    // VecSimTieredIndex::getDataByLabel that currently skips the backend read for SVS entirely.
-    //
-    // What it has to produce: the vectors stored under `label`, in the form the base contract
-    // describes -- the *stored* elements, i.e. after whatever preprocessing an insert applied --
-    // appending nothing when the label is absent, so the output size answers "is it held".
-    //
-    // Why it is empty today: SVS keeps vectors in the SVS library's own layout, quantized and for
-    // LeanVec dimensionality-reduced, and this wrapper has no per-label read of them.
-    //
-    // One rule to carry over from the HNSW implementations: report nothing rather than an
-    // approximation. They refuse when `isQuantized`, because a caller comparing a new value
-    // against the stored one byte for byte would read a dequantized reconstruction as a
-    // difference -- or worse, as a match. An SVS index that is quantized should answer the same
-    // way; only an unquantized one can answer truthfully.
-    //
-    // What it unblocks: the no-change-set path in RediSearch (`VectorIndex_HoldsVectors`), which
-    // is what serves JSON writes and background scans. Note that alone is not enough to make an
-    // SVS-backed vector field relabel -- `relabelVector` is also unimplemented for SVS, and both
-    // are needed.
+    // Same rule as the HNSW implementations: report nothing rather than an approximation.
+    // `storage_traits_t::is_compressed()` covers quantized (LVQ/scalar) and LeanVec-reduced
+    // storage alike -- nothing here dequantizes, so a caller comparing a new value against the
+    // stored one byte for byte would read a dequantized reconstruction as a difference, or
+    // worse, as a match. Only an uncompressed index can answer truthfully.
     void getDataByLabel(
         labelType label,
         std::vector<std::vector<svs_details::vecsim_dt<DataType>>> &vectors_output) const override {
-        this->log(VecSimCommonStrings::LOG_DEBUG_STRING,
-                  "getDataByLabel: not implemented for SVS, reporting no stored vectors for "
-                  "label %zu",
-                  static_cast<size_t>(label));
+        if constexpr (storage_traits_t::is_compressed()) {
+            return;
+        } else {
+            appendStoredDataByLabel(label, vectors_output);
+        }
     }
 };
 
