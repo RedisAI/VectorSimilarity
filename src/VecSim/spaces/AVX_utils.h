@@ -35,3 +35,14 @@ static inline float my_mm256_reduce_add_ps(__m256 x) {
     return TmpRes[0] + TmpRes[1] + TmpRes[2] + TmpRes[3] + TmpRes[4] + TmpRes[5] + TmpRes[6] +
            TmpRes[7];
 }
+
+// As my_mm256_reduce_add_ps, but folded in-register in three steps instead of spilling 8 floats
+// and summing them with 7 dependent scalar adds. That fixed cost dominates at small dimensions.
+// Reassociating changes the low bits, so this is added alongside the original rather than
+// replacing it -- the original's other callers would each need their own benchmarking.
+static inline float my_mm256_reduce_add_ps_tree(__m256 x) {
+    __m128 sum128 = _mm_add_ps(_mm256_castps256_ps128(x), _mm256_extractf128_ps(x, 1));
+    sum128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+    sum128 = _mm_add_ss(sum128, _mm_shuffle_ps(sum128, sum128, 0x1));
+    return _mm_cvtss_f32(sum128);
+}

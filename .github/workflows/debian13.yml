@@ -1,11 +1,10 @@
-name: debian bullseye flow
+name: debian trixie flow
 
 on: [workflow_dispatch, workflow_call]
 
 jobs:
-  bullseye:
+  trixie:
     uses: ./.github/workflows/task-unit-test.yml
     with:
-      container: gcc:11-bullseye
+      container: gcc:14-trixie
       pre-checkout-script: apt-get update && apt-get -y install git
-      
