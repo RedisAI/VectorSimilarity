@@ -849,6 +849,11 @@ private:
     template <typename OutputElement>
     void appendStoredDataByLabel(labelType label,
                                  std::vector<std::vector<OutputElement>> &vectors_output) const {
+        // The spans handed to `append_datum` point straight into the dataset, so `impl_` has to
+        // stay alive for the whole walk: `markIndexUpdate` takes `pimplGuard_` exclusively to
+        // reset it once the last label is gone. Test it under the lock rather than before it -- a
+        // check outside the lock can pass and then block until after the reset.
+        std::shared_lock lock(this->pimplGuard_);
         if (!impl_) {
             return;
         }
