@@ -40,6 +40,13 @@ using float16 = vecsim_types::float16;
         }                                                                                          \
     }
 
+static size_t EstimateBlockSize(const SVSParams &params, size_t block_size, size_t num_elements) {
+    const size_t reverse_edges_per_slot = SVSGraphBuilder<uint32_t>::reverse_edges_element_size();
+    const size_t reverse_edges_slots = svs::lib::SegmentedVector<uint8_t>(num_elements).capacity();
+    return (EstimateElementSize(params) - reverse_edges_per_slot) * block_size +
+           reverse_edges_per_slot * reverse_edges_slots;
+}
+
 // Log callback function to print non-debug log messages
 static void svsTestLogCallBackNoDebug(void *ctx, const char *level, const char *message) {
     if (level == nullptr || message == nullptr) {
@@ -1388,7 +1395,7 @@ TYPED_TEST(FP16SVSTest, testSizeEstimation) {
     size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
-    estimation = EstimateElementSize(params) * bs;
+    estimation = EstimateBlockSize(params, bs, 1);
 
     this->GenerateAndAddVector(index, dim, 0);
     actual = index->getAllocationSize() - actual; // get the delta
@@ -1589,7 +1596,7 @@ TYPED_TEST(FP16SVSTest, quant_modes) {
 
         ASSERT_EQ(VecSimIndex_IndexSize(index), n);
 
-        estimation = EstimateElementSize(params) * DEFAULT_BLOCK_SIZE;
+        estimation = EstimateBlockSize(params, DEFAULT_BLOCK_SIZE, n);
         actual = index->getAllocationSize() - actual; // get the delta
         ASSERT_GT(actual, 0);
         // LVQ element size estimation accuracy is low
@@ -1666,15 +1673,19 @@ TYPED_TEST(FP16SVSTest, scalar_quantization_query) {
     const size_t k = 10;
     const double quant_precision = 1.0 / (1 << 7); // int8 quantization precision
 
+    std::default_random_engine gen;
+    std::uniform_real_distribution<float> dist(-1.0, 1.0);
     std::vector<std::array<float16, dim>> dataset(n);
     for (size_t i = 0; i < n; i++) {
-        test_utils::populate_float16_vec(dataset[i].data(), dim, i, -1.0, 1.0);
+        for (size_t j = 0; j < dim; j++) {
+            dataset[i][j] = vecsim_types::FP32_to_FP16(dist(gen));
+        }
     }
     std::vector<size_t> ids(n);
     std::iota(ids.begin(), ids.end(), 0);
 
     float16 query[dim];
-    test_utils::populate_float16_vec(query, dim, n, -1.0, 1.0);
+    this->GenerateVector(query, dim, 0.1f);
 
     VecSimQueryReply *fp_results = nullptr;
     auto verify_res = [&](size_t id, double score, size_t result_rank) {
@@ -1724,7 +1735,7 @@ TYPED_TEST(FP16SVSTest, scalar_quantization_query) {
         ASSERT_EQ(VecSimIndex_IndexSize(index_sq), n);
         ASSERT_EQ(index_sq->indexCapacity(), n);
 
-        estimation = EstimateElementSize(params) * params.blockSize;
+        estimation = EstimateBlockSize(params, params.blockSize, n);
         actual = index_sq->getAllocationSize() - actual; // get the delta
         ASSERT_GT(actual, 0);
         ASSERT_GE(estimation * 1.01, actual);
@@ -2328,7 +2339,7 @@ protected:
             }
         }
         // Submit the index update job.
-        tiered_index->scheduleSVSIndexUpdate();
+        tiered_index->scheduleSVSIndexInit();
         ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
         // Execute the job from the queue and validate that the index was updated properly.
@@ -2848,8 +2859,9 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
-    // Move the vector to SVS by executing the insert job.
-    mock_thread_pool.thread_iteration();
+    // Move the vector to SVS by executing the pending jobs.
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // Scalar quantization accuracy is insufficient for this check.
@@ -2896,7 +2908,9 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-    mock_thread_pool.thread_iteration();
+
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in the flat index.
@@ -2910,13 +2924,21 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVectorMulti) {
 
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in SVS index.
     this->GenerateAndAddVector(tiered_index, dim, vec_label, vec_label);
     this->GenerateAndAddVector(tiered_index, dim, vec_label, other_vec_val);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
     mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
