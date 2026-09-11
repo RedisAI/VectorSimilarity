@@ -269,6 +269,33 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     mock_thread_pool.thread_pool_join();
 }
 
+// `SVSIndex::relabelVector` moves a label on a plain SVS index, but wrapping that index in a
+// tier does not inherit the ability: neither `TieredSVSIndex` nor `VecSimTieredIndex` overrides
+// `relabelVector`, so the call resolves to the interface default. Only `TieredHNSWIndex`
+// overrides it.
+//
+// The code is correct for a caller that honours it -- `Unsupported` means "fall back to delete
+// and re-add", not "nothing happened" -- but it does mean a tiered SVS index never takes the
+// relabel path, however capable its backend is. Asserted here so that stays a known gap rather
+// than being mistaken for working, and so implementing it has a test to flip.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorIsUnsupportedOnATier) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7);
+
+    // Reported even though the label is present and the target is free, which is what separates
+    // this from the other rejection codes: it is about the index kind, not the arguments.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_Unsupported);
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(7))
+        << "an unsupported relabel must leave the index alone";
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(70));
+}
+
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs
     const auto num_threads = std::min(4U, getAvailableCPUs());
