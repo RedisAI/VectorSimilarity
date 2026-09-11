@@ -369,6 +369,52 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorRejectsOnATier) {
 // the case `updateJobMutex` is held for -- an update job snapshots the buffer's labels by value
 // and afterwards reconciles only id swaps and deletions, so a rename that landed inside its
 // window would be invisible to it and the vector would reach the backend under the old label.
+// The tier's version of the deleted-label contract, which has an extra dimension the plain index
+// does not: the delete can land while the vector is still buffered or after it reached the
+// backend, and a move must report the label absent either way rather than resurrecting it in the
+// tier the delete missed.
+//
+// Unlike a plain SVS index, no tombstone is observable here -- `getNumMarkedDeleted()` reads 0
+// after the delete -- so this asserts the refusal and the absence rather than the marking. The
+// plain index covers the soft-delete state itself.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorAfterDeleteOnATier) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1 so a single vector reaches the backend, as `insertJob` does.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    // Buffered: deleted before any job ran, so the flat buffer is the tier that held it.
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    VecSimIndex_AddVector(tiered_index, vector, 7);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 7), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OldLabelMissing);
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
+
+    // Ingested, then deleted: now the backend is the tier that held it, and its delete is soft.
+    GenerateVector<TEST_DATA_T>(vector, dim, 8);
+    VecSimIndex_AddVector(tiered_index, vector, 8);
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(8));
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 8), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(8));
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 8, 80), VecSimRelabel_OldLabelMissing);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(80)) << "a tombstone was renamed";
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(80));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+}
+
 TYPED_TEST(SVSTieredIndexTest, relabelVectorDuringUpdateJob) {
     size_t dim = 4;
     size_t n = 200;

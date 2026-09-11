@@ -3576,6 +3576,43 @@ TYPED_TEST(SVSTest, relabelVector) {
     VecSimIndex_Free(index);
 }
 
+// SVS deletes softly -- the entry is marked and only dropped by a later consolidation, so it is
+// still occupying an id when this runs. `has_id` excludes it, which is what makes the move report
+// the label absent rather than renaming a tombstone: the same contract HNSW states for its own
+// marked-deleted elements, and worth pinning here because the two arrive at it by different
+// means.
+TYPED_TEST(SVSTest, relabelVectorMarkedDeleted) {
+    size_t dim = 4;
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
+    ASSERT_EQ(VecSimIndex_DeleteVector(index, 0), 1);
+
+    auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
+    ASSERT_NE(svs_index, nullptr);
+    // Soft, not gone: the assertions below are about a marked entry, not an absent one.
+    ASSERT_GT(svs_index->getNumMarkedDeleted(), 0);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 0, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_FALSE(svs_index->isLabelExists(100)) << "a tombstone was renamed";
+    ASSERT_EQ(index->indexLabelCount(), 1);
+
+    // A live label in the same index still relabels fine.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 101), VecSimRelabel_OK);
+    ASSERT_TRUE(svs_index->isLabelExists(101));
+    ASSERT_EQ(index->indexLabelCount(), 1);
+
+    // And the deleted label stays free for reuse rather than being half-claimed by the refusal.
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 7);
+    ASSERT_TRUE(svs_index->isLabelExists(0));
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(SVSTest, relabelVectorRejects) {
     size_t dim = 4;
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
