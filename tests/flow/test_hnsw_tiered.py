@@ -5,6 +5,7 @@
 # (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
 # GNU Affero General Public License v3 (AGPLv3).
 import time
+import pytest
 from common import *
 
 
@@ -665,6 +666,80 @@ def test_relabel_vector(test_logger):
     assert index.relabel_vector(0, 0) == VecSimRelabel_SameLabel
     assert index.index_size() == num_elements
     test_logger.info("tiered relabel_vector moved the label across both tiers")
+
+
+# The relabel counterpart to `test_parallel_insert_search`: the operation running on one thread
+# while queries run on another, with the relabels aimed at labels that are still being ingested so
+# a label is briefly held by both tiers.
+#
+# Unlike the insert test there is no approximate assertion to fall back on. Inserting concurrently
+# makes a query legitimately miss vectors, so that test can only check recall did not regress; a
+# relabel adds and removes nothing, so the invariant here is exact: a reply must never list one
+# label twice. `merge_result_lists` collapses a vector both tiers report by matching labels, and a
+# relabel inside a query's window moves that key, so the two copies survive the merge as one
+# vector under two labels.
+#
+# Skipped on this branch, not because the assertion is unsound -- a duplicate label in a reply is
+# always wrong -- but because the fix is on another branch (VecSim #1047, MOD-18494) and the
+# failure is intermittent, so leaving it live would redden this PR's CI for a defect it did not
+# introduce. Remove the marker once that lands.
+@pytest.mark.skip(reason="needs the cross-tier relabel fix from #1047 / MOD-18494")
+def test_relabel_vector_during_query(test_logger):
+    import threading
+
+    dim = 16
+    num_elements = 20000
+    k = 10
+    hnsw_params = create_hnsw_params(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32)
+    # A flat buffer big enough to hold everything, so ingestion is still draining while the two
+    # threads run and the relabelled labels really are in both tiers for a while.
+    index = Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), num_elements)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    offset = num_elements + 1000
+    query_data = np.float32(np.random.random((200, dim)))
+    duplicates = []
+    relabel_failures = []
+
+    def relabel_labels():
+        for label in range(num_elements):
+            code = index.relabel_vector(label, label + offset)
+            if code != VecSimRelabel_OK:
+                relabel_failures.append((label, code))
+                break
+
+    def run_queries():
+        # Keep querying for as long as the relabel thread is working, so the windows overlap
+        # many times rather than once.
+        while relabel_thread.is_alive():
+            labels, _ = index.knn_query(query_data, k)
+            for row in labels:
+                if len(set(row)) != len(row):
+                    duplicates.append(row.tolist())
+
+    relabel_thread = threading.Thread(target=relabel_labels)
+    query_thread = threading.Thread(target=run_queries)
+    relabel_thread.start()
+    query_thread.start()
+    for t in (relabel_thread, query_thread):
+        t.join()
+
+    assert not relabel_failures, f"relabel refused a live label: {relabel_failures[:3]}"
+    assert not duplicates, f"one vector reported under two labels: {duplicates[:3]}"
+
+    # The settled state, which holds whatever the interleaving was: every label moved, nothing
+    # gained or lost.
+    index.wait_for_index()
+    assert index.index_size() == num_elements
+    assert index.hnsw_label_count() == num_elements
+    for label in (0, num_elements // 2, num_elements - 1):
+        assert index.get_vector(label).shape == (0, dim)
+        assert_allclose(index.get_vector(label + offset)[0], data[label], rtol=1e-6)
+
+    test_logger.info("tiered relabel_vector kept queries duplicate-free")
 
 
 def test_relabel_vector_multi(test_logger):
