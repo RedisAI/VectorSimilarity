@@ -278,6 +278,71 @@ def test_create_fp16(test_logger):
     test_logger.info("Test create FLOAT16 tiered svs index")
     create_tiered_index(test_logger, is_multi=False, data_type=VecSimType_FLOAT16)
 
+def relabel_vector(test_logger, is_multi: bool, num_per_label=1, data_type=VecSimType_FLOAT32,
+                   quantBits=VecSimSvsQuant_NONE):
+    data_size = 2000
+    # Small thresholds so ingestion is under way by the time the relabels run, leaving some labels
+    # in the backend and some still buffered. The tier has to move the label in either state.
+    indices_ctx = IndexCtx(dim=32, data_size=data_size, is_multi=is_multi, num_per_label=num_per_label,
+                           flat_buffer_size=data_size, graph_degree=32, data_type=data_type,
+                           quantBits=quantBits, trainingThreshold=1024, updateThreshold=128)
+    index = indices_ctx.tiered_index
+    num_labels = indices_ctx.num_labels
+
+    indices_ctx.populate_index(index)
+
+    # Moved into a range past the populated one, so a move can never land on a label that is
+    # still waiting to be ingested.
+    offset = num_labels + 500
+    moved = {7: 7 + offset, num_labels - 1: num_labels - 1 + offset}
+    buffered = index.get_curr_bf_size()
+    test_logger.info(f"relabeling with {buffered} of {num_labels} labels still buffered")
+    for old_label, new_label in moved.items():
+        assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # Rejections, from a tier: the target has to be free in both of them.
+    assert index.relabel_vector(7, 7) == VecSimRelabel_SameLabel
+    assert index.relabel_vector(num_labels + 10000, offset) == VecSimRelabel_OldLabelMissing
+    assert index.relabel_vector(8, 9) == VecSimRelabel_NewLabelTaken
+
+    index.wait_for_index()
+
+    # Nothing gained or lost a label, which is what fails if an in-flight update job ingested a
+    # vector under the label it snapshotted rather than the one it now has.
+    assert index.index_size() == num_labels * num_per_label
+    assert index.svs_label_count() == num_labels
+
+    for old_label, new_label in moved.items():
+        assert index.get_vector(old_label).shape == (0, indices_ctx.dim)
+        if quantBits == VecSimSvsQuant_NONE:
+            # A compressed backend reports no stored values, so only the unquantized
+            # configurations can be checked by reading the vector back.
+            assert index.get_vector(new_label).shape == (num_per_label, indices_ctx.dim)
+
+        # Searchable under the new label either way.
+        labels, _ = index.knn_query(np.array([indices_ctx.data[old_label]]), 1)
+        assert labels[0][0] == new_label
+
+    test_logger.info("tiered svs relabel_vector moved the label in both tiers")
+
+
+def test_relabel_vector(test_logger):
+    test_logger.info("Start tiered svs relabel test")
+    relabel_vector(test_logger, is_multi=False)
+
+def test_relabel_vector_q8(test_logger):
+    test_logger.info("Start tiered svs relabel test, 8-bit quantized")
+    relabel_vector(test_logger, is_multi=False, quantBits=VecSimSvsQuant_8)
+
+def test_relabel_vector_leanvec_8x8(test_logger):
+    test_logger.info("Start tiered svs relabel test, LeanVec 8x8")
+    relabel_vector(test_logger, is_multi=False, quantBits=VecSimSvsQuant_8x8_LeanVec)
+
+def test_relabel_vector_fp16(test_logger):
+    test_logger.info("Start tiered svs relabel test, FLOAT16")
+    relabel_vector(test_logger, is_multi=False, data_type=VecSimType_FLOAT16)
+
+
 def test_search_insert(test_logger):
     test_logger.info("Start insert & search test")
     search_insert(test_logger, is_multi=False)
