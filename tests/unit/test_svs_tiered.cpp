@@ -3303,7 +3303,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     auto jobs_before_gc = mock_thread_pool.jobQ.size();
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
-    // Expected that a single GC job was added to the queue.
+    // Expected that a multi-thread GC job was added to the queue.
     ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
     // Run GC twice.
     VecSimTieredIndex_GC(tiered_index);

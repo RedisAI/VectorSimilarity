@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <tuple>
 
 /**
@@ -19,6 +20,7 @@
 struct SVSInsertJob : public AsyncJob {
     labelType label;
     idType id;
+    std::atomic<bool> executing{false};
 
     SVSInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
                  JobCallback insertCb, VecSimIndex *index_)
@@ -35,14 +37,6 @@ struct SVSConsolidateJob : public AsyncJob {
                       const std::vector<labelType> &labels_, JobCallback insertCb,
                       VecSimIndex *index_)
         : AsyncJob(allocator, SVS_CONSOLIDATE_JOB, insertCb, index_), labels(labels_) {}
-};
-
-/**
- * Definition of a job that launches GC on SVS Index.
- */
-struct SVSGCJob : public AsyncJob {
-    SVSGCJob(std::shared_ptr<VecSimAllocator> allocator, JobCallback insertCb, VecSimIndex *index_)
-        : AsyncJob(allocator, SVS_GC_JOB, insertCb, index_) {}
 };
 
 /**
@@ -257,23 +251,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     using flat_index_t = BruteForceIndex<DataType, DistType>;
     using backend_index_t = VecSimIndexAbstract<DataType, DistType>;
     using svs_index_t = SVSIndexBase;
-
-    // swaps_journal is used by updateSVSIndex() to track vectors swap operations that were done in
-    // the Flat index during SVS index updating.
-    // The journal contains tuples of (label, oldId, newId).
-    // oldId is the index of the label in flat index before the swap.
-    // newId is the index of the label in flat index after the swap.
-    // if oldId == newId, it means that the vector was not moved in the Flat index, but was removed
-    // from the end of the Flat index (no id swaps occurred internally).
-    // if label == SKIP_LABEL, it means that the vector was not moved in the Flat index, but
-    // updated in-place (hence was already removed  and no need to remove it again)
-    using swap_record = std::tuple<labelType, idType, idType>;
-    constexpr static size_t SKIP_LABEL = std::numeric_limits<labelType>::max();
-    std::vector<swap_record> swaps_journal;
-    // deleted_labels_journal is used by initSVSIndex() to track vectors that were deleted from
-    // Flat index during SVS index updating. The journal contains the deleted labels. These labels
-    // are used to delete the same vectors from the SVS index at the end of the update.
-    std::vector<labelType> deleted_labels_journal;
 
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
@@ -726,37 +703,9 @@ public:
     }
 
 private:
-    static void applySwapsToLabelsArray(std::vector<size_t> &labels,
-                                        const std::vector<swap_record> &swaps) {
-        // Enumerate journal and reflect swaps in the labels.
-        // The journal contains tuples of (label, oldId, newId).
-        // oldId is the index of the label in flat index before the swap.
-        // newId is the index of the label in flat index after the swap.
-        for (const auto &p : swaps) {
-            auto oldId = std::get<1>(p);
-            auto newId = std::get<2>(p);
-
-            if (oldId == newId || oldId >= labels.size()) {
-                // If oldId == newId, it means that the vector was not moved in the Flat index,
-                // but was removed or updated in-place.
-                // If oldId is out of bounds - new vector was added and swapped meanwhile.
-                // In both cases, we should not touch flat index at the new position.
-                if (newId < labels.size()) {
-                    labels[newId] = SKIP_LABEL;
-                }
-                continue; // Next swap record.
-            }
-
-            // Real swap case.
-            // If oldId != newId and oldId is in bounds, it means that the tracked vector was moved
-            // So, move the label to new position and skip the old position from deletions.
-            // NOTE: labels[oldId] can be SKIP_LABEL, but we still need to move it to newId.
-            labels[newId] = labels[oldId];
-            labels[oldId] = SKIP_LABEL;
-        }
-    }
-
-    idType setAndSaveInvalidJob(AsyncJob *job) {
+    idType setAndSaveInvalidJob(SVSInsertJob *job) {
+        // wait until insertion finishes
+        while (job->executing.load(std::memory_order_acquire)) {std::this_thread::yield();}
         this->invalidJobsLookupGuard.lock();
         job->isValid = false;
         idType curInvalidId = currInvalidJobId++;
@@ -787,10 +736,13 @@ private:
         size_t data_size = this->frontendIndex->getStoredDataSize();
         auto blob_copy = this->getAllocator()->allocate_unique(data_size);
         memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
+
+        job->executing.store(true, std::memory_order_release);
         this->flatIndexGuard.unlock_shared();
 
         svs_index->addVector(blob_copy.get(), job->label);
 
+        job->executing.store(false, std::memory_order_release);
         // Remove the vector and the insert job from the flat buffer.
         this->flatIndexGuard.lock();
         // The job might have been invalidated due to overwrite in the meantime. In this case,
@@ -882,23 +834,19 @@ private:
                 idType id = *it;
                 auto label = this->frontendIndex->getVectorLabel(id);
                 // Delete the vector from the frontend index if not in-place updated.
-                if (label != SKIP_LABEL) {
-                    labelType last_vec_label =
-                        this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
-                    int deleted = this->frontendIndex->deleteVectorById(label, id);
-                    if (deleted && id != this->frontendIndex->indexSize()) {
-                        // If the vector removal caused a swap with the last id, update the relevant
-                        // insert job.
-                        this->updateInsertJobInternalId(this->frontendIndex->indexSize(), id,
-                                                        last_vec_label);
-                    }
-                    total_deleted += deleted;
+                labelType last_vec_label =
+                    this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
+                int deleted = this->frontendIndex->deleteVectorById(label, id);
+                if (deleted && id != this->frontendIndex->indexSize()) {
+                    // If the vector removal caused a swap with the last id, update the relevant
+                    // insert job.
+                    this->updateInsertJobInternalId(this->frontendIndex->indexSize(), id,
+                                                    last_vec_label);
                 }
+                total_deleted += deleted;
             }
 
-            assert(total_deleted ==
-                       std::count_if(labels_to_move.begin(), labels_to_move.end(),
-                                     [](labelType label) { return label != SKIP_LABEL; }) &&
+            assert(total_deleted == labels_to_move.size() &&
                    "Deleted vectors count does not match the number of labels to delete");
         } // release frontend index
         executeTracingCallback("UpdateJob::after_add_to_svs");
@@ -936,9 +884,20 @@ public:
         this->updateJobWaitTime = tiered_svs_params.updateJobWaitTime == 0
                                       ? SVS_DEFAULT_UPDATE_JOB_WAIT_TIME
                                       : tiered_svs_params.updateJobWaitTime;
+    }
 
-        // Reserve space for the journal to avoid reallocation.
-        this->swaps_journal.reserve(this->trainingTriggerThreshold);
+    ~TieredSVSIndex() {
+        // Delete all the pending insert jobs.
+        for (auto &jobs : this->labelToInsertJobs) {
+            for (auto *job : jobs.second) {
+                delete job;
+            }
+        }
+
+        // Delete all the pending invalid jobs.
+        for (auto &it : this->invalidJobs) {
+            delete it.second;
+        }
     }
 
     int addVector(const void *blob, labelType label) override {
@@ -948,14 +907,11 @@ public:
 
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
-            // It is ok to lock everything at once for in-place mode,
-            // but we will have to unlock averything before calling initSVSIndexWrapper()
-            // so make the minimal needed lock here.
             // Backend index initialization data have to be buffered for proper
             // compression/training.
             if ((!svs_index->ready()) &&
                 (!this->backendInitSubmited.load(std::memory_order_acquire))) {
-                // If backend index size is 0, first collect vectors in frontend index
+                // First collect vectors in frontend index
                 // lock in scope to ensure that these will be released before
                 // initSVSIndexWrapper() is called.
                 {
@@ -1106,17 +1062,15 @@ public:
     void deleteAndUpdateInitIds(labelType label) {
         auto deleting_ids = this->frontendIndex->getElementIds(label);
 
-        // Sort deleting_ids by id descending order
-        std::sort(deleting_ids.begin(), deleting_ids.end(),
-                  [](const auto &a, const auto &b) { return a > b; });
+        std::sort(deleting_ids.begin(), deleting_ids.end());
 
         // Delete vector from the frontend index.
         auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
 
         assert(std::all_of(updated_ids.begin(), updated_ids.end(),
                            [&deleting_ids](const auto &pair) {
-                               return std::find(deleting_ids.begin(), deleting_ids.end(),
-                                                pair.first) != deleting_ids.end();
+                               return std::binary_search(deleting_ids.begin(), deleting_ids.end(),
+                                                         pair.first);
                            }) &&
                "updated_ids should be a subset of deleting_ids");
 
@@ -1233,24 +1187,13 @@ public:
             .updateTriggerThreshold = this->updateTriggerThreshold,
             .updateJobWaitTime = this->updateJobWaitTime,
         };
-        {
-            // Use try_lock to avoid blocking the main thread during long-running
-            // training operations. initSVSIndexWrapper holds updateJobMutex for
-            // the entire training duration (which can take 40-85s on slow machines).
-            // If the mutex is held, training is actively running, so we report
-            // indexUpdateScheduled = true (BACKGROUND_INDEXING = 1).
-            std::unique_lock<std::shared_mutex> lock(this->updateJobMutex, std::try_to_lock);
-            if (lock.owns_lock()) {
-                svsTieredInfo.indexUpdateScheduled = this->indexUpdateScheduled.test();
-            } else {
-                // Mutex is held by initSVSIndexWrapper — training is in progress.
-                svsTieredInfo.indexUpdateScheduled = true;
-            }
-        }
+
+        svsTieredInfo.indexUpdateScheduled =
+            (info.tieredInfo.frontendCommonInfo.indexSize > 0) &&
+            this->backendInitSubmited.load(std::memory_order_acquire);
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
-        // Background indexing is in progress whenever the flat buffer is non-empty: every vector
-        // buffered there has either a pending per-vector insert job or a batch-init job that will
-        // drain it into the backend.
+
+        // Background indexing is in progress whenever the flat buffer is non-empty
         info.tieredInfo.backgroundIndexing =
             info.tieredInfo.frontendCommonInfo.indexSize > 0 ? VecSimBool_TRUE : VecSimBool_FALSE;
         return info;
