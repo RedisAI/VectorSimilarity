@@ -407,7 +407,7 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     // Verify: numThreads (pool size) unchanged, lastReservedThreads (parallelism) reflects
-    // we only used one thread (write-in-place calls updateSVSIndexWrapper with availableThreads=1).
+    // we only used one thread (write-in-place calls initSVSIndexWrapper with availableThreads=1).
     backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
     ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
@@ -549,7 +549,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelReadsSvsBackendWhenUncompresse
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
     // Ingest it into the SVS backend.
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
