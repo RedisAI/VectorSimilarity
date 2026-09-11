@@ -1257,3 +1257,93 @@ TYPED_TEST(SVSMultiTest, rangeQuery) {
 }
 
 #endif // HAVE_SVS
+
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+
+// A multi-value label is where a move that handles only the label's first id still looks correct
+// in the single-value tests: every one of its vectors has to answer to the new label, and none to
+// the old. Runs across the type set, so it also covers moving a label whose vectors are quantized.
+TYPED_TEST(SVSMultiTest, relabelVectorMulti) {
+    const size_t dim = 4;
+    const size_t per_label = 5;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    // Label 7 gets several vectors, and label 8 is an untouched neighbour with its own, so a move
+    // that is too broad shows up as well.
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 7, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 8, i + 100);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    // Captured per vector before the move: asserting these are unchanged afterwards says every
+    // copy still holds its own data, without assuming what the distances are under quantization.
+    std::vector<double> before(per_label);
+    for (size_t i = 0; i < per_label; i++) {
+        TEST_DATA_T v[dim];
+        GenerateVector<TEST_DATA_T>(v, dim, i);
+        before[i] = VecSimIndex_GetDistanceFrom_Unsafe(index, 7, v);
+        ASSERT_FALSE(std::isnan(before[i]));
+    }
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 7, 70), VecSimRelabel_OK);
+
+    // Every copy moved, and only the label changed.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    for (size_t i = 0; i < per_label; i++) {
+        TEST_DATA_T v[dim];
+        GenerateVector<TEST_DATA_T>(v, dim, i);
+        ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 70, v), before[i])
+            << "copy " << i << " was disturbed by the move";
+    }
+    TEST_DATA_T probe[dim];
+    GenerateVector<TEST_DATA_T>(probe, dim, 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 7, probe)))
+        << "the old label still answers";
+
+    // The neighbour kept all of its own copies.
+    TEST_DATA_T neighbour[dim];
+    GenerateVector<TEST_DATA_T>(neighbour, dim, 100);
+    ASSERT_FALSE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 8, neighbour)));
+
+    // A search for one of the moved vectors reports the new label.
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+    auto verify_res = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 70); };
+    runTopKSearchTest(index, query, 1, verify_res);
+
+    VecSimIndex_Free(index);
+}
+
+// Rejections on a multi index: a target that already holds vectors of its own is taken, however
+// many copies either label has.
+TYPED_TEST(SVSMultiTest, relabelVectorMultiRejects) {
+    const size_t dim = 4;
+    const size_t per_label = 3;
+
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 2, i + 100);
+    }
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 1), VecSimRelabel_SameLabel);
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 43), VecSimRelabel_OldLabelMissing);
+
+    // A rejection leaves every copy of both labels in place.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    VecSimIndex_Free(index);
+}
+
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID

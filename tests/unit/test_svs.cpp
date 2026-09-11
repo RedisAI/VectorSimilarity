@@ -3541,51 +3541,52 @@ TEST(SVSTest, ThreadPoolLazyInit) {
 
 #if HAVE_SVS_REPLACE_EXTERNAL_ID
 
-TEST(SVSTest, relabelVector) {
+TYPED_TEST(SVSTest, relabelVector) {
     size_t dim = 4;
-    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams index_params = CreateParams(params);
-    VecSimIndex *index = VecSimIndex_New(&index_params);
-    ASSERT_NE(index, nullptr);
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
-    GenerateAndAddVector<float>(index, dim, 1, 1);
-    GenerateAndAddVector<float>(index, dim, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 2, 2);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
 
-    float query[dim];
-    GenerateVector<float>(query, dim, 1);
-    // Distance from the label's own vector, to prove below that the data did not move.
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query), 0);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 1);
+    // The distance to the label's own vector, captured before the move. Asserting it is unchanged
+    // afterwards says the move did not disturb the stored vector without assuming what that
+    // distance is -- a quantized index does not answer 0 for a vector's own query.
+    const double before = VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query);
+    ASSERT_FALSE(std::isnan(before));
 
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 100), VecSimRelabel_OK);
 
     // Nothing was added or removed, and the vector answers to the new label only.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
     ASSERT_EQ(index->indexLabelCount(), 2);
-    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 100, query), 0);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 100, query), before);
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query)));
 
     auto verify_res = [&](size_t id, double score, size_t rank) {
         ASSERT_EQ(id, 100);
-        ASSERT_EQ(score, 0);
+        ASSERT_EQ(score, before);
     };
     runTopKSearchTest(index, query, 1, verify_res);
 
     VecSimIndex_Free(index);
 }
 
-TEST(SVSTest, relabelVectorRejects) {
+TYPED_TEST(SVSTest, relabelVectorRejects) {
     size_t dim = 4;
-    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams index_params = CreateParams(params);
-    VecSimIndex *index = VecSimIndex_New(&index_params);
-    ASSERT_NE(index, nullptr);
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
 
     // An index that never held a vector has no SVS impl yet - still a clean rejection, not a crash.
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_OldLabelMissing);
 
-    GenerateAndAddVector<float>(index, dim, 1, 1);
-    GenerateAndAddVector<float>(index, dim, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 2, 2);
 
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 42, 100), VecSimRelabel_OldLabelMissing);
     ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_NewLabelTaken);
@@ -3594,9 +3595,10 @@ TEST(SVSTest, relabelVectorRejects) {
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
     ASSERT_EQ(index->indexLabelCount(), 2);
     for (labelType label : {1, 2}) {
-        float v[dim];
-        GenerateVector<float>(v, dim, label);
-        ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, label, v), 0)
+        TEST_DATA_T v[dim];
+        GenerateVector<TEST_DATA_T>(v, dim, label);
+        // Present and answering for its own vector; the value itself depends on the encoding.
+        ASSERT_FALSE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, label, v)))
             << "label " << label << " was modified";
     }
 
