@@ -93,8 +93,6 @@ protected:
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
     using graph_type = typename graph_builder_t::graph_type;
 
-    // The concurrent index mirrors the upstream template signature and member surface, so
-    // the only change needed here is the namespace.
     using impl_type = std::conditional_t<
         isMulti,
         svs::concurrent::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
@@ -321,6 +319,8 @@ protected:
     }
 
     void consolidate(const std::vector<labelType> &labels) override {
+        // There is documentation for consolidate():
+        // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
         std::shared_lock lock(this->pimplGuard_);
         if (!ready())
             return;
@@ -369,10 +369,9 @@ protected:
         if (indexLabelCount() == 0) {
             std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
             if (indexLabelCountUnsafe() == 0) {
-                {
-                    setUnready();
-                    this->impl_.reset();
-                }
+                setUnready();
+                this->impl_.reset();
+
                 num_marked_deleted.store(0, std::memory_order_relaxed);
                 return;
             }
@@ -657,19 +656,14 @@ public:
         if (!ready()) {
             return std::numeric_limits<double>::quiet_NaN();
         }
-        {
-            std::shared_lock lock(this->pimplGuard_);
-            if (!impl_->has_id(label)) {
-                return std::numeric_limits<double>::quiet_NaN();
-            }
+        std::shared_lock lock(this->pimplGuard_);
+        if (!impl_->has_id(label)) {
+            return std::numeric_limits<double>::quiet_NaN();
         }
 
         auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
-        {
-            std::shared_lock lock(this->pimplGuard_);
-            auto dist = impl_->get_distance(label, query_datum);
-            return toVecSimDistance(dist);
-        }
+        auto dist = impl_->get_distance(label, query_datum);
+        return toVecSimDistance(dist);
     }
 
     VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
@@ -840,9 +834,6 @@ public:
     void runGC() override {
         if (ready()) {
             std::shared_lock lock(this->pimplGuard_);
-            // There is documentation for consolidate():
-            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
-            // impl_->consolidate();
             // There is documentation for compact():
             // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
             impl_->compact();

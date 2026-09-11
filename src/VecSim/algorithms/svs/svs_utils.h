@@ -375,7 +375,6 @@ struct SVSGraphBuilder {
     }
 
     // Per-node size of the concurrent graph's reverse-edge index.
-    //
     static constexpr size_t reverse_edges_element_size() {
         using reverse_edges_type = typename graph_type::reverse_edges_type;
         return sizeof(typename reverse_edges_type::list_type) + sizeof(svs::concurrent::SpinLock);
