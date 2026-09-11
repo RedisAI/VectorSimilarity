@@ -964,6 +964,61 @@ public:
         }
         return ret;
     }
+    /**
+     * Move `old_label` onto `new_label`, leaving the vector where it is in whichever tier holds
+     * it. `new_label` must be unused in both tiers, not just the one holding `old_label`: a
+     * multi-value label routinely has copies in each, and a target taken in either would collide
+     * once the buffer drains.
+     *
+     * Reports `Unsupported` when the backend holds the label and cannot move it, which is the
+     * case when built against an SVS without `replace_external_id`. All-or-nothing: on any code
+     * other than `VecSimRelabel_OK` both tiers are untouched.
+     *
+     * `updateJobMutex` is taken first, in the order `updateSVSIndex` takes its own locks. Holding
+     * it is what makes this correct rather than merely serialised: an update job snapshots the
+     * buffer's labels *by value* and afterwards reconciles only id swaps and deletions, so a
+     * rename landing inside its window would be invisible to it and the vector would reach the
+     * backend under the old label.
+     */
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override {
+        if (old_label == new_label) {
+            return VecSimRelabel_SameLabel;
+        }
+        auto *svs_index = GetSVSIndex();
+
+        std::lock_guard<std::mutex> update_lock(this->updateJobMutex);
+        std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        std::unique_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+
+        const bool in_flat = this->frontendIndex->isLabelExists(old_label);
+        const bool in_backend = svs_index->isLabelExists(old_label);
+        if (!in_flat && !in_backend) {
+            return VecSimRelabel_OldLabelMissing;
+        }
+        if (this->frontendIndex->isLabelExists(new_label) || svs_index->isLabelExists(new_label)) {
+            return VecSimRelabel_NewLabelTaken;
+        }
+
+        // The backend goes first because it is the tier that can refuse; refusing after the
+        // buffer had already moved would leave the label half applied.
+        if (in_backend) {
+            const VecSimRelabelCode backend_ret =
+                this->backendIndex->relabelVector(old_label, new_label);
+            if (backend_ret != VecSimRelabel_OK) {
+                return backend_ret;
+            }
+        }
+        if (in_flat) {
+            const VecSimRelabelCode flat_ret =
+                this->frontendIndex->relabelVector(old_label, new_label);
+#ifdef BUILD_TESTS
+            assert(flat_ret == VecSimRelabel_OK && "the buffer just reported holding this label");
+#endif
+            UNUSED(flat_ret);
+        }
+        return VecSimRelabel_OK;
+    }
+
     size_t getNumMarkedDeleted() const override {
         return this->GetSVSIndex()->getNumMarkedDeleted();
     }
