@@ -289,6 +289,11 @@ def relabel_vector(test_logger, is_multi: bool, num_per_label=1, data_type=VecSi
     index = indices_ctx.tiered_index
     num_labels = indices_ctx.num_labels
 
+    # A build that picked up a pre-built SVS has no `replace_external_id`, and the tier reports
+    # the whole capability as unsupported rather than moving only buffered labels.
+    if not svs_relabel_supported(index, 0):
+        pytest.skip("this SVS build has no replace_external_id")
+
     indices_ctx.populate_index(index)
 
     # Moved into a range past the populated one, so a move can never land on a label that is

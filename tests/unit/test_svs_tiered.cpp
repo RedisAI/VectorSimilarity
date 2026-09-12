@@ -270,6 +270,8 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     mock_thread_pool.thread_pool_join();
 }
 
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+
 // Relabel on a tier, in the two write states a vector can be in: buffered with its update job
 // still pending, and moved to the backend. These are the states `addVector` and `insertJob` cover
 // for insertion, and the tier has to move the label in whichever one holds it.
@@ -510,6 +512,8 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorCannotLandInsideAnUpdateJobsWindow) 
     ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70) ||
                 tiered_index->GetFlatIndex()->isLabelExists(70));
 }
+
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs

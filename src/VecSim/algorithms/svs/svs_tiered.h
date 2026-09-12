@@ -964,6 +964,14 @@ public:
         }
         return ret;
     }
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+    // Only declared when the SVS this was built against offers `replace_external_id`, mirroring
+    // `SVSIndex::relabelVector`. Left out otherwise, so the interface default reports
+    // `VecSimRelabel_Unsupported` for the whole tier rather than this moving a buffered label
+    // and refusing an ingested one -- a caller cannot act on a capability that depends on which
+    // tier happens to hold the label. It also keeps the runtime probe honest: an override that
+    // answered `SameLabel` before consulting the backend would look capable on a build that
+    // is not.
     /**
      * Move `old_label` onto `new_label`, leaving the vector where it is in whichever tier holds
      * it. `new_label` must be unused in both tiers, not just the one holding `old_label`: a
@@ -1018,6 +1026,8 @@ public:
         }
         return VecSimRelabel_OK;
     }
+
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
     size_t getNumMarkedDeleted() const override {
         return this->GetSVSIndex()->getNumMarkedDeleted();
