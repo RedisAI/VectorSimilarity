@@ -417,6 +417,71 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorAfterDeleteOnATier) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
 }
 
+// The lock orders in this class disagree, and relabel has to survive that. Nearly everything
+// takes the flat guard before the main one, but in-place `addVector` takes `mainIndexGuard`
+// *before* `flatIndexGuard` while the backend is still empty. Acquiring relabel's guards one
+// after another closes a cycle with that path: relabel holds flat and waits for main, the add
+// holds main and waits for flat.
+//
+// A regression shows up as the global 300s timeout rather than an assertion, since a deadlock
+// hangs. The two threads touch disjoint label ranges, so every relabel here should report OK and
+// the only thing under test is that both threads finish.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorDoesNotDeadlockAgainstInPlaceAdd) {
+    size_t dim = 4;
+    const size_t iterations = 300;
+    const labelType add_base = 10000; // disjoint from the relabelled range
+    const labelType relabel_offset = 50000;
+
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // A training threshold far above what this test inserts, so the backend stays empty and the
+    // in-place add keeps taking the main-then-flat path that inverts against relabel.
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, iterations * 10, iterations * 10);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < iterations; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0) << "the backend must stay empty";
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    std::atomic<size_t> relabels_ok{0};
+
+    std::thread adder([&]() {
+        TEST_DATA_T vector[dim];
+        for (size_t i = 0; i < iterations; i++) {
+            GenerateVector<TEST_DATA_T>(vector, dim, i);
+            VecSimIndex_AddVector(tiered_index, vector, add_base + i);
+        }
+    });
+    std::thread relabeler([&]() {
+        for (size_t i = 0; i < iterations; i++) {
+            if (VecSimIndex_RelabelVector(tiered_index, i, i + relabel_offset) ==
+                VecSimRelabel_OK) {
+                relabels_ok++;
+            }
+        }
+    });
+    adder.join();
+    relabeler.join();
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    // Reaching here at all is the result. The counts just confirm the threads did real work
+    // rather than bailing out early on some other rejection.
+    ASSERT_EQ(relabels_ok, iterations);
+    for (size_t i = 0; i < iterations; i++) {
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(i + relabel_offset))
+            << "label " << i;
+        ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(i)) << "stale label " << i;
+    }
+}
+
 TYPED_TEST(SVSTieredIndexTest, relabelVectorDuringUpdateJob) {
     size_t dim = 4;
     size_t n = 200;

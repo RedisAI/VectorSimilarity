@@ -994,9 +994,13 @@ public:
         }
         auto *svs_index = GetSVSIndex();
 
-        std::lock_guard<std::mutex> update_lock(this->updateJobMutex);
-        std::unique_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        std::unique_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+        // Taken together through `std::lock`'s back-off rather than one after another, because
+        // the orders in this class disagree: nearly everything acquires flat before main, but the
+        // in-place add path takes `mainIndexGuard` before `flatIndexGuard` while the backend is
+        // still empty. Acquiring in sequence would hold one guard while blocking on another and
+        // close a cycle with that path; acquiring them together cannot, whichever order the other
+        // side uses. Same idiom that path already uses for its own two locks.
+        std::scoped_lock lock(this->updateJobMutex, this->flatIndexGuard, this->mainIndexGuard);
 
         const bool in_flat = this->frontendIndex->isLabelExists(old_label);
         const bool in_backend = svs_index->isLabelExists(old_label);
