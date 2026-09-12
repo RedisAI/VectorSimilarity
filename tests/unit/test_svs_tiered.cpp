@@ -9,6 +9,7 @@
 
 #if HAVE_SVS
 #include <thread>
+#include <chrono>
 // For getAvailableCPUs():
 #include <sched.h>
 
@@ -268,6 +269,316 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     ASSERT_EQ(num_reserved_threads, num_threads);
     mock_thread_pool.thread_pool_join();
 }
+
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+
+// Relabel on a tier, in the two write states a vector can be in: buffered with its update job
+// still pending, and moved to the backend. These are the states `addVector` and `insertJob` cover
+// for insertion, and the tier has to move the label in whichever one holds it.
+//
+// The fixture's type set spans single-value, multi-value and Quant_8, so this also answers whether
+// a compressed backend can move a label -- `replace_external_id` renames an id and never touches
+// the stored vector, so it can, even where the backend cannot report values.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorMovesTheLabelInBothWriteStates) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1, as `insertJob` uses, so one vector is enough to trigger the update job.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    VecSimIndex_AddVector(tiered_index, vector, 7);
+
+    // Buffered: nothing has run, so the label lives only in the flat buffer.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(7));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1) << "the move must not add a label";
+
+    // Drain: the update job carries the vector to the backend, and must carry the *new* label,
+    // not the one it had when the job was queued.
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(7));
+
+    // Backend only: the same move again, now served by the backend tier.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 70, 700), VecSimRelabel_OK);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(700));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
+
+    // Still the same vector, and findable under the label it ended up with. Asserted by search
+    // rather than by reading values back, because a compressed backend reports no values.
+    auto verify = [&](size_t label, double score, size_t rank) {
+        ASSERT_EQ(label, 700);
+        ASSERT_NEAR(score, 0, 1e-4);
+    };
+    runTopKSearchTest(tiered_index, vector, 1, verify);
+}
+
+// Each rejection, asked of a tier: the target has to be free in *both* of them, so a target taken
+// in the buffer and a target taken in the backend are separate cases.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorRejectsOnATier) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1, as `insertJob` uses, so one vector is enough to trigger the update job.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 1);
+    VecSimIndex_AddVector(tiered_index, vector, 1);
+    GenerateVector<TEST_DATA_T>(vector, dim, 2);
+    VecSimIndex_AddVector(tiered_index, vector, 2);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 1), VecSimRelabel_SameLabel);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 42, 43), VecSimRelabel_OldLabelMissing);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 1, 2), VecSimRelabel_NewLabelTaken)
+        << "target held by the buffer";
+
+    // Move label 2 to the backend, so the next rejection comes from the other tier.
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(2));
+    GenerateVector<TEST_DATA_T>(vector, dim, 3);
+    VecSimIndex_AddVector(tiered_index, vector, 3);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 3, 2), VecSimRelabel_NewLabelTaken)
+        << "target held by the backend";
+
+    // A rejection leaves both tiers as they were.
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(3));
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(2));
+}
+
+// The analogue of `insertJobAsync` for relabel: workers running while the label moves. This is
+// the case `updateJobMutex` is held for -- an update job snapshots the buffer's labels by value
+// and afterwards reconciles only id swaps and deletions, so a rename that landed inside its
+// window would be invisible to it and the vector would reach the backend under the old label.
+// The tier's version of the deleted-label contract, which has an extra dimension the plain index
+// does not: the delete can land while the vector is still buffered or after it reached the
+// backend, and a move must report the label absent either way rather than resurrecting it in the
+// tier the delete missed.
+//
+// Unlike a plain SVS index, no tombstone is observable here -- `getNumMarkedDeleted()` reads 0
+// after the delete -- so this asserts the refusal and the absence rather than the marking. The
+// plain index covers the soft-delete state itself.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorAfterDeleteOnATier) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1 so a single vector reaches the backend, as `insertJob` does.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    // Buffered: deleted before any job ran, so the flat buffer is the tier that held it.
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    VecSimIndex_AddVector(tiered_index, vector, 7);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 7), 1);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OldLabelMissing);
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
+
+    // Ingested, then deleted: now the backend is the tier that held it, and its delete is soft.
+    GenerateVector<TEST_DATA_T>(vector, dim, 8);
+    VecSimIndex_AddVector(tiered_index, vector, 8);
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(8));
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 8), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(8));
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 8, 80), VecSimRelabel_OldLabelMissing);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(80)) << "a tombstone was renamed";
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(80));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+}
+
+// The lock orders in this class disagree, and relabel has to survive that. Nearly everything
+// takes the flat guard before the main one, but in-place `addVector` takes `mainIndexGuard`
+// *before* `flatIndexGuard` while the backend is still empty. Acquiring relabel's guards one
+// after another closes a cycle with that path: relabel holds flat and waits for main, the add
+// holds main and waits for flat.
+//
+// A regression shows up as the global 300s timeout rather than an assertion, since a deadlock
+// hangs. The two threads touch disjoint label ranges, so every relabel here should report OK and
+// the only thing under test is that both threads finish.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorDoesNotDeadlockAgainstInPlaceAdd) {
+    size_t dim = 4;
+    const size_t iterations = 300;
+    const labelType add_base = 10000; // disjoint from the relabelled range
+    const labelType relabel_offset = 50000;
+
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // A training threshold far above what this test inserts, so the backend stays empty and the
+    // in-place add keeps taking the main-then-flat path that inverts against relabel.
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, iterations * 10, iterations * 10);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < iterations; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0) << "the backend must stay empty";
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    std::atomic<size_t> relabels_ok{0};
+
+    std::thread adder([&]() {
+        TEST_DATA_T vector[dim];
+        for (size_t i = 0; i < iterations; i++) {
+            GenerateVector<TEST_DATA_T>(vector, dim, i);
+            VecSimIndex_AddVector(tiered_index, vector, add_base + i);
+        }
+    });
+    std::thread relabeler([&]() {
+        for (size_t i = 0; i < iterations; i++) {
+            if (VecSimIndex_RelabelVector(tiered_index, i, i + relabel_offset) ==
+                VecSimRelabel_OK) {
+                relabels_ok++;
+            }
+        }
+    });
+    adder.join();
+    relabeler.join();
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    // Reaching here at all is the result. The counts just confirm the threads did real work
+    // rather than bailing out early on some other rejection.
+    ASSERT_EQ(relabels_ok, iterations);
+    for (size_t i = 0; i < iterations; i++) {
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(i + relabel_offset))
+            << "label " << i;
+        ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(i)) << "stale label " << i;
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTest, relabelVectorDuringUpdateJob) {
+    size_t dim = 4;
+    size_t n = 200;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+
+    // Labels are moved into a range past `n`, so a move can never collide with a label that is
+    // still waiting to be ingested.
+    const labelType offset = n + 500;
+    mock_thread_pool.init_threads();
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    for (size_t i = 0; i < n; i++) {
+        // Whichever tier holds it by now, and whether or not a job is mid-flight, the move must
+        // be accepted and must be the only thing that changes.
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, i, i + offset), VecSimRelabel_OK)
+            << "label " << i;
+    }
+    mock_thread_pool.thread_pool_join();
+
+    // Every vector survived under its new label and under no other, which is what fails if a job
+    // ingested one under the label it was queued with.
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(i)) << "stale label " << i;
+        ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(i)) << "stale label " << i;
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(i + offset) ||
+                    tiered_index->GetSVSIndex()->isLabelExists(i + offset))
+            << "lost label " << i + offset;
+    }
+}
+
+// What `updateJobMutex` is actually for, pinned. An update job snapshots the buffer's labels by
+// value, then adds to the backend; the tracing hook sits between those two steps, which is the
+// only window where a rename is invisible to the job. Land one there and, unheld, the job would
+// carry the vector into the backend under the label it snapshotted -- the old one.
+//
+// The relabel has to come from another thread: the job holds `updateJobMutex` for its whole
+// duration, so relabeling from inside the hook would block on a lock this thread already holds.
+// Blocking is the expected outcome here, and is what makes the result correct.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorCannotLandInsideAnUpdateJobsWindow) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    std::thread relabel_thread;
+    std::atomic<bool> relabel_entered{false};
+    bool hooked = false;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        if (hooked) {
+            return;
+        }
+        hooked = true;
+        relabel_thread = std::thread([&]() {
+            relabel_entered = true;
+            VecSimIndex_RelabelVector(tiered_index, 7, 70);
+        });
+        while (!relabel_entered) {
+            std::this_thread::yield();
+        }
+        // Long enough that the move would have completed if it were free to.
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    });
+
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    VecSimIndex_AddVector(tiered_index, vector, 7);
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(hooked) << "the hook never ran, so the window was not exercised";
+    relabel_thread.join();
+
+    // The move happened, and it happened to the vector the job had already ingested -- so the
+    // backend holds the new label and nothing holds the old one.
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(7)) << "ingested under the stale label";
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(7));
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70) ||
+                tiered_index->GetFlatIndex()->isLabelExists(70));
+}
+
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs

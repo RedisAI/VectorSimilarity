@@ -531,6 +531,94 @@ TYPED_TEST(HNSWTieredIndexTestBasic, getDataByLabelSpansBothTiers) {
     ASSERT_TRUE(stored.empty());
 }
 
+// The buffered case is the one that regressed before: reading only the backend reports nothing
+// for a vector written recently enough to still be queued for ingestion, which is exactly when a
+// document is most likely to be written again. Determinism comes from never running the job.
+TYPED_TEST(HNSWTieredIndexTestBasic, getDataByLabelWhileStillBuffered) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 1);
+    VecSimIndex_AddVector(tiered_index, vector, 0);
+    // Nothing ingested: the vector exists only in the buffer, with its job still pending.
+    ASSERT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(this->CastToHNSW(tiered_index)->indexSize(), 0);
+
+    std::vector<std::vector<TEST_DATA_T>> stored;
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 1) << "the buffered tier was not read";
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+
+    // Draining moves it to the backend, which must report it exactly once -- not once per tier.
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(this->CastToHNSW(tiered_index)->indexSize(), 1);
+    stored.clear();
+    tiered_index->getDataByLabel(0, stored);
+    ASSERT_EQ(stored.size(), 1);
+    ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+}
+
+// An ingest job inserts into the backend before dropping the buffered copy, so a label is briefly
+// held by both tiers. What that means for `getDataByLabel` differs by index kind, and both halves
+// are asserted here because each is a deliberate consequence of one condition in the dispatch:
+// a single-value label short-circuits on the buffer hit and never reads the backend, while a
+// multi-value label always reads it and so reports the caught vector twice.
+TYPED_TEST(HNSWTieredIndexTestBasic, getDataByLabelInTheIngestWindow) {
+    size_t dim = 4;
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 1);
+
+    {
+        HNSWParams single = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = false};
+        VecSimParams hnsw_params = CreateParams(single);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        // Build the window directly rather than racing a worker into it.
+        VecSimIndex_AddVector(tiered_index, vector, 0);
+        hnsw_index->addVector(vector, 0);
+        ASSERT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 1);
+        ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+        std::vector<std::vector<TEST_DATA_T>> stored;
+        tiered_index->getDataByLabel(0, stored);
+        ASSERT_EQ(stored.size(), 1) << "a single-value label must not report its two tier copies";
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+    }
+
+    {
+        HNSWParams multi = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = true};
+        VecSimParams hnsw_params = CreateParams(multi);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        VecSimIndex_AddVector(tiered_index, vector, 0);
+        hnsw_index->addVector(vector, 0);
+
+        std::vector<std::vector<TEST_DATA_T>> stored;
+        tiered_index->getDataByLabel(0, stored);
+        // Documented on the declaration: a multi-value label always reads both tiers, so a vector
+        // caught mid-ingest is reported by each. Pinned here so the caveat cannot change unnoticed.
+        ASSERT_EQ(stored.size(), 2);
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[0].data(), vector, dim));
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(stored[1].data(), vector, dim));
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTestBasic, insertJobAsyncMulti) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;

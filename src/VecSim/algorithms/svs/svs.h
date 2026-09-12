@@ -549,6 +549,29 @@ public:
         return deleteVectorsImpl(labels, n);
     }
 
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+    // Only declared when the SVS this was built against offers `replace_external_id`. The
+    // pre-built SVS releases predate it, so where it is missing this override is left out and the
+    // interface default reports `VecSimRelabel_Unsupported` - which tells a caller to fall back to
+    // delete + insert rather than read it as a no-op.
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override {
+        if (old_label == new_label) {
+            return VecSimRelabel_SameLabel;
+        }
+        // `isLabelExists` also covers the index that never held a vector, where `impl_` has not
+        // been created yet and so trivially holds nothing.
+        if (!isLabelExists(old_label)) {
+            return VecSimRelabel_OldLabelMissing;
+        }
+        if (isLabelExists(new_label)) {
+            return VecSimRelabel_NewLabelTaken;
+        }
+
+        impl_->replace_external_id(old_label, new_label);
+        return VecSimRelabel_OK;
+    }
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
+
     bool isLabelExists(labelType label) const override {
         return impl_ ? impl_->has_id(label) : false;
     }
