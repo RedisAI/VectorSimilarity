@@ -66,11 +66,6 @@ inline double toVecSimDistance<svs::distance::DistanceIP>(float v) {
     return 1.0 - static_cast<double>(v);
 }
 
-template <>
-inline double toVecSimDistance<svs::distance::DistanceCosineSimilarity>(float v) {
-    return 1.0 - static_cast<double>(v);
-}
-
 // VecSim allocator wrapper for SVS containers
 template <typename T>
 using SVSAllocator = VecsimSTLAllocator<T>;
