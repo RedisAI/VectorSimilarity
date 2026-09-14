@@ -569,9 +569,15 @@ public:
 #endif
 
 protected:
-    std::shared_lock<std::shared_mutex> lockMainIndexForQuery() const override {
-        // returns a no-op lock because SVS does its locking internally
-        return std::shared_lock<std::shared_mutex>{};
+    ScopedLocks lockMainIndexForQuery() const override {
+        // No-op: SVS does its query locking internally.
+        return ScopedLocks();
+    }
+
+    ScopedLocks lockIndexForSize() const override { return ScopedLocks(this->flatIndexLockable); }
+
+    ScopedLocks lockIndexForCapacity() const override {
+        return ScopedLocks(this->flatIndexLockable);
     }
 
 private:
@@ -1188,16 +1194,6 @@ public:
 
     size_t getNumMarkedDeleted() const override {
         return this->GetSVSIndex()->getNumMarkedDeleted();
-    }
-
-    size_t indexSize() const override {
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        return this->frontendIndex->indexSize() + this->backendIndex->indexSize();
-    }
-
-    size_t indexCapacity() const override {
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        return this->frontendIndex->indexCapacity() + this->backendIndex->indexCapacity();
     }
 
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override {
