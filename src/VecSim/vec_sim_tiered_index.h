@@ -59,13 +59,13 @@ protected:
     SharedMutexLockable flatIndexLockable{flatIndexGuard};
     SharedMutexLockable mainIndexLockable{mainIndexGuard};
 
-    // Locking behavior for topKQuery/rangeQuery: real lock by default, overridden to a no-op
-    // by backends (e.g. SVS) that handle their own concurrency internally.
-    virtual ScopedLocks lockMainIndexForQuery() const { return ScopedLocks(mainIndexLockable); }
+    // Locking behavior for topKQuery/rangeQuery
+    virtual ScopedLocks lockMainIndexForQuery() const;
 
-    // Locking behavior for indexSize/indexCapacity, which each backend defines to match
-    // whatever it actually needs to guard those counters with -- the two differ per backend.
+    // Locking behavior for indexSize()
     virtual ScopedLocks lockIndexForSize() const = 0;
+
+    // Locking behavior for indexCapacity()
     virtual ScopedLocks lockIndexForCapacity() const = 0;
 
     void lockMainIndexGuard() const {
