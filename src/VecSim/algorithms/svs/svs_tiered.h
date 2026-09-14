@@ -276,6 +276,9 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     idType currInvalidJobId; // A unique arbitrary identifier for accessing invalid jobs
     std::mutex invalidJobsLookupGuard;
 
+    vecsim_stl::unordered_set<AsyncJob *> pendingConsolidateJobs;
+    std::mutex consolidateJobsGuard;
+
     size_t flat_buffer_bound;
 
     /// <batch_iterator>
@@ -649,6 +652,10 @@ private:
         auto svs_index = index->GetSVSIndex();
         svs_index->setParallelism(1);
         svs_index->consolidate(consolidate_job->labels);
+        {
+            std::lock_guard jobs_lock(index->consolidateJobsGuard);
+            index->pendingConsolidateJobs.erase(job);
+        }
         delete job;
     }
 
@@ -698,6 +705,10 @@ public:
         AsyncJob *new_consolidate_job = new (this->allocator)
             SVSConsolidateJob(this->allocator, {label}, SVSIndexConsolidateWrapper, this);
 
+        {
+            std::lock_guard lock(this->consolidateJobsGuard);
+            this->pendingConsolidateJobs.insert(new_consolidate_job);
+        }
         // Insert job to the queue.
         this->submitSingleJob(new_consolidate_job);
     }
@@ -860,7 +871,8 @@ public:
                    std::shared_ptr<VecSimAllocator> allocator)
         : Base(svs_index, bf_index, tiered_index_params, allocator),
           uncompletedJobs(this->allocator), labelToInsertJobs(this->allocator),
-          invalidJobs(this->allocator), currInvalidJobId(0) {
+          invalidJobs(this->allocator), currInvalidJobId(0),
+          pendingConsolidateJobs(this->allocator) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
@@ -899,6 +911,11 @@ public:
         // Delete all the pending invalid jobs.
         for (auto &it : this->invalidJobs) {
             delete it.second;
+        }
+
+        // Delete all the pending consolidate jobs
+        for (auto *job : this->pendingConsolidateJobs) {
+            delete job;
         }
     }
 
