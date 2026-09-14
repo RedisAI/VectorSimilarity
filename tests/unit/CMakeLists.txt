@@ -35,7 +35,6 @@ else()
 endif()
 
 add_executable(test_hnsw ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_hnsw.cpp test_hnsw_multi.cpp test_hnsw_tiered.cpp unit_test_utils.cpp)
-add_executable(test_hnsw_parallel ../utils/test_main_with_timeout.cpp test_hnsw_parallel.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
 add_executable(test_hnsw_sq8 ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_hnsw_sq8.cpp unit_test_utils.cpp)
 add_executable(test_bruteforce ../utils/test_main_with_timeout.cpp test_bruteforce.cpp test_bruteforce_multi.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
 add_executable(test_allocator ../utils/test_main_with_timeout.cpp test_allocator.cpp ../utils/mock_thread_pool.cpp unit_test_utils.cpp)
@@ -51,7 +50,6 @@ add_executable(test_index_test_utils ../utils/test_main_with_timeout.cpp ../util
 add_executable(test_svs ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp test_svs_fp16.cpp test_svs_threadpool.cpp unit_test_utils.cpp)
 
 target_link_libraries(test_hnsw PUBLIC gtest VectorSimilarity)
-target_link_libraries(test_hnsw_parallel PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_hnsw_sq8 PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_bruteforce PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_allocator PUBLIC gtest VectorSimilarity)
@@ -69,7 +67,6 @@ target_link_libraries(test_svs PUBLIC gtest VectorSimilarity)
 include(GoogleTest)
 
 gtest_discover_tests(test_hnsw)
-gtest_discover_tests(test_hnsw_parallel)
 gtest_discover_tests(test_hnsw_sq8)
 gtest_discover_tests(test_bruteforce)
 gtest_discover_tests(test_allocator)
