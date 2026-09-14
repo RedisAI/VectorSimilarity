@@ -46,6 +46,11 @@ struct AsyncJob : public VecsimBaseObject {
 template <typename DataType, typename DistType>
 class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
+    // RAII acquisition of mainIndexGuard to allow different locking behavior in child classes
+    virtual std::shared_lock<std::shared_mutex> lockMainIndexForQuery() const {
+        return std::shared_lock<std::shared_mutex>(mainIndexGuard);
+    }
+
     VecSimIndexAbstract<DataType, DistType> *backendIndex;
     BruteForceIndex<DataType, DistType> *frontendIndex;
 
@@ -237,9 +242,8 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         // Simply query the main index and return the results while holding the lock.
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
-        this->mainIndexGuard.lock_shared();
+        auto mainLock = lockMainIndexForQuery();
         auto res = this->backendIndex->topKQuery(processed_query, k, queryParams);
-        this->mainIndexGuard.unlock_shared();
 
         return res;
     } else {
@@ -256,10 +260,12 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
 
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
-        // Lock the main index and query it.
-        this->mainIndexGuard.lock_shared();
-        auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
-        this->mainIndexGuard.unlock_shared();
+        VecSimQueryReply *main_results;
+        {
+            // Lock the main index and query it.
+            auto mainLock = lockMainIndexForQuery();
+            main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
+        }
 
         // If the query failed (currently only on timeout), return the error code.
         if (main_results->code != VecSim_QueryReply_OK) {
@@ -302,10 +308,12 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
 
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
-        // Simply query the main index and return the results while holding the lock.
-        this->mainIndexGuard.lock_shared();
-        auto res = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
-        this->mainIndexGuard.unlock_shared();
+        VecSimQueryReply *res;
+        {
+            auto mainLock = lockMainIndexForQuery();
+            // Simply query the main index and return the results while holding the lock.
+            res = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
+        }
 
         // We could have passed the order to the main index, but we can sort them here after
         // unlocking it instead.
@@ -326,9 +334,12 @@ VecSimTieredIndex<DataType, DistType>::rangeQueryImp(const void *queryBlob, doub
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
         const void *processed_query = processed_query_ptr.get();
         // Lock the main index and query it.
-        this->mainIndexGuard.lock_shared();
-        auto main_results = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
-        this->mainIndexGuard.unlock_shared();
+
+        VecSimQueryReply *main_results;
+        {
+            auto mainLock = lockMainIndexForQuery();
+            main_results = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
+        }
 
         // Merge the results and return, avoiding duplicates.
         // At this point, the return code of the FLAT index is OK, and the return code of the MAIN
