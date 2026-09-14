@@ -15,6 +15,7 @@
 #include "VecSim/tombstone_interface.h"
 #include "VecSim/utils/query_result_utils.h"
 #include "VecSim/utils/alignment.h"
+#include "VecSim/utils/scoped_locks.h"
 
 #include <shared_mutex>
 
@@ -46,11 +47,6 @@ struct AsyncJob : public VecsimBaseObject {
 template <typename DataType, typename DistType>
 class VecSimTieredIndex : public VecSimIndexInterface {
 protected:
-    // RAII acquisition of mainIndexGuard to allow different locking behavior in child classes
-    virtual std::shared_lock<std::shared_mutex> lockMainIndexForQuery() const {
-        return std::shared_lock<std::shared_mutex>(mainIndexGuard);
-    }
-
     VecSimIndexAbstract<DataType, DistType> *backendIndex;
     BruteForceIndex<DataType, DistType> *frontendIndex;
 
@@ -60,6 +56,18 @@ protected:
 
     mutable std::shared_mutex flatIndexGuard;
     mutable std::shared_mutex mainIndexGuard;
+    SharedMutexLockable flatIndexLockable{flatIndexGuard};
+    SharedMutexLockable mainIndexLockable{mainIndexGuard};
+
+    // Locking behavior for topKQuery/rangeQuery: real lock by default, overridden to a no-op
+    // by backends (e.g. SVS) that handle their own concurrency internally.
+    virtual ScopedLocks lockMainIndexForQuery() const { return ScopedLocks(mainIndexLockable); }
+
+    // Locking behavior for indexSize/indexCapacity, which each backend defines to match
+    // whatever it actually needs to guard those counters with -- the two differ per backend.
+    virtual ScopedLocks lockIndexForSize() const = 0;
+    virtual ScopedLocks lockIndexForCapacity() const = 0;
+
     void lockMainIndexGuard() const {
         mainIndexGuard.lock();
 #ifdef BUILD_TESTS
@@ -196,6 +204,16 @@ public:
     VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
                                  VecSimQueryParams *queryParams,
                                  VecSimQueryReply_Order order) const override;
+
+    size_t indexSize() const override {
+        auto locks = lockIndexForSize();
+        return this->frontendIndex->indexSize() + this->backendIndex->indexSize();
+    }
+
+    size_t indexCapacity() const override {
+        auto locks = lockIndexForCapacity();
+        return this->frontendIndex->indexCapacity() + this->backendIndex->indexCapacity();
+    }
 
     virtual inline uint64_t getAllocationSize() const override {
         return this->allocator->getAllocationSize() + this->backendIndex->getAllocationSize() +
