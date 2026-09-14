@@ -76,7 +76,11 @@ template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits
           size_t ResidualBits, bool IsLeanVec>
 void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::impl_save(
     const std::string &location) {
-    impl_->save(location + "/config", location + "/graph", location + "/data");
+    auto impl = getImpl();
+    if (!impl) {
+        throw std::runtime_error("SVSIndex::impl_save called on an empty index");
+    }
+    impl->save(location + "/config", location + "/graph", location + "/data");
 }
 
 // This function will load the serialized svs index from the given folder path
@@ -92,6 +96,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     // Verify metadata compatibility, will throw runtime exception if not compatible
     compareMetadataFile(folder_path + "/metadata");
 
+    std::shared_ptr<impl_type> loaded_impl;
     if constexpr (isMulti) {
         auto loaded = svs::concurrent::auto_multi_dynamic_assemble(
             folder_path + "/config",
@@ -101,7 +106,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
                                             this->getAllocator())),
             distance_f(), std::move(threadpool_handle),
             svs::concurrent::MultiMutableVamanaLoad::FROM_MULTI, logger_);
-        impl_ = std::make_unique<impl_type>(std::move(loaded));
+        loaded_impl = std::make_shared<impl_type>(std::move(loaded));
     } else {
         auto loaded = svs::concurrent::auto_dynamic_assemble(
             folder_path + "/config",
@@ -110,9 +115,12 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
                                             this->getAllocator())),
             distance_f(), std::move(threadpool_handle), false, logger_);
-        impl_ = std::make_unique<impl_type>(std::move(loaded));
+        loaded_impl = std::make_shared<impl_type>(std::move(loaded));
     }
-    setReady();
+
+    std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
+    std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
+    impl_ = std::move(loaded_impl);
 }
 
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,
@@ -163,7 +171,8 @@ template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits
           size_t ResidualBits, bool IsLeanVec>
 bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>::checkIntegrity()
     const {
-    if (!impl_) {
+    auto impl = getImpl();
+    if (!impl) {
         throw std::runtime_error(
             "SVSIndex integrity check failed: index implementation (impl_) is null.");
     }
@@ -171,9 +180,9 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     try {
         // SVS internal index integrity validation
         if constexpr (isMulti) {
-            impl_->get_parent_index().debug_check_invariants(true);
+            impl->get_parent_index().debug_check_invariants(true);
         } else {
-            impl_->debug_check_invariants(true);
+            impl->debug_check_invariants(true);
         }
     }
     // debug_check_invariants throws svs::lib::ANNException : public std::runtime_error in case of
@@ -183,10 +192,10 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     }
 
     try {
-        size_t index_size = impl_->size();
-        size_t storage_size = impl_->view_data().size();
-        size_t capacity = storage_traits_t::storage_capacity(impl_->view_data());
-        size_t label_count = this->indexLabelCount();
+        size_t index_size = impl->size();
+        size_t storage_size = impl->view_data().size();
+        size_t capacity = storage_traits_t::storage_capacity(impl->view_data());
+        size_t label_count = labelCountOf(*impl);
 
         // Storage size must match index size
         if (storage_size != index_size) {
@@ -204,7 +213,7 @@ bool SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
         bool label_validation_passed = true;
 
         try {
-            impl_->on_ids([&](size_t label) { labels_counted++; });
+            impl->on_ids([&](size_t label) { labels_counted++; });
 
             // Validate label count consistency
             label_validation_passed = (labels_counted == label_count);

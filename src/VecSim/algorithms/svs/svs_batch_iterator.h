@@ -29,6 +29,9 @@ private:
 
     using dist_type = typename Index::distance_type;
     size_t dim;
+    // Declared before impl_ so that impl_, which holds a raw back-pointer into the index, is
+    // destroyed first.
+    std::shared_ptr<const Index> index_;
     impl_type impl_;
     typename impl_type::const_iterator curr_it;
     size_t batch_size;
@@ -67,14 +70,16 @@ private:
     }
 
 public:
-    SVS_BatchIterator(void *query_vector, const Index *index, const VecSimQueryParams *queryParams,
+    SVS_BatchIterator(void *query_vector, std::shared_ptr<const Index> index,
+                      const VecSimQueryParams *queryParams,
                       std::shared_ptr<VecSimAllocator> allocator, bool is_two_level_lvq)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
-          dim{index->dimensions()}, impl_{index->make_batch_iterator(std::span{
-                                        static_cast<const DataType *>(query_vector), dim})},
+          dim{index->dimensions()}, index_{std::move(index)},
+          impl_{index_->make_batch_iterator(
+              std::span{static_cast<const DataType *>(query_vector), dim})},
           curr_it{impl_.begin()} {
-        auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams,
+        auto sp = svs_details::joinSearchParams(index_->get_search_parameters(), queryParams,
                                                 is_two_level_lvq);
         batch_size = queryParams && queryParams->batchSize
                          ? queryParams->batchSize
