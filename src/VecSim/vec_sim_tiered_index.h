@@ -60,7 +60,7 @@ protected:
     SharedMutexLockable mainIndexLockable{mainIndexGuard};
 
     // Locking behavior for topKQuery/rangeQuery
-    virtual ScopedLocks lockMainIndexForQuery() const;
+    virtual ScopedLocks lockMainIndexForQuery() const = 0;
 
     // Locking behavior for indexSize()
     virtual ScopedLocks lockIndexForSize() const = 0;

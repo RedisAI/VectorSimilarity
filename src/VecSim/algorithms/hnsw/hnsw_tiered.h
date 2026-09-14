@@ -166,7 +166,9 @@ protected:
     };
     HnswDataGuardLockable hnswDataGuardLockable{this->getHNSWIndex()};
 
-    ScopedLocks lockMainIndexForQuery() { return ScopedLocks(mainIndexLockable); }
+    ScopedLocks lockMainIndexForQuery() const override {
+        return ScopedLocks(this->mainIndexLockable);
+    }
 
     ScopedLocks lockIndexForSize() const override {
         return ScopedLocks(this->flatIndexLockable, hnswDataGuardLockable);
