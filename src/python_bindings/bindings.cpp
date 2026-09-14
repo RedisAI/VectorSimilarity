@@ -214,7 +214,9 @@ public:
         return PyBatchIterator(index, py_batch_ptr);
     }
 
-    void runGC() { VecSimTieredIndex_GC(index.get()); }
+    // Not VecSimTieredIndex_GC(): that is a no-op unless the index is tiered, while
+    // SVSIndex::runGC() compacts and rebuilds reverse edges on a plain index too.
+    void runGC() { index->runGC(); }
 
     py::object getVector(labelType label) {
         VecSimIndexBasicInfo info = index->basicInfo();

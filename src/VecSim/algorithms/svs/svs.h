@@ -338,7 +338,7 @@ protected:
         }
 
         const int deleted_num = impl->delete_entries(std::span{&label, 1});
-        this->markIndexUpdate(deleted_num);
+        this->markIndexUpdate(impl, deleted_num);
         return deleted_num;
     }
 
@@ -350,18 +350,12 @@ protected:
 
         const int deleted_num = impl->delete_entries(std::span{labels, n});
         if (deleted_num > 0) {
-            this->markIndexUpdate(deleted_num);
+            this->markIndexUpdate(impl, deleted_num);
         }
         return deleted_num;
     }
 
-    // Count deletions and drop the index instance if it became empty
-    void markIndexUpdate(size_t n = 1) {
-        auto impl = getImpl();
-        if (!impl) {
-            return;
-        }
-
+    void markIndexUpdate(const std::shared_ptr<impl_type> &impl, size_t n = 1) {
         // SVS index instance should not be empty
         if (labelCountOf(*impl) == 0) {
             std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
@@ -426,7 +420,10 @@ public:
 
     ~SVSIndex() = default;
 
-    bool ready() const override { return getImpl() != nullptr; }
+    bool ready() const override {
+        std::shared_lock lock(this->pimplGuard_);
+        return this->impl_ != nullptr;
+    }
 
     size_t indexSize() const override { return indexStorageSize(); }
 
