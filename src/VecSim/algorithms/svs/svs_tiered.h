@@ -643,13 +643,13 @@ private:
         index->executeTracingCallback("GCJob::before_run_gc");
         std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
 
+        // Release the scheduled flag to allow scheduling again
+        index->indexGCScheduled.clear();
+
         svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
         svs_index->setParallelism(1);
-
-        // Release the scheduled flag to allow scheduling again
-        index->indexGCScheduled.clear();
     }
 
     static void SVSIndexConsolidateWrapper(AsyncJob *job) {
