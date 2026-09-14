@@ -443,10 +443,10 @@ class TestFloat16():
     def test_bf_float16_L2(self, test_logger):
         k = 10
 
-        keys, dists = self.data.measure_dists(k)
         bf_labels, bf_distances = self.data.index.knn_query(self.data.query, k=k)
-        assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
-        assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+        exact_distances = get_distances_by_label(spatial.distance.sqeuclidean,
+                                                 self.data.query.flat, self.data.vectors)
+        assert_float16_l2_knn(bf_labels[0], bf_distances[0], exact_distances, k)
         test_logger.info(f"sanity test for {self.data.metric} and {self.data.type} pass")
 
     def test_bf_float16_batch_iterator(self, test_logger):
@@ -461,8 +461,8 @@ class TestFloat16():
 
         _, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
         for i, dist in enumerate(distances_second_batch[0][:-1]):
-            # assert sorting by score
-            assert(distances_second_batch[0][i] < distances_second_batch[0][i+1])
+            # Native fp16 scores can tie after rounding; they must remain nondecreasing.
+            assert(distances_second_batch[0][i] <= distances_second_batch[0][i+1])
             # assert that every distance in the second batch is higher than any distance of the first batch
             assert(len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) == 0)
 
@@ -494,14 +494,10 @@ class TestFloat16():
         res_num = len(bf_labels[0])
         test_logger.info(f'lookup time for {self.num_labels} vectors with dim={self.dim} took {end - start} seconds, got {res_num} results')
 
-        # Verify that we got exactly all vectors within the range
-        results, keys = get_ground_truth_results(spatial.distance.sqeuclidean, query_data.flat, self.data.vectors, res_num)
-
-        assert_allclose(max(bf_distances[0]), results[res_num-1]["dist"], rtol=1e-05)
-        assert np.array_equal(np.array(bf_labels[0]), np.array(keys))
+        exact_distances = get_distances_by_label(spatial.distance.sqeuclidean,
+                                                 query_data.flat, self.data.vectors)
+        assert_float16_l2_range(bf_labels[0], bf_distances[0], exact_distances, radius)
         assert max(bf_distances[0]) <= radius
-        # Verify that the next closest vector that hasn't returned is not within the range
-        assert results[res_num]["dist"] > radius
 
         # Expect zero results for radius==0
         bf_labels, bf_distances = bfindex.range_query(query_data, radius=0)
@@ -519,18 +515,6 @@ def test_bf_float16_multivalue(test_logger):
     k=10
 
     query_data = data.query
-    dists = {}
-    for key, vec in data.vectors:
-        # Setting or updating the score for each label.
-        # If it's the first time we calculate a score for a label dists.get(key, dist)
-        # will return dist so we will choose the actual score the first time.
-        dist = spatial.distance.sqeuclidean(query_data.flat, vec)
-        dists[key] = min(dist, dists.get(key, dist))
-
-    dists = list(dists.items())
-    dists = sorted(dists, key=lambda pair: pair[1])[:k]
-    keys = [key for key, _ in dists[:k]]
-    dists = [dist for _, dist in dists[:k]]
 
     start = time.time()
     bf_labels, bf_distances = data.index.knn_query(query_data, k=10)
@@ -538,8 +522,9 @@ def test_bf_float16_multivalue(test_logger):
 
     test_logger.info(f'lookup time for {num_elements} vectors ({num_labels} labels and {num_per_label} vectors per label) with dim={dim} took {end - start} seconds')
 
-    assert_allclose(bf_labels, [keys],  rtol=1e-5, atol=0)
-    assert_allclose(bf_distances, [dists],  rtol=1e-5, atol=0)
+    exact_distances = get_distances_by_label(spatial.distance.sqeuclidean,
+                                             query_data.flat, data.vectors)
+    assert_float16_l2_knn(bf_labels[0], bf_distances[0], exact_distances, k)
 
 '''
 A Class to run common tests for BF index

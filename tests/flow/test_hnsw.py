@@ -761,8 +761,8 @@ class TestFloat16():
         labels_second_batch, distances_second_batch = batch_iterator.get_next_results(10, BY_SCORE)
         should_have_return_in_first_batch = []
         for i, dist in enumerate(distances_second_batch[0][:-1]):
-            # Assert sorting by score
-            assert (distances_second_batch[0][i] < distances_second_batch[0][i + 1])
+            # Native fp16 scores can tie after rounding; they must remain nondecreasing.
+            assert (distances_second_batch[0][i] <= distances_second_batch[0][i + 1])
             # Assert that every distance in the second batch is higher than any distance of the first batch
             if len(distances_first_batch[0][np.where(distances_first_batch[0] > dist)]) != 0:
                 should_have_return_in_first_batch.append(dist)
@@ -790,18 +790,23 @@ class TestFloat16():
             end = time.time()
             res_num = len(hnsw_labels[0])
 
-            dists = sorted([(key, spatial.distance.sqeuclidean(self.query_data[0], vec)) for key, vec in self.vectors])
-            actual_results = [(key, dist) for key, dist in dists if dist <= radius]
+            exact_distances = get_distances_by_label(spatial.distance.sqeuclidean,
+                                                     self.query_data[0], self.vectors)
+            actual_labels = {label for label, distance in exact_distances.items()
+                             if distance <= radius}
 
             test_logger.info(
                 f'lookup time for {self.num_elements} vectors with dim={self.dim} took {end - start} seconds with epsilon={epsilon_rt},'
-                f' got {res_num} results, which are {res_num / len(actual_results)} of the entire results in the range.')
+                f' got {res_num} results, which are {res_num / len(actual_labels)} of the entire results in the range.')
 
-            # Compare the number of vectors that are actually within the range to the returned results.
-            assert np.all(np.isin(hnsw_labels, np.array([label for label, _ in actual_results])))
+            # HNSW is approximate, so validate returned labels and scores without requiring every
+            # vector in the exact inner range to be present.
+            assert_float16_l2_range(hnsw_labels[0], hnsw_distances[0], exact_distances,
+                                    radius, require_inner=False)
 
             assert max(hnsw_distances[0]) <= radius
-            recalls[epsilon_rt] = res_num / len(actual_results)
+            returned_labels = set(map(int, hnsw_labels[0]))
+            recalls[epsilon_rt] = len(returned_labels.intersection(actual_labels)) / len(actual_labels)
 
         # Expect higher recalls for higher epsilon values.
         assert recalls[0.001] <= recalls[0.01] <= recalls[0.1]
