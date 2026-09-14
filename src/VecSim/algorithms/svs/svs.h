@@ -125,7 +125,7 @@ protected:
     // initImpl() needs at least one point to compute an entry point.
     // so impl_ is null until the first insert
     std::shared_ptr<impl_type> impl_;
-    
+
     mutable std::shared_mutex pimplGuard_;
     // Serialize mutators of the impl_ pointer (exclusive)
     // vs add_points() (shared) to avoid silent drops of additions
