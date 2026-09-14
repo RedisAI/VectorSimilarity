@@ -46,6 +46,7 @@ float FP16_InnerProductSIMD32_AVX512FP16_VL(const void *pVect1v, const void *pVe
         InnerProductStep(pVect1, pVect2, sum);
     } while (pVect1 < pEnd1);
 
-    _Float16 res = _mm512_reduce_add_ph(sum);
-    return _Float16(1) - res;
+    const _Float16 reduced = _mm512_reduce_add_ph(sum);
+    // Subtract in fp32 so distances close to 1.0 are not rounded back to fp16.
+    return 1.0f - static_cast<float>(reduced);
 }

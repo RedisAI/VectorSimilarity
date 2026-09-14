@@ -705,7 +705,9 @@ public:
 private:
     idType setAndSaveInvalidJob(SVSInsertJob *job) {
         // wait until insertion finishes
-        while (job->executing.load(std::memory_order_acquire)) {std::this_thread::yield();}
+        while (job->executing.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
         this->invalidJobsLookupGuard.lock();
         job->isValid = false;
         idType curInvalidId = currInvalidJobId++;
