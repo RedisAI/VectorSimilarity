@@ -21,6 +21,7 @@
 #include "pybind11/numpy.h"
 #include "pybind11/stl.h"
 #include <cstring>
+#include <stdexcept>
 #include <thread>
 #include <VecSim/algorithms/hnsw/hnsw_single.h>
 #include <VecSim/algorithms/brute_force/brute_force_single.h>
@@ -168,7 +169,11 @@ public:
     PyVecSimIndex() = default;
 
     explicit PyVecSimIndex(const VecSimParams &params) {
-        index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        auto *native_index = VecSimIndex_New(&params);
+        if (!native_index) {
+            throw std::invalid_argument("Unsupported vector index parameters");
+        }
+        index = std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
     }
 
     void addVector(const py::object &input, size_t id) {
@@ -286,7 +291,11 @@ public:
     explicit PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                                .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        auto *native_index = VecSimIndex_New(&params);
+        if (!native_index) {
+            throw std::invalid_argument("Unsupported vector index parameters");
+        }
+        this->index = std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
         this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
@@ -536,7 +545,13 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_TIERED,
                                .algoParams = {.tieredParams = TieredIndexParams{tiered_params}}};
 
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        auto *native_index = VecSimIndex_New(&params);
+        if (!native_index) {
+            // The mock destructor requires a valid index whenever its context is present.
+            mock_thread_pool.reset_ctx();
+            throw std::invalid_argument("Unsupported vector index parameters");
+        }
+        this->index = std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
 
         // Set the created tiered index in the index external context.
         this->mock_thread_pool.ctx->index_strong_ref = this->index;
@@ -681,6 +696,11 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimMetric_Cosine", VecSimMetric_Cosine)
         .export_values();
 
+    py::enum_<VecSimQuantType>(m, "VecSimQuantType")
+        .value("VecSimQuant_NONE", VecSimQuant_NONE)
+        .value("VecSimQuant_SQ8", VecSimQuant_SQ8)
+        .export_values();
+
     py::enum_<VecSimOptionMode>(m, "VecSimOptionMode")
         .value("VecSimOption_AUTO", VecSimOption_AUTO)
         .value("VecSimOption_ENABLE", VecSimOption_ENABLE)
@@ -702,7 +722,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("M", &HNSWParams::M)
         .def_readwrite("efConstruction", &HNSWParams::efConstruction)
         .def_readwrite("efRuntime", &HNSWParams::efRuntime)
-        .def_readwrite("epsilon", &HNSWParams::epsilon);
+        .def_readwrite("epsilon", &HNSWParams::epsilon)
+        .def_readwrite("quantType", &HNSWParams::quantType);
 
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
@@ -746,7 +767,8 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<TieredHNSWParams>(m, "TieredHNSWParams")
         .def(py::init())
-        .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold);
+        .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold)
+        .def_readwrite("QuantNormalizationSetSize", &TieredHNSWParams::QuantNormalizationSetSize);
 
     py::class_<TieredSVSParams>(m, "TieredSVSParams")
         .def(py::init())

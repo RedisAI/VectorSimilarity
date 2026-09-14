@@ -5,6 +5,7 @@
 # (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
 # GNU Affero General Public License v3 (AGPLv3).
 import time
+import pytest
 from common import *
 
 
@@ -13,6 +14,64 @@ def create_tiered_hnsw_params(swap_job_threshold = 0):
     tiered_hnsw_params = TieredHNSWParams()
     tiered_hnsw_params.swapJobThreshold = swap_job_threshold
     return tiered_hnsw_params
+
+
+@pytest.mark.parametrize("training_threshold", [0, 2])
+def test_sq8_tiered_training_threshold(training_threshold):
+    """SQ8 either migrates immediately or retains vectors until its training threshold."""
+    vectors = np.eye(2, 64, dtype=np.float32)
+    hnsw_params = create_hnsw_params(
+        dim=64, num_elements=2, metric=VecSimMetric_L2, data_type=VecSimType_FLOAT32)
+    tiered_params = create_tiered_hnsw_params()
+    assert hnsw_params.quantType == VecSimQuant_NONE
+    assert tiered_params.QuantNormalizationSetSize == 0
+    hnsw_params.quantType = VecSimQuant_SQ8
+    tiered_params.QuantNormalizationSetSize = training_threshold
+    index = Tiered_HNSWIndex(hnsw_params, tiered_params, 1024)
+
+    index.add_vector(vectors[0], 0)
+    index.wait_for_index(1)
+    expected_sizes = (1, 0) if training_threshold else (0, 1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == expected_sizes
+    assert index.index_size() == 1
+    labels, distances = index.knn_query(vectors[0], 1)
+    assert_equal(labels, [[0]])
+    assert np.isfinite(distances).all(), distances
+    assert_allclose(distances, [[0.0]], atol=1e-3)
+
+    index.add_vector(vectors[1], 1)
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (0, 2)
+    assert index.index_size() == 2
+    for label, vector in enumerate(vectors):
+        labels, distances = index.knn_query(vector, 1)
+        assert_equal(labels, [[label]])
+        assert np.isfinite(distances).all(), distances
+        assert_allclose(distances, [[0.0]], atol=1e-3)
+
+
+@pytest.mark.parametrize("index_class", [HNSWIndex, Tiered_HNSWIndex, VecSimIndex],
+                         ids=["hnsw", "tiered", "generic"])
+def test_sq8_rejects_unsupported_type(index_class):
+    """Native SQ8 rejection must raise without constructing an invalid Python index."""
+    hnsw_params = create_hnsw_params(
+        dim=64, num_elements=2, metric=VecSimMetric_L2, data_type=VecSimType_FLOAT64)
+    hnsw_params.quantType = VecSimQuant_SQ8
+    if index_class is VecSimIndex:
+        algo_params = AlgoParams()
+        algo_params.hnswParams = hnsw_params
+        params = VecSimParams()
+        params.algo = VecSimAlgo_HNSWLIB
+        params.algoParams = algo_params
+        args = (params,)
+    elif index_class is Tiered_HNSWIndex:
+        args = (hnsw_params, create_tiered_hnsw_params(), 1024)
+    else:
+        args = (hnsw_params,)
+
+    with pytest.raises(ValueError, match="Unsupported vector index parameters"):
+        index_class(*args)
+
 
 class IndexCtx:
     array_conversion_func = {
