@@ -597,9 +597,17 @@ private:
     static void executeInsertJobWrapper(AsyncJob *job) {
         auto *insert_job = static_cast<SVSInsertJob *>(job);
         auto *job_index = static_cast<TieredSVSIndex<DataType> *>(insert_job->index);
-        // prevent parallel execution with index initilizing job
-        std::shared_lock<std::shared_mutex> lock(job_index->updateJobMutex);
-        job_index->executeInsertJob(insert_job);
+        InsertJobOutcome outcome;
+        {
+            // prevent parallel execution with index initilizing job
+            std::shared_lock<std::shared_mutex> lock(job_index->updateJobMutex);
+            outcome = job_index->executeInsertJob(insert_job);
+        }
+
+        if (outcome == InsertJobOutcome::Deferred) {
+            job_index->submitSingleJob(job);
+            return;
+        }
         delete job;
     }
 
@@ -727,9 +735,10 @@ private:
         return curInvalidId;
     }
 
-    void executeInsertJob(SVSInsertJob *job) {
+    enum class InsertJobOutcome { Completed, Deferred };
+
+    InsertJobOutcome executeInsertJob(SVSInsertJob *job) {
         auto svs_index = GetSVSIndex();
-        assert(svs_index->ready());
 
         // Note that accessing the job fields should occur with flat index guard held (here and
         // later).
@@ -741,7 +750,13 @@ private:
             this->invalidJobsLookupGuard.lock();
             this->invalidJobs.erase(job->id);
             this->invalidJobsLookupGuard.unlock();
-            return;
+            return InsertJobOutcome::Completed;
+        }
+
+        // Backend is still initilizing. Resubmit the job
+        if (!svs_index->ready() && this->indexUpdateScheduled.test()) {
+            this->flatIndexGuard.unlock_shared();
+            return InsertJobOutcome::Deferred;
         }
 
         // Copy the vector blob out of the flat buffer while holding flatIndexGuard, so we
@@ -794,6 +809,7 @@ private:
             this->invalidJobsLookupGuard.unlock();
         }
         this->flatIndexGuard.unlock();
+        return InsertJobOutcome::Completed;
     }
 
     void initSVSIndex(size_t availableThreads) {
