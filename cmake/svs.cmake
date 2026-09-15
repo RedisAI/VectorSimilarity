@@ -126,7 +126,7 @@ if(USE_SVS)
     # so whether it is available depends on which SVS this build ended up with rather than on the
     # platform. Detect it in the header instead of assuming: it is a method, not a file, so this
     # greps the header the LVQ check would have tested for existence.
-    set(SVS_DYNAMIC_INDEX_HEADER "svs/index/vamana/dynamic_index.h")
+    set(SVS_DYNAMIC_INDEX_HEADER "svs/concurrent/dynamic_index.h")
     set(SVS_HAS_REPLACE_EXTERNAL_ID 0)
     if(EXISTS "${svs_SOURCE_DIR}/include/${SVS_DYNAMIC_INDEX_HEADER}")
         file(READ "${svs_SOURCE_DIR}/include/${SVS_DYNAMIC_INDEX_HEADER}" SVS_DYNAMIC_INDEX_SRC)
