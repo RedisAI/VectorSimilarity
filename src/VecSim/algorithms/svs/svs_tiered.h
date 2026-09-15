@@ -14,24 +14,29 @@
 #include <thread>
 #include <tuple>
 
-struct SVSInsertJob : public TieredInsertJob<SVS_INSERT_VECTOR_JOB> {
+/**
+ * Definition of a job that inserts a new vector from flat into SVS Index.
+ */
+struct SVSInsertJob : public AsyncJob {
+    labelType label;
+    idType id;
     std::atomic<bool> executing{false};
 
     SVSInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
                  JobCallback insertCb, VecSimIndex *index_)
-        : TieredInsertJob<SVS_INSERT_VECTOR_JOB>(allocator, label_, id_, insertCb, index_) {}
+        : AsyncJob(allocator, SVS_INSERT_VECTOR_JOB, insertCb, index_), label(label_), id(id_) {}
 };
 
 /**
  * Definition of a job that launches partial consolidation on SVS Index.
  */
-struct SVSConsolidateJob : public TieredJob<SVS_CONSOLIDATE_JOB> {
+struct SVSConsolidateJob : public AsyncJob {
     std::vector<labelType> labels;
 
     SVSConsolidateJob(std::shared_ptr<VecSimAllocator> allocator,
                       const std::vector<labelType> &labels_, JobCallback insertCb,
                       VecSimIndex *index_)
-        : TieredJob<SVS_CONSOLIDATE_JOB>(allocator, insertCb, index_), labels(labels_) {}
+        : AsyncJob(allocator, SVS_CONSOLIDATE_JOB, insertCb, index_), labels(labels_) {}
 };
 
 /**
@@ -574,7 +579,7 @@ private:
     static void executeInsertJobWrapper(AsyncJob *job) {
         auto *insert_job = static_cast<SVSInsertJob *>(job);
         auto *job_index = static_cast<TieredSVSIndex<DataType> *>(insert_job->index);
-        InsertJobOutcome outcome = InsertJobOutcome::Completed;
+        InsertJobOutcome outcome;
         {
             // prevent parallel execution with index initilizing job
             std::shared_lock<std::shared_mutex> lock(job_index->updateJobMutex);
