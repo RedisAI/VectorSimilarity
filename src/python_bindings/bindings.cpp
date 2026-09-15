@@ -106,12 +106,11 @@ private:
     template <typename DataType, typename DistType, typename NPArrayType = DataType>
     inline py::object rawVectorsAsNumpy(labelType label, size_t dim) {
         std::vector<std::vector<DataType>> vectors;
-        if (index->basicInfo().algo == VecSimAlgo_BF) {
-            dynamic_cast<BruteForceIndex<DataType, DistType> *>(this->index.get())
-                ->getDataByLabel(label, vectors);
+        if (auto *tiered =
+                dynamic_cast<VecSimTieredIndex<DataType, DistType> *>(this->index.get())) {
+            tiered->getDataByLabel(label, vectors);
         } else {
-            // index is HNSW
-            dynamic_cast<HNSWIndex<DataType, DistType> *>(this->index.get())
+            dynamic_cast<VecSimIndexAbstract<DataType, DistType> *>(this->index.get())
                 ->getDataByLabel(label, vectors);
         }
         size_t n_vectors = vectors.size();
@@ -215,6 +214,11 @@ public:
     }
 
     void runGC() { VecSimTieredIndex_GC(index.get()); }
+
+    VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) {
+        py::gil_scoped_release py_gil;
+        return VecSimIndex_RelabelVector(index.get(), old_label, new_label);
+    }
 
     py::object getVector(labelType label) {
         VecSimIndexBasicInfo info = index->basicInfo();
@@ -713,6 +717,14 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("initialCapacity", &BFParams::initialCapacity)
         .def_readwrite("blockSize", &BFParams::blockSize);
 
+    py::enum_<VecSimRelabelCode>(m, "VecSimRelabelCode")
+        .value("VecSimRelabel_OK", VecSimRelabel_OK)
+        .value("VecSimRelabel_OldLabelMissing", VecSimRelabel_OldLabelMissing)
+        .value("VecSimRelabel_NewLabelTaken", VecSimRelabel_NewLabelTaken)
+        .value("VecSimRelabel_SameLabel", VecSimRelabel_SameLabel)
+        .value("VecSimRelabel_Unsupported", VecSimRelabel_Unsupported)
+        .export_values();
+
     py::enum_<VecSimSvsQuantBits>(m, "VecSimSvsQuantBits")
         .value("VecSimSvsQuant_NONE", VecSimSvsQuant_NONE)
         .value("VecSimSvsQuant_Scalar", VecSimSvsQuant_Scalar)
@@ -799,6 +811,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
         .def("get_vector", &PyVecSimIndex::getVector)
+        .def("relabel_vector", &PyVecSimIndex::relabelVector, py::arg("old_label"),
+             py::arg("new_label"))
         .def("run_gc", &PyVecSimIndex::runGC);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")

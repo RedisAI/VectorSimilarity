@@ -123,6 +123,29 @@ if(USE_SVS)
         message("SVS LVQ implementation not found")
         add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_LVQ=0")
     endif()
+
+    # `replace_external_id` is newer than the pre-built SVS releases that SVS_SHARED_LIB downloads,
+    # so whether it is available depends on which SVS this build ended up with rather than on the
+    # platform. Detect it in the header instead of assuming: it is a method, not a file, so this
+    # greps the header the LVQ check would have tested for existence.
+    set(SVS_DYNAMIC_INDEX_HEADER "svs/index/vamana/dynamic_index.h")
+    set(SVS_HAS_REPLACE_EXTERNAL_ID 0)
+    if(EXISTS "${svs_SOURCE_DIR}/include/${SVS_DYNAMIC_INDEX_HEADER}")
+        file(READ "${svs_SOURCE_DIR}/include/${SVS_DYNAMIC_INDEX_HEADER}" SVS_DYNAMIC_INDEX_SRC)
+        string(FIND "${SVS_DYNAMIC_INDEX_SRC}" "replace_external_id" SVS_REPLACE_EXTERNAL_ID_POS)
+        if(NOT SVS_REPLACE_EXTERNAL_ID_POS EQUAL -1)
+            set(SVS_HAS_REPLACE_EXTERNAL_ID 1)
+        endif()
+        unset(SVS_DYNAMIC_INDEX_SRC)
+    endif()
+
+    if(SVS_HAS_REPLACE_EXTERNAL_ID)
+        message("SVS replace_external_id found - SVS relabeling enabled")
+        add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_REPLACE_EXTERNAL_ID=1")
+    else()
+        message("SVS replace_external_id not found - SVS relabeling reports unsupported")
+        add_compile_definitions(VectorSimilarity PUBLIC "HAVE_SVS_REPLACE_EXTERNAL_ID=0")
+    endif()
 else()
     message(STATUS "SVS support disabled")
     add_compile_definitions("HAVE_SVS=0")

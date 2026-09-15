@@ -336,7 +336,8 @@ void HNSWSQ8Test<index_type_t>::test_override() {
         EXPECT_EQ(id, count - result_index - 1);
         // Compare against the values as they are stored: FP16 cannot hold 0.1 × i exactly, and
         // half-precision accumulation drops a few more bits, hence the relative tolerance.
-        const float diff = query_value - to_fp32<data_t>(ToDataType(static_cast<float>(id) * scale));
+        const float diff =
+            query_value - to_fp32<data_t>(ToDataType(static_cast<float>(id) * scale));
         const float expected = 4.0f * diff * diff;
         EXPECT_NEAR(score, expected, 1e-4f + expected * 0.002f);
     };
