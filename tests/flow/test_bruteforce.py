@@ -747,3 +747,61 @@ class TestUINT8(GeneralTest):
 
     def test_multi_value(self):
         self.multi_value(create_uint8_vectors)
+
+
+def test_relabel_vector(test_logger):
+    dim = 16
+    num_elements = 100
+    index = create_flat_index(dim, VecSimMetric_L2, VecSimType_FLOAT32)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    old_label, new_label = 7, num_elements + 500
+    assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # The label moved without the data moving, and the index neither grew nor shrank.
+    assert index.index_size() == num_elements
+    assert_allclose(index.get_vector(new_label)[0], data[old_label], rtol=1e-6)
+    assert index.get_vector(old_label).shape == (0, dim)
+
+    # Still searchable, and answering under the new label.
+    labels, distances = index.knn_query(data[old_label], 1)
+    assert labels[0][0] == new_label
+    assert distances[0][0] < 1e-6
+
+    # Each rejection is reported distinctly, and none of them modifies the index.
+    assert index.relabel_vector(num_elements + 1, 0) == VecSimRelabel_OldLabelMissing
+    assert index.relabel_vector(0, 1) == VecSimRelabel_NewLabelTaken
+    assert index.relabel_vector(0, 0) == VecSimRelabel_SameLabel
+    assert index.index_size() == num_elements
+    test_logger.info("flat index relabel_vector moved the label, keeping the vector data")
+
+
+def test_relabel_vector_multi(test_logger):
+    dim = 16
+    num_labels = 20
+    per_label = 3
+    index = create_flat_index(dim, VecSimMetric_L2, VecSimType_FLOAT32, is_multi=True)
+
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    for label in range(num_labels):
+        for vector in data[label]:
+            index.add_vector(vector, label)
+
+    old_label, new_label = 7, num_labels + 500
+    assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # Every vector under the label moves as a unit, keeping its data and insertion order.
+    assert index.index_size() == num_labels * per_label
+    assert_allclose(index.get_vector(new_label), data[old_label], rtol=1e-6)
+    assert index.get_vector(old_label).shape == (0, dim)
+
+    # Moving onto an occupied label must be rejected: accepting it would silently merge two
+    # labels' vectors, which is the failure mode unique to a multi index.
+    assert index.relabel_vector(new_label, 0) == VecSimRelabel_NewLabelTaken
+    assert index.get_vector(new_label).shape == (per_label, dim)
+    assert index.get_vector(0).shape == (per_label, dim)
+    assert index.index_size() == num_labels * per_label
+    test_logger.info("flat multi relabel_vector moved every vector under the label")

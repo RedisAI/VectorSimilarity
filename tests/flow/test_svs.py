@@ -11,6 +11,7 @@ import os
 import time
 from VecSim import *
 from common import *
+import pytest
 import hnswlib
 
 def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
@@ -456,3 +457,151 @@ def test_multi_range_query(test_logger):
     # Expect zero results for radius==0
     svs_labels, svs_distances = index.range_query(query_data, radius=0)
     assert len(svs_labels[0]) == 0
+
+
+def test_get_vector(test_logger):
+    dim = 16
+    num_elements = 100
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    # L2 applies no insert-time preprocessing, so the stored vector is the one that was handed to
+    # add_vector. Under cosine it would come back normalized instead.
+    for label in [0, num_elements // 2, num_elements - 1]:
+        stored = index.get_vector(label)
+        assert stored.shape == (1, dim)
+        assert_allclose(stored[0], data[label], rtol=1e-6)
+
+    # An absent label appends nothing, so the caller gets zero rows rather than an error.
+    assert index.get_vector(num_elements + 1).shape == (0, dim)
+    test_logger.info("SVS get_vector returned the stored vectors")
+
+
+def test_get_vector_multi(test_logger):
+    dim = 16
+    num_labels = 20
+    per_label = 3
+    index = create_svs_index(dim, num_labels * per_label, VecSimType_FLOAT32, VecSimMetric_L2,
+                             is_multi=True)
+
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    for label in range(num_labels):
+        for vector in data[label]:
+            index.add_vector(vector, label)
+
+    # Every vector grouped under the label comes back, in insertion order.
+    for label in [0, num_labels - 1]:
+        stored = index.get_vector(label)
+        assert stored.shape == (per_label, dim)
+        assert_allclose(stored, data[label], rtol=1e-6)
+    test_logger.info("SVS get_vector returned every vector under a multi label")
+
+
+def test_get_vector_quantized(test_logger):
+    dim = 16
+    num_elements = 100
+    svs_params = create_svs_params(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2,
+                                   quantBits=VecSimSvsQuant_Scalar)
+    index = SVSIndex(svs_params)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    # A quantized index cannot report its stored vectors as values, and nothing here dequantizes.
+    # It therefore reports no rows - "cannot tell" - rather than reinterpreting the compressed
+    # form and its metadata as vector elements.
+    assert index.get_vector(0).shape == (0, dim)
+    test_logger.info("SVS get_vector reported nothing for a quantized index")
+
+
+def test_relabel_vector(test_logger):
+    dim = 16
+    num_elements = 100
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    if not svs_relabel_supported(index, 0):
+        pytest.skip("this SVS build has no replace_external_id")
+
+    old_label, new_label = 7, num_elements + 500
+    assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # The vector moved label without moving data: same contents, and the index neither grew nor
+    # shrank.
+    assert index.index_size() == num_elements
+    assert_allclose(index.get_vector(new_label)[0], data[old_label], rtol=1e-6)
+    assert index.get_vector(old_label).shape == (0, dim)
+
+    # A relabeled vector is still searchable, and answers under the new label.
+    labels, distances = index.knn_query(data[old_label], 1)
+    assert labels[0][0] == new_label
+    # Querying with the stored vector itself, so the distance to it is zero.
+    assert distances[0][0] < 1e-6
+    test_logger.info("SVS relabel_vector moved the label, keeping the vector data")
+
+
+def test_relabel_vector_rejects(test_logger):
+    dim = 16
+    num_elements = 10
+    index = create_svs_index(dim, num_elements, VecSimType_FLOAT32, VecSimMetric_L2)
+
+    if not svs_relabel_supported(index, 0):
+        pytest.skip("this SVS build has no replace_external_id")
+
+    # An index that never held a vector has no SVS impl yet - still a clean rejection.
+    assert index.relabel_vector(1, 2) == VecSimRelabel_OldLabelMissing
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    # Each rejection is reported distinctly, so a caller can tell a conflict it may resolve from a
+    # label that simply is not there.
+    assert index.relabel_vector(num_elements + 1, 0) == VecSimRelabel_OldLabelMissing
+    assert index.relabel_vector(0, 1) == VecSimRelabel_NewLabelTaken
+    assert index.relabel_vector(0, 0) == VecSimRelabel_SameLabel
+
+    # None of the rejections touched the index.
+    assert index.index_size() == num_elements
+    for label in range(num_elements):
+        assert_allclose(index.get_vector(label)[0], data[label], rtol=1e-6)
+    test_logger.info("SVS relabel_vector reported each rejection without modifying the index")
+
+
+def test_relabel_vector_multi(test_logger):
+    dim = 16
+    num_labels = 20
+    per_label = 3
+    index = create_svs_index(dim, num_labels * per_label, VecSimType_FLOAT32, VecSimMetric_L2,
+                             is_multi=True)
+
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    for label in range(num_labels):
+        for vector in data[label]:
+            index.add_vector(vector, label)
+
+    if not svs_relabel_supported(index, 0):
+        pytest.skip("this SVS build has no replace_external_id")
+
+    old_label, new_label = 7, num_labels + 500
+    assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # SVS renames the label itself, so every vector grouped under it stays grouped - and keeps its
+    # own internal id, which is why the data comes back unchanged and in order.
+    assert index.index_size() == num_labels * per_label
+    assert_allclose(index.get_vector(new_label), data[old_label], rtol=1e-6)
+    assert index.get_vector(old_label).shape == (0, dim)
+
+    # Accepting a move onto an occupied label would merge two labels' vectors.
+    assert index.relabel_vector(new_label, 0) == VecSimRelabel_NewLabelTaken
+    assert index.get_vector(new_label).shape == (per_label, dim)
+    assert index.get_vector(0).shape == (per_label, dim)
+    assert index.index_size() == num_labels * per_label
+    test_logger.info("SVS multi relabel_vector moved every vector under the label")
