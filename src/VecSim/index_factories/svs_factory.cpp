@@ -100,8 +100,8 @@ VecSimIndex *NewIndexImpl(const VecSimParams *params, bool is_normalized) {
     case VecSimType_FLOAT16:
         return NewIndexImpl<MetricType, svs::Float16>(params, is_normalized);
     default:
-        // If we got here something is wrong.
-        assert(false && "Unsupported data type");
+        // The type comes straight from the caller's params, so reject it like the HNSW and
+        // brute-force factories do rather than aborting an assertion-enabled build.
         return NULL;
     }
 }

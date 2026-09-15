@@ -151,12 +151,27 @@ private:
 protected:
     std::shared_ptr<VecSimIndex> index;
 
+    static std::shared_ptr<VecSimIndex> ownIndex(VecSimIndex *native_index) {
+        return std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
+    }
+
+    // A null factory result must never reach a shared_ptr: it faults on first use, and for a
+    // tiered index it also leaves the mock thread pool's context without the strong reference
+    // that its destructor dereferences.
     static std::shared_ptr<VecSimIndex> createIndex(const VecSimParams &params) {
         auto *native_index = VecSimIndex_New(&params);
         if (!native_index) {
             throw std::invalid_argument("Unsupported vector index parameters");
         }
-        return std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
+        return ownIndex(native_index);
+    }
+
+    // Deserialization fails on unreadable or malformed input rather than on bad parameters.
+    static std::shared_ptr<VecSimIndex> loadIndexOrThrow(VecSimIndex *native_index) {
+        if (!native_index) {
+            throw std::runtime_error("Index creation failed");
+        }
+        return ownIndex(native_index);
     }
 
     inline VecSimQueryReply *searchKnnInternal(const char *query, size_t k,
@@ -299,8 +314,7 @@ public:
 
     // @params is required only in V1.
     explicit PyHNSWLibIndex(const std::string &location) {
-        this->index =
-            std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
+        this->index = loadIndexOrThrow(HNSWFactory::NewIndex(location));
         this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
@@ -581,11 +595,7 @@ public:
 
     explicit PySVSIndex(const std::string &location, const SVSParams &svs_params) {
         VecSimParams params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
-        this->index =
-            std::shared_ptr<VecSimIndex>(SVSFactory::NewIndex(location, &params), VecSimIndex_Free);
-        if (!this->index) {
-            throw std::runtime_error("Index creation failed");
-        }
+        this->index = loadIndexOrThrow(SVSFactory::NewIndex(location, &params));
     }
 
     void addVectorsParallel(const py::object &input, const py::object &vectors_labels) {
