@@ -154,6 +154,31 @@ private:
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
 
+protected:
+    // Adapts HNSW's own data-guard mutex to Lockable
+    class HnswDataGuardLockable : public Lockable {
+        HNSWIndex<DataType, DistType> *hnsw;
+
+    public:
+        explicit HnswDataGuardLockable(HNSWIndex<DataType, DistType> *hnsw) : hnsw(hnsw) {}
+        void lock() const override { hnsw->lockSharedIndexDataGuard(); }
+        void unlock() const override { hnsw->unlockSharedIndexDataGuard(); }
+    };
+    HnswDataGuardLockable hnswDataGuardLockable{this->getHNSWIndex()};
+
+    ScopedLocks lockMainIndexForQuery() const override {
+        return ScopedLocks(this->mainIndexLockable);
+    }
+
+    ScopedLocks lockIndexForSize() const override {
+        return ScopedLocks(this->flatIndexLockable, hnswDataGuardLockable);
+    }
+
+    ScopedLocks lockIndexForCapacity() const override {
+        // No-op: No locking required for capacity()
+        return ScopedLocks();
+    }
+
 public:
     class TieredHNSW_BatchIterator : public VecSimBatchIterator {
     private:
@@ -217,8 +242,6 @@ public:
     size_t getNumMarkedDeleted() const override {
         return this->getHNSWIndex()->getNumMarkedDeleted();
     }
-    size_t indexSize() const override;
-    size_t indexCapacity() const override;
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
@@ -736,21 +759,6 @@ TieredHNSWIndex<DataType, DistType>::~TieredHNSWIndex() {
     for (auto &it : this->invalidJobs) {
         delete it.second;
     }
-}
-
-template <typename DataType, typename DistType>
-size_t TieredHNSWIndex<DataType, DistType>::indexSize() const {
-    this->flatIndexGuard.lock_shared();
-    this->getHNSWIndex()->lockSharedIndexDataGuard();
-    size_t res = this->backendIndex->indexSize() + this->frontendIndex->indexSize();
-    this->getHNSWIndex()->unlockSharedIndexDataGuard();
-    this->flatIndexGuard.unlock_shared();
-    return res;
-}
-
-template <typename DataType, typename DistType>
-size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
-    return this->backendIndex->indexCapacity() + this->frontendIndex->indexCapacity();
 }
 
 // In the tiered index, we assume that the blobs are processed by the flat buffer

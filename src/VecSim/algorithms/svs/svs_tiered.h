@@ -538,6 +538,18 @@ public:
     }
 #endif
 
+protected:
+    ScopedLocks lockMainIndexForQuery() const override {
+        // No-op: SVS does its query locking internally.
+        return ScopedLocks();
+    }
+
+    ScopedLocks lockIndexForSize() const override { return ScopedLocks(this->flatIndexLockable); }
+
+    ScopedLocks lockIndexForCapacity() const override {
+        return ScopedLocks(this->flatIndexLockable);
+    }
+
 private:
     /**
      * @brief Init the SVS index in a thread-safe manner.
@@ -1154,16 +1166,6 @@ public:
         return this->GetSVSIndex()->getNumMarkedDeleted();
     }
 
-    size_t indexSize() const override {
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        return this->frontendIndex->indexSize() + this->backendIndex->indexSize();
-    }
-
-    size_t indexCapacity() const override {
-        std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
-        return this->frontendIndex->indexCapacity() + this->backendIndex->indexCapacity();
-    }
-
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override {
         // Try to get the distance from the flat buffer.
         // If the label doesn't exist, the distance will be NaN.
@@ -1238,85 +1240,6 @@ public:
                 .uintegerValue =
                     info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime}}});
         return infoIterator;
-    }
-
-    VecSimQueryReply *topKQuery(const void *queryBlob, size_t k,
-                                VecSimQueryParams *queryParams) const override {
-        // SVS handles its own internal locking for concurrent search + modification,
-        // so we don't need mainIndexGuard for backend queries.
-        this->flatIndexGuard.lock_shared();
-
-        if (this->frontendIndex->indexSize() == 0) {
-            this->flatIndexGuard.unlock_shared();
-
-            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
-            const void *processed_query = processed_query_ptr.get();
-            return this->backendIndex->topKQuery(processed_query, k, queryParams);
-        } else {
-            auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-            this->flatIndexGuard.unlock_shared();
-
-            if (flat_results->code != VecSim_QueryReply_OK) {
-                assert(flat_results->results.empty());
-                return flat_results;
-            }
-
-            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
-            const void *processed_query = processed_query_ptr.get();
-            auto main_results = this->backendIndex->topKQuery(processed_query, k, queryParams);
-
-            if (main_results->code != VecSim_QueryReply_OK) {
-                VecSimQueryReply_Free(flat_results);
-                assert(main_results->results.empty());
-                return main_results;
-            }
-
-            return merge_result_lists(main_results, flat_results, k);
-        }
-    }
-
-    VecSimQueryReply *rangeQuery(const void *queryBlob, double radius,
-                                 VecSimQueryParams *queryParams,
-                                 VecSimQueryReply_Order order) const override {
-        // SVS handles its own internal locking for concurrent search + modification,
-        // so we don't need mainIndexGuard for backend queries.
-        this->flatIndexGuard.lock_shared();
-
-        if (this->frontendIndex->indexSize() == 0) {
-            this->flatIndexGuard.unlock_shared();
-
-            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
-            const void *processed_query = processed_query_ptr.get();
-            auto res = this->backendIndex->rangeQuery(processed_query, radius, queryParams);
-            sort_results(res, order);
-            return res;
-        } else {
-            auto flat_results = this->frontendIndex->rangeQuery(queryBlob, radius, queryParams);
-            this->flatIndexGuard.unlock_shared();
-
-            if (flat_results->code != VecSim_QueryReply_OK) {
-                return flat_results;
-            }
-
-            auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
-            const void *processed_query = processed_query_ptr.get();
-            auto main_results =
-                this->backendIndex->rangeQuery(processed_query, radius, queryParams);
-
-            if (BY_SCORE == order) {
-                sort_results_by_score_then_id(main_results);
-                sort_results_by_score_then_id(flat_results);
-
-                auto code = main_results->code;
-                VecSimQueryReply *ret = merge_result_lists(main_results, flat_results, -1);
-                ret->code = code;
-                return ret;
-            } else { // BY_ID
-                concat_results(main_results, flat_results);
-                filter_results_by_id(main_results);
-                return main_results;
-            }
-        }
     }
 
     VecSimBatchIterator *newBatchIterator(const void *queryBlob,
