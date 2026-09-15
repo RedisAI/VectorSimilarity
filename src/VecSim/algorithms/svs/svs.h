@@ -615,15 +615,20 @@ public:
         auto impl = getImpl();
 
         // A null impl_ is an index that never held a vector, so it holds neither label.
-        if (!impl || !impl->has_id(old_label)) {
+        if (!impl) {
             return VecSimRelabel_OldLabelMissing;
         }
-        if (impl->has_id(new_label)) {
-            return VecSimRelabel_NewLabelTaken;
-        }
 
-        impl->replace_external_id(old_label, new_label);
-        return VecSimRelabel_OK;
+        // SVS checks both ends under its own translator lock
+        switch (impl->replace_external_id(old_label, new_label)) {
+        case svs::concurrent::ReplaceExternalIdResult::Ok:
+            return VecSimRelabel_OK;
+        case svs::concurrent::ReplaceExternalIdResult::NewIdExists:
+            return VecSimRelabel_NewLabelTaken;
+        case svs::concurrent::ReplaceExternalIdResult::OldIdMissing:
+            break;
+        }
+        return VecSimRelabel_OldLabelMissing;
     }
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
