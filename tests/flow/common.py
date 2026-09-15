@@ -174,3 +174,10 @@ def fp32_expand_and_calc_cosine_dist(a, b):
     a_float32 = a.astype(np.float32)
     b_float32 = b.astype(np.float32)
     return spatial.distance.cosine(a_float32, b_float32)
+
+# The pre-built SVS releases predate `replace_external_id`, so a build that picked one up reports
+# relabeling as unsupported rather than implementing it. There is no python-visible build flag for
+# that, so ask the index itself on a throwaway label - a real implementation cannot answer
+# Unsupported, so this cannot mask a broken one.
+def svs_relabel_supported(index, label):
+    return index.relabel_vector(label, label) != VecSimRelabel_Unsupported
