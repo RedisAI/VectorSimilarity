@@ -703,7 +703,9 @@ public:
 protected:
     static constexpr size_t normalization_set_size = 10;
 
-    void SetUp(HNSWParams &hnsw_params) override {
+    void SetUp(HNSWParams &hnsw_params) override { SetUp(hnsw_params, 0); }
+
+    void SetUp(HNSWParams &hnsw_params, size_t flat_buffer_limit) {
         hnsw_params.type = index_type_t::get_index_type();
         hnsw_params.quantType = VecSimQuant_SQ8;
         VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
@@ -711,6 +713,7 @@ protected:
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
             .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &vecsim_hnsw_params,
             .specificParams = {TieredHNSWParams{
                 .QuantNormalizationSetSize =
@@ -801,6 +804,7 @@ void SQ8TieredHNSWTest<index_type_t>::frontend_size_estimation_test(VecSimMetric
                               .quantType = VecSimQuant_SQ8};
     VecSimParams backend_params = CreateParams(hnsw_params);
     TieredIndexParams tiered_params = {
+        .flatBufferLimit = block_size + 1,
         .primaryIndexParams = &backend_params,
         .specificParams = {
             TieredHNSWParams{.QuantNormalizationSetSize =
@@ -808,7 +812,7 @@ void SQ8TieredHNSWTest<index_type_t>::frontend_size_estimation_test(VecSimMetric
 
     // Wide full-precision vectors make the frontend's block larger than the SQ8 backend's.
     const size_t estimation = EstimateElementSize(tiered_params) * block_size;
-    this->SetUp(hnsw_params);
+    this->SetUp(hnsw_params, tiered_params.flatBufferLimit);
     auto *tiered_index = static_cast<TieredHNSWIndex<data_t, float> *>(this->index);
     auto *frontend = tiered_index->getFlatBufferIndex();
 
