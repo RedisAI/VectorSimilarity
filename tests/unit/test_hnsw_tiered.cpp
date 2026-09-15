@@ -23,6 +23,9 @@
 #include "mock_thread_pool.h"
 
 #include <thread>
+#include <atomic>
+#include <condition_variable>
+#include <set>
 
 // Runs the test for all combination of data type(float/double) - label type (single/multi)
 
@@ -5311,6 +5314,148 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, AccumulationPhaseInitialization) {
     ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), 0);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, TrainingThresholdIsCapped) {
+    constexpr size_t cap = MAX_QUANT_NORMALIZATION_SET_SIZE;
+    for (auto metric : {VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine}) {
+        for (size_t requested : {cap - 1, cap, cap + 1, 2 * cap}) {
+            SCOPED_TRACE(::testing::Message() << "metric=" << metric << " threshold=" << requested);
+            tieredIndexMock pool;
+            auto *index = this->CreateSQ8TieredIndex(pool, 64, metric, requested);
+            if (!index) {
+                pool.reset_ctx();
+                FAIL() << "SQ8 index construction failed";
+            }
+            ASSERT_TRUE(this->getIsInAccumulationPhase(index));
+            EXPECT_EQ(this->getNormalizationSetSize(index), requested < cap ? requested : cap);
+        }
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, ConcurrentQueriesDuringNormalizationTransition) {
+    constexpr size_t dim = 65;
+    constexpr size_t count = 8;
+    const size_t labels = TypeParam::isMulti() ? count / 2 : count;
+    for (auto metric : {VecSimMetric_L2, VecSimMetric_IP, VecSimMetric_Cosine}) {
+        for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+            SCOPED_TRACE(::testing::Message() << "metric=" << metric << " mode=" << mode);
+            VecSimIndexInterface::asyncWriteMode = mode;
+            tieredIndexMock pool(2);
+            auto *index = this->CreateSQ8TieredIndex(pool, dim, metric, count);
+            if (!index) {
+                pool.reset_ctx();
+                FAIL() << "SQ8 index construction failed";
+            }
+            std::vector<std::vector<TEST_DATA_T>> vectors(count, std::vector<TEST_DATA_T>(dim));
+            for (size_t i = 0; i < count; ++i) {
+                this->GenerateVectorData(vectors[i].data(), dim, 10.0f * (i + 1));
+            }
+            for (size_t i = 0; i < count - 1; ++i) {
+                ASSERT_EQ(VecSimIndex_AddVector(index, vectors[i].data(),
+                                                TypeParam::isMulti() ? i / 2 : i),
+                          1);
+            }
+
+            std::mutex mutex;
+            std::condition_variable cv;
+            unsigned phase = 0, completed_phase = 0;
+            const auto pause_for_queries = [&](unsigned next_phase) {
+                std::unique_lock lock(mutex);
+                phase = next_phase;
+                cv.notify_all();
+                EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(10),
+                                        [&] { return completed_phase >= next_phase; }));
+            };
+            index->setBeforeQuantizationFinalizationHook([&] { pause_for_queries(1); });
+            index->setAfterQuantizationFinalizationHook([&] { pause_for_queries(2); });
+            std::atomic_bool first_backend_insert{true};
+            index->setAfterBackendInsertBeforeFlatRemovalHook([&] {
+                if (first_backend_insert.exchange(false)) {
+                    pause_for_queries(3);
+                }
+            });
+
+            const auto check_reply = [&](VecSimQueryReply *reply, std::set<size_t> &seen) {
+                EXPECT_NE(reply, nullptr);
+                if (!reply) {
+                    return;
+                }
+                EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
+                for (const auto &result : reply->results) {
+                    const auto label = VecSimQueryResult_GetId(&result);
+                    EXPECT_LT(label, labels);
+                    EXPECT_TRUE(seen.insert(label).second) << "duplicate label " << label;
+                    EXPECT_TRUE(std::isfinite(VecSimQueryResult_GetScore(&result)));
+                }
+                VecSimQueryReply_Free(reply);
+            };
+            const auto check_queries = [&] {
+                std::set<size_t> seen;
+                check_reply(
+                    VecSimIndex_TopKQuery(index, vectors[0].data(), labels, nullptr, BY_SCORE),
+                    seen);
+                EXPECT_EQ(seen.size(), labels);
+                seen.clear();
+                check_reply(
+                    VecSimIndex_RangeQuery(index, vectors[0].data(), 100.0, nullptr, BY_SCORE),
+                    seen);
+                EXPECT_EQ(seen.size(), labels);
+                seen.clear();
+                auto *iterator = VecSimBatchIterator_New(index, vectors[0].data(), nullptr);
+                ASSERT_NE(iterator, nullptr);
+                size_t batches = 0;
+                while (VecSimBatchIterator_HasNext(iterator) && batches++ < labels + 1) {
+                    check_reply(VecSimBatchIterator_Next(iterator, 2, BY_SCORE), seen);
+                }
+                EXPECT_FALSE(VecSimBatchIterator_HasNext(iterator));
+                EXPECT_EQ(seen.size(), labels);
+                VecSimBatchIterator_Free(iterator);
+                (void)VecSimIndex_IndexSize(index);
+                (void)VecSimIndex_DebugInfo(index);
+                (void)VecSimIndex_StatsInfo(index);
+                (void)VecSimIndex_PreferAdHocSearch(index, count, 1, true);
+            };
+
+            // Each hook waits for a complete query pass begun in that phase. The reader also
+            // keeps running between hooks, while the writer and migration workers advance.
+            std::jthread reader([&](std::stop_token stop) {
+                while (!stop.stop_requested()) {
+                    unsigned observed_phase;
+                    {
+                        std::unique_lock lock(mutex);
+                        if (!cv.wait_for(lock, std::chrono::seconds(10),
+                                         [&] { return phase > 0; })) {
+                            ADD_FAILURE() << "Writer did not reach quantization finalization";
+                            return;
+                        }
+                        observed_phase = phase;
+                    }
+                    check_queries();
+                    {
+                        std::lock_guard lock(mutex);
+                        completed_phase = observed_phase;
+                    }
+                    cv.notify_all();
+                }
+            });
+            if (mode == VecSim_WriteAsync) {
+                pool.init_threads();
+            }
+            std::jthread writer([&] {
+                EXPECT_EQ(VecSimIndex_AddVector(index, vectors.back().data(), labels - 1), 1);
+            });
+            writer.join();
+            pool.thread_pool_wait();
+            reader.request_stop();
+            reader.join();
+            EXPECT_EQ(completed_phase, 3u);
+            EXPECT_FALSE(this->getIsInAccumulationPhase(index));
+            EXPECT_EQ(this->getFrontendIndex(index)->indexSize(), 0);
+            EXPECT_EQ(this->getBackendIndex(index)->indexSize(), count);
+            check_queries();
+        }
+    }
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, InitialMemoryAndSuppliedMeanWithOptionalTraining) {
