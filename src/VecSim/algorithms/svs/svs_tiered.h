@@ -305,19 +305,14 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         VecSimBatchIterator *flat_iterator;
         VecSimBatchIterator *svs_iterator;
 
-        // On single value indices, this set holds the IDs of the results that were returned from
-        // the flat buffer.
-        // On multi value indices, this set holds the IDs of all the results that were returned.
-        // The difference between the two cases is that on multi value indices, the same ID can
-        // appear in both indexes and results with different scores, and therefore we can't tell in
-        // advance when we expect a possibility of a duplicate.
-        // On single value indices, a duplicate may appear at the same batch (and we will handle it
-        // when merging the results) Or it may appear in a different batches, first from the flat
-        // buffer and then from the SVS, in the cases where a better result if found later in SVS
-        // because of the approximate nature of the algorithm.
+        // IDs of all the results returned so far, so that neither tier can yield one twice.
+        // Both directions have to be covered: nothing freezes the backend for the iterator's
+        // lifetime, so an insert job can publish a label into SVS and only then drop it from the
+        // flat buffer, while the flat iterator still holds it in the snapshot it computed on its
+        // first call. Either tier can therefore surface a label first.
         vecsim_stl::unordered_set<labelType> returned_results_set;
 
-        VecSimQueryReply *compute_current_batch(size_t n_res, bool isMultiValue) {
+        VecSimQueryReply *compute_current_batch(size_t n_res) {
             // Merge results
             // This call will update `svs_res` and `bf_res` to point to the end of the merged
             // results.
@@ -327,33 +322,18 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             auto [from_svs, from_flat] =
                 merge_results<true>(batch_res->results, svs_results, flat_results, n_res);
 
-            if (!isMultiValue) {
-                // If we're on a single-value index, update the set of results returned from the
-                // FLAT index before popping them, to prevent them to be returned from the SVS index
-                // in later batches.
-                for (size_t i = 0; i < from_flat; ++i) {
-                    this->returned_results_set.insert(this->flat_results[i].id);
-                }
-            } else {
-                // If we're on a multi-value index, update the set of results returned (from
-                // `batch_res`)
-                for (size_t i = 0; i < batch_res->results.size(); ++i) {
-                    this->returned_results_set.insert(batch_res->results[i].id);
-                }
+            for (size_t i = 0; i < batch_res->results.size(); ++i) {
+                this->returned_results_set.insert(batch_res->results[i].id);
             }
 
             // Update results
             flat_results.erase(flat_results.begin(), flat_results.begin() + from_flat);
             svs_results.erase(svs_results.begin(), svs_results.begin() + from_svs);
 
-            // clean up the results
-            // On multi-value indexes, one (or both) results lists may contain results that are
-            // already returned form the other list (with a different score). We need to filter them
-            // out.
-            if (isMultiValue) {
-                filter_irrelevant_results(this->flat_results);
-                filter_irrelevant_results(this->svs_results);
-            }
+            // Either list may still hold a label just returned from the other one (with a different
+            // score), so drop those before the next batch.
+            filter_irrelevant_results(this->flat_results);
+            filter_irrelevant_results(this->svs_results);
 
             // Return current batch
             return batch_res;
@@ -422,7 +402,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         VecSimQueryReply *getNextResults(size_t n_res, VecSimQueryReply_Order order) override {
             auto svs_code = VecSim_QueryReply_OK;
 
-            const bool isMulti = this->index->backendIndex->isMultiValue();
             if (svs_iterator == nullptr) { // first call
                 // First call to getNextResults. The call to the BF iterator will include
                 // calculating all the distances and access the BF index. We take the lock on this
@@ -453,17 +432,8 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                                         tail->results.end());
                     VecSimQueryReply_Free(tail);
 
-                    if (!isMulti) {
-                        // On single-value indexes, duplicates will never appear in the hnsw results
-                        // before they appear in the flat results (at the same time or later if the
-                        // approximation misses) so we don't need to try and filter the flat results
-                        // (and recheck conditions).
-                        break;
-                    } else {
-                        // On multi-value indexes, the flat results may contain results that are
-                        // already returned from the hnsw index. We need to filter them out.
-                        filter_irrelevant_results(this->flat_results);
-                    }
+                    // The flat results may contain labels already returned from the SVS index.
+                    filter_irrelevant_results(this->flat_results);
                 }
 
                 while (svs_results.size() < n_res && svs_iterator != depleted() &&
@@ -489,7 +459,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             }
 
             VecSimQueryReply *batch;
-            batch = compute_current_batch(n_res, isMulti);
+            batch = compute_current_batch(n_res);
 
             if (order == BY_ID) {
                 sort_results_by_id(batch);
