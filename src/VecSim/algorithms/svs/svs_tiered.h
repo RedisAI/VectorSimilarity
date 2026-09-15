@@ -32,6 +32,7 @@ struct SVSInsertJob : public AsyncJob {
  */
 struct SVSConsolidateJob : public AsyncJob {
     std::vector<labelType> labels;
+    std::atomic<bool> executing{false};
 
     SVSConsolidateJob(std::shared_ptr<VecSimAllocator> allocator,
                       const std::vector<labelType> &labels_, JobCallback insertCb,
@@ -276,8 +277,9 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     idType currInvalidJobId; // A unique arbitrary identifier for accessing invalid jobs
     std::mutex invalidJobsLookupGuard;
 
-    vecsim_stl::unordered_set<AsyncJob *> pendingConsolidateJobs;
-    std::mutex consolidateJobsGuard;
+    vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSConsolidateJob *>>
+        labelToConsolidateJobs;
+    mutable std::shared_mutex consolidateJobsGuard;
 
     size_t flat_buffer_bound;
 
@@ -641,11 +643,21 @@ private:
         std::shared_lock<std::shared_mutex> lock(index->updateJobMutex);
         auto svs_index = index->GetSVSIndex();
         svs_index->setParallelism(1);
-        svs_index->consolidate(consolidate_job->labels);
+
+        bool valid = false;
         {
-            std::lock_guard jobs_lock(index->consolidateJobsGuard);
-            index->pendingConsolidateJobs.erase(job);
+            std::shared_lock<std::shared_mutex> flat_lock(index->flatIndexGuard);
+            valid = consolidate_job->isValid;
+            if (valid) {
+                consolidate_job->executing.store(true, std::memory_order_release);
+            }
         }
+        if (valid) {
+            svs_index->consolidate(consolidate_job->labels);
+            // Cleared before the registry lock is needed again, so a waiter cannot deadlock us.
+            consolidate_job->executing.store(false, std::memory_order_release);
+        }
+        index->forgetConsolidateJob(consolidate_job);
         delete job;
     }
 
@@ -692,23 +704,79 @@ public:
     }
 
     void scheduleSVSIndexConsolidate(labelType label) {
-        AsyncJob *new_consolidate_job = new (this->allocator)
+        auto *new_consolidate_job = new (this->allocator)
             SVSConsolidateJob(this->allocator, {label}, SVSIndexConsolidateWrapper, this);
 
         {
-            std::lock_guard lock(this->consolidateJobsGuard);
-            this->pendingConsolidateJobs.insert(new_consolidate_job);
+            std::lock_guard<std::shared_mutex> lock(this->consolidateJobsGuard);
+            auto it = this->labelToConsolidateJobs.find(label);
+            if (it != this->labelToConsolidateJobs.end()) {
+                it->second.push_back(new_consolidate_job);
+            } else {
+                vecsim_stl::vector<SVSConsolidateJob *> jobs(1, new_consolidate_job,
+                                                             this->allocator);
+                this->labelToConsolidateJobs.insert({label, std::move(jobs)});
+            }
         }
         // Insert job to the queue.
         this->submitSingleJob(new_consolidate_job);
     }
 
 private:
-    idType setAndSaveInvalidJob(SVSInsertJob *job) {
-        // wait until insertion finishes
+    void forgetConsolidateJob(SVSConsolidateJob *job) {
+        std::lock_guard<std::shared_mutex> lock(this->consolidateJobsGuard);
+        for (auto label : job->labels) {
+            auto it = this->labelToConsolidateJobs.find(label);
+            if (it == this->labelToConsolidateJobs.end()) {
+                continue;
+            }
+            auto &jobs = it->second;
+            jobs.erase(std::remove(jobs.begin(), jobs.end(), job), jobs.end());
+            if (jobs.empty()) {
+                this->labelToConsolidateJobs.erase(it);
+            }
+        }
+    }
+    // Caller must hold flatIndexGuard exclusive
+    std::vector<labelType> takeOverConsolidateOf(labelType label) {
+        std::vector<labelType> taken_over;
+        vecsim_stl::vector<SVSConsolidateJob *> running(this->allocator);
+        {
+            std::shared_lock<std::shared_mutex> lock(this->consolidateJobsGuard);
+            auto it = this->labelToConsolidateJobs.find(label);
+            if (it == this->labelToConsolidateJobs.end()) {
+                return taken_over;
+            }
+            for (auto *job : it->second) {
+                if (!job->isValid) {
+                    continue; // already taken over by an earlier call
+                }
+                if (job->executing.load(std::memory_order_acquire)) {
+                    running.push_back(job);
+                } else {
+                    job->isValid = false;
+                    taken_over.insert(taken_over.end(), job->labels.begin(), job->labels.end());
+                }
+            }
+        }
+        for (auto *job : running) {
+            while (job->executing.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        }
+        return taken_over;
+    }
+
+    // Wait until the job leaves its publish window
+    // Safe to call while holding flatIndexGuard exclusive
+    static void waitForInsertJob(SVSInsertJob *job) {
         while (job->executing.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
+    }
+
+    idType setAndSaveInvalidJob(SVSInsertJob *job) {
+        waitForInsertJob(job);
         this->invalidJobsLookupGuard.lock();
         job->isValid = false;
         idType curInvalidId = currInvalidJobId++;
@@ -870,7 +938,7 @@ public:
         : Base(svs_index, bf_index, tiered_index_params, allocator),
           uncompletedJobs(this->allocator), labelToInsertJobs(this->allocator),
           invalidJobs(this->allocator), currInvalidJobId(0),
-          pendingConsolidateJobs(this->allocator) {
+          labelToConsolidateJobs(this->allocator) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
@@ -912,8 +980,10 @@ public:
         }
 
         // Delete all the pending consolidate jobs
-        for (auto *job : this->pendingConsolidateJobs) {
-            delete job;
+        for (auto &jobs : this->labelToConsolidateJobs) {
+            for (auto *job : jobs.second) {
+                delete job;
+            }
         }
     }
 
@@ -1179,12 +1249,6 @@ public:
      * Reports `Unsupported` when the backend holds the label and cannot move it, which is the
      * case when built against an SVS without `replace_external_id`. All-or-nothing: on any code
      * other than `VecSimRelabel_OK` both tiers are untouched.
-     *
-     * `updateJobMutex` is taken first, in the order `updateSVSIndex` takes its own locks. Holding
-     * it is what makes this correct rather than merely serialised: an update job snapshots the
-     * buffer's labels *by value* and afterwards reconciles only id swaps and deletions, so a
-     * rename landing inside its window would be invisible to it and the vector would reach the
-     * backend under the old label.
      */
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override {
         if (old_label == new_label) {
@@ -1192,39 +1256,71 @@ public:
         }
         auto *svs_index = GetSVSIndex();
 
-        // Taken together through `std::lock`'s back-off rather than one after another, because
-        // the orders in this class disagree: nearly everything acquires flat before main, but the
-        // in-place add path takes `mainIndexGuard` before `flatIndexGuard` while the backend is
-        // still empty. Acquiring in sequence would hold one guard while blocking on another and
-        // close a cycle with that path; acquiring them together cannot, whichever order the other
-        // side uses. Same idiom that path already uses for its own two locks.
-        std::scoped_lock lock(this->updateJobMutex, this->flatIndexGuard, this->mainIndexGuard);
+        std::shared_lock<std::shared_mutex> lock(this->updateJobMutex);
 
-        const bool in_flat = this->frontendIndex->isLabelExists(old_label);
-        const bool in_backend = svs_index->isLabelExists(old_label);
-        if (!in_flat && !in_backend) {
-            return VecSimRelabel_OldLabelMissing;
-        }
-        if (this->frontendIndex->isLabelExists(new_label) || svs_index->isLabelExists(new_label)) {
-            return VecSimRelabel_NewLabelTaken;
-        }
+        bool flat_holds_old = false;
+        std::vector<labelType> taken_over;
+        {
+            std::lock_guard flat_lock{this->flatIndexGuard};
 
-        // The backend goes first because it is the tier that can refuse; refusing after the
-        // buffer had already moved would leave the label half applied.
-        if (in_backend) {
-            const VecSimRelabelCode backend_ret =
-                this->backendIndex->relabelVector(old_label, new_label);
-            if (backend_ret != VecSimRelabel_OK) {
-                return backend_ret;
+            flat_holds_old = this->frontendIndex->isLabelExists(old_label);
+            if (!flat_holds_old && !svs_index->isLabelExists(old_label)) {
+                return VecSimRelabel_OldLabelMissing;
+            }
+            if (this->frontendIndex->isLabelExists(new_label) ||
+                svs_index->isLabelExists(new_label)) {
+                return VecSimRelabel_NewLabelTaken;
+            }
+
+            auto pending = this->labelToInsertJobs.find(old_label);
+            if (pending != this->labelToInsertJobs.end()) {
+                auto jobs = std::move(pending->second);
+                this->labelToInsertJobs.erase(pending);
+                for (auto *job : jobs) {
+                    waitForInsertJob(job);
+                    job->label = new_label;
+                }
+                this->labelToInsertJobs.emplace(new_label, std::move(jobs));
+            }
+
+            // isLabelExists() said new_label is free, but SVS keeps the translator entry of a
+            // soft-deleted label until its consolidate job runs, and would refuse the remap.
+            taken_over = takeOverConsolidateOf(new_label);
+
+            if (flat_holds_old) {
+                const VecSimRelabelCode flat_ret =
+                    this->frontendIndex->relabelVector(old_label, new_label);
+                assert(flat_ret == VecSimRelabel_OK &&
+                       "the buffer just reported holding this label");
+                UNUSED(flat_ret);
             }
         }
-        if (in_flat) {
-            const VecSimRelabelCode flat_ret =
-                this->frontendIndex->relabelVector(old_label, new_label);
-#ifdef BUILD_TESTS
-            assert(flat_ret == VecSimRelabel_OK && "the buffer just reported holding this label");
-#endif
-            UNUSED(flat_ret);
+
+        // Do the taken-over job's,
+        // the remap below isn't refused by a leftover translator entry
+        if (!taken_over.empty()) {
+            svs_index->consolidate(taken_over);
+        }
+
+        const VecSimRelabelCode backend_ret =
+            this->backendIndex->relabelVector(old_label, new_label);
+        if (backend_ret == VecSimRelabel_NewLabelTaken) {
+            // Only reachable if new_label was added concurrently with this rename
+            std::lock_guard flat_lock{this->flatIndexGuard};
+            auto pending = this->labelToInsertJobs.find(new_label);
+            if (pending != this->labelToInsertJobs.end()) {
+                auto jobs = std::move(pending->second);
+                this->labelToInsertJobs.erase(pending);
+                for (auto *job : jobs) {
+                    waitForInsertJob(job);
+                    job->label = old_label;
+                }
+                this->labelToInsertJobs.emplace(old_label, std::move(jobs));
+            }
+            if (flat_holds_old) {
+                this->frontendIndex->relabelVector(new_label, old_label);
+            }
+            return VecSimRelabel_NewLabelTaken;
         }
         return VecSimRelabel_OK;
     }
