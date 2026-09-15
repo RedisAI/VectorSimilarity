@@ -17,6 +17,8 @@
 #include "VecSim/utils/alignment.h"
 #include "VecSim/utils/scoped_locks.h"
 
+#include <atomic>
+#include <mutex>
 #include <shared_mutex>
 
 #if HAVE_SVS
@@ -76,7 +78,13 @@ protected:
     }
 
     void unlockMainIndexGuard() const { mainIndexGuard.unlock(); }
+
+    [[nodiscard]] std::lock_guard<std::shared_mutex> acquireMainIndexGuard() const {
+        lockMainIndexGuard();
+        return std::lock_guard<std::shared_mutex>(mainIndexGuard, std::adopt_lock);
+    }
 #ifdef BUILD_TESTS
+    // Cumulative exclusive acquisitions; unlocking does not decrement this counter.
     mutable std::atomic_int mainIndexGuard_write_lock_count = 0;
 #endif
     size_t flatBufferLimit;
@@ -137,6 +145,9 @@ public:
      * - An ingest job inserts into the backend before removing from the buffer, so a vector
      *   caught inside that window is reported by both tiers and appears twice.
      *
+     * An SQ8 HNSW backend cannot report vector elements. Reads append nothing, including during
+     * training, when the requested label is still buffered in the flat tier.
+     *
      * Which tiers are read follows `getDistanceFrom_Unsafe`: a single-value label found in the
      * buffer is the whole answer, but a multi-value label's vectors are routinely split across
      * the tiers while an ingest is pending, so there the backend is read as well. Reading only
@@ -154,6 +165,11 @@ public:
         assert(vectors_output.empty() && "getDataByLabel expects an empty output vector");
 #endif
 
+        // SQ8 HNSW indexes report no values, including during training.
+        if (this->backendIndex->usesQuantizedStorage()) {
+            return;
+        }
+
 #if HAVE_SVS
         const auto *svs_backend = dynamic_cast<const SVSIndexBase *>(this->backendIndex);
         const bool backend_cannot_report = svs_backend && svs_backend->isCompressed();
@@ -163,13 +179,13 @@ public:
         const size_t before_flat = vectors_output.size();
         this->frontendIndex->getDataByLabel(label, vectors_output);
 #if HAVE_SVS
-        // no relevant data in flat and backend cannot function
+        // There is no buffer contribution, and the compressed backend cannot report values.
         if (backend_cannot_report && vectors_output.size() == before_flat) {
             return;
         }
 #endif
-        // continue to look the data in the backend
-        if (this->backendIndex->isMultiValue() || vectors_output.size() == before_flat) {
+        // Read the backend for multi-value labels or labels absent from FLAT.
+        if (this->frontendIndex->isMultiValue() || vectors_output.size() == before_flat) {
             std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
 #if HAVE_SVS
             if (backend_cannot_report && vectors_output.size() > before_flat &&
@@ -191,7 +207,9 @@ public:
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          flatBufferLimit(tieredParams.flatBufferLimit) {}
+          flatBufferLimit(tieredParams.flatBufferLimit) {
+        assert(backendIndex != nullptr);
+    }
 
     virtual ~VecSimTieredIndex() {
         VecSimIndex_Free(backendIndex);
@@ -250,12 +268,12 @@ template <typename DataType, typename DistType>
 VecSimQueryReply *
 VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_t k,
                                                     VecSimQueryParams *queryParams) const {
-    this->flatIndexGuard.lock_shared();
+    std::shared_lock<std::shared_mutex> flat_lock(this->flatIndexGuard);
 
     // If the flat buffer is empty, we can simply query the main index.
     if (this->frontendIndex->indexSize() == 0) {
         // Release the flat lock and acquire the main lock.
-        this->flatIndexGuard.unlock_shared();
+        flat_lock.unlock();
 
         // Simply query the main index and return the results while holding the lock.
         auto processed_query_ptr = this->frontendIndex->preprocessQuery(queryBlob);
@@ -268,7 +286,7 @@ VecSimTieredIndex<DataType, DistType>::topKQueryImp(const void *queryBlob, size_
         // No luck... first query the flat buffer and release the lock.
         // The query blob is already processed according to the frontend index.
         auto flat_results = this->frontendIndex->topKQuery(queryBlob, k, queryParams);
-        this->flatIndexGuard.unlock_shared();
+        flat_lock.unlock();
 
         // If the query failed (currently only on timeout), return the error code.
         if (flat_results->code != VecSim_QueryReply_OK) {
