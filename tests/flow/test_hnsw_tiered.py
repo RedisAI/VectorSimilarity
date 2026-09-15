@@ -90,6 +90,162 @@ def test_sq8_rejects_unsupported_type(create_index):
         create_index(hnsw_params)
 
 
+
+# SQ8 kernels exist for FLOAT32/FLOAT16 input and for L2/IP. The tiered factory builds its backend
+# as pre-normalized, so Cosine resolves to IP there; a plain HNSW index has no such guarantee.
+SQ8_TYPES = [pytest.param(VecSimType_FLOAT32, id="fp32"), pytest.param(VecSimType_FLOAT16, id="fp16")]
+SQ8_TIERED_METRICS = [
+    pytest.param(VecSimMetric_L2, id="l2"),
+    pytest.param(VecSimMetric_IP, id="ip"),
+    pytest.param(VecSimMetric_Cosine, id="cosine"),
+]
+# Below 64 dimensions SQ8 per-vector metadata outweighs the savings and the index logs a warning.
+SQ8_MIN_DIM = 64
+# The default efRuntime of 10 caps achievable recall for a k=10 query, masking quantization error.
+SQ8_EF_RUNTIME = 100
+
+
+def create_sq8_tiered_index(dim, num_elements, metric, data_type, training_threshold=0,
+                            is_multi=False):
+    hnsw_params = create_hnsw_params(dim=dim, num_elements=num_elements, metric=metric,
+                                     data_type=data_type, is_multi=is_multi,
+                                     ef_runtime=SQ8_EF_RUNTIME)
+    hnsw_params.quantType = VecSimQuant_SQ8
+    tiered_params = create_tiered_hnsw_params()
+    tiered_params.QuantNormalizationSetSize = training_threshold
+    return Tiered_HNSWIndex(hnsw_params, tiered_params, 1024)
+
+
+def to_index_dtype(vectors, data_type):
+    """A FLOAT16 index reads raw half-precision bytes, so it must receive np.float16 input."""
+    return vec_to_float16(vectors) if data_type == VecSimType_FLOAT16 else vectors
+
+
+def exact_distances(query, vectors, metric):
+    # float64 view of whatever precision was actually stored, so rounding is already accounted for.
+    q = np.asarray(query, dtype=np.float64)
+    v = np.asarray(vectors, dtype=np.float64)
+    if metric == VecSimMetric_L2:
+        return np.sum((v - q) ** 2, axis=1)
+    if metric == VecSimMetric_IP:
+        return 1.0 - v @ q
+    return 1.0 - (v @ q) / (np.linalg.norm(v, axis=1) * np.linalg.norm(q))
+
+
+def topk_recall(index, queries, vectors, labels, metric, k):
+    """Recall of the index's top-k labels against the exact ranking over the stored vectors."""
+    hits = 0
+    for query in queries:
+        distances = exact_distances(query, vectors, metric)
+        best = {}
+        for distance, label in zip(distances, labels):
+            best[label] = min(distance, best.get(label, np.inf))
+        expected = [label for label, _ in sorted(best.items(), key=lambda kv: kv[1])[:k]]
+        found, _ = index.knn_query(query, k)
+        hits += len(set(found[0]) & set(expected))
+    return hits / (k * len(queries))
+
+
+@pytest.mark.parametrize("is_multi", [False, True], ids=["single", "multi"])
+@pytest.mark.parametrize("metric", SQ8_TIERED_METRICS)
+@pytest.mark.parametrize("data_type", SQ8_TYPES)
+def test_sq8_tiered_supported_matrix(data_type, metric, is_multi):
+    """Every SQ8-supported type/metric/multiplicity combination indexes, migrates and searches."""
+    num_labels = 100
+    per_label = 2 if is_multi else 1
+    rng = np.random.default_rng(seed=42)
+    vectors = to_index_dtype(
+        np.float32(rng.random((num_labels * per_label, SQ8_MIN_DIM))), data_type)
+    queries = to_index_dtype(np.float32(rng.random((10, SQ8_MIN_DIM))), data_type)
+    labels = [i % num_labels for i in range(num_labels * per_label)]
+
+    index = create_sq8_tiered_index(SQ8_MIN_DIM, len(vectors), metric, data_type,
+                                    is_multi=is_multi)
+    for vector, label in zip(vectors, labels):
+        index.add_vector(vector, label)
+    index.wait_for_index(1)
+
+    # A zero training threshold migrates on ingest, so nothing may remain in the flat buffer.
+    assert index.get_curr_bf_size() == 0
+    assert index.hnsw_label_count() == num_labels
+    assert index.index_size() == len(vectors)
+
+    assert topk_recall(index, queries, vectors, labels, metric, k=10) >= 0.9
+
+
+@pytest.mark.parametrize("data_type", SQ8_TYPES)
+def test_sq8_cosine_needs_a_normalized_backend(data_type):
+    """Cosine has an SQ8 kernel only via a pre-normalized backend, which only tiered guarantees."""
+    hnsw_params = create_hnsw_params(dim=SQ8_MIN_DIM, num_elements=4, metric=VecSimMetric_Cosine,
+                                     data_type=data_type)
+    hnsw_params.quantType = VecSimQuant_SQ8
+
+    with pytest.raises(ValueError, match="Unsupported vector index parameters"):
+        HNSWIndex(hnsw_params)
+
+    assert Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), 1024).index_size() == 0
+
+
+def test_sq8_deletion_during_accumulation():
+    """A label deleted while accumulating must not migrate once the threshold is crossed."""
+    threshold = 8
+    total = 16
+    rng = np.random.default_rng(seed=42)
+    vectors = np.float32(rng.random((total, SQ8_MIN_DIM)))
+    index = create_sq8_tiered_index(SQ8_MIN_DIM, total, VecSimMetric_L2, VecSimType_FLOAT32,
+                                    training_threshold=threshold)
+
+    for label in range(3):
+        index.add_vector(vectors[label], label)
+    index.wait_for_index(1)
+    # Below the threshold the vectors are still held uncompressed in the flat buffer.
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (3, 0)
+
+    index.delete_vector(1)
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (2, 0)
+    assert index.index_size() == 2
+
+    for label in range(3, total):
+        index.add_vector(vectors[label], label)
+    index.wait_for_index(1)
+
+    surviving = [label for label in range(total) if label != 1]
+    assert index.get_curr_bf_size() == 0
+    assert index.hnsw_label_count() == len(surviving)
+    assert index.index_size() == len(surviving)
+
+    # The deleted label must not reappear through the migrated, quantized index.
+    found, _ = index.knn_query(vectors[1], len(surviving))
+    assert 1 not in found[0], found
+
+
+def test_sq8_queries_across_transition():
+    """Search stays exact before the threshold and keeps recall after migration quantizes."""
+    threshold = 60
+    below = 20
+    rng = np.random.default_rng(seed=42)
+    vectors = np.float32(rng.random((threshold, SQ8_MIN_DIM)))
+    queries = np.float32(rng.random((10, SQ8_MIN_DIM)))
+    labels = list(range(threshold))
+    index = create_sq8_tiered_index(SQ8_MIN_DIM, threshold, VecSimMetric_L2, VecSimType_FLOAT32,
+                                    training_threshold=threshold)
+
+    for label in range(below):
+        index.add_vector(vectors[label], label)
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (below, 0)
+    # The flat buffer is an uncompressed brute-force index, so its ranking is exact.
+    assert topk_recall(index, queries, vectors[:below], labels[:below],
+                       VecSimMetric_L2, k=10) == 1.0
+
+    for label in range(below, threshold):
+        index.add_vector(vectors[label], label)
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (0, threshold)
+    assert topk_recall(index, queries, vectors, labels, VecSimMetric_L2, k=10) >= 0.9
+
+
 class IndexCtx:
     array_conversion_func = {
         VecSimType_FLOAT32: np.float32,
