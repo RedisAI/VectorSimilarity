@@ -41,6 +41,28 @@ struct AsyncJob : public VecsimBaseObject {
           isValid(true) {}
 };
 
+/**
+ * Common base for asynchronous jobs submitted by tiered indexes.
+ */
+template <JobType Type>
+struct TieredJob : public AsyncJob {
+    TieredJob(std::shared_ptr<VecSimAllocator> allocator, JobCallback callback, VecSimIndex *index)
+        : AsyncJob(allocator, Type, callback, index) {}
+};
+
+/**
+ * A job that inserts a new vector from the flat buffer to the backend.
+ */
+template <JobType Type>
+struct TieredInsertJob : public TieredJob<Type> {
+    labelType label;
+    idType id;
+
+    TieredInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
+                    JobCallback insertCb, VecSimIndex *index_)
+        : TieredJob<Type>(allocator, insertCb, index_), label(label_), id(id_) {}
+};
+
 // All read operations (including KNN, range, batch iterators and get-distance-from) are guaranteed
 // to consider all vectors that were added to the index before the query was submitted. The results
 // may include vectors that were added after the query was submitted, with no guarantees.
