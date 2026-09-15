@@ -146,11 +146,14 @@ size_t VecSimIndex_IndexSize(VecSimIndex *index);
  * @param paramNum number of params in rparams (or number of parames in rparams to resolve).
  * @param qparams pointer to VecSimQueryParams struct to set.
  * @param query_type indicates if query is hybrid, range or "standard" VSS query.
+ * @param err_msg optional out param. On failure (a non-OK return code), set to a message
+ * describing why that specific parameter/value was rejected; set to NULL on success. The pointer
+ * is thread-local and is overwritten by the next call to this function on the same thread.
  * @return VecSim_OK if the resolve was successful, VecSimResolveCode error code if not.
  */
 VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                             int paramNum, VecSimQueryParams *qparams,
-                                            VecsimQueryType query_type);
+                                            VecsimQueryType query_type, const char **err_msg);
 
 /**
  * @brief Search for the k closest vectors to a given vector in the index. The results can be

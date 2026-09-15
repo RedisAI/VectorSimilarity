@@ -1203,9 +1203,9 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
     rparams.push_back(VecSimRawParam{"epsilon", strlen("epsilon"), "0.1", strlen("0.1")});
 
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_UnknownParam);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSimParamResolverErr_UnknownParam);
     }
     // EF_RUNTIME is not a valid parameter for BF index.
     rparams[0] = {.name = "ef_runtime",
@@ -1214,22 +1214,23 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
                   .valLen = strlen("200")};
 
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_UnknownParam);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSimParamResolverErr_UnknownParam);
     }
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
     // Sending only "batch_size" param is valid.
     rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "100", strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data() + 1, 1, &qparams, QUERY_TYPE_HYBRID),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data() + 1, 1, &qparams, QUERY_TYPE_HYBRID,
+                                        nullptr),
               VecSim_OK);
     ASSERT_EQ(qparams.batchSize, 100);
 
     // With EF_RUNTIME, its again invalid (for hybrid queries as well).
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_UnknownParam);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSimParamResolverErr_UnknownParam);
     }
     VecSimIndex_Free(index);
 }
