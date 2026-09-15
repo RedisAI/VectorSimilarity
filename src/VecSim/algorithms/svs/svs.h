@@ -610,16 +610,19 @@ public:
         if (old_label == new_label) {
             return VecSimRelabel_SameLabel;
         }
-        // `isLabelExists` also covers the index that never held a vector, where `impl_` has not
-        // been created yet and so trivially holds nothing.
-        if (!isLabelExists(old_label)) {
+
+        std::shared_lock mutation_lock(this->implMutationGuard_);
+        auto impl = getImpl();
+
+        // A null impl_ is an index that never held a vector, so it holds neither label.
+        if (!impl || !impl->has_id(old_label)) {
             return VecSimRelabel_OldLabelMissing;
         }
-        if (isLabelExists(new_label)) {
+        if (impl->has_id(new_label)) {
             return VecSimRelabel_NewLabelTaken;
         }
 
-        impl_->replace_external_id(old_label, new_label);
+        impl->replace_external_id(old_label, new_label);
         return VecSimRelabel_OK;
     }
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
