@@ -16,14 +16,23 @@
 #include "hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 
-using HNSWInsertJob = TieredInsertJob<HNSW_INSERT_VECTOR_JOB>;
+/**
+ * Definition of a job that inserts a new vector from flat into HNSW Index.
+ */
+struct HNSWInsertJob : public AsyncJob {
+    labelType label;
+    idType id;
+
+    HNSWInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
+                  JobCallback insertCb, VecSimIndex *index_)
+        : AsyncJob(allocator, HNSW_INSERT_VECTOR_JOB, insertCb, index_), label(label_), id(id_) {}
+};
 
 /**
  * Definition of a job that swaps last id with a deleted id in HNSW Index after delete operation.
  */
 struct HNSWSwapJob : public VecsimBaseObject {
     idType deleted_id;
-
     std::atomic_int
         pending_repair_jobs_counter; // number of repair jobs left to complete before this job
                                      // is ready to be executed (atomic counter).
@@ -44,14 +53,14 @@ static const size_t MAX_PENDING_SWAP_JOBS_THRESHOLD = 100000;
  * Definition of a job that repairs a certain node's connection in HNSW Index after delete
  * operation.
  */
-struct HNSWRepairJob : public TieredJob<HNSW_REPAIR_NODE_CONNECTIONS_JOB> {
+struct HNSWRepairJob : public AsyncJob {
     idType node_id;
     unsigned short level;
     vecsim_stl::vector<HNSWSwapJob *> associatedSwapJobs;
 
     HNSWRepairJob(std::shared_ptr<VecSimAllocator> allocator, idType id_, unsigned short level_,
                   JobCallback repairCb, VecSimIndex *index_, HNSWSwapJob *swapJob)
-        : TieredJob<HNSW_REPAIR_NODE_CONNECTIONS_JOB>(allocator, repairCb, index_), node_id(id_),
+        : AsyncJob(allocator, HNSW_REPAIR_NODE_CONNECTIONS_JOB, repairCb, index_), node_id(id_),
           level(level_),
           // Insert the first swap job from which this repair job was created.
           associatedSwapJobs(1, swapJob, this->allocator) {}
