@@ -151,6 +151,14 @@ private:
 protected:
     std::shared_ptr<VecSimIndex> index;
 
+    static std::shared_ptr<VecSimIndex> createIndex(const VecSimParams &params) {
+        auto *native_index = VecSimIndex_New(&params);
+        if (!native_index) {
+            throw std::invalid_argument("Unsupported vector index parameters");
+        }
+        return std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
+    }
+
     inline VecSimQueryReply *searchKnnInternal(const char *query, size_t k,
                                                VecSimQueryParams *query_params) {
         return VecSimIndex_TopKQuery(index.get(), query, k, query_params, BY_SCORE);
@@ -168,13 +176,7 @@ protected:
 public:
     PyVecSimIndex() = default;
 
-    explicit PyVecSimIndex(const VecSimParams &params) {
-        auto *native_index = VecSimIndex_New(&params);
-        if (!native_index) {
-            throw std::invalid_argument("Unsupported vector index parameters");
-        }
-        index = std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
-    }
+    explicit PyVecSimIndex(const VecSimParams &params) : index(createIndex(params)) {}
 
     void addVector(const py::object &input, size_t id) {
         py::array vector_data(input);
@@ -291,11 +293,7 @@ public:
     explicit PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                                .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
-        auto *native_index = VecSimIndex_New(&params);
-        if (!native_index) {
-            throw std::invalid_argument("Unsupported vector index parameters");
-        }
-        this->index = std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
+        this->index = createIndex(params);
         this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
@@ -496,6 +494,17 @@ class PyTieredIndex : public PyVecSimIndex {
 protected:
     tieredIndexMock mock_thread_pool;
 
+    void initializeIndex(const VecSimParams &params) {
+        try {
+            this->index = createIndex(params);
+        } catch (...) {
+            // The mock destructor requires a valid index whenever its context is present.
+            mock_thread_pool.reset_ctx();
+            throw;
+        }
+        mock_thread_pool.ctx->index_strong_ref = this->index;
+    }
+
     VecSimIndexAbstract<float, float> *getFlatBuffer() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
             ->getFlatBufferIndex();
@@ -545,16 +554,7 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_TIERED,
                                .algoParams = {.tieredParams = TieredIndexParams{tiered_params}}};
 
-        auto *native_index = VecSimIndex_New(&params);
-        if (!native_index) {
-            // The mock destructor requires a valid index whenever its context is present.
-            mock_thread_pool.reset_ctx();
-            throw std::invalid_argument("Unsupported vector index parameters");
-        }
-        this->index = std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
-
-        // Set the created tiered index in the index external context.
-        this->mock_thread_pool.ctx->index_strong_ref = this->index;
+        initializeIndex(params);
     }
 
     size_t HNSWLabelCount() {
@@ -567,7 +567,7 @@ public:
     explicit PyBFIndex(const BFParams &bf_params) {
         VecSimParams params = {.algo = VecSimAlgo_BF,
                                .algoParams = {.bfParams = BFParams{bf_params}}};
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        this->index = createIndex(params);
     }
 };
 
@@ -576,10 +576,7 @@ class PySVSIndex : public PyVecSimIndex {
 public:
     explicit PySVSIndex(const SVSParams &svs_params) {
         VecSimParams params = {.algo = VecSimAlgo_SVS, .algoParams = {.svsParams = svs_params}};
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
-        if (!this->index) {
-            throw std::runtime_error("Index creation failed");
-        }
+        this->index = createIndex(params);
     }
 
     explicit PySVSIndex(const std::string &location, const SVSParams &svs_params) {
@@ -660,10 +657,7 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_TIERED,
                                .algoParams = {.tieredParams = tiered_params}};
 
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
-
-        // Set the created tiered index in the index external context.
-        this->mock_thread_pool.ctx->index_strong_ref = this->index;
+        initializeIndex(params);
     }
 
     size_t SVSLabelCount() {
