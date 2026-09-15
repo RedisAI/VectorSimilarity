@@ -1068,6 +1068,20 @@ class GeneralTest():
         hnsw_labels, hnsw_distances = hnsw_index.range_query(self.query_data[0], radius=0)
         assert len(hnsw_labels[0]) == 0
 
+    def get_vector(self, test_logger):
+        hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
+
+        # An integer index stores its elements exactly as they were inserted, so reading them back
+        # is an equality check rather than a tolerance one.
+        for label, vector in (label_to_vec_list[0], label_to_vec_list[-1]):
+            stored = hnsw_index.get_vector(label)
+            assert stored.shape == (1, self.dim)
+            assert np.array_equal(stored[0], vector)
+
+        # An absent label is reported as no vectors rather than as an error.
+        assert hnsw_index.get_vector(self.num_elements + 1).shape == (0, self.dim)
+        test_logger.info("get_vector returned the stored elements")
+
     def multi_value(self, create_data_func, test_logger, num_per_label = 5):
         num_per_label = 5
         num_labels = self.num_elements // num_per_label
@@ -1135,6 +1149,9 @@ class TestINT8(GeneralTest):
     def test_multi_value(self, test_logger):
         self.multi_value(create_int8_vectors, test_logger)
 
+    def test_get_vector(self, test_logger):
+        self.get_vector(test_logger)
+
 class TestUINT8(GeneralTest):
 
     data_type = VecSimType_UINT8
@@ -1156,6 +1173,9 @@ class TestUINT8(GeneralTest):
 
     def test_multi_value(self, test_logger):
         self.multi_value(create_uint8_vectors, test_logger)
+
+    def test_get_vector(self, test_logger):
+        self.get_vector(test_logger)
 
 
 def test_relabel_vector(test_logger):

@@ -168,6 +168,11 @@ inline size_t EstimateInitialSize_ChooseMultiOrSingle(bool is_multi) {
 }
 
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
+    return EstimateInitialSize(params, is_normalized,
+                               /* with_mean = */ params->quantParams != nullptr);
+}
+
+size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
@@ -179,7 +184,7 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
             throw std::invalid_argument("Unsupported quantization params for HNSW index");
         }
         // Template arguments do not affect these component sizes.
-        if (params->quantParams) {
+        if (with_mean) {
             est += allocations_overhead +
                    sizeof(DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>);
             est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
@@ -218,18 +223,20 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized) {
 }
 
 size_t EstimateElementSize(const HNSWParams *params) {
+    return EstimateElementSize(params, /* with_mean = */ params->quantParams != nullptr);
+}
 
+size_t EstimateElementSize(const HNSWParams *params, bool with_mean) {
     size_t M = (params->M) ? params->M : HNSW_DEFAULT_M;
     size_t elementGraphDataSize = sizeof(ElementGraphData) + sizeof(idType) * M * 2;
 
     size_t stored_data_size;
     // Preserve the element estimator's existing contract: return a size and validate in NewIndex.
     if (params->quantType == VecSimQuant_SQ8) {
-        bool with_norm = params->quantParams != nullptr;
         if (params->metric == VecSimMetric_L2) {
-            stored_data_size = GetSQ8StoredDataSize<VecSimMetric_L2>(params->dim, with_norm);
+            stored_data_size = GetSQ8StoredDataSize<VecSimMetric_L2>(params->dim, with_mean);
         } else {
-            stored_data_size = GetSQ8StoredDataSize<VecSimMetric_IP>(params->dim, with_norm);
+            stored_data_size = GetSQ8StoredDataSize<VecSimMetric_IP>(params->dim, with_mean);
         }
     } else {
         stored_data_size =
