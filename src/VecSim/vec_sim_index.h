@@ -116,6 +116,7 @@ protected:
     }
 
     IndexCalculatorInterface<DistType> *getIndexCalculator() const { return indexCalculator; }
+    PreprocessorsContainerAbstract *getPreprocessorsContainer() const { return preprocessors; }
 
 public:
     /**

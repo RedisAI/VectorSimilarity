@@ -20,6 +20,8 @@
 #include "VecSim/query_result_definitions.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
+#include "VecSim/spaces/computer/preprocessors.h"
+#include <span>
 #include "VecSim/tombstone_interface.h"
 
 #ifdef BUILD_TESTS
@@ -89,6 +91,46 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public HNSWSerializer
 #endif
 {
+private:
+    template <VecSimMetric Metric>
+    void setSQ8Mean(std::span<const float> mean) noexcept {
+        // SQ8-specific component access. Introduce a trainer interface when a second quantizer
+        // needs training, replacing these concrete component casts.
+        // Assumes exactly one preprocessor: SQ8 WithNorm in slot 0. Tiered cosine inputs
+        // are normalized by the frontend; a pipeline with a preceding normalizer is unsupported.
+        auto *container = static_cast<MultiPreprocessorsContainer<DataType, 1> *>(
+            this->getPreprocessorsContainer());
+        auto *preprocessor = dynamic_cast<QuantPreprocessor<DataType, Metric, true> *>(
+            container->getPreprocessors()[0]);
+        auto *calculator = dynamic_cast<DistanceCalculatorWithNorm<DataType, float, Metric> *>(
+            this->getIndexCalculator());
+        assert(preprocessor && calculator);
+        preprocessor->setMean(mean);
+        calculator->setMeanSumSquares(mean);
+    }
+
+public:
+    // Writer-only operation: install the mean once, before any stored vector, under the
+    // exclusive tiered main lock and before submitting insertion jobs. The backend must have
+    // its final SQ8 WithNorm components; the caller owns and enforces the one-time transition.
+    // SQ8-specific: assumes a single SQ8 preprocessor in slot 0, with cosine normalization
+    // performed by the frontend. Introduce a trainer interface when a second quantizer needs
+    // training. A quantizer that learns storedDataSize from data needs deferred backend creation.
+    void setQuantizationMean(std::span<const float> mean) noexcept {
+        assert(this->isQuantized && curElementCount == 0 && mean.size() == this->dim);
+        if constexpr (QuantInput<DataType> && std::is_same_v<DistType, float>) {
+            if (this->metric == VecSimMetric_L2) {
+                setSQ8Mean<VecSimMetric_L2>(mean);
+            } else {
+                // Tiered cosine inputs are already normalized, and use IP SQ8 components.
+                assert(this->metric == VecSimMetric_IP || this->metric == VecSimMetric_Cosine);
+                setSQ8Mean<VecSimMetric_IP>(mean);
+            }
+        } else {
+            assert(false && "Unsupported SQ8 data type");
+        }
+    }
+
 protected:
     // Index build parameters
     size_t maxElements;
@@ -251,6 +293,7 @@ public:
     void unlockIndexDataGuard() const;
     void lockSharedIndexDataGuard() const;
     void unlockSharedIndexDataGuard() const;
+    std::shared_lock<std::shared_mutex> acquireSharedIndexDataGuard() const;
     void lockNodeLinks(idType node_id) const;
     void unlockNodeLinks(idType node_id) const;
     VisitedNodesHandler *getVisitedList() const;
@@ -543,6 +586,12 @@ void HNSWIndex<DataType, DistType>::lockSharedIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
     indexDataGuard.unlock_shared();
+}
+
+template <typename DataType, typename DistType>
+std::shared_lock<std::shared_mutex>
+HNSWIndex<DataType, DistType>::acquireSharedIndexDataGuard() const {
+    return std::shared_lock<std::shared_mutex>(indexDataGuard);
 }
 
 template <typename DataType, typename DistType>
