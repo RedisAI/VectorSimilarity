@@ -621,3 +621,78 @@ def test_multi_range_query(test_logger):
     # Expect zero results for radius==0
     tiered_labels, tiered_distances = index.range_query(query_data, radius=0)
     assert len(tiered_labels[0]) == 0
+
+
+def test_relabel_vector(test_logger):
+    dim = 16
+    num_elements = 1000
+    hnsw_params = create_hnsw_params(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32)
+    # A flat buffer large enough to hold everything, so the relabel below has a real chance of
+    # landing while the vector is still buffered with a pending ingest job.
+    index = Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), num_elements)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    # Relabel one early and one late label. The workers ingest in insertion order, so by now the
+    # early one is most likely already in HNSW while the late one is most likely still buffered
+    # with a pending ingest job - between them the two tiers both get covered. The buffered case is
+    # the delicate one: a job left holding the old label would either ingest the vector under it or
+    # throw out of the worker thread, and neither would survive the assertions below.
+    buffered = index.get_curr_bf_size()
+    test_logger.info(f"relabeling with {buffered} of {num_elements} vectors still buffered")
+    moved = {7: num_elements + 500, num_elements - 1: num_elements + 501}
+    for old_label, new_label in moved.items():
+        assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    index.wait_for_index()
+
+    # Once ingestion has drained, the vector sits in HNSW under the new label and under no other.
+    assert index.index_size() == num_elements
+    assert index.hnsw_label_count() == num_elements
+    for old_label, new_label in moved.items():
+        assert_allclose(index.get_vector(new_label)[0], data[old_label], rtol=1e-6)
+        assert index.get_vector(old_label).shape == (0, dim)
+
+        labels, distances = index.knn_query(data[old_label], 1)
+        assert labels[0][0] == new_label
+        assert distances[0][0] < 1e-6
+
+    # Each rejection is reported distinctly, and none of them modifies the index.
+    assert index.relabel_vector(num_elements + 1, 0) == VecSimRelabel_OldLabelMissing
+    assert index.relabel_vector(0, 1) == VecSimRelabel_NewLabelTaken
+    assert index.relabel_vector(0, 0) == VecSimRelabel_SameLabel
+    assert index.index_size() == num_elements
+    test_logger.info("tiered relabel_vector moved the label across both tiers")
+
+
+def test_relabel_vector_multi(test_logger):
+    dim = 16
+    num_labels = 200
+    per_label = 5
+    hnsw_params = create_hnsw_params(dim, num_labels * per_label, VecSimMetric_L2,
+                                     VecSimType_FLOAT32, is_multi=True)
+    index = Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), num_labels * per_label)
+
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    for label in range(num_labels):
+        for vector in data[label]:
+            index.add_vector(vector, label)
+
+    # In a multi index a label can hold several pending ingest jobs at once, so a late label
+    # exercises re-keying all of them together while an early one is most likely already in HNSW.
+    buffered = index.get_curr_bf_size()
+    test_logger.info(f"relabeling with {buffered} of {num_labels * per_label} vectors buffered")
+    moved = {7: num_labels + 500, num_labels - 1: num_labels + 501}
+    for old_label, new_label in moved.items():
+        assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    index.wait_for_index()
+
+    assert index.index_size() == num_labels * per_label
+    assert index.hnsw_label_count() == num_labels
+    for old_label, new_label in moved.items():
+        assert index.get_vector(new_label).shape == (per_label, dim)
+        assert index.get_vector(old_label).shape == (0, dim)
+    test_logger.info("tiered multi relabel_vector moved every vector under the label")
