@@ -10,6 +10,7 @@
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "tests_utils.h"
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"

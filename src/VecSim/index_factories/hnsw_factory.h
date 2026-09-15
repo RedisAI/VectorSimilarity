@@ -25,7 +25,9 @@ namespace HNSWFactory {
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
 VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized = false);
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized = false);
+size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean);
 size_t EstimateElementSize(const HNSWParams *params);
+size_t EstimateElementSize(const HNSWParams *params, bool with_mean);
 
 #ifdef BUILD_TESTS
 // Factory function to be used before loading a serialized index.

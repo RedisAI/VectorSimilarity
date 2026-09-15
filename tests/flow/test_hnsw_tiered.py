@@ -696,3 +696,74 @@ def test_relabel_vector_multi(test_logger):
         assert index.get_vector(new_label).shape == (per_label, dim)
         assert index.get_vector(old_label).shape == (0, dim)
     test_logger.info("tiered multi relabel_vector moved every vector under the label")
+
+
+def test_get_vector(test_logger):
+    dim = 16
+    num_elements = 1000
+    hnsw_params = create_hnsw_params(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32)
+    # A flat buffer large enough to hold everything, so the first read below has a real chance of
+    # landing while the vector is still buffered with a pending ingest job.
+    index = Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), num_elements)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    # A tiered index answers from the buffer as well as from the backend, so a vector is readable
+    # whichever tier currently holds it. The workers ingest in insertion order, which makes the
+    # early label the likely backend case and the late one the likely buffered case.
+    buffered = index.get_curr_bf_size()
+    test_logger.info(f"reading vectors back with {buffered} of {num_elements} still buffered")
+    for label in (0, num_elements - 1):
+        assert_allclose(index.get_vector(label)[0], data[label], rtol=1e-6)
+
+    index.wait_for_index()
+
+    # Once ingestion has drained every vector is in HNSW, and reading it back still returns the
+    # values that were inserted.
+    for label in (0, 7, num_elements - 1):
+        assert_allclose(index.get_vector(label)[0], data[label], rtol=1e-6)
+
+    # An absent label is reported as no vectors rather than as an error.
+    assert index.get_vector(num_elements + 1).shape == (0, dim)
+    test_logger.info("tiered get_vector read from both tiers")
+
+
+def test_get_vector_multi(test_logger):
+    dim = 16
+    num_labels = 200
+    per_label = 5
+    hnsw_params = create_hnsw_params(dim, num_labels * per_label, VecSimMetric_L2,
+                                     VecSimType_FLOAT32, is_multi=True)
+    index = Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), num_labels * per_label)
+
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    for label in range(num_labels):
+        for vector in data[label]:
+            index.add_vector(vector, label)
+
+    # A multi label's vectors are routinely split across the tiers while an ingest is pending, and
+    # an ingest job inserts into the backend before removing from the buffer, so a vector caught
+    # inside that window is reported by both tiers. Hence the count here is a range: every returned
+    # row has to be one of the label's vectors, and none of them may be missing.
+    buffered = index.get_curr_bf_size()
+    test_logger.info(f"reading vectors back with {buffered} of {num_labels} labels buffered")
+    for label in (0, num_labels - 1):
+        stored = index.get_vector(label)
+        assert per_label <= stored.shape[0] <= 2 * per_label
+        assert stored.shape[1] == dim
+        for row in stored:
+            assert np.any(np.all(np.isclose(data[label], row, rtol=1e-6), axis=1))
+
+    index.wait_for_index()
+
+    # Draining ingestion resolves the duplicates: each vector is in the backend exactly once.
+    for label in (0, 7, num_labels - 1):
+        stored = index.get_vector(label)
+        assert stored.shape == (per_label, dim)
+        for row in stored:
+            assert np.any(np.all(np.isclose(data[label], row, rtol=1e-6), axis=1))
+
+    assert index.get_vector(num_labels + 1).shape == (0, dim)
+    test_logger.info("tiered multi get_vector read every vector under the label")
