@@ -253,7 +253,7 @@ public:
         this->getHNSWIndex()->unlockSharedIndexDataGuard();
     }
 
-    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData) {
+    VecSimDebugCommandCode getHNSWElementNeighbors(size_t label, int ***neighborsData) override {
         this->mainIndexGuard.lock_shared();
         auto res = this->getHNSWIndex()->getHNSWElementNeighbors(label, neighborsData);
         this->mainIndexGuard.unlock_shared();
