@@ -235,6 +235,8 @@ public:
             return rawVectorsAsNumpy<float16, float, float>(label, dim);
         } else if (info.type == VecSimType_INT8) {
             return rawVectorsAsNumpy<int8_t, float>(label, dim);
+        } else if (info.type == VecSimType_UINT8) {
+            return rawVectorsAsNumpy<uint8_t, float>(label, dim);
         } else {
             throw std::runtime_error("Invalid vector data type");
         }
