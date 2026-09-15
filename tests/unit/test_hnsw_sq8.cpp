@@ -310,24 +310,35 @@ TYPED_TEST(HNSWSQ8Test, SearchEmptyIndex) { this->search_empty_index_test(); }
 template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::test_override() {
     constexpr size_t count = 250;
+    // Scale the values to keep every distance inside the FP16 range. FP16 tops out at 65504 and
+    // L2² = dim × diff², so unscaled labels would need 4 × 250² = 250000. A vector that is still
+    // waiting in an FP16 flat buffer is compared by an FP16 kernel, which accumulates in half
+    // precision, so an out-of-range distance saturates to infinity there. With scale = 0.1 the
+    // largest distance is 4 × (250 × 0.1)² = 10000.
+    constexpr float scale = 0.1f;
     HNSWParams params = {
         .dim = 4, .initialCapacity = 100, .M = 8, .efConstruction = 20, .efRuntime = count};
     SetUp(params);
 
     for (size_t i = 0; i < 100; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 0);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 0);
     }
     for (size_t i = 100; i < count; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 1);
     }
 
     data_t query[4];
-    GenerateVector(query, static_cast<float>(count));
+    GenerateVector(query, static_cast<float>(count) * scale);
     // Distance decreases as the label increases, so results are in descending label order.
+    const float query_value = to_fp32<data_t>(ToDataType(static_cast<float>(count) * scale));
     auto verify = [&](size_t id, double score, size_t result_index) {
         EXPECT_EQ(id, count - result_index - 1);
-        EXPECT_FLOAT_EQ(score, 4.0f * (count - id) * (count - id));
+        // Compare against the values as they are stored: FP16 cannot hold 0.1 × i exactly, and
+        // half-precision accumulation drops a few more bits, hence the relative tolerance.
+        const float diff = query_value - to_fp32<data_t>(ToDataType(static_cast<float>(id) * scale));
+        const float expected = 4.0f * diff * diff;
+        EXPECT_NEAR(score, expected, 1e-4f + expected * 0.002f);
     };
     runTopKSearchTest(index, query, count, verify);
 }
@@ -393,17 +404,20 @@ template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
     constexpr size_t count = 250;
     constexpr size_t batch_size = 5;
+    // Scaled for the same reason as test_override: an FP16 kernel saturates a distance above
+    // 65504 to infinity, which would leave the farthest labels tied and unordered.
+    constexpr float scale = 0.1f;
     HNSWParams params = {
         .dim = 4, .initialCapacity = count, .M = 8, .efConstruction = 20, .efRuntime = count};
     SetUp(params);
 
-    // Store [i, i, i, i] under label i.
+    // Store [i, i, i, i] * scale under label i.
     for (size_t i = 0; i < count; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 1);
     }
 
     data_t query[4];
-    GenerateVector(query, static_cast<float>(count));
+    GenerateVector(query, static_cast<float>(count) * scale);
     VecSimBatchIterator *iterator = VecSimBatchIterator_New(index, query, nullptr);
     ASSERT_NE(iterator, nullptr);
 
