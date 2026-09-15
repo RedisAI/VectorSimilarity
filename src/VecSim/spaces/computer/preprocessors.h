@@ -257,6 +257,11 @@ static inline T from_fp32(float x) {
 
 template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
 class QuantPreprocessor : public PreprocessorInterface {
+public:
+    // Center L2 queries in FP32 even when the original input is FP16.
+    using QueryType = std::conditional_t<WithNorm && Metric == VecSimMetric_L2, float, DataType>;
+
+private:
     using OUTPUT_TYPE = uint8_t;
     using MetadataType = float; // SQ8 metadata is always FP32 (see class doc).
     using sq8 = vecsim_types::sq8;
@@ -401,7 +406,7 @@ class QuantPreprocessor : public PreprocessorInterface {
     // For normalized L2, values contains y - mean while original_input contains y.
     // The output pointer addresses the metadata region after the query body and may not be
     // 4-byte aligned (e.g. FP16 query body with odd dim), so writes go through memcpy.
-    void assign_query_metadata(const DataType *values, const DataType *original_input,
+    void assign_query_metadata(const QueryType *values, const DataType *original_input,
                                void *output_metadata) const {
 
         // Accumulators are FP32 to preserve precision for FP16 inputs.
@@ -417,10 +422,10 @@ class QuantPreprocessor : public PreprocessorInterface {
         size_t dim_round_down = this->dim & ~size_t(3);
 
         for (; i < dim_round_down; i += 4) {
-            const float y0 = to_fp32<DataType>(values[i]);
-            const float y1 = to_fp32<DataType>(values[i + 1]);
-            const float y2 = to_fp32<DataType>(values[i + 2]);
-            const float y3 = to_fp32<DataType>(values[i + 3]);
+            const float y0 = to_fp32<QueryType>(values[i]);
+            const float y1 = to_fp32<QueryType>(values[i + 1]);
+            const float y2 = to_fp32<QueryType>(values[i + 2]);
+            const float y3 = to_fp32<QueryType>(values[i + 3]);
 
             s0 += y0;
             s1 += y1;
@@ -449,7 +454,7 @@ class QuantPreprocessor : public PreprocessorInterface {
 
         // Tail: handle remaining elements
         for (; i < this->dim; ++i) {
-            const float y = to_fp32<DataType>(values[i]);
+            const float y = to_fp32<QueryType>(values[i]);
             sum += y;
             if constexpr (Metric == VecSimMetric_L2) {
                 sum_squares += y * y;
@@ -460,7 +465,7 @@ class QuantPreprocessor : public PreprocessorInterface {
         }
 
         // Metadata uses MetadataType. Use memcpy because the metadata offset (after the query
-        // body of dim * sizeof(DataType)) is not guaranteed to be sizeof(MetadataType)-aligned
+        // body of dim * sizeof(QueryType)) is not guaranteed to be sizeof(MetadataType)-aligned
         // when DataType is float16 and dim is odd.
         MetadataType buf[3] = {sum};
         size_t n = 1;
@@ -477,7 +482,7 @@ public:
         requires(!WithNorm)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(sq8::storage_bytes_count<Metric>(dim)),
-          query_bytes_count(dim * sizeof(DataType) +
+          query_bytes_count(dim * sizeof(QueryType) +
                             sq8::query_metadata_count<Metric>() * sizeof(MetadataType)) {}
 
     // WithNorm constructor: accepts a pre-computed mean vector (FP32, length == dim).
@@ -486,7 +491,7 @@ public:
         requires(WithNorm)
         : PreprocessorInterface(allocator), mean(mean_vec), dim(dim),
           storage_bytes_count(sq8::storage_bytes_count<Metric, WithNorm>(dim)),
-          query_bytes_count(dim * sizeof(DataType) +
+          query_bytes_count(dim * sizeof(QueryType) +
                             sq8::query_metadata_count<Metric, WithNorm>() * sizeof(MetadataType)) {
         assert(this->mean.size() == dim && "mean vector size must equal dim");
     }
@@ -497,7 +502,7 @@ public:
      * Storage vectors are quantized to uint8_t values, with metadata (min, delta, sum, and
      * sum_squares for L2) appended for distance reconstruction.
      *
-     * Query vectors remain as DataType for asymmetric distance computation, with a precomputed
+     * Query vectors use QueryType for asymmetric distance computation, with a precomputed
      * sum (for IP/Cosine) or sum of squares (for L2) appended for efficient distance calculation.
      *
      * Possible scenarios (currently only CASE 1 is implemented):
@@ -550,7 +555,7 @@ public:
     /**
      * Preprocesses the query vector for asymmetric distance computation.
      *
-     * The query blob contains DataType values followed by FP32 precomputed values. Normalized L2
+     * The query blob contains QueryType values followed by FP32 precomputed values. Normalized L2
      * stores centered query values (y - mean), so its distance kernel directly computes
      * ||(x - mean) - (y - mean)||² without cancellation-prone correction terms. Other modes keep
      * the original query values.
@@ -564,8 +569,8 @@ public:
      * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
      *
      * Query blob size:
-     * - For IP/Cosine: dim * sizeof(DataType) + 1 * sizeof(float)
-     * - For L2:        dim * sizeof(DataType) + 2 * sizeof(float)
+     * - For IP/Cosine: dim * sizeof(QueryType) + 1 * sizeof(float)
+     * - For L2:        dim * sizeof(QueryType) + 2 * sizeof(float)
      */
     void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
                          unsigned char alignment) const override {
@@ -573,12 +578,12 @@ public:
 
         // Allocate aligned memory for the query blob
         blob = this->allocator->allocate_aligned(this->query_bytes_count, alignment);
-        const size_t body_bytes = this->dim * sizeof(DataType);
+        const size_t body_bytes = this->dim * sizeof(QueryType);
         const DataType *input = static_cast<const DataType *>(original_blob);
-        DataType *query_values = static_cast<DataType *>(blob);
+        QueryType *query_values = static_cast<QueryType *>(blob);
         if constexpr (WithNorm && Metric == VecSimMetric_L2) {
             for (size_t i = 0; i < this->dim; ++i) {
-                query_values[i] = from_fp32<DataType>(to_fp32<DataType>(input[i]) - this->mean[i]);
+                query_values[i] = to_fp32<DataType>(input[i]) - this->mean[i];
             }
         } else {
             memcpy(query_values, original_blob, body_bytes);
