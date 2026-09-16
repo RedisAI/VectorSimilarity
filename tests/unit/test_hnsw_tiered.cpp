@@ -340,7 +340,7 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
     // Account for the memory that was allocated in the labelToInsertJobs map (approx.)
     expected_mem +=
         sizeof(vecsim_stl::unordered_map<labelType,
-                                        vecsim_stl::vector<TieredInsertJob *>>::value_type) +
+                                         vecsim_stl::vector<TieredInsertJob *>>::value_type) +
         sizeof(void *) + sizeof(size_t);
     // Account for the inner buffer of the std::vector<TieredInsertJob *> in the map.
     expected_mem += sizeof(void *) + sizeof(size_t);
