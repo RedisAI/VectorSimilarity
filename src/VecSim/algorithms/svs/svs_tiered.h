@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <tuple>
 
@@ -266,7 +267,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // The reason of following container just to properly destroy jobs which not executed yet
     SVSMultiThreadJob::JobsRegistry uncompletedJobs;
 
-    std::atomic<bool> backendInitSubmited{false};
+    // frontend ids holding training data for the backend (re)initialization
     std::unordered_set<idType> ids_to_init_;
 
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSConsolidateJob *>>
@@ -550,9 +551,9 @@ private:
      *
      * This static wrapper function performs the following actions:
      * - Acquires a lock on the index's updateJobMutex to prevent concurrent updates.
-     * - Clears the indexUpdateScheduled flag to allow future scheduling.
      * - Configures the number of threads for the underlying SVS index update operation.
      * - Calls the initSVSIndex method to perform the actual index update.
+     * - Clears the indexUpdateScheduled flag to allow future scheduling.
      *
      * @param idx Pointer to the VecSimIndex to be updated.
      * @param availableThreads The number of threads available for the update operation. Current
@@ -564,9 +565,11 @@ private:
         assert(index);
         // prevent parallel updates
         std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
-        // Release the scheduled flag to allow scheduling again
-        index->indexUpdateScheduled.clear();
-        // Update the SVS index
+        // flag stays set while init runs: !ready() + !flag means "no one will init the backend"
+        struct ClearOnExit {
+            std::atomic_flag &flag;
+            ~ClearOnExit() { flag.clear(std::memory_order_release); }
+        } clear_on_exit{index->indexUpdateScheduled};
         index->initSVSIndex(availableThreads);
     }
 
@@ -775,10 +778,13 @@ private:
             return InsertJobOutcome::Completed;
         }
 
-        // Backend is still initilizing. Resubmit the job
-        if (!svs_index->ready() && this->indexUpdateScheduled.test()) {
+        // a job never inits the backend: one point cannot train the compression
+        if (!svs_index->ready()) {
             this->flatIndexGuard.unlock_shared();
-            return InsertJobOutcome::Deferred;
+            // init pending -> wait for it. no init pending -> back to the training buffer
+            return this->indexUpdateScheduled.test(std::memory_order_acquire)
+                       ? InsertJobOutcome::Deferred
+                       : adoptJobIntoInitBuffer(job);
         }
 
         // Copy the vector blob out of the flat buffer while holding flatIndexGuard, so we
@@ -912,39 +918,20 @@ public:
     int addVector(const void *blob, labelType label) override {
         int ret = 0;
         auto svs_index = GetSVSIndex();
-        size_t frontend_index_size = 0;
 
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
             // Backend index initialization data have to be buffered for proper
             // compression/training.
-            if ((!svs_index->ready()) &&
-                (!this->backendInitSubmited.load(std::memory_order_acquire))) {
-                // First collect vectors in frontend index
-                // lock in scope to ensure that these will be released before
-                // initSVSIndexWrapper() is called.
-                {
-                    std::lock_guard lock(this->flatIndexGuard);
-                    int deleted = 0;
-                    if (!this->frontendIndex->isMultiValue() &&
-                        this->frontendIndex->isLabelExists(label)) {
-                        deleted = deleteAndUpdateInitIds(label);
-                    }
-                    ids_to_init_.insert(this->frontendIndex->indexSize());
-                    ret = std::max(this->frontendIndex->addVector(blob, label) - deleted, 0);
-                    // If frontend size exceeds the update job threshold, ...
-                    frontend_index_size = this->frontendIndex->indexSize();
+            if (!svs_index->ready()) {
+                if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/true)) {
+                    return *buffered;
                 }
-                // ... move vectors to the backend index.
-                if (frontend_index_size >= this->trainingTriggerThreshold) {
-                    // initSVSIndexWrapper() accures it's own locks
-                    // initialize the SVS index synchonously using current thread only
-                    initSVSIndexWrapper(this, 1);
-                }
-                return ret;
-            } else {
-                // backend index is initialized - we can add the vector directly
-                auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+            }
+            // backend index is initialized - we can add the vector directly
+            auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+            int deleted = 0;
+            {
                 // prevent update job from running in parallel and lock any access to the backend
                 // index
                 // Only updateJobMutex is needed here, not mainIndexGuard: the concurrent
@@ -953,37 +940,30 @@ public:
                 // Defensive: ensure single-threaded operation for write-in-place mode.
                 // parallelism_ defaults to 1, so this is a no-op in the normal case.
                 svs_index->setParallelism(1);
-                int deleted = 0;
                 if (!this->backendIndex->isMultiValue()) {
                     deleted = svs_index->deleteVector(label);
                     if (deleted > 0)
                         svs_index->consolidate({label});
                 }
-                return this->backendIndex->addVector(storage_blob.get(), label) - deleted;
+                if (svs_index->ready()) {
+                    return this->backendIndex->addVector(storage_blob.get(), label) - deleted;
+                }
             }
+            // the delete above dropped the last backend vector: adding now would refit the
+            // compression to this single point
+            if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/true)) {
+                return std::max(*buffered - deleted, 0);
+            }
+            // a queued init job rebuilt the backend meanwhile
+            std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
+            return std::max(this->backendIndex->addVector(storage_blob.get(), label) - deleted, 0);
         }
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
-        // Async mode - add vector to the frontend index and schedule an update job if needed.
-        if ((!svs_index->ready()) && (!this->backendInitSubmited.load(std::memory_order_acquire))) {
-            // Add vector to the frontend index.
-            std::lock_guard lock(this->flatIndexGuard);
-            if ((!svs_index->ready()) &&
-                (!this->backendInitSubmited.load(std::memory_order_acquire))) {
-                int deleted = 0;
-                if (!this->frontendIndex->isMultiValue() &&
-                    this->frontendIndex->isLabelExists(label)) {
-                    deleted = deleteAndUpdateInitIds(label);
-                }
-                ids_to_init_.insert(this->frontendIndex->indexSize());
-                const auto ft_ret = this->frontendIndex->addVector(blob, label);
-                ret = std::max(ret + ft_ret - deleted, 0);
-
-                if (this->frontendIndex->indexSize() >= this->trainingTriggerThreshold) {
-                    this->backendInitSubmited.store(true, std::memory_order_release);
-                    scheduleSVSIndexInit();
-                }
-                return ret;
+        // Async mode - buffer training data until the backend can be inited from a batch.
+        if (!svs_index->ready() && !this->indexUpdateScheduled.test(std::memory_order_acquire)) {
+            if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/false)) {
+                return *buffered;
             }
         }
 
@@ -994,6 +974,13 @@ public:
 
             const int overwritten =
                 this->backendIndex->isMultiValue() ? 0 : this->deleteVector(label);
+
+            // the delete above may have dropped the last backend vector
+            if (!svs_index->ready()) {
+                if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/false)) {
+                    return std::max(*buffered - overwritten, 0);
+                }
+            }
 
             std::shared_lock<std::shared_mutex> lock(updateJobMutex);
             ret = svs_index->addVector(storage_blob.get(), label);
@@ -1068,6 +1055,14 @@ public:
         }
     }
 
+    // training data is tracked by frontend id, so it has to follow the same swaps as insert jobs
+    void updateInsertJobInternalId(idType prev_id, idType new_id, labelType label) override {
+        if (ids_to_init_.erase(prev_id) > 0) {
+            ids_to_init_.insert(new_id);
+        }
+        Base::updateInsertJobInternalId(prev_id, new_id, label);
+    }
+
     // Returns the number of vectors removed from the frontend index.
     int deleteAndUpdateInitIds(labelType label) {
         auto deleting_ids = this->frontendIndex->getElementIds(label);
@@ -1136,6 +1131,58 @@ public:
 
         deleteAndUpdateInitIds(label);
         return static_cast<int>(deleting_ids.size());
+    }
+
+    // Buffer a vector in the frontend index as training data for the backend (re)initialization.
+    // Returns 1 for a new label, 0 for an overwrite, or nullopt if the backend turned ready while
+    // the guard was taken
+    std::optional<int> tryBufferForTraining(const void *blob, labelType label, bool in_place) {
+        int ret = 0;
+        bool run_init = false;
+        {
+            std::lock_guard flat_lock{this->flatIndexGuard};
+            // never buffer into a ready backend: ids_to_init_ would have no consumer
+            if (GetSVSIndex()->ready()) {
+                return std::nullopt;
+            }
+            int deleted = 0;
+            if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
+                // once the backend has been dropped the buffer may also hold job-backed vectors,
+                // so the overwrite has to invalidate pending jobs
+                deleted = removeLabelFromFlat(label);
+            }
+            ids_to_init_.insert(this->frontendIndex->indexSize());
+            ret = std::max(this->frontendIndex->addVector(blob, label) - deleted, 0);
+            run_init = ids_to_init_.size() >= this->trainingTriggerThreshold;
+            if (run_init && !in_place) {
+                scheduleSVSIndexInit();
+                run_init = false;
+            }
+        }
+        if (run_init) {
+            initSVSIndexWrapper(this, 1);
+        }
+        return ret;
+    }
+
+    // Move a pending job's vector from the insert-job path to the training batch. The vector stays
+    // in the frontend index, only its ownership changes.
+    InsertJobOutcome adoptJobIntoInitBuffer(SVSInsertJob *job) {
+        std::lock_guard flat_lock{this->flatIndexGuard};
+        if (!job->isValid) {
+            std::lock_guard invalid_lock{this->invalidJobsLookupGuard};
+            this->invalidJobs.erase(job->id);
+            return InsertJobOutcome::Completed;
+        }
+        if (GetSVSIndex()->ready() || this->indexUpdateScheduled.test(std::memory_order_acquire)) {
+            return InsertJobOutcome::Deferred;
+        }
+        ids_to_init_.insert(job->id);
+        this->detachInsertJob(job);
+        if (ids_to_init_.size() >= this->trainingTriggerThreshold) {
+            scheduleSVSIndexInit();
+        }
+        return InsertJobOutcome::Completed;
     }
 
     int deleteVector(labelType label) override {
@@ -1292,7 +1339,7 @@ public:
 
         svsTieredInfo.indexUpdateScheduled =
             (info.tieredInfo.frontendCommonInfo.indexSize > 0) &&
-            this->backendInitSubmited.load(std::memory_order_acquire);
+            this->indexUpdateScheduled.test(std::memory_order_acquire);
         info.tieredInfo.specificTieredBackendInfo.svsTieredInfo = svsTieredInfo;
 
         // Background indexing is in progress whenever the flat buffer is non-empty
