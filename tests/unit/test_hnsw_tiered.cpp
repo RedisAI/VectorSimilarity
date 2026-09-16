@@ -124,7 +124,7 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
 
     auto job = new (allocator)
         HNSWInsertJob(tiered_index->allocator, vector_label, 0, insert_to_index, tiered_index);
-    auto jobs_vec = vecsim_stl::vector<HNSWInsertJob *>(1, job, allocator);
+    auto jobs_vec = vecsim_stl::vector<TieredInsertJob *>(1, job, allocator);
     tiered_index->labelToInsertJobs.insert({vector_label, jobs_vec});
 
     // Wrap this job with an array and submit the jobs to the queue.
@@ -339,10 +339,10 @@ TYPED_TEST(HNSWTieredIndexTest, addVector) {
                     sizeof(void *) + sizeof(size_t);
     // Account for the memory that was allocated in the labelToInsertJobs map (approx.)
     expected_mem +=
-        sizeof(
-            vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>>::value_type) +
+        sizeof(vecsim_stl::unordered_map<labelType,
+                                        vecsim_stl::vector<TieredInsertJob *>>::value_type) +
         sizeof(void *) + sizeof(size_t);
-    // Account for the inner buffer of the std::vector<HNSWInsertJob *> in the map.
+    // Account for the inner buffer of the std::vector<TieredInsertJob *> in the map.
     expected_mem += sizeof(void *) + sizeof(size_t);
     // Account for the insert job that was created.
     expected_mem += sizeof(HNSWInsertJob) + sizeof(size_t);
@@ -4988,7 +4988,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorMulti) {
     }
     ASSERT_EQ(tiered_index->labelToInsertJobs.count(7), 0);
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(70).size(), per_label);
-    for (HNSWInsertJob *job : tiered_index->labelToInsertJobs.at(70)) {
+    for (TieredInsertJob *job : tiered_index->labelToInsertJobs.at(70)) {
         ASSERT_EQ(job->label, 70);
     }
 

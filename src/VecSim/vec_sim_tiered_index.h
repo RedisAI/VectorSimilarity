@@ -43,6 +43,19 @@ struct AsyncJob : public VecsimBaseObject {
           isValid(true) {}
 };
 
+/**
+ * Definition of a job that inserts a new vector from flat into the backend index.
+ * Backend specific insert jobs derive from it to set their own job type.
+ */
+struct TieredInsertJob : public AsyncJob {
+    labelType label;
+    idType id;
+
+    TieredInsertJob(std::shared_ptr<VecSimAllocator> allocator, JobType type, labelType label_,
+                    idType id_, JobCallback insertCb, VecSimIndex *index_)
+        : AsyncJob(allocator, type, insertCb, index_), label(label_), id(id_) {}
+};
+
 // All read operations (including KNN, range, batch iterators and get-distance-from) are guaranteed
 // to consider all vectors that were added to the index before the query was submitted. The results
 // may include vectors that were added after the query was submitted, with no guarantees.
@@ -134,6 +147,83 @@ public:
                                     VecSimQueryParams *queryParams,
                                     VecSimQueryReply_Order order) const;
 
+#ifdef BUILD_TESTS
+public:
+#endif
+    /// Mappings from id/label to associated jobs, for invalidating and update ids if necessary.
+    // In MULTI, we can have more than one insert job pending per label.
+    // **This map is protected with the flat buffer lock**
+    vecsim_stl::unordered_map<labelType, vecsim_stl::vector<TieredInsertJob *>> labelToInsertJobs;
+
+    // Helper function for updating the pending insert job(s) of a label after the flat buffer
+    // swapped the vector's internal id
+    void updateInsertJobInternalId(idType prev_id, idType new_id, labelType label) {
+        // Update the pending job id, due to a swap that was caused after the removal of new_id.
+        assert(new_id != INVALID_ID && prev_id != INVALID_ID);
+        auto it = this->labelToInsertJobs.find(label);
+        if (it != this->labelToInsertJobs.end()) {
+            // There is a pending job for the label of the swapped last id - update its id.
+            for (TieredInsertJob *job_it : it->second) {
+                if (job_it->id == prev_id) {
+                    job_it->id = new_id;
+                }
+            }
+        }
+    }
+
+    // A mapping to hold invalid jobs, so we can dispose them upon index deletion.
+    vecsim_stl::unordered_map<idType, AsyncJob *> invalidJobs;
+    idType currInvalidJobId; // A unique arbitrary identifier for accessing invalid jobs
+    std::mutex invalidJobsLookupGuard;
+
+    // Set an insert/repair job as invalid, put the job pointer in the invalid jobs lookup under
+    // the current available id, increase it and return it (while holding invalidJobsLookupGuard).
+    // Returns the id that the job was stored under (to be set in the job id field).
+    virtual idType setAndSaveInvalidJob(AsyncJob *job) {
+        std::lock_guard<std::mutex> lock(this->invalidJobsLookupGuard);
+        job->isValid = false;
+        idType curInvalidId = currInvalidJobId++;
+        this->invalidJobs.insert({curInvalidId, job});
+        return curInvalidId;
+    }
+
+    // Remove a vector and its insert job from the flat buffer
+    void removeIngestedVectorFromFlat(TieredInsertJob *job) {
+        std::lock_guard<std::shared_mutex> flat_lock(this->flatIndexGuard);
+        // The job might have been invalidated due to overwrite in the meantime. In this case,
+        // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
+        if (!job->isValid) {
+            // Remove the current job from the invalid jobs' lookup, as we are about to delete it
+            // now.
+            std::lock_guard<std::mutex> invalid_jobs_lock(this->invalidJobsLookupGuard);
+            this->invalidJobs.erase(job->id);
+            return;
+        }
+        // Remove the job pointer from the labelToInsertJobs mapping.
+        auto &jobs = this->labelToInsertJobs.at(job->label);
+        for (size_t i = 0; i < jobs.size(); i++) {
+            if (jobs[i]->id == job->id) {
+                jobs.erase(jobs.begin() + (long)i);
+                break;
+            }
+        }
+        if (jobs.empty()) {
+            this->labelToInsertJobs.erase(job->label);
+        }
+        // Remove the vector from the flat buffer. This may cause the last vector id to swap with
+        // the deleted id. Hold the label for the last id, so we can later on update its
+        // corresponding job id. Note that after calling deleteVectorById, the last id's label
+        // shouldn't be available, since it is removed from the lookup.
+        labelType last_vec_label =
+            this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
+        int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
+        if (deleted && job->id != this->frontendIndex->indexSize()) {
+            // If the vector removal caused a swap with the last id, update the relevant insert job.
+            this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id,
+                                            last_vec_label);
+        }
+    }
+
 public:
     /**
      * @brief Get the vector elements stored under a label, in insertion order.
@@ -207,11 +297,22 @@ public:
         : VecSimIndexInterface(allocator), backendIndex(backendIndex_),
           frontendIndex(frontendIndex_), jobQueue(tieredParams.jobQueue),
           jobQueueCtx(tieredParams.jobQueueCtx), SubmitJobsToQueue(tieredParams.submitCb),
-          flatBufferLimit(tieredParams.flatBufferLimit) {
+          flatBufferLimit(tieredParams.flatBufferLimit), labelToInsertJobs(this->allocator),
+          invalidJobs(this->allocator), currInvalidJobId(0) {
         assert(backendIndex != nullptr);
     }
 
     virtual ~VecSimTieredIndex() {
+        // Delete all the pending insert jobs.
+        for (auto &jobs : this->labelToInsertJobs) {
+            for (auto *job : jobs.second) {
+                delete job;
+            }
+        }
+        // Delete all the pending invalid jobs.
+        for (auto &it : this->invalidJobs) {
+            delete it.second;
+        }
         VecSimIndex_Free(backendIndex);
         VecSimIndex_Free(frontendIndex);
     }

@@ -17,14 +17,12 @@
 /**
  * Definition of a job that inserts a new vector from flat into SVS Index.
  */
-struct SVSInsertJob : public AsyncJob {
-    labelType label;
-    idType id;
+struct SVSInsertJob : public TieredInsertJob {
     std::atomic<bool> executing{false};
 
     SVSInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
                  JobCallback insertCb, VecSimIndex *index_)
-        : AsyncJob(allocator, SVS_INSERT_VECTOR_JOB, insertCb, index_), label(label_), id(id_) {}
+        : TieredInsertJob(allocator, SVS_INSERT_VECTOR_JOB, label_, id_, insertCb, index_) {}
 };
 
 /**
@@ -270,12 +268,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     std::atomic<bool> backendInitSubmited{false};
     std::unordered_set<idType> ids_to_init_;
-
-    vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSInsertJob *>> labelToInsertJobs;
-    // A mapping to hold invalid jobs, so we can dispose them upon index deletion.
-    vecsim_stl::unordered_map<idType, AsyncJob *> invalidJobs;
-    idType currInvalidJobId; // A unique arbitrary identifier for accessing invalid jobs
-    std::mutex invalidJobsLookupGuard;
 
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSConsolidateJob *>>
         labelToConsolidateJobs;
@@ -665,20 +657,6 @@ private:
 public:
 #endif
 
-    void updateInsertJobInternalId(idType prev_id, idType new_id, labelType label) {
-        // Update the pending job id, due to a swap that was caused after the removal of new_id.
-        assert(new_id != INVALID_ID && prev_id != INVALID_ID);
-        auto it = this->labelToInsertJobs.find(label);
-        if (it != this->labelToInsertJobs.end()) {
-            // There is a pending job for the label of the swapped last id - update its id.
-            for (SVSInsertJob *job_it : it->second) {
-                if (job_it->id == prev_id) {
-                    job_it->id = new_id;
-                }
-            }
-        }
-    }
-
     void scheduleSVSIndexInit() {
         // do not schedule if scheduled already
         if (indexUpdateScheduled.test_and_set()) {
@@ -760,29 +738,23 @@ private:
             }
         }
         for (auto *job : running) {
-            while (job->executing.load(std::memory_order_acquire)) {
-                std::this_thread::yield();
-            }
+            waitForJob(job);
         }
         return taken_over;
     }
 
     // Wait until the job leaves its publish window
     // Safe to call while holding flatIndexGuard exclusive
-    static void waitForInsertJob(SVSInsertJob *job) {
+    template <typename Job>
+    static void waitForJob(Job *job) {
         while (job->executing.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
     }
 
-    idType setAndSaveInvalidJob(SVSInsertJob *job) {
-        waitForInsertJob(job);
-        this->invalidJobsLookupGuard.lock();
-        job->isValid = false;
-        idType curInvalidId = currInvalidJobId++;
-        this->invalidJobs.insert({curInvalidId, job});
-        this->invalidJobsLookupGuard.unlock();
-        return curInvalidId;
+    idType setAndSaveInvalidJob(AsyncJob *job) override {
+        waitForJob(static_cast<SVSInsertJob *>(job));
+        return Base::setAndSaveInvalidJob(job);
     }
 
     enum class InsertJobOutcome { Completed, Deferred };
@@ -822,43 +794,7 @@ private:
 
         job->executing.store(false, std::memory_order_release);
         // Remove the vector and the insert job from the flat buffer.
-        this->flatIndexGuard.lock();
-        // The job might have been invalidated due to overwrite in the meantime. In this case,
-        // it was already deleted and the job has been evicted. Otherwise, we need to do it now.
-        if (job->isValid) {
-            // Remove the job pointer from the labelToInsertJobs mapping.
-            auto &jobs = labelToInsertJobs.at(job->label);
-            for (size_t i = 0; i < jobs.size(); i++) {
-                if (jobs[i]->id == job->id) {
-                    jobs.erase(jobs.begin() + (long)i);
-                    break;
-                }
-            }
-            if (labelToInsertJobs.at(job->label).empty()) {
-                labelToInsertJobs.erase(job->label);
-            }
-            // Remove the vector from the flat buffer.
-            // The flat buffer stores data in a contiguous
-            // array, so deleting an element may move the last element into the freed slot to keep
-            // ids dense. Capture the last id's label beforehand (after deletion it is no longer in
-            // the lookup) so we can later fix up its insert job.
-            labelType last_vec_label =
-                this->frontendIndex->getVectorLabel(this->frontendIndex->indexSize() - 1);
-            int deleted = this->frontendIndex->deleteVectorById(job->label, job->id);
-            if (deleted && job->id != this->frontendIndex->indexSize()) {
-                // If the vector removal caused a swap with the last id, update the relevant insert
-                // job.
-                this->updateInsertJobInternalId(this->frontendIndex->indexSize(), job->id,
-                                                last_vec_label);
-            }
-        } else {
-            // Remove the current job from the invalid jobs' lookup, as we are about to delete it
-            // now.
-            this->invalidJobsLookupGuard.lock();
-            this->invalidJobs.erase(job->id);
-            this->invalidJobsLookupGuard.unlock();
-        }
-        this->flatIndexGuard.unlock();
+        this->removeIngestedVectorFromFlat(job);
         return InsertJobOutcome::Completed;
     }
 
@@ -936,9 +872,7 @@ public:
                    const TieredIndexParams &tiered_index_params,
                    std::shared_ptr<VecSimAllocator> allocator)
         : Base(svs_index, bf_index, tiered_index_params, allocator),
-          uncompletedJobs(this->allocator), labelToInsertJobs(this->allocator),
-          invalidJobs(this->allocator), currInvalidJobId(0),
-          labelToConsolidateJobs(this->allocator) {
+          uncompletedJobs(this->allocator), labelToConsolidateJobs(this->allocator) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
@@ -967,18 +901,6 @@ public:
     }
 
     ~TieredSVSIndex() {
-        // Delete all the pending insert jobs.
-        for (auto &jobs : this->labelToInsertJobs) {
-            for (auto *job : jobs.second) {
-                delete job;
-            }
-        }
-
-        // Delete all the pending invalid jobs.
-        for (auto &it : this->invalidJobs) {
-            delete it.second;
-        }
-
         // Delete all the pending consolidate jobs
         for (auto &jobs : this->labelToConsolidateJobs) {
             for (auto *job : jobs.second) {
@@ -1109,7 +1031,7 @@ public:
             // If this label already exists, this will do overwrite.
             ret += this->frontendIndex->addVector(blob, label);
 
-            AsyncJob *new_insert_job = new (this->allocator)
+            TieredInsertJob *new_insert_job = new (this->allocator)
                 SVSInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
 
             // Save a pointer to the job, so that if the vector is overwritten, we'll have an
@@ -1118,10 +1040,10 @@ public:
                 // There's already a pending insert job for this label, add another one (without
                 // overwrite, only possible in multi index)
                 assert(this->backendIndex->isMultiValue());
-                this->labelToInsertJobs.at(label).push_back((SVSInsertJob *)new_insert_job);
+                this->labelToInsertJobs.at(label).push_back(new_insert_job);
             } else {
-                vecsim_stl::vector<SVSInsertJob *> new_jobs_vec(1, (SVSInsertJob *)new_insert_job,
-                                                                this->allocator);
+                vecsim_stl::vector<TieredInsertJob *> new_jobs_vec(1, new_insert_job,
+                                                                   this->allocator);
                 this->labelToInsertJobs.insert({label, new_jobs_vec});
             }
             this->flatIndexGuard.unlock();
@@ -1277,7 +1199,7 @@ public:
                 auto jobs = std::move(pending->second);
                 this->labelToInsertJobs.erase(pending);
                 for (auto *job : jobs) {
-                    waitForInsertJob(job);
+                    waitForJob(static_cast<SVSInsertJob *>(job));
                     job->label = new_label;
                 }
                 this->labelToInsertJobs.emplace(new_label, std::move(jobs));
@@ -1312,7 +1234,7 @@ public:
                 auto jobs = std::move(pending->second);
                 this->labelToInsertJobs.erase(pending);
                 for (auto *job : jobs) {
-                    waitForInsertJob(job);
+                    waitForJob(static_cast<SVSInsertJob *>(job));
                     job->label = old_label;
                 }
                 this->labelToInsertJobs.emplace(old_label, std::move(jobs));
