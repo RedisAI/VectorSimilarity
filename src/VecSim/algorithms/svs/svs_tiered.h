@@ -19,7 +19,11 @@
  * Definition of a job that inserts a new vector from flat into SVS Index.
  */
 struct SVSInsertJob : public TieredInsertJob {
-    std::atomic<bool> executing{false};
+    // Pending -> Executing -> Done. Delayed means a relabel is remapping the label in the backend
+    // right now, and publishing would put the vector under a label that is not settled yet.
+    // Written under flatIndexGuard, except Executing/Done which waitForJob() reads unlocked.
+    enum class Status : uint8_t { Pending, Delayed, Executing, Done };
+    std::atomic<Status> status{Status::Pending};
 
     SVSInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
                  JobCallback insertCb, VecSimIndex *index_)
@@ -748,8 +752,13 @@ private:
 
     // Wait until the job leaves its publish window
     // Safe to call while holding flatIndexGuard exclusive
-    template <typename Job>
-    static void waitForJob(Job *job) {
+    static void waitForJob(SVSInsertJob *job) {
+        while (job->status.load(std::memory_order_acquire) == SVSInsertJob::Status::Executing) {
+            std::this_thread::yield();
+        }
+    }
+
+    static void waitForJob(SVSConsolidateJob *job) {
         while (job->executing.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
@@ -778,6 +787,12 @@ private:
             return InsertJobOutcome::Completed;
         }
 
+        if (job->status.load(std::memory_order_relaxed) == SVSInsertJob::Status::Delayed) {
+            this->flatIndexGuard.unlock_shared();
+            // relabelVector() clears it once the backend remap settled the label
+            return InsertJobOutcome::Deferred;
+        }
+
         // a job never inits the backend: one point cannot train the compression
         if (!svs_index->ready()) {
             this->flatIndexGuard.unlock_shared();
@@ -793,15 +808,17 @@ private:
         auto blob_copy = this->getAllocator()->allocate_unique(data_size);
         memcpy(blob_copy.get(), this->frontendIndex->getDataByInternalId(job->id), data_size);
 
-        job->executing.store(true, std::memory_order_release);
+        job->status.store(SVSInsertJob::Status::Executing, std::memory_order_release);
         this->flatIndexGuard.unlock_shared();
 
         // if a concurrent deletion drops the instance
         // initializing it from this single point would refit the compression
         const int added = svs_index->addVectorsIfInitialized(blob_copy.get(), &job->label, 1);
+        const bool published = added != SVSIndexBase::kNotInitialized;
 
-        job->executing.store(false, std::memory_order_release);
-        if (added == SVSIndexBase::kNotInitialized) {
+        job->status.store(published ? SVSInsertJob::Status::Done : SVSInsertJob::Status::Pending,
+                          std::memory_order_release);
+        if (!published) {
             return adoptJobIntoInitBuffer(job);
         }
         // Remove the vector and the insert job from the flat buffer.
@@ -1245,7 +1262,7 @@ public:
         std::shared_lock<std::shared_mutex> lock(this->updateJobMutex);
 
         bool flat_holds_old = false;
-        bool had_pending = false;
+        bool delayed_any = false;
         std::vector<labelType> taken_over;
         {
             std::lock_guard flat_lock{this->flatIndexGuard};
@@ -1259,14 +1276,25 @@ public:
                 return VecSimRelabel_NewLabelTaken;
             }
 
-            // invalid job and rebuild once the label is settled.
             auto pending = this->labelToInsertJobs.find(old_label);
             if (pending != this->labelToInsertJobs.end()) {
-                for (auto *job : pending->second) {
-                    job->id = this->setAndSaveInvalidJob(job);
-                }
+                auto jobs = std::move(pending->second);
                 this->labelToInsertJobs.erase(pending);
-                had_pending = true;
+                for (auto *job : jobs) {
+                    auto *insert_job = static_cast<SVSInsertJob *>(job);
+                    // wait it out: a job that published before the remap is remapped with the
+                    // backend, and still drops its own buffer copy under the new label
+                    waitForJob(insert_job);
+                    job->label = new_label;
+                    if (insert_job->status.load(std::memory_order_relaxed) ==
+                        SVSInsertJob::Status::Pending) {
+                        // did not publish yet - hold it until the remap settles the label
+                        insert_job->status.store(SVSInsertJob::Status::Delayed,
+                                                 std::memory_order_relaxed);
+                        delayed_any = true;
+                    }
+                }
+                this->labelToInsertJobs.emplace(new_label, std::move(jobs));
             }
 
             // isLabelExists() said new_label is free, but SVS keeps the translator entry of a
@@ -1292,23 +1320,35 @@ public:
             this->backendIndex->relabelVector(old_label, new_label) == VecSimRelabel_NewLabelTaken;
         const labelType final_label = rollback ? old_label : new_label;
 
-        vecsim_stl::vector<TieredInsertJob *> new_jobs(this->allocator);
-        if (rollback || had_pending) {
+        if (rollback || delayed_any) {
             std::lock_guard flat_lock{this->flatIndexGuard};
-            if (rollback && flat_holds_old) {
-                this->frontendIndex->relabelVector(new_label, old_label);
+            if (rollback) {
+                auto pending = this->labelToInsertJobs.find(new_label);
+                if (pending != this->labelToInsertJobs.end()) {
+                    auto jobs = std::move(pending->second);
+                    this->labelToInsertJobs.erase(pending);
+                    for (auto *job : jobs) {
+                        job->label = old_label;
+                    }
+                    this->labelToInsertJobs.emplace(old_label, std::move(jobs));
+                }
+                if (flat_holds_old) {
+                    this->frontendIndex->relabelVector(new_label, old_label);
+                }
             }
-            // Rebuild the jobs invalidated above from the buffer itself
-            if (had_pending) {
-                for (idType id : this->frontendIndex->getElementIds(final_label)) {
-                    if (ids_to_init_.count(id) == 0) {
-                        new_jobs.push_back(createInsertJob(final_label, id));
+            if (delayed_any) {
+                auto it = this->labelToInsertJobs.find(final_label);
+                if (it != this->labelToInsertJobs.end()) {
+                    for (auto *job : it->second) {
+                        auto *insert_job = static_cast<SVSInsertJob *>(job);
+                        if (insert_job->status.load(std::memory_order_relaxed) ==
+                            SVSInsertJob::Status::Delayed) {
+                            insert_job->status.store(SVSInsertJob::Status::Pending,
+                                                     std::memory_order_relaxed);
+                        }
                     }
                 }
             }
-        }
-        for (auto *job : new_jobs) {
-            this->submitSingleJob(job);
         }
         return rollback ? VecSimRelabel_NewLabelTaken : VecSimRelabel_OK;
     }
