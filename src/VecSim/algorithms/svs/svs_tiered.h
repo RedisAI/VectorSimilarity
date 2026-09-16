@@ -1024,21 +1024,7 @@ public:
             // If this label already exists, this will do overwrite.
             ret += this->frontendIndex->addVector(blob, label);
 
-            TieredInsertJob *new_insert_job = new (this->allocator)
-                SVSInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
-
-            // Save a pointer to the job, so that if the vector is overwritten, we'll have an
-            // indication.
-            if (this->labelToInsertJobs.find(label) != this->labelToInsertJobs.end()) {
-                // There's already a pending insert job for this label, add another one (without
-                // overwrite, only possible in multi index)
-                assert(this->backendIndex->isMultiValue());
-                this->labelToInsertJobs.at(label).push_back(new_insert_job);
-            } else {
-                vecsim_stl::vector<TieredInsertJob *> new_jobs_vec(1, new_insert_job,
-                                                                   this->allocator);
-                this->labelToInsertJobs.insert({label, new_jobs_vec});
-            }
+            TieredInsertJob *new_insert_job = createInsertJob(label, new_flat_id);
             this->flatIndexGuard.unlock();
 
             // Here, a worker might ingest the previous vector that was stored under "label"
@@ -1137,6 +1123,24 @@ public:
 
         deleteAndUpdateInitIds(label);
         return static_cast<int>(deleting_ids.size());
+    }
+
+    // Create a pending insert job for a vector already buffered in the frontend index
+    // Caller must hold flatIndexGuard exclusively.
+    TieredInsertJob *createInsertJob(labelType label, idType flat_id) {
+        TieredInsertJob *job = new (this->allocator)
+            SVSInsertJob(this->allocator, label, flat_id, executeInsertJobWrapper, this);
+        auto it = this->labelToInsertJobs.find(label);
+        if (it != this->labelToInsertJobs.end()) {
+            // There's already a pending insert job for this label, add another one (without
+            // overwrite, only possible in multi index)
+            assert(this->backendIndex->isMultiValue());
+            it->second.push_back(job);
+        } else {
+            vecsim_stl::vector<TieredInsertJob *> new_jobs_vec(1, job, this->allocator);
+            this->labelToInsertJobs.insert({label, new_jobs_vec});
+        }
+        return job;
     }
 
     // Buffer a vector in the frontend index as training data for the backend (re)initialization.
@@ -1242,6 +1246,7 @@ public:
         std::shared_lock<std::shared_mutex> lock(this->updateJobMutex);
 
         bool flat_holds_old = false;
+        bool had_pending = false;
         std::vector<labelType> taken_over;
         {
             std::lock_guard flat_lock{this->flatIndexGuard};
@@ -1255,15 +1260,14 @@ public:
                 return VecSimRelabel_NewLabelTaken;
             }
 
+            // invalid job and rebuild once the label is settled.
             auto pending = this->labelToInsertJobs.find(old_label);
             if (pending != this->labelToInsertJobs.end()) {
-                auto jobs = std::move(pending->second);
-                this->labelToInsertJobs.erase(pending);
-                for (auto *job : jobs) {
-                    waitForJob(static_cast<SVSInsertJob *>(job));
-                    job->label = new_label;
+                for (auto *job : pending->second) {
+                    job->id = this->setAndSaveInvalidJob(job);
                 }
-                this->labelToInsertJobs.emplace(new_label, std::move(jobs));
+                this->labelToInsertJobs.erase(pending);
+                had_pending = true;
             }
 
             // isLabelExists() said new_label is free, but SVS keeps the translator entry of a
@@ -1285,27 +1289,29 @@ public:
             svs_index->consolidate(taken_over);
         }
 
-        const VecSimRelabelCode backend_ret =
-            this->backendIndex->relabelVector(old_label, new_label);
-        if (backend_ret == VecSimRelabel_NewLabelTaken) {
-            // Only reachable if new_label was added concurrently with this rename
+        const bool rollback = this->backendIndex->relabelVector(old_label, new_label) ==
+                              VecSimRelabel_NewLabelTaken;
+        const labelType final_label = rollback ? old_label : new_label;
+
+        vecsim_stl::vector<TieredInsertJob *> new_jobs(this->allocator);
+        if (rollback || had_pending) {
             std::lock_guard flat_lock{this->flatIndexGuard};
-            auto pending = this->labelToInsertJobs.find(new_label);
-            if (pending != this->labelToInsertJobs.end()) {
-                auto jobs = std::move(pending->second);
-                this->labelToInsertJobs.erase(pending);
-                for (auto *job : jobs) {
-                    waitForJob(static_cast<SVSInsertJob *>(job));
-                    job->label = old_label;
-                }
-                this->labelToInsertJobs.emplace(old_label, std::move(jobs));
-            }
-            if (flat_holds_old) {
+            if (rollback && flat_holds_old) {
                 this->frontendIndex->relabelVector(new_label, old_label);
             }
-            return VecSimRelabel_NewLabelTaken;
+            // Rebuild the jobs invalidated above from the buffer itself
+            if (had_pending) {
+                for (idType id : this->frontendIndex->getElementIds(final_label)) {
+                    if (ids_to_init_.count(id) == 0) {
+                        new_jobs.push_back(createInsertJob(final_label, id));
+                    }
+                }
+            }
         }
-        return VecSimRelabel_OK;
+        for (auto *job : new_jobs) {
+            this->submitSingleJob(job);
+        }
+        return rollback ? VecSimRelabel_NewLabelTaken : VecSimRelabel_OK;
     }
 
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
