@@ -831,8 +831,8 @@ public:
 
     void runGC() override {
         if (auto impl = getImpl()) {
-            // There is documentation for compact():
-            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
+            // concurrent compact() consolidates every soft-deleted points first
+            // pending per-label consolidate jobs need not be drained - they become no-ops
             impl->compact();
         }
         num_marked_deleted.store(0, std::memory_order_relaxed);
