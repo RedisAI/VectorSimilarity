@@ -102,6 +102,8 @@ protected:
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
     using graph_type = typename graph_builder_t::graph_type;
 
+    // Note. svs::concurrent::* classes differ from the svs::index::vamana::* classes
+    // in their mutation contracts.
     using impl_type = std::conditional_t<
         isMulti,
         svs::concurrent::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
@@ -334,8 +336,6 @@ protected:
     }
 
     void consolidate(const std::vector<labelType> &labels) override {
-        // There is documentation for consolidate():
-        // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
         if (auto impl = getImpl()) {
             impl->consolidate(labels);
         }
