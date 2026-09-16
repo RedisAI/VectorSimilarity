@@ -2405,6 +2405,7 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2433,8 +2434,9 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_NONE, nullptr),
+                                        QUERY_TYPE_NONE, &err_msg),
               VecSimParamResolverErr_UnknownParam);
+    ASSERT_STREQ(err_msg, "Unknown query parameter: 'wrong_name'");
 
     // Testing for legal prefix but only partial parameter name.
     param_name = "search_window_si";
@@ -2448,8 +2450,9 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "SEARCH_WINDOW_SIZE must be a positive integer");
 
     param_name = "search_window_size";
     param_val = "-30";
@@ -2470,8 +2473,9 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "SEARCH_WINDOW_SIZE was specified more than once");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -2499,6 +2503,7 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2564,8 +2569,9 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "SEARCH_BUFFER_CAPACITY was specified more than once");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -2593,6 +2599,7 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2651,8 +2658,9 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "USE_SEARCH_HISTORY must be one of: ON, OFF, AUTO");
 
     param_name = "use_search_history";
     param_val = "1";
@@ -2702,6 +2710,7 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2722,8 +2731,9 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     rparams.push_back(mkRawParams(param_name, param_val));
     for (VecsimQueryType query_type : {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID}) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                            query_type, nullptr),
+                                            query_type, &err_msg),
                   VecSimParamResolverErr_InvalidPolicy_NRange);
+        ASSERT_STREQ(err_msg, "EPSILON is only valid for range queries");
     }
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
