@@ -157,7 +157,7 @@ public:
 
     // Helper function for updating the pending insert job(s) of a label after the flat buffer
     // swapped the vector's internal id
-    void updateInsertJobInternalId(idType prev_id, idType new_id, labelType label) {
+    virtual void updateInsertJobInternalId(idType prev_id, idType new_id, labelType label) {
         // Update the pending job id, due to a swap that was caused after the removal of new_id.
         assert(new_id != INVALID_ID && prev_id != INVALID_ID);
         auto it = this->labelToInsertJobs.find(label);
@@ -187,6 +187,24 @@ public:
         return curInvalidId;
     }
 
+    // Remove the job pointer from the labelToInsertJobs mapping. Must hold flatIndexGuard.
+    void detachInsertJob(TieredInsertJob *job) {
+        auto it = this->labelToInsertJobs.find(job->label);
+        if (it == this->labelToInsertJobs.end()) {
+            return;
+        }
+        auto &jobs = it->second;
+        for (size_t i = 0; i < jobs.size(); i++) {
+            if (jobs[i] == job) {
+                jobs.erase(jobs.begin() + (long)i);
+                break;
+            }
+        }
+        if (jobs.empty()) {
+            this->labelToInsertJobs.erase(it);
+        }
+    }
+
     // Remove a vector and its insert job from the flat buffer
     void removeIngestedVectorFromFlat(TieredInsertJob *job) {
         std::lock_guard<std::shared_mutex> flat_lock(this->flatIndexGuard);
@@ -199,17 +217,7 @@ public:
             this->invalidJobs.erase(job->id);
             return;
         }
-        // Remove the job pointer from the labelToInsertJobs mapping.
-        auto &jobs = this->labelToInsertJobs.at(job->label);
-        for (size_t i = 0; i < jobs.size(); i++) {
-            if (jobs[i]->id == job->id) {
-                jobs.erase(jobs.begin() + (long)i);
-                break;
-            }
-        }
-        if (jobs.empty()) {
-            this->labelToInsertJobs.erase(job->label);
-        }
+        this->detachInsertJob(job);
         // Remove the vector from the flat buffer. This may cause the last vector id to swap with
         // the deleted id. Hold the label for the last id, so we can later on update its
         // corresponding job id. Note that after calling deleteVectorById, the last id's label
