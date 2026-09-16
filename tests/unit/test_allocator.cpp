@@ -15,7 +15,9 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "unit_test_utils.h"
 #include "VecSim/utils/serializer.h"
+#include "VecSim/utils/vecsim_stl.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#include <list>
 
 const size_t vecsimAllocationOverhead = VecSimAllocator::getAllocationOverheadSize();
 
@@ -81,6 +83,41 @@ TEST_F(AllocatorTest, test_nested_object) {
     expectedAllocationSize += sizeof(int) + vecsimAllocationOverhead;
     ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
     delete obj;
+}
+
+TEST_F(AllocatorTest, test_vector_range_constructor) {
+    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
+    const int src[] = {1, 2, 3, 4};
+
+    // A range of random access iterators: the exact size is known upfront, so a single allocation
+    // of the vector's data is expected, and it goes through the vecsim allocator.
+    const size_t expectedAllocationSize = allocator->getAllocationSize();
+    {
+        vecsim_stl::vector<int> fromArray(src, src + 4, allocator);
+        ASSERT_EQ(allocator->getAllocationSize(),
+                  expectedAllocationSize + sizeof(src) + vecsimAllocationOverhead);
+        ASSERT_EQ(fromArray.size(), 4);
+        ASSERT_TRUE(std::equal(fromArray.begin(), fromArray.end(), src));
+
+        // A range of another vecsim_stl::vector's iterators.
+        vecsim_stl::vector<int> copy(fromArray.begin(), fromArray.end(), allocator);
+        ASSERT_EQ(copy.size(), fromArray.size());
+        ASSERT_TRUE(std::equal(copy.begin(), copy.end(), src));
+    }
+    // Both vectors were destroyed, so their data was returned to the allocator.
+    ASSERT_EQ(allocator->getAllocationSize(), expectedAllocationSize);
+
+    // A range of non-contiguous iterators (the size is not known upfront).
+    std::list<int> list{7, 8, 9};
+    vecsim_stl::vector<int> fromList(list.begin(), list.end(), allocator);
+    ASSERT_EQ(fromList.size(), list.size());
+    ASSERT_TRUE(std::equal(fromList.begin(), fromList.end(), list.begin()));
+
+    // The range constructor is constrained to input iterators, so it must not be preferred over
+    // the (count, value) constructor when T is an integral type.
+    vecsim_stl::vector<size_t> fill(10, 5, allocator);
+    ASSERT_EQ(fill.size(), 10);
+    ASSERT_EQ(std::count(fill.begin(), fill.end(), 5UL), 10);
 }
 
 template <typename index_type_t>
