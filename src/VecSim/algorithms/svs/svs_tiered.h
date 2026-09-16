@@ -990,14 +990,12 @@ public:
             this->flatIndexGuard.unlock_shared();
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
 
-            if (!this->backendIndex->isMultiValue()) {
-                auto deleted = svs_index->deleteVector(label);
-                if (deleted > 0)
-                    scheduleSVSIndexConsolidate(label);
-            }
+            const int overwritten =
+                this->backendIndex->isMultiValue() ? 0 : this->deleteVector(label);
 
             std::shared_lock<std::shared_mutex> lock(updateJobMutex);
-            return ret = svs_index->addVector(storage_blob.get(), label);
+            ret = svs_index->addVector(storage_blob.get(), label);
+            return std::max(ret - overwritten, 0);
         } else {
             this->flatIndexGuard.unlock_shared();
             this->flatIndexGuard.lock();
@@ -1101,6 +1099,40 @@ public:
         }
     }
 
+    int removeLabelFromFlat(labelType label) {
+        if (!this->frontendIndex->isLabelExists(label)) {
+            return 0;
+        }
+        auto deleting_ids = this->frontendIndex->getElementIds(label);
+        if (deleting_ids.size() == 0) {
+            return 0;
+        }
+
+        // assert if all elements of deleting_ids are unique
+        assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() == deleting_ids.size() &&
+               "deleting_ids should contain unique ids");
+
+        // If id is deleted, don't use it for initialization
+        if (!ids_to_init_.empty()) {
+            for (idType id : deleting_ids) {
+                ids_to_init_.erase(id);
+            }
+        }
+
+        if (this->labelToInsertJobs.count(label) > 0) {
+            // Invalidate the pending insert job(s) into SVS associated with this label
+            auto &insert_jobs = this->labelToInsertJobs.at(label);
+            for (auto *job : insert_jobs) {
+                job->id = this->setAndSaveInvalidJob(job);
+            }
+            // Remove the pending insert job(s) from the labelToInsertJobs mapping.
+            this->labelToInsertJobs.erase(label);
+        }
+
+        deleteAndUpdateInitIds(label);
+        return static_cast<int>(deleting_ids.size());
+    }
+
     int deleteVector(labelType label) override {
         int ret = 0;
 
@@ -1108,36 +1140,7 @@ public:
         if (this->frontendIndex->isLabelExists(label)) {
             this->flatIndexGuard.unlock_shared();
             std::lock_guard flat_lock{this->flatIndexGuard};
-            // Check again if the label exists, as it may have been removed while we released the
-            // lock.
-            if (this->frontendIndex->isLabelExists(label)) {
-                auto deleting_ids = this->frontendIndex->getElementIds(label);
-                if (deleting_ids.size() == 0)
-                    return 0;
-
-                // assert if all elements of deleting_ids are unique
-                assert(std::set(deleting_ids.begin(), deleting_ids.end()).size() ==
-                           deleting_ids.size() &&
-                       "deleting_ids should contain unique ids");
-
-                // If id is deleted, don't use it for initialization
-                for (idType id : deleting_ids) {
-                    ids_to_init_.erase(id);
-                }
-
-                if (this->labelToInsertJobs.count(label) > 0) {
-                    // Invalidate the pending insert job(s) into SVS associated with this label
-                    auto &insert_jobs = this->labelToInsertJobs.at(label);
-                    for (auto *job : insert_jobs) {
-                        job->id = this->setAndSaveInvalidJob(job);
-                    }
-                    // Remove the pending insert job(s) from the labelToInsertJobs mapping.
-                    this->labelToInsertJobs.erase(label);
-                }
-
-                deleteAndUpdateInitIds(label);
-                ret += deleting_ids.size();
-            }
+            ret += removeLabelFromFlat(label);
         } else {
             this->flatIndexGuard.unlock_shared();
         }
