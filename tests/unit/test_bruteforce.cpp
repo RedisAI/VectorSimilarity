@@ -1196,6 +1196,7 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -1204,8 +1205,9 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
 
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                            query_type, nullptr),
+                                            query_type, &err_msg),
                   VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "EPSILON is only valid for HNSW or SVS indexes");
     }
     // EF_RUNTIME is not a valid parameter for BF index.
     rparams[0] = {.name = "ef_runtime",
@@ -1215,8 +1217,9 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
 
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                            query_type, nullptr),
+                                            query_type, &err_msg),
                   VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "EF_RUNTIME is only valid for HNSW indexes");
     }
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
     // Sending only "batch_size" param is valid.

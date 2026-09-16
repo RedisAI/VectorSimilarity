@@ -1151,6 +1151,7 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -1171,8 +1172,9 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
 
     rparams[0] = (VecSimRawParam){.name = "wrong_name", .nameLen = 10, .value = "100", .valLen = 3};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_NONE, nullptr),
+                                        QUERY_TYPE_NONE, &err_msg),
               VecSimParamResolverErr_UnknownParam);
+    ASSERT_STREQ(err_msg, "Unknown query parameter: 'wrong_name'");
 
     // Testing for legal prefix but only partial parameter name.
     rparams[0] = (VecSimRawParam){.name = "ef_run", .nameLen = 6, .value = "100", .valLen = 3};
@@ -1183,13 +1185,15 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
     rparams[0] =
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "wrong_val", .valLen = 9};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "EF_RUNTIME must be a positive integer");
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE, nullptr),
+                                        QUERY_TYPE_RANGE, &err_msg),
               VecSimParamResolverErr_UnknownParam);
+    ASSERT_STREQ(err_msg, "EF_RUNTIME is not a valid parameter for range queries");
 
     rparams[0] = (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "-30", .valLen = 3};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
@@ -1206,8 +1210,9 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
     rparams.push_back(
         (VecSimRawParam){.name = "ef_runtime", .nameLen = 10, .value = "100", .valLen = 3});
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "EF_RUNTIME was specified more than once");
 
     /** Testing with hybrid query params - cases which are only relevant for HNSW index. **/
     // Cannot set ef_runtime param with "hybrid_policy" which is "ADHOC_BF"
@@ -1216,8 +1221,9 @@ TYPED_TEST(HNSWTest, hnsw_resolve_ef_runtime_params) {
                                   .value = "ADHOC_BF",
                                   .valLen = strlen("ADHOC_BF")};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID, nullptr),
+                                        QUERY_TYPE_HYBRID, &err_msg),
               VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime);
+    ASSERT_STREQ(err_msg, "EF_RUNTIME is irrelevant for the 'adhoc_bf' hybrid policy");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -1249,6 +1255,7 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -1259,8 +1266,9 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
 
     for (VecsimQueryType query_type : {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID}) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                            query_type, nullptr),
+                                            query_type, &err_msg),
                   VecSimParamResolverErr_InvalidPolicy_NRange);
+        ASSERT_STREQ(err_msg, "EPSILON is only valid for range queries");
     }
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
@@ -1286,8 +1294,9 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
     rparams[0] = (VecSimRawParam){
         .name = "epsilon", .nameLen = strlen("epsilon"), .value = "wrong_val", .valLen = 9};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE, nullptr),
+                                        QUERY_TYPE_RANGE, &err_msg),
               VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "EPSILON must be a positive number");
 
     rparams[0] = (VecSimRawParam){
         .name = "epsilon", .nameLen = strlen("epsilon"), .value = "-30", .valLen = 3};
@@ -1304,8 +1313,9 @@ TYPED_TEST(HNSWTest, hnsw_resolve_epsilon_runtime_params) {
                                        .value = "0.001",
                                        .valLen = strlen("0.001")});
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE, nullptr),
+                                        QUERY_TYPE_RANGE, &err_msg),
               VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "EPSILON was specified more than once");
 
     VecSimIndex_Free(index);
 }
@@ -1326,10 +1336,12 @@ TYPED_TEST(HNSWTest, hnsw_resolve_rerank_rejected_on_ram_hnsw) {
         .name = "RERANK", .nameLen = strlen("RERANK"), .value = "TRUE", .valLen = strlen("TRUE")});
 
     // RERANK is only valid for disk-based HNSW; reject on RAM HNSW for every query type.
+    const char *err_msg = nullptr;
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                            query_type, nullptr),
+                                            query_type, &err_msg),
                   VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "RERANK is only valid for disk-based HNSW indexes");
     }
 
     VecSimIndex_Free(index);
@@ -1346,6 +1358,7 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
     VecSimIndex *index = this->CreateNewIndex(params);
     // Flip the disk flag so that the resolver treats this as a disk-based HNSW.
     this->CastToHNSW(index)->setIsDiskForTesting(true);
+    const char *err_msg = nullptr;
 
     VecSimQueryParams qparams;
     std::vector<VecSimRawParam> rparams;
@@ -1433,8 +1446,9 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
                                        .value = "MAYBE",
                                        .valLen = strlen("MAYBE")});
     EXPECT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_BadValue);
+    EXPECT_STREQ(err_msg, "RERANK must be TRUE or FALSE");
 
     rparams[0] = (VecSimRawParam){
         .name = "ef_runtime", .nameLen = strlen("ef_runtime"), .value = "-30", .valLen = 3};
@@ -1450,8 +1464,9 @@ TYPED_TEST(HNSWTest, hnsw_disk_query_params) {
                                        .value = "FALSE",
                                        .valLen = strlen("FALSE")});
     EXPECT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_KNN, nullptr),
+                                        QUERY_TYPE_KNN, &err_msg),
               VecSimParamResolverErr_AlreadySet);
+    EXPECT_STREQ(err_msg, "RERANK was specified more than once");
 
     // --- error paths: AlreadySet (EF_RUNTIME) ---
     rparams[0] = (VecSimRawParam){

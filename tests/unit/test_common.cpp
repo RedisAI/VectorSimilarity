@@ -59,6 +59,7 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -72,9 +73,18 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
 
     for (VecsimQueryType query_type : test_utils::query_types) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), nullptr,
-                                            query_type, nullptr),
+                                            query_type, &err_msg),
                   VecSimParamResolverErr_NullParam);
+        ASSERT_STREQ(err_msg, "Query parameters were not provided");
     }
+
+    // Unknown parameter name.
+    rparams.push_back(VecSimRawParam{"not_a_real_param", strlen("not_a_real_param"), "1", 1});
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, &err_msg),
+              VecSimParamResolverErr_UnknownParam);
+    ASSERT_STREQ(err_msg, "Unknown query parameter: 'not_a_real_param'");
+    rparams.clear();
 
     /** Testing with common hybrid query params. **/
     rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "100", strlen("100")});
@@ -88,16 +98,19 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "200", strlen("200")});
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID, nullptr),
+                                        QUERY_TYPE_HYBRID, &err_msg),
               VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "BATCH_SIZE was specified more than once");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
                                   .value = "batches_wrong",
                                   .valLen = strlen("batches_wrong")};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID, nullptr),
+                                        QUERY_TYPE_HYBRID, &err_msg),
               VecSimParamResolverErr_InvalidPolicy_NExits);
+    ASSERT_STREQ(err_msg, "invalid value 'batches_wrong' for HYBRID_POLICY: expected 'batches' or "
+                          "'adhoc_bf'");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -137,8 +150,9 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
                                   .value = "100",
                                   .valLen = strlen("100")};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID, nullptr),
+                                        QUERY_TYPE_HYBRID, &err_msg),
               VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize);
+    ASSERT_STREQ(err_msg, "BATCH_SIZE is irrelevant for the 'adhoc_bf' hybrid policy");
 
     rparams[0] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -164,8 +178,9 @@ TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     rparams[1].value = "not_a_number";
     rparams[1].valLen = strlen("not_a_number");
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID, nullptr),
+                                        QUERY_TYPE_HYBRID, &err_msg),
               VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "BATCH_SIZE must be a positive integer");
 
     rparams[1].value = "9223372036854775808"; // LLONG_MAX+1
     rparams[1].valLen = strlen("9223372036854775808");
