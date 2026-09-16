@@ -925,12 +925,13 @@ public:
                 // initSVSIndexWrapper() is called.
                 {
                     std::lock_guard lock(this->flatIndexGuard);
+                    int deleted = 0;
                     if (!this->frontendIndex->isMultiValue() &&
                         this->frontendIndex->isLabelExists(label)) {
-                        deleteAndUpdateInitIds(label);
+                        deleted = deleteAndUpdateInitIds(label);
                     }
                     ids_to_init_.insert(this->frontendIndex->indexSize());
-                    ret = this->frontendIndex->addVector(blob, label);
+                    ret = std::max(this->frontendIndex->addVector(blob, label) - deleted, 0);
                     // If frontend size exceeds the update job threshold, ...
                     frontend_index_size = this->frontendIndex->indexSize();
                 }
@@ -969,13 +970,14 @@ public:
             std::lock_guard lock(this->flatIndexGuard);
             if ((!svs_index->ready()) &&
                 (!this->backendInitSubmited.load(std::memory_order_acquire))) {
+                int deleted = 0;
                 if (!this->frontendIndex->isMultiValue() &&
                     this->frontendIndex->isLabelExists(label)) {
-                    deleteAndUpdateInitIds(label);
+                    deleted = deleteAndUpdateInitIds(label);
                 }
                 ids_to_init_.insert(this->frontendIndex->indexSize());
                 const auto ft_ret = this->frontendIndex->addVector(blob, label);
-                ret = std::max(ret + ft_ret, 0);
+                ret = std::max(ret + ft_ret - deleted, 0);
 
                 if (this->frontendIndex->indexSize() >= this->trainingTriggerThreshold) {
                     this->backendInitSubmited.store(true, std::memory_order_release);
@@ -1066,7 +1068,8 @@ public:
         }
     }
 
-    void deleteAndUpdateInitIds(labelType label) {
+    // Returns the number of vectors removed from the frontend index.
+    int deleteAndUpdateInitIds(labelType label) {
         auto deleting_ids = this->frontendIndex->getElementIds(label);
 
         std::sort(deleting_ids.begin(), deleting_ids.end());
@@ -1097,6 +1100,8 @@ public:
         for (idType new_id : new_ids_to_init) {
             ids_to_init_.insert(new_id);
         }
+
+        return static_cast<int>(deleting_ids.size());
     }
 
     int removeLabelFromFlat(labelType label) {
