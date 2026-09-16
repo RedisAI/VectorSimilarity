@@ -220,6 +220,19 @@ public:
         return VecSimIndex_RelabelVector(index.get(), old_label, new_label);
     }
 
+    // Accepts a single vector or a 2D array of them, so that the multi-value case reads as one
+    // call with the whole new contents of the label.
+    VecSimUpdateCode updateVectors(labelType label, const py::object &input) {
+        py::array vectors(input);
+        // A single vector may be passed on its own rather than as a one-row array, so that the
+        // common case reads the way `add_vector` does.
+        const size_t n = vectors.ndim() > 1 ? vectors.shape(0) : (vectors.size() == 0 ? 0 : 1);
+        // An empty update has nothing to point at, and `data(0)` on an empty array is out of range.
+        const char *blobs = n == 0 ? nullptr : (const char *)vectors.data(0);
+        py::gil_scoped_release py_gil;
+        return VecSimIndex_UpdateVectors(index.get(), label, blobs, n);
+    }
+
     py::object getVector(labelType label) {
         VecSimIndexBasicInfo info = index->basicInfo();
         size_t dim = info.dim;
@@ -727,6 +740,12 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimRelabel_Unsupported", VecSimRelabel_Unsupported)
         .export_values();
 
+    py::enum_<VecSimUpdateCode>(m, "VecSimUpdateCode")
+        .value("VecSimUpdate_OK", VecSimUpdate_OK)
+        .value("VecSimUpdate_MultiNotSupported", VecSimUpdate_MultiNotSupported)
+        .value("VecSimUpdate_Unsupported", VecSimUpdate_Unsupported)
+        .export_values();
+
     py::enum_<VecSimSvsQuantBits>(m, "VecSimSvsQuantBits")
         .value("VecSimSvsQuant_NONE", VecSimSvsQuant_NONE)
         .value("VecSimSvsQuant_Scalar", VecSimSvsQuant_Scalar)
@@ -813,6 +832,7 @@ PYBIND11_MODULE(VecSim, m) {
         .def("create_batch_iterator", &PyVecSimIndex::createBatchIterator, py::arg("query_blob"),
              py::arg("query_param") = nullptr)
         .def("get_vector", &PyVecSimIndex::getVector)
+        .def("update_vectors", &PyVecSimIndex::updateVectors, py::arg("label"), py::arg("vectors"))
         .def("relabel_vector", &PyVecSimIndex::relabelVector, py::arg("old_label"),
              py::arg("new_label"))
         .def("run_gc", &PyVecSimIndex::runGC);

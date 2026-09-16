@@ -2493,3 +2493,93 @@ TYPED_TEST(HNSWTest, relabelVectorMarkedDeleted) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWTest, updateVectors) {
+    size_t dim = 4;
+    size_t n = 10;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 16, .efConstruction = 200};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    const labelType label = 3;
+    TEST_DATA_T old_vector[dim], new_vector[dim];
+    GenerateVector<TEST_DATA_T>(old_vector, dim, label); // the value stored under `label`
+    GenerateVector<TEST_DATA_T>(new_vector, dim, n + 5); // a value no other element holds
+
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, label, new_vector, 1), VecSimUpdate_OK);
+
+    // One vector took another's place: nothing was added or relabeled, and the graph is whole.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->isLabelExists(label));
+    ASSERT_EQ(hnsw_index->getElementIds(label).size(), 1);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The label holds the new vector and no longer the old one.
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(label, new_vector), 0);
+    ASSERT_NE(hnsw_index->getDistanceFrom_Unsafe(label, old_vector), 0);
+
+    // It is reachable by search at its new value, and that value is what decides the ranking: a
+    // query at the old value no longer finds this label first, its neighbours by value do.
+    auto verify_new = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, label);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(index, new_vector, 1, verify_new);
+    auto verify_old = [&](size_t id, double score, size_t rank) { ASSERT_NE(id, label); };
+    runTopKSearchTest(index, old_vector, 1, verify_old);
+
+    // A label the index does not hold yet is simply stored: with nothing to remove, the end state
+    // the caller asked for is reached anyway, so there is nothing to report.
+    TEST_DATA_T fresh[dim];
+    GenerateVector<TEST_DATA_T>(fresh, dim, n + 6);
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 100, fresh, 1), VecSimUpdate_OK);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n + 1);
+    ASSERT_EQ(index->indexLabelCount(), n + 1);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(100, fresh), 0);
+
+    // An empty update leaves the label holding nothing, which is a delete.
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 100, nullptr, 0), VecSimUpdate_OK);
+    ASSERT_FALSE(hnsw_index->isLabelExists(100));
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    VecSimIndex_Free(index);
+}
+
+TYPED_TEST(HNSWTest, updateVectorsRejectsSeveralVectorsInSingle) {
+    size_t dim = 4;
+    size_t n = 5;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+
+    // Two vectors under one label is not a state this index can reach. Refused rather than served
+    // by storing one of them, which would leave the caller believing both are there.
+    TEST_DATA_T two_vectors[2 * dim];
+    GenerateVector<TEST_DATA_T>(two_vectors, dim, 100);
+    GenerateVector<TEST_DATA_T>(two_vectors + dim, dim, 101);
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 1, two_vectors, 2), VecSimUpdate_MultiNotSupported);
+
+    // The refusal changed nothing - in particular it did not delete the label first.
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T expected[dim];
+        GenerateVector<TEST_DATA_T>(expected, dim, i);
+        ASSERT_TRUE(hnsw_index->isLabelExists(i));
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(i, expected), 0);
+    }
+
+    VecSimIndex_Free(index);
+}
