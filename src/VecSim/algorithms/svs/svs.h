@@ -40,8 +40,14 @@ struct SVSIndexBase
 {
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
+    // Returned by addVectorsIfInitialized() when nothing was added.
+    static constexpr int kNotInitialized = -1;
+
     virtual int addVector(const void *vector_data, labelType label) = 0;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
+    // Add vectors into an already initialized instance.
+    virtual int addVectorsIfInitialized(const void *vectors_data, const labelType *labels,
+                                        size_t n) = 0;
     virtual int deleteVector(labelType label) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual void consolidate(const std::vector<labelType> &labels) = 0;
@@ -283,7 +289,8 @@ protected:
     // for the operation.
     // Important NOTE: For single vector operations (n=1), parallelism should be 1.
     // For bulk operations (n>1), parallelism should reflect the number of available threads.
-    int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
+    int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n,
+                       bool allow_init = true) {
         if (n == 0) {
             return 0;
         }
@@ -311,6 +318,9 @@ protected:
             this->implMutationGuard_.lock();
             if (auto existing = getImpl()) {
                 existing->add_points(points, ids, /*reuse_empty*/ false);
+            } else if (!allow_init) {
+                this->implMutationGuard_.unlock();
+                return kNotInitialized;
             } else {
                 auto built = initImpl(points, ids);
                 assert(built != nullptr);
@@ -593,6 +603,13 @@ public:
         assert(!(n == 1 && getParallelism() > 1) &&
                "Can't use more than one thread to insert a single vector");
         return addVectorsImpl(vectors_data, labels, n);
+    }
+
+    int addVectorsIfInitialized(const void *vectors_data, const labelType *labels,
+                                size_t n) override {
+        assert(!(n == 1 && getParallelism() > 1) &&
+               "Can't use more than one thread to insert a single vector");
+        return addVectorsImpl(vectors_data, labels, n, /*allow_init=*/false);
     }
 
     int deleteVector(labelType label) override { return deleteVectorImpl(label); }
