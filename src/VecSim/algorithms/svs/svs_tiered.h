@@ -796,9 +796,15 @@ private:
         job->executing.store(true, std::memory_order_release);
         this->flatIndexGuard.unlock_shared();
 
-        svs_index->addVector(blob_copy.get(), job->label);
+        // if a concurrent deletion drops the instance
+        // initializing it from this single point would refit the compression
+        const int added =
+            svs_index->addVectorsIfInitialized(blob_copy.get(), &job->label, 1);
 
         job->executing.store(false, std::memory_order_release);
+        if (added == SVSIndexBase::kNotInitialized) {
+            return adoptJobIntoInitBuffer(job);
+        }
         // Remove the vector and the insert job from the flat buffer.
         this->removeIngestedVectorFromFlat(job);
         return InsertJobOutcome::Completed;
