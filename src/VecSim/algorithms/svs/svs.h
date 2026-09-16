@@ -16,6 +16,8 @@
 #include <memory>
 #include <cassert>
 #include <limits>
+#include <mutex>
+#include <shared_mutex>
 #include <type_traits>
 #include <vector>
 
@@ -38,16 +40,28 @@ struct SVSIndexBase
 {
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
+    // Returned by addVectorsIfInitialized() when nothing was added.
+    static constexpr int kNotInitialized = -1;
 
+    virtual int addVector(const void *vector_data, labelType label) = 0;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
+    // Add vectors into an already initialized instance.
+    virtual int addVectorsIfInitialized(const void *vectors_data, const labelType *labels,
+                                        size_t n) = 0;
+    virtual int deleteVector(labelType label) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
+    virtual void consolidate(const std::vector<labelType> &labels) = 0;
     virtual bool isLabelExists(labelType label) const = 0;
     virtual size_t indexStorageSize() const = 0;
     virtual size_t getParallelism() const = 0;
     virtual void setParallelism(size_t parallelism) = 0;
     virtual size_t getPoolSize() const = 0;
     virtual bool isCompressed() const = 0;
-    size_t getNumMarkedDeleted() const { return num_marked_deleted; }
+    virtual bool ready() const = 0;
+
+    size_t getNumMarkedDeleted() const {
+        return num_marked_deleted.load(std::memory_order_relaxed);
+    }
 
     // Abstract handler to manage SVS implementation instance
     // declared to avoid unsafe unique_ptr<void> usage
@@ -64,7 +78,7 @@ struct SVSIndexBase
 protected:
     // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
     // markIndexUpdate() manages this counter
-    size_t num_marked_deleted;
+    std::atomic<size_t> num_marked_deleted;
 };
 
 /** Thread Management Strategy:
@@ -88,10 +102,12 @@ protected:
     using graph_builder_t = SVSGraphBuilder<uint32_t>;
     using graph_type = typename graph_builder_t::graph_type;
 
+    // Note. svs::concurrent::* classes differ from the svs::index::vamana::* classes
+    // in their mutation contracts.
     using impl_type = std::conditional_t<
         isMulti,
-        svs::index::vamana::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
-        svs::index::vamana::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
+        svs::concurrent::MultiMutableVamanaIndex<graph_type, index_storage_type, distance_f>,
+        svs::concurrent::MutableVamanaIndex<graph_type, index_storage_type, distance_f>>;
 
     bool forcePreprocessing;
 
@@ -113,8 +129,21 @@ protected:
     // SVS thread pool
     VecSimSVSThreadPool threadpool_;
     svs::logging::logger_ptr logger_;
-    // SVS Index implementation instance
-    std::unique_ptr<impl_type> impl_;
+    // SVS Index implementation instance.
+    // initImpl() needs at least one point to compute an entry point.
+    // so impl_ is null until the first insert
+    std::shared_ptr<impl_type> impl_;
+
+    mutable std::shared_mutex pimplGuard_;
+    // Serialize mutators of the impl_ pointer (exclusive)
+    // vs add_points() (shared) to avoid silent drops of additions
+    // Lock order: implMutationGuard_ -> pimplGuard_.
+    std::shared_mutex implMutationGuard_;
+
+    std::shared_ptr<impl_type> getImpl() const {
+        std::shared_lock lock(this->pimplGuard_);
+        return this->impl_;
+    }
 
     static double toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
 
@@ -157,7 +186,7 @@ protected:
     // Create SVS index instance with initial data
     // Data should not be empty
     template <svs::data::ImmutableMemoryDataset Dataset>
-    std::unique_ptr<impl_type> initImpl(const Dataset &points,
+    std::shared_ptr<impl_type> initImpl(const Dataset &points,
                                         std::span<const labelType> ids) const {
         svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
 
@@ -178,7 +207,7 @@ protected:
                                          this->blockSize, this->getAllocator(), logger_);
 
         // Create SVS MutableIndex instance
-        auto impl = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
+        auto impl = std::make_shared<impl_type>(std::move(graph), std::move(data), entry_point,
                                                 std::move(distance), ids, threadpool_, logger_);
 
         // Set SVS MutableIndex build parameters to be used in future updates
@@ -221,8 +250,8 @@ protected:
 
     // Handler to manage SVS implementation instance
     struct SVSImplHandler : public SVSIndexBase::ImplHandler {
-        std::unique_ptr<impl_type> impl;
-        SVSImplHandler(std::unique_ptr<impl_type> impl) : impl{std::move(impl)} {}
+        std::shared_ptr<impl_type> impl;
+        SVSImplHandler(std::shared_ptr<impl_type> impl) : impl{std::move(impl)} {}
     };
 
     std::unique_ptr<ImplHandler> createImpl(const void *vectors_data, const labelType *labels,
@@ -242,14 +271,17 @@ protected:
     }
 
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
-        if (impl_ != nullptr) {
-            throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
-        }
-
         SVSImplHandler *svs_handler = dynamic_cast<SVSImplHandler *>(handler.get());
         if (!svs_handler) {
             throw std::logic_error("Failed to cast to SVSImplHandler");
         }
+
+        std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
+        if (getImpl()) {
+            throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
+        }
+
+        std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
         this->impl_ = std::move(svs_handler->impl);
     }
 
@@ -259,17 +291,13 @@ protected:
     // for the operation.
     // Important NOTE: For single vector operations (n=1), parallelism should be 1.
     // For bulk operations (n>1), parallelism should reflect the number of available threads.
-    int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
+    int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n,
+                       bool allow_init = true) {
         if (n == 0) {
             return 0;
         }
 
         int deleted_num = 0;
-        if constexpr (!isMulti) {
-            // SVS index does not support overriding vectors with the same label
-            // so we have to delete them first if needed
-            deleted_num = deleteVectorsImpl(labels, n);
-        }
 
         std::span<const labelType> ids(labels, n);
         auto processed_blob = this->preprocessForBatchStorage(vectors_data, n);
@@ -277,65 +305,93 @@ protected:
         // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
-        if (!impl_) {
-            // SVS index instance cannot be empty, so we have to construct it at first rows
-            impl_ = initImpl(points, ids);
+        if constexpr (!isMulti) {
+            // SVS index does not support overriding vectors with the same label
+            // so we have to delete them first if needed
+            deleted_num = deleteVectorsImpl(labels, n);
+        }
+
+        this->implMutationGuard_.lock_shared();
+        if (auto impl = getImpl()) {
+            impl->add_points(points, ids, /*reuse_empty*/ false);
+            this->implMutationGuard_.unlock_shared();
         } else {
-            // Add new points to existing SVS index
-            impl_->add_points(points, ids);
+            this->implMutationGuard_.unlock_shared();
+            this->implMutationGuard_.lock();
+            if (auto existing = getImpl()) {
+                existing->add_points(points, ids, /*reuse_empty*/ false);
+            } else if (!allow_init) {
+                this->implMutationGuard_.unlock();
+                return kNotInitialized;
+            } else {
+                auto built = initImpl(points, ids);
+                assert(built != nullptr);
+                std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
+                this->impl_ = std::move(built);
+            }
+            this->implMutationGuard_.unlock();
         }
 
         return n - deleted_num;
     }
 
+    void consolidate(const std::vector<labelType> &labels) override {
+        if (auto impl = getImpl()) {
+            impl->consolidate(labels);
+        }
+    }
+
     int deleteVectorImpl(const labelType label) {
-        if (indexLabelCount() == 0 || !impl_->has_id(label)) {
+        auto impl = getImpl();
+        if (!impl) {
             return 0;
         }
 
-        const auto deleted_num = impl_->delete_entries(std::span{&label, 1});
-
-        this->markIndexUpdate(deleted_num);
+        const int deleted_num = impl->delete_entries(std::span{&label, 1});
+        this->markIndexUpdate(impl, deleted_num);
         return deleted_num;
     }
 
     int deleteVectorsImpl(const labelType *labels, size_t n) {
-        if (indexLabelCount() == 0) {
+        auto impl = getImpl();
+        if (!impl) {
             return 0;
         }
 
-        // SVS fails if we try to delete non-existing entries
-        std::vector<labelType> entries_to_delete;
-        entries_to_delete.reserve(n);
-        for (size_t i = 0; i < n; i++) {
-            if (impl_->has_id(labels[i])) {
-                entries_to_delete.push_back(labels[i]);
-            }
+        const int deleted_num = impl->delete_entries(std::span{labels, n});
+        if (deleted_num > 0) {
+            this->markIndexUpdate(impl, deleted_num);
         }
-
-        if (entries_to_delete.size() == 0) {
-            return 0;
-        }
-
-        const auto deleted_num = impl_->delete_entries(entries_to_delete);
-
-        this->markIndexUpdate(deleted_num);
         return deleted_num;
     }
 
-    // Count deletions and consolidate index if needed
-    void markIndexUpdate(size_t n = 1) {
-        if (!impl_)
-            return;
-
+    void markIndexUpdate(const std::shared_ptr<impl_type> &impl, size_t n = 1) {
         // SVS index instance should not be empty
-        if (indexLabelCount() == 0) {
-            this->impl_.reset();
-            num_marked_deleted = 0;
-            return;
+        if (labelCountOf(*impl) == 0) {
+            std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
+            if (getImpl() != impl) {
+                // The instance was already droped
+                return;
+            }
+            if (labelCountOf(*impl) == 0) {
+                {
+                    std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
+                    this->impl_.reset();
+                }
+                num_marked_deleted.store(0, std::memory_order_relaxed);
+                return;
+            }
         }
 
-        num_marked_deleted += n;
+        num_marked_deleted.fetch_add(n, std::memory_order_relaxed);
+    }
+
+    static size_t labelCountOf(const impl_type &impl) {
+        if constexpr (isMulti) {
+            return impl.labelcount();
+        } else {
+            return impl.size();
+        }
     }
 
     bool isTwoLevelLVQ(const VecSimSvsQuantBits &qbits) {
@@ -374,26 +430,32 @@ public:
 
     ~SVSIndex() = default;
 
+    bool ready() const override {
+        std::shared_lock lock(this->pimplGuard_);
+        return this->impl_ != nullptr;
+    }
+
     size_t indexSize() const override { return indexStorageSize(); }
 
-    size_t indexStorageSize() const override { return impl_ ? impl_->view_data().size() : 0; }
+    size_t indexStorageSize() const override {
+        auto impl = getImpl();
+        return impl ? impl->view_data().size() : 0;
+    }
 
     size_t indexCapacity() const override {
-        return impl_ ? storage_traits_t::storage_capacity(impl_->view_data()) : 0;
+        auto impl = getImpl();
+        return impl ? storage_traits_t::storage_capacity(impl->view_data()) : 0;
     }
 
     size_t indexLabelCount() const override {
-        if constexpr (isMulti) {
-            return impl_ ? impl_->labelcount() : 0;
-        } else {
-            return impl_ ? impl_->size() : 0;
-        }
+        auto impl = getImpl();
+        return impl ? labelCountOf(*impl) : 0;
     }
 
     vecsim_stl::set<size_t> getLabelsSet() const override {
         vecsim_stl::set<size_t> labels(this->allocator);
-        if (impl_) {
-            impl_->on_ids([&labels](size_t label) { labels.insert(label); });
+        if (auto impl = getImpl()) {
+            impl->on_ids([&labels](size_t label) { labels.insert(label); });
         }
         return labels;
     }
@@ -543,6 +605,13 @@ public:
         return addVectorsImpl(vectors_data, labels, n);
     }
 
+    int addVectorsIfInitialized(const void *vectors_data, const labelType *labels,
+                                size_t n) override {
+        assert(!(n == 1 && getParallelism() > 1) &&
+               "Can't use more than one thread to insert a single vector");
+        return addVectorsImpl(vectors_data, labels, n, /*allow_init=*/false);
+    }
+
     int deleteVector(labelType label) override { return deleteVectorImpl(label); }
 
     int deleteVectors(const labelType *labels, size_t n) override {
@@ -558,22 +627,31 @@ public:
         if (old_label == new_label) {
             return VecSimRelabel_SameLabel;
         }
-        // `isLabelExists` also covers the index that never held a vector, where `impl_` has not
-        // been created yet and so trivially holds nothing.
-        if (!isLabelExists(old_label)) {
+
+        std::shared_lock mutation_lock(this->implMutationGuard_);
+        auto impl = getImpl();
+
+        // A null impl_ is an index that never held a vector, so it holds neither label.
+        if (!impl) {
             return VecSimRelabel_OldLabelMissing;
         }
-        if (isLabelExists(new_label)) {
-            return VecSimRelabel_NewLabelTaken;
-        }
 
-        impl_->replace_external_id(old_label, new_label);
-        return VecSimRelabel_OK;
+        // SVS checks both ends under its own translator lock
+        switch (impl->replace_external_id(old_label, new_label)) {
+        case svs::concurrent::ReplaceExternalIdResult::Ok:
+            return VecSimRelabel_OK;
+        case svs::concurrent::ReplaceExternalIdResult::NewIdExists:
+            return VecSimRelabel_NewLabelTaken;
+        case svs::concurrent::ReplaceExternalIdResult::OldIdMissing:
+            break;
+        }
+        return VecSimRelabel_OldLabelMissing;
     }
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
     bool isLabelExists(labelType label) const override {
-        return impl_ ? impl_->has_id(label) : false;
+        auto impl = getImpl();
+        return impl ? impl->has_id(label) : false;
     }
 
     size_t getParallelism() const override { return threadpool_.getParallelism(); }
@@ -588,12 +666,13 @@ public:
     }
 
     double getDistanceFrom_Unsafe(labelType label, const void *vector_data) const override {
-        if (!impl_ || !impl_->has_id(label)) {
+        auto impl = getImpl();
+        if (!impl || !impl->has_id(label)) {
             return std::numeric_limits<double>::quiet_NaN();
-        };
+        }
 
         auto query_datum = std::span{static_cast<const DataType *>(vector_data), this->dim};
-        auto dist = impl_->get_distance(label, query_datum);
+        auto dist = impl->get_distance(label, query_datum);
         return toVecSimDistance(dist);
     }
 
@@ -601,39 +680,45 @@ public:
                                 VecSimQueryParams *queryParams) const override {
         auto rep = new VecSimQueryReply(this->allocator);
         this->lastMode = STANDARD_KNN;
-        if (k == 0 || this->indexLabelCount() == 0) {
+        auto impl = getImpl();
+        if (k == 0 || !impl) {
             return rep;
         }
+        {
+            const auto label_count = labelCountOf(*impl);
+            if (label_count == 0) {
+                return rep;
+            }
+            // limit result size to index size
+            k = std::min(k, label_count);
 
-        // limit result size to index size
-        k = std::min(k, this->indexLabelCount());
+            auto processed_query_ptr = this->preprocessQuery(queryBlob);
+            const void *processed_query = processed_query_ptr.get();
 
-        auto processed_query_ptr = this->preprocessQuery(queryBlob);
-        const void *processed_query = processed_query_ptr.get();
+            auto query = svs::data::ConstSimpleDataView<DataType>{
+                static_cast<const DataType *>(processed_query), 1, this->dim};
+            auto result = svs::QueryResult<size_t>{query.size(), k};
+            auto sp = svs_details::joinSearchParams(impl->get_search_parameters(), queryParams,
+                                                    is_two_level_lvq);
 
-        auto query = svs::data::ConstSimpleDataView<DataType>{
-            static_cast<const DataType *>(processed_query), 1, this->dim};
-        auto result = svs::QueryResult<size_t>{query.size(), k};
-        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
-                                                is_two_level_lvq);
+            auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
+            auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
 
-        auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
-        auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
+            impl->search(result.view(), query, sp, cancel);
+            if (cancel()) {
+                rep->code = VecSim_QueryReply_TimedOut;
+                return rep;
+            }
 
-        impl_->search(result.view(), query, sp, cancel);
-        if (cancel()) {
-            rep->code = VecSim_QueryReply_TimedOut;
-            return rep;
-        }
+            assert(result.n_queries() == 1);
 
-        assert(result.n_queries() == 1);
+            const auto n_neighbors = result.n_neighbors();
+            rep->results.reserve(n_neighbors);
 
-        const auto n_neighbors = result.n_neighbors();
-        rep->results.reserve(n_neighbors);
-
-        for (size_t i = 0; i < n_neighbors; i++) {
-            rep->results.push_back(
-                VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
+            for (size_t i = 0; i < n_neighbors; i++) {
+                rep->results.push_back(
+                    VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
+            }
         }
         // Workaround for VecSim merge_results() that expects results to be sorted
         // by score, then by id from both indices.
@@ -646,61 +731,63 @@ public:
                                  VecSimQueryParams *queryParams) const override {
         auto rep = new VecSimQueryReply(this->allocator);
         this->lastMode = RANGE_QUERY;
-        if (radius == 0 || this->indexLabelCount() == 0) {
+        auto impl = getImpl();
+        if (radius == 0 || !impl || labelCountOf(*impl) == 0) {
             return rep;
         }
+        {
+            auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
+            auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
 
-        auto timeoutCtx = queryParams ? queryParams->timeoutCtx : nullptr;
-        auto cancel = [timeoutCtx]() { return VECSIM_TIMEOUT(timeoutCtx); };
+            // Prepare query blob for SVS
+            auto processed_query_ptr = this->preprocessQuery(queryBlob);
+            const void *processed_query = processed_query_ptr.get();
+            std::span<const data_type> query{static_cast<const data_type *>(processed_query),
+                                             this->dim};
 
-        // Prepare query blob for SVS
-        auto processed_query_ptr = this->preprocessQuery(queryBlob);
-        const void *processed_query = processed_query_ptr.get();
-        std::span<const data_type> query{static_cast<const data_type *>(processed_query),
-                                         this->dim};
+            // Base search parameters for the SVS iterator schedule.
+            auto sp = svs_details::joinSearchParams(impl->get_search_parameters(), queryParams,
+                                                    is_two_level_lvq);
+            // SVS BatchIterator handles the search in batches
+            // The batch size is set to the index search window size by default
+            const size_t batch_size = sp.buffer_config_.get_search_window_size();
 
-        // Base search parameters for the SVS iterator schedule.
-        auto sp = svs_details::joinSearchParams(impl_->get_search_parameters(), queryParams,
-                                                is_two_level_lvq);
-        // SVS BatchIterator handles the search in batches
-        // The batch size is set to the index search window size by default
-        const size_t batch_size = sp.buffer_config_.get_search_window_size();
-
-        // Create SVS BatchIterator for range search
-        // Search result is cached in the iterator and can be accessed by the user
-        auto svs_it = impl_->make_batch_iterator(query);
-        svs_it.next(batch_size, cancel);
-        if (cancel()) {
-            rep->code = VecSim_QueryReply_TimedOut;
-            return rep;
-        }
-
-        // range search using epsilon
-        const auto epsilon = queryParams && queryParams->svsRuntimeParams.epsilon != 0
-                                 ? queryParams->svsRuntimeParams.epsilon
-                                 : this->epsilon;
-
-        const auto range_search_boundaries = radius * (1.0 + std::abs(epsilon));
-        bool keep_searching = true;
-
-        // Loop while iterator cache is not empty and search radius + epsilon is not exceeded
-        while (keep_searching && svs_it.size() > 0) {
-            // Iterate over the cached search results
-            for (auto &neighbor : svs_it) {
-                const auto dist = toVecSimDistance(neighbor.distance());
-                if (dist <= radius) {
-                    rep->results.push_back(VecSimQueryResult{neighbor.id(), dist});
-                } else if (dist > range_search_boundaries) {
-                    keep_searching = false;
-                }
+            // Create SVS BatchIterator for range search
+            // Search result is cached in the iterator and can be accessed by the user
+            auto svs_it = impl->make_batch_iterator(query);
+            svs_it.next(batch_size, cancel);
+            if (cancel()) {
+                rep->code = VecSim_QueryReply_TimedOut;
+                return rep;
             }
-            // If search radius + epsilon is not exceeded, request SVS BatchIterator for the next
-            // batch
-            if (keep_searching) {
-                svs_it.next(batch_size, cancel);
-                if (cancel()) {
-                    rep->code = VecSim_QueryReply_TimedOut;
-                    return rep;
+
+            // range search using epsilon
+            const auto epsilon = queryParams && queryParams->svsRuntimeParams.epsilon != 0
+                                     ? queryParams->svsRuntimeParams.epsilon
+                                     : this->epsilon;
+
+            const auto range_search_boundaries = radius * (1.0 + std::abs(epsilon));
+            bool keep_searching = true;
+
+            // Loop while iterator cache is not empty and search radius + epsilon is not exceeded
+            while (keep_searching && svs_it.size() > 0) {
+                // Iterate over the cached search results
+                for (auto &neighbor : svs_it) {
+                    const auto dist = toVecSimDistance(neighbor.distance());
+                    if (dist <= radius) {
+                        rep->results.push_back(VecSimQueryResult{neighbor.id(), dist});
+                    } else if (dist > range_search_boundaries) {
+                        keep_searching = false;
+                    }
+                }
+                // If search radius + epsilon is not exceeded, request SVS BatchIterator for the
+                // next batch
+                if (keep_searching) {
+                    svs_it.next(batch_size, cancel);
+                    if (cancel()) {
+                        rep->code = VecSim_QueryReply_TimedOut;
+                        return rep;
+                    }
                 }
             }
         }
@@ -719,12 +806,14 @@ public:
         // take ownership of the blob copy and pass it to the batch iterator.
         auto *queryBlobCopyPtr = queryBlobCopy.release();
         // Ownership of queryBlobCopy moves to VecSimBatchIterator that will free it at the end.
-        if (indexLabelCount() == 0) {
+        auto impl = getImpl();
+        if (!impl || labelCountOf(*impl) == 0) {
             return new (this->getAllocator())
                 NullSVS_BatchIterator(queryBlobCopyPtr, queryParams, this->getAllocator());
         } else {
             return new (this->getAllocator()) SVS_BatchIterator<impl_type, data_type>(
-                queryBlobCopyPtr, impl_.get(), queryParams, this->getAllocator(), is_two_level_lvq);
+                queryBlobCopyPtr, std::move(impl), queryParams, this->getAllocator(),
+                is_two_level_lvq);
         }
     }
 
@@ -758,15 +847,12 @@ public:
     }
 
     void runGC() override {
-        if (impl_) {
-            // There is documentation for consolidate():
-            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.consolidate
-            impl_->consolidate();
-            // There is documentation for compact():
-            // https://intel.github.io/ScalableVectorSearch/python/dynamic.html#svs.DynamicVamana.compact
-            impl_->compact();
+        if (auto impl = getImpl()) {
+            // concurrent compact() consolidates every soft-deleted points first
+            // pending per-label consolidate jobs need not be drained - they become no-ops
+            impl->compact();
         }
-        num_marked_deleted = 0;
+        num_marked_deleted.store(0, std::memory_order_relaxed);
     }
 
 private:
@@ -776,7 +862,11 @@ private:
     template <typename OutputElement>
     void appendStoredDataByLabel(labelType label,
                                  std::vector<std::vector<OutputElement>> &vectors_output) const {
-        if (!impl_) {
+        // The spans handed to `append_datum` point straight into the dataset, so the instance has
+        // to stay alive for the whole walk. The snapshot's reference keeps it alive even if
+        // markIndexUpdate() drops impl_ meanwhile.
+        auto impl = getImpl();
+        if (!impl) {
             return;
         }
         auto append_datum = [&](auto indexed_span) {
@@ -796,18 +886,18 @@ private:
         };
 
         if constexpr (isMulti) {
-            auto it = impl_->get_label_to_external_lookup().find(label);
-            if (it == impl_->get_label_to_external_lookup().end()) {
+            auto it = impl->get_label_to_external_lookup().find(label);
+            if (it == impl->get_label_to_external_lookup().end()) {
                 return;
             }
             for (auto external_id : it->second) {
-                append_datum(impl_->get_parent_index().get_datum(external_id));
+                append_datum(impl->get_parent_index().get_datum(external_id));
             }
         } else {
-            if (!impl_->has_id(label)) {
+            if (!impl->has_id(label)) {
                 return;
             }
-            append_datum(impl_->get_datum(label));
+            append_datum(impl->get_datum(label));
         }
     }
 
