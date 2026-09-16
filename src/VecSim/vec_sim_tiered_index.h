@@ -18,6 +18,7 @@
 #include "VecSim/utils/scoped_locks.h"
 
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <shared_mutex>
 
@@ -289,6 +290,50 @@ public:
 #endif
             this->backendIndex->getDataByLabel(label, vectors_output);
         }
+    }
+
+    // `getDistanceFrom` returns the minimum distance between the given blob and the vector with
+    // the given label. If the label doesn't exist, the distance will be NaN.
+    // Therefore, it's better to just call `getDistanceFrom` on both indexes and return the minimum
+    // instead of checking if the label exists in each index. We first try to get the distance from
+    // the flat buffer, as vectors in the buffer might move to the backend while we're "between"
+    // the locks.
+    // Behavior for single (regular) index:
+    // 1. label doesn't exist in both indexes - return NaN
+    // 2. label exists in one of the indexes only - return the distance from that index (valid)
+    // 3. label exists in both indexes - return the value from the flat buffer (valid and equal to
+    //    the value from the backend index), saving us from locking the backend index.
+    // Behavior for multi index:
+    // 1. label doesn't exist in both indexes - return NaN
+    // 2. label exists in one of the indexes only - return the distance from that index (valid)
+    // 3. label exists in both indexes - we may have some of the vectors with the same label in the
+    //    flat buffer only and some in the backend index only (and maybe temporal duplications). So,
+    //    we get the distance from both indexes and return the minimum.
+    //
+    // IMPORTANT: this should be called when the *tiered index locks are locked for shared
+    // ownership*, along with the backend index's own data guard lock if it has one. That is since
+    // the internal getDistanceFrom calls access the indexes' data, and it is not safe to run
+    // insert/delete operations in parallel. Also, we avoid acquiring the locks internally, since
+    // this is usually called for every vector individually, and the overhead of acquiring and
+    // releasing the locks is significant in that case.
+    double getDistanceFrom_Unsafe(labelType label, const void *blob) const override {
+        // Try to get the distance from the flat buffer.
+        // If the label doesn't exist, the distance will be NaN.
+        auto flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
+
+        // Optimization. TODO: consider having different implementations for single and multi
+        // indexes, to avoid checking the index type on every query.
+        if (!this->backendIndex->isMultiValue() && !std::isnan(flat_dist)) {
+            // If the index is single value, and we got a valid distance from the flat buffer,
+            // we can return the distance without querying the backend index.
+            return flat_dist;
+        }
+
+        // Try to get the distance from the backend index.
+        auto backend_dist = this->backendIndex->getDistanceFrom_Unsafe(label, blob);
+
+        // Return the minimum distance that is not NaN.
+        return std::fmin(flat_dist, backend_dist);
     }
 
     VecSimTieredIndex(VecSimIndexAbstract<DataType, DistType> *backendIndex_,
