@@ -17,6 +17,8 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/algorithms/svs/svs_utils.h"
 #include <cassert>
+#include <cstdarg>
+#include <cstdio>
 #include "memory.h"
 
 // Ensure labelType is compatible with size_t for C API boundary.
@@ -47,23 +49,52 @@ extern "C" void VecSim_UpdateThreadPoolSize(size_t new_size) {
     VecSimSVSThreadPool::resize(new_size);
 }
 
+namespace {
+// Written by SetResolveErr() and read back through the *err_msg it hands out; both happen on the
+// same thread within a single VecSimIndex_ResolveParams call, before any other resolve call can
+// overwrite it.
+constexpr size_t RESOLVE_ERR_MSG_MAX_LEN = 256;
+thread_local char resolve_err_msg_buf[RESOLVE_ERR_MSG_MAX_LEN];
+
+__attribute__((format(printf, 3, 4))) VecSimResolveCode
+SetResolveErr(const char **err_msg, VecSimResolveCode code, const char *fmt, ...) {
+    if (err_msg) {
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(resolve_err_msg_buf, sizeof(resolve_err_msg_buf), fmt, args);
+        va_end(args);
+        *err_msg = resolve_err_msg_buf;
+    }
+    return code;
+}
+} // namespace
+
 static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
                                                   VecSimQueryParams *qparams,
-                                                  VecsimQueryType query_type) {
+                                                  VecsimQueryType query_type,
+                                                  const char **err_msg) {
     long long num_val;
     // EF_RUNTIME is a valid parameter only in HNSW algorithm.
     if (index_type != VecSimAlgo_HNSWLIB) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is only valid for HNSW indexes",
+                             VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
     // EF_RUNTIME is invalid for range query
     if (query_type == QUERY_TYPE_RANGE) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is not a valid parameter for range queries",
+                             VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
     if (qparams->hnswRuntimeParams.efRuntime != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
     if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue,
+                             "%s must be a positive integer",
+                             VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
 
     qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
@@ -71,17 +102,23 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
 }
 
 static VecSimResolveCode _ResolveParams_SearchWS(VecSimAlgo index_type, VecSimRawParam rparam,
-                                                 VecSimQueryParams *qparams) {
+                                                 VecSimQueryParams *qparams, const char **err_msg) {
     long long num_val;
     // SEARCH_WS is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is only valid for SVS indexes",
+                             VecSimCommonStrings::SVS_SEARCH_WS_STRING);
     }
     if (qparams->svsRuntimeParams.windowSize != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::SVS_SEARCH_WS_STRING);
     }
     if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue,
+                             "%s must be a positive integer",
+                             VecSimCommonStrings::SVS_SEARCH_WS_STRING);
     }
 
     qparams->svsRuntimeParams.windowSize = (size_t)num_val;
@@ -89,17 +126,23 @@ static VecSimResolveCode _ResolveParams_SearchWS(VecSimAlgo index_type, VecSimRa
 }
 
 static VecSimResolveCode _ResolveParams_SearchBC(VecSimAlgo index_type, VecSimRawParam rparam,
-                                                 VecSimQueryParams *qparams) {
+                                                 VecSimQueryParams *qparams, const char **err_msg) {
     long long num_val;
     // SEARCH_BC is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is only valid for SVS indexes",
+                             VecSimCommonStrings::SVS_SEARCH_BC_STRING);
     }
     if (qparams->svsRuntimeParams.bufferCapacity != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::SVS_SEARCH_BC_STRING);
     }
     if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue,
+                             "%s must be a positive integer",
+                             VecSimCommonStrings::SVS_SEARCH_BC_STRING);
     }
 
     qparams->svsRuntimeParams.bufferCapacity = (size_t)num_val;
@@ -107,17 +150,24 @@ static VecSimResolveCode _ResolveParams_SearchBC(VecSimAlgo index_type, VecSimRa
 }
 static VecSimResolveCode _ResolveParams_UseSearchHistory(VecSimAlgo index_type,
                                                          VecSimRawParam rparam,
-                                                         VecSimQueryParams *qparams) {
+                                                         VecSimQueryParams *qparams,
+                                                         const char **err_msg) {
     VecSimOptionMode bool_val;
     // USE_SEARCH_HISTORY is a valid parameter only in SVS algorithm.
     if (index_type != VecSimAlgo_SVS) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is only valid for SVS indexes",
+                             VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING);
     }
     if (qparams->svsRuntimeParams.searchHistory != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING);
     }
     if (validate_vecsim_bool_param(rparam, &bool_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue,
+                             "%s must be one of: ON, OFF, AUTO",
+                             VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING);
     }
 
     qparams->svsRuntimeParams.searchHistory = bool_val;
@@ -125,16 +175,23 @@ static VecSimResolveCode _ResolveParams_UseSearchHistory(VecSimAlgo index_type,
 }
 
 static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQueryParams *qparams,
-                                                  VecsimQueryType query_type) {
+                                                  VecsimQueryType query_type,
+                                                  const char **err_msg) {
     long long num_val;
     if (query_type != QUERY_TYPE_HYBRID) {
-        return VecSimParamResolverErr_InvalidPolicy_NHybrid;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_NHybrid,
+                             "%s is only valid for hybrid queries",
+                             VecSimCommonStrings::BATCH_SIZE_STRING);
     }
     if (qparams->batchSize != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::BATCH_SIZE_STRING);
     }
     if (validate_positive_integer_param(rparam, &num_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue,
+                             "%s must be a positive integer",
+                             VecSimCommonStrings::BATCH_SIZE_STRING);
     }
     qparams->batchSize = (size_t)num_val;
     return VecSimParamResolver_OK;
@@ -142,22 +199,29 @@ static VecSimResolveCode _ResolveParams_BatchSize(VecSimRawParam rparam, VecSimQ
 
 static VecSimResolveCode _ResolveParams_Epsilon(VecSimAlgo index_type, VecSimRawParam rparam,
                                                 VecSimQueryParams *qparams,
-                                                VecsimQueryType query_type) {
+                                                VecsimQueryType query_type, const char **err_msg) {
     double num_val;
     // EPSILON is a valid parameter only in HNSW or SVS algorithms.
     if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_SVS) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is only valid for HNSW or SVS indexes",
+                             VecSimCommonStrings::EPSILON_STRING);
     }
     if (query_type != QUERY_TYPE_RANGE) {
-        return VecSimParamResolverErr_InvalidPolicy_NRange;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_NRange,
+                             "%s is only valid for range queries",
+                             VecSimCommonStrings::EPSILON_STRING);
     }
     auto &epsilon_ref = index_type == VecSimAlgo_HNSWLIB ? qparams->hnswRuntimeParams.epsilon
                                                          : qparams->svsRuntimeParams.epsilon;
     if (epsilon_ref != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::EPSILON_STRING);
     }
     if (validate_positive_double_param(rparam, &num_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue,
+                             "%s must be a positive number", VecSimCommonStrings::EPSILON_STRING);
     }
     epsilon_ref = num_val;
     return VecSimParamResolver_OK;
@@ -173,17 +237,23 @@ static void _InitQueryParams(VecSimQueryParams *qparams, VecSimAlgo index_type, 
 }
 
 static VecSimResolveCode _ResolveParams_Rerank(VecSimAlgo index_type, bool is_disk,
-                                               VecSimRawParam rparam, VecSimQueryParams *qparams) {
+                                               VecSimRawParam rparam, VecSimQueryParams *qparams,
+                                               const char **err_msg) {
     // RERANK is valid only for disk-based HNSW indexes.
     if (index_type != VecSimAlgo_HNSWLIB || !is_disk) {
-        return VecSimParamResolverErr_UnknownParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                             "%s is only valid for disk-based HNSW indexes",
+                             VecSimCommonStrings::HNSW_RERANK_STRING);
     }
     if (qparams->hnswDiskRuntimeParams.shouldRerank != VecSimBool_UNSET) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::HNSW_RERANK_STRING);
     }
     VecSimBool bool_val;
     if (validate_vecsim_tristate_bool_param(rparam, &bool_val) != VecSimParamResolver_OK) {
-        return VecSimParamResolverErr_BadValue;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_BadValue, "%s must be TRUE or FALSE",
+                             VecSimCommonStrings::HNSW_RERANK_STRING);
     }
     qparams->hnswDiskRuntimeParams.shouldRerank = bool_val;
     return VecSimParamResolver_OK;
@@ -191,21 +261,27 @@ static VecSimResolveCode _ResolveParams_Rerank(VecSimAlgo index_type, bool is_di
 
 static VecSimResolveCode _ResolveParams_HybridPolicy(VecSimRawParam rparam,
                                                      VecSimQueryParams *qparams,
-                                                     VecsimQueryType query_type) {
+                                                     VecsimQueryType query_type,
+                                                     const char **err_msg) {
     if (query_type != QUERY_TYPE_HYBRID) {
-        return VecSimParamResolverErr_InvalidPolicy_NHybrid;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_NHybrid,
+                             "%s is only valid for hybrid queries",
+                             VecSimCommonStrings::HYBRID_POLICY_STRING);
     }
     if (qparams->searchMode != 0) {
-        return VecSimParamResolverErr_AlreadySet;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
+                             "%s was specified more than once",
+                             VecSimCommonStrings::HYBRID_POLICY_STRING);
     }
     if (!strcasecmp(rparam.value, VECSIM_POLICY_BATCHES)) {
         qparams->searchMode = HYBRID_BATCHES;
     } else if (!strcasecmp(rparam.value, VECSIM_POLICY_ADHOC_BF)) {
         qparams->searchMode = HYBRID_ADHOC_BF;
-    } else if (!strcasecmp(rparam.value, VECSIM_POLICY_INVALID)) {
-        return VecSimParamResolverErr_InvalidPolicy_NExits;
     } else {
-        return VecSimParamResolverErr_InvalidPolicy_NExits;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_NExits,
+                             "invalid value '%s' for %s: expected '%s' or '%s'", rparam.value,
+                             VecSimCommonStrings::HYBRID_POLICY_STRING, VECSIM_POLICY_BATCHES,
+                             VECSIM_POLICY_ADHOC_BF);
     }
     return VecSimParamResolver_OK;
 }
@@ -278,10 +354,14 @@ extern "C" size_t VecSimIndex_IndexSize(VecSimIndex *index) { return index->inde
 
 extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *rparams,
                                                        int paramNum, VecSimQueryParams *qparams,
-                                                       VecsimQueryType query_type) {
-
+                                                       VecsimQueryType query_type,
+                                                       const char **err_msg) {
+    if (err_msg) {
+        *err_msg = NULL;
+    }
     if (!qparams || (!rparams && (paramNum != 0))) {
-        return VecSimParamResolverErr_NullParam;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_NullParam,
+                             "Query parameters were not provided");
     }
     VecSimIndexBasicInfo info = index->basicInfo();
     VecSimAlgo index_type = info.algo;
@@ -291,59 +371,64 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
     auto res = VecSimParamResolver_OK;
     for (int i = 0; i < paramNum; i++) {
         if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_EF_RUNTIME_STRING)) {
-            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, query_type)) !=
-                VecSimParamResolver_OK) {
+            if ((res = _ResolveParams_EFRuntime(index_type, rparams[i], qparams, query_type,
+                                                err_msg)) != VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::EPSILON_STRING)) {
-            if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type)) !=
-                VecSimParamResolver_OK) {
+            if ((res = _ResolveParams_Epsilon(index_type, rparams[i], qparams, query_type,
+                                              err_msg)) != VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HNSW_RERANK_STRING)) {
-            if ((res = _ResolveParams_Rerank(index_type, is_disk, rparams[i], qparams)) !=
+            if ((res = _ResolveParams_Rerank(index_type, is_disk, rparams[i], qparams, err_msg)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::BATCH_SIZE_STRING)) {
-            if ((res = _ResolveParams_BatchSize(rparams[i], qparams, query_type)) !=
+            if ((res = _ResolveParams_BatchSize(rparams[i], qparams, query_type, err_msg)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::HYBRID_POLICY_STRING)) {
-            if ((res = _ResolveParams_HybridPolicy(rparams[i], qparams, query_type)) !=
+            if ((res = _ResolveParams_HybridPolicy(rparams[i], qparams, query_type, err_msg)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_SEARCH_WS_STRING)) {
-            if ((res = _ResolveParams_SearchWS(index_type, rparams[i], qparams)) !=
+            if ((res = _ResolveParams_SearchWS(index_type, rparams[i], qparams, err_msg)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name, VecSimCommonStrings::SVS_SEARCH_BC_STRING)) {
-            if ((res = _ResolveParams_SearchBC(index_type, rparams[i], qparams)) !=
+            if ((res = _ResolveParams_SearchBC(index_type, rparams[i], qparams, err_msg)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else if (!strcasecmp(rparams[i].name,
                                VecSimCommonStrings::SVS_USE_SEARCH_HISTORY_STRING)) {
-            if ((res = _ResolveParams_UseSearchHistory(index_type, rparams[i], qparams)) !=
+            if ((res = _ResolveParams_UseSearchHistory(index_type, rparams[i], qparams, err_msg)) !=
                 VecSimParamResolver_OK) {
                 return res;
             }
         } else {
-            return VecSimParamResolverErr_UnknownParam;
+            return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
+                                 "Unknown query parameter: '%s'", rparams[i].name);
         }
     }
     // The combination of AD-HOC with batch_size is invalid, as there are no batches in this policy.
     if (qparams->searchMode == HYBRID_ADHOC_BF && qparams->batchSize > 0) {
-        return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_AdHoc_With_BatchSize,
+                             "%s is irrelevant for the '%s' hybrid policy",
+                             VecSimCommonStrings::BATCH_SIZE_STRING, VECSIM_POLICY_ADHOC_BF);
     }
     // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
     // graph.
     if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
         qparams->hnswRuntimeParams.efRuntime > 0) {
-        return VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime;
+        return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime,
+                             "%s is irrelevant for the '%s' hybrid policy",
+                             VecSimCommonStrings::HNSW_EF_RUNTIME_STRING, VECSIM_POLICY_ADHOC_BF);
     }
     if (qparams->searchMode != 0) {
         index->setLastSearchMode(qparams->searchMode);
