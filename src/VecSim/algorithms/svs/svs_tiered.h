@@ -798,8 +798,7 @@ private:
 
         // if a concurrent deletion drops the instance
         // initializing it from this single point would refit the compression
-        const int added =
-            svs_index->addVectorsIfInitialized(blob_copy.get(), &job->label, 1);
+        const int added = svs_index->addVectorsIfInitialized(blob_copy.get(), &job->label, 1);
 
         job->executing.store(false, std::memory_order_release);
         if (added == SVSIndexBase::kNotInitialized) {
@@ -1289,8 +1288,8 @@ public:
             svs_index->consolidate(taken_over);
         }
 
-        const bool rollback = this->backendIndex->relabelVector(old_label, new_label) ==
-                              VecSimRelabel_NewLabelTaken;
+        const bool rollback =
+            this->backendIndex->relabelVector(old_label, new_label) == VecSimRelabel_NewLabelTaken;
         const labelType final_label = rollback ? old_label : new_label;
 
         vecsim_stl::vector<TieredInsertJob *> new_jobs(this->allocator);
