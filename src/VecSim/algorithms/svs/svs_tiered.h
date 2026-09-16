@@ -1308,26 +1308,6 @@ public:
         return this->GetSVSIndex()->getNumMarkedDeleted();
     }
 
-    double getDistanceFrom_Unsafe(labelType label, const void *blob) const override {
-        // Try to get the distance from the flat buffer.
-        // If the label doesn't exist, the distance will be NaN.
-        auto flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
-
-        // Optimization. TODO: consider having different implementations for single and multi
-        // indexes, to avoid checking the index type on every query.
-        if (!this->backendIndex->isMultiValue() && !std::isnan(flat_dist)) {
-            // If the index is single value, and we got a valid distance from the flat buffer,
-            // we can return the distance without querying the Main index.
-            return flat_dist;
-        }
-
-        // Try to get the distance from the Main index.
-        auto svs_dist = this->backendIndex->getDistanceFrom_Unsafe(label, blob);
-
-        // Return the minimum distance that is not NaN.
-        return std::fmin(flat_dist, svs_dist);
-    }
-
     VecSimIndexDebugInfo debugInfo() const override {
         auto info = Base::debugInfo();
 
