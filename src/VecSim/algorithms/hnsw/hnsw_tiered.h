@@ -288,7 +288,6 @@ public:
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override { return getHNSWIndex()->getNumMarkedDeleted(); }
-    double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
     VecSimIndexDebugInfo debugInfo() const override;
@@ -342,16 +341,16 @@ public:
 /* Helper methods */
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJobWrapper(AsyncJob *job) {
-    auto *insert_job = reinterpret_cast<HNSWInsertJob *>(job);
-    auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
+    auto *insert_job = static_cast<HNSWInsertJob *>(job);
+    auto *job_index = static_cast<TieredHNSWIndex<DataType, DistType> *>(insert_job->index);
     job_index->executeInsertJob(insert_job);
     delete job;
 }
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeRepairJobWrapper(AsyncJob *job) {
-    auto *repair_job = reinterpret_cast<HNSWRepairJob *>(job);
-    auto *job_index = reinterpret_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
+    auto *repair_job = static_cast<HNSWRepairJob *>(job);
+    auto *job_index = static_cast<TieredHNSWIndex<DataType, DistType> *>(repair_job->index);
     job_index->executeRepairJob(repair_job);
     delete job;
 }
@@ -1114,50 +1113,6 @@ VecSimRelabelCode TieredHNSWIndex<DataType, DistType>::relabelVector(labelType o
         return VecSimRelabel_NewLabelTaken;
     }
     return VecSimRelabel_OK;
-}
-
-// `getDistanceFrom` returns the minimum distance between the given blob and the vector with the
-// given label. If the label doesn't exist, the distance will be NaN.
-// Therefore, it's better to just call `getDistanceFrom` on both indexes and return the minimum
-// instead of checking if the label exists in each index. We first try to get the distance from the
-// flat buffer, as vectors in the buffer might move to the Main while we're "between" the locks.
-// Behavior for single (regular) index:
-// 1. label doesn't exist in both indexes - return NaN
-// 2. label exists in one of the indexes only - return the distance from that index (which is valid)
-// 3. label exists in both indexes - return the value from the flat buffer (which is valid and equal
-//    to the value from the Main index), saving us from locking the Main index.
-// Behavior for multi index:
-// 1. label doesn't exist in both indexes - return NaN
-// 2. label exists in one of the indexes only - return the distance from that index (which is valid)
-// 3. label exists in both indexes - we may have some of the vectors with the same label in the flat
-//    buffer only and some in the Main index only (and maybe temporal duplications).
-//    So, we get the distance from both indexes and return the minimum.
-
-// IMPORTANT: this should be called when the *tiered index locks are locked for shared ownership*,
-// along with HNSW index data guard lock. That is since the internal getDistanceFrom calls access
-// the indexes' data, and it is not safe to run insert/delete operation in parallel. Also, we avoid
-// acquiring the locks internally, since this is usually called for every vector individually, and
-// the overhead of acquiring and releasing the locks is significant in that case.
-template <typename DataType, typename DistType>
-double TieredHNSWIndex<DataType, DistType>::getDistanceFrom_Unsafe(labelType label,
-                                                                   const void *blob) const {
-    // Try to get the distance from the flat buffer.
-    // If the label doesn't exist, the distance will be NaN.
-    auto flat_dist = this->frontendIndex->getDistanceFrom_Unsafe(label, blob);
-
-    // Optimization. TODO: consider having different implementations for single and multi indexes,
-    // to avoid checking the index type on every query.
-    if (!this->backendIndex->isMultiValue() && !std::isnan(flat_dist)) {
-        // If the index is single value, and we got a valid distance from the flat buffer,
-        // we can return the distance without querying the Main index.
-        return flat_dist;
-    }
-
-    // Try to get the distance from the Main index.
-    auto hnsw_dist = getHNSWIndex()->getDistanceFrom_Unsafe(label, blob);
-
-    // Return the minimum distance that is not NaN.
-    return std::fmin(flat_dist, hnsw_dist);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
