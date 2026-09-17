@@ -567,12 +567,31 @@ public:
             return VecSimUpdate_MultiNotSupported;
         }
 
-        deleteVectorImpl(label);
-        if (n > 0) {
-            // Every vector goes under the same label, which is what the batch add takes a label
-            // per vector for.
-            std::vector<labelType> labels(n, label);
-            addVectorsImpl(new_blobs, labels.data(), n);
+        // SVS reports a failure by throwing - `ANNException`, derived from `std::runtime_error` -
+        // and neither the add nor the delete has a status to return: the batch add answers with the
+        // number of *new* labels, which says nothing about whether it succeeded. This is reached
+        // through an `extern "C"` boundary, where an escaping exception is undefined behaviour, so
+        // a throw is reported as a failure instead. A real one, not a no-op: the label's vectors go
+        // before the new ones are stored, so the label can be left holding nothing.
+        try {
+            // One vector replacing a single-value label *is* an overwrite, and `addVectorsImpl`
+            // performs that itself - it deletes an existing single-value label before adding, since
+            // SVS cannot store two vectors under one id - so the delete below would only cost a
+            // second lookup for the same end state.
+            if (!isMulti && n == 1) {
+                addVectorsImpl(new_blobs, &label, 1);
+                return VecSimUpdate_OK;
+            }
+
+            deleteVectorImpl(label);
+            if (n > 0) {
+                // Every vector goes under the same label, which is what the batch add takes a
+                // label per vector for.
+                std::vector<labelType> labels(n, label);
+                addVectorsImpl(new_blobs, labels.data(), n);
+            }
+        } catch (const std::exception &) {
+            return VecSimUpdate_Failed;
         }
         return VecSimUpdate_OK;
     }

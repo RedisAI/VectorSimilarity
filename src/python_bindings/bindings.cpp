@@ -756,6 +756,7 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimUpdate_OK", VecSimUpdate_OK)
         .value("VecSimUpdate_MultiNotSupported", VecSimUpdate_MultiNotSupported)
         .value("VecSimUpdate_Unsupported", VecSimUpdate_Unsupported)
+        .value("VecSimUpdate_Failed", VecSimUpdate_Failed)
         .export_values();
 
     py::enum_<VecSimSvsQuantBits>(m, "VecSimSvsQuantBits")

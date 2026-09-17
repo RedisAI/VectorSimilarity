@@ -5199,9 +5199,15 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsBuffered) {
 
     // The vector is still in the flat buffer, with a pending insert job.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
-    ASSERT_EQ(frontend_index->indexSize(), 1);
+    // A second buffered label, to catch the update disturbing anything but its own: removing a
+    // vector from the flat buffer swaps the last one into the hole and rewrites the pending job
+    // that names it, so a delete-then-insert would move this label's id as collateral.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 8, 8);
+    ASSERT_EQ(frontend_index->indexSize(), 2);
     ASSERT_EQ(hnsw_index->indexSize(), 0);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    const idType flat_id = tiered_index->labelToInsertJobs.at(7)[0]->id;
+    const idType other_flat_id = tiered_index->labelToInsertJobs.at(8)[0]->id;
 
     TEST_DATA_T buffered[dim], replacement[dim];
     GenerateVector<TEST_DATA_T>(buffered, dim, 7);
@@ -5209,14 +5215,24 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsBuffered) {
 
     ASSERT_EQ(tiered_index->updateVectors(7, replacement, 1), VecSimUpdate_OK);
 
+    // One vector under a single-value label is an overwrite, and it is served as one: the buffered
+    // copy is written over where it sits, keeping its id, and no other label's pending job is
+    // touched. A delete followed by an insert would reach the same end state for label 7 while
+    // moving label 8's vector to a different id on the way, and would leave label 7 without a
+    // vector in between.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7)[0]->id, flat_id) << "the buffered copy moved";
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(8)[0]->id, other_flat_id)
+        << "another label's buffered vector was moved as collateral";
+
     // Nothing had reached the graph, so nothing was marked deleted: the label's vector was dropped
     // from the buffer - taking its pending job out of circulation - and the new one buffered with a
     // job of its own.
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
-    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 2);
     ASSERT_EQ(hnsw_index->indexSize(), 0);
-    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 1);
-    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 2);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(7, replacement), 0);
     ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(7, buffered), 0);
 
@@ -5225,7 +5241,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsBuffered) {
         mock_thread_pool.thread_iteration();
     }
     ASSERT_EQ(frontend_index->indexSize(), 0);
-    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 2);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
     ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(7, replacement), 0);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);

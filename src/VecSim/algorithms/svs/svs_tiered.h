@@ -980,11 +980,26 @@ public:
         if (!this->backendIndex->isMultiValue() && n > 1) {
             return VecSimUpdate_MultiNotSupported;
         }
+        // Reported rather than let through, for the reason `SVSIndex::updateVectors` gives: the
+        // backend signals failure by throwing, and this is reached across an `extern "C"` boundary.
+        // The locks the paths below take are scoped, so unwinding releases them.
+        try {
+            // One vector replacing a single-value label *is* an overwrite, which `addVector`
+            // already performs across the tiers: it writes over the buffered copy in place and
+            // journals the overwrite so an update job in flight does not carry the replaced vector
+            // away, where a delete followed by an insert would drop that copy and buffer a new one.
+            if (n == 1 && !this->backendIndex->isMultiValue()) {
+                this->addVector(new_blobs, label);
+                return VecSimUpdate_OK;
+            }
 
-        this->deleteVector(label);
-        const char *blob = static_cast<const char *>(new_blobs);
-        for (size_t i = 0; i < n; i++) {
-            this->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
+            this->deleteVector(label);
+            const char *blob = static_cast<const char *>(new_blobs);
+            for (size_t i = 0; i < n; i++) {
+                this->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
+            }
+        } catch (const std::exception &) {
+            return VecSimUpdate_Failed;
         }
         return VecSimUpdate_OK;
     }

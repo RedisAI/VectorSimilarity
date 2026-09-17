@@ -589,6 +589,14 @@ VecSimUpdateCode HNSWIndex<DataType, DistType>::updateVectors(labelType label,
     if (!this->isMultiValue() && n > 1) {
         return VecSimUpdate_MultiNotSupported;
     }
+    // One vector replacing a single-value label *is* an overwrite, which is what `addVector`
+    // already does for that case - and it is the case a caller hits most, since a hash document
+    // holds one vector per field. Delegating keeps the two operations from drifting apart, and
+    // avoids paying for a removal whose slot the insertion below would only fill again.
+    if (n == 1 && !this->isMultiValue()) {
+        this->addVector(new_blobs, label);
+        return VecSimUpdate_OK;
+    }
 
     this->deleteVector(label);
     const char *blob = static_cast<const char *>(new_blobs);

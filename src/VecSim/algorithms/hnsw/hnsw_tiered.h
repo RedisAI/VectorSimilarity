@@ -1156,6 +1156,16 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
     if (!this->backendIndex->isMultiValue() && n > 1) {
         return VecSimUpdate_MultiNotSupported;
     }
+    // One vector replacing a single-value label *is* an overwrite, and `addVector` serves that
+    // better than a delete and an insert would: it writes over the buffered copy in place, keeping
+    // its id and the pending job that will ingest it, and only then marks the backend's copy
+    // deleted - so the label is never without a vector, where removing first would leave a window
+    // with none. It is also the case a caller hits most, a hash document holding one vector per
+    // field.
+    if (n == 1 && !this->backendIndex->isMultiValue()) {
+        this->addVector(new_blobs, label);
+        return VecSimUpdate_OK;
+    }
 
     this->deleteVector(label);
     const char *blob = static_cast<const char *>(new_blobs);

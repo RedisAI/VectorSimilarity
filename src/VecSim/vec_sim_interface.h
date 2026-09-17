@@ -96,7 +96,9 @@ public:
      * An index that holds a single vector per label accepts only `n == 1`, and reports
      * `VecSimUpdate_MultiNotSupported` otherwise rather than silently storing one of the vectors
      * and dropping the rest. The default implementation reports `VecSimUpdate_Unsupported`, leaving
-     * such a caller to delete and insert.
+     * such a caller to delete and insert. An index that tried and could not store them reports
+     * `VecSimUpdate_Failed`, which unlike the other two says nothing about what the label holds
+     * now: the removal precedes the insertion, so it may hold nothing.
      *
      * @param label the label whose vectors are replaced.
      * @param new_blobs `n` vectors laid out one after another, each matching the index's data type

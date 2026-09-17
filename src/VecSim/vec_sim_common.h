@@ -142,14 +142,18 @@ typedef enum {
     VecSimRelabel_Unsupported      // this index type does not implement relabeling
 } VecSimRelabelCode;
 
-// Outcome of `updateVectors`. The two refusals are told apart because only one of them is the
-// caller's doing: `MultiNotSupported` is more vectors than a single-value index can hold under one
-// label, while `Unsupported` says this index type does not implement the operation at all - so the
-// caller has to delete the label and insert the vectors itself.
+// Outcome of `updateVectors`. The refusals are told apart because a caller acts on them
+// differently: `MultiNotSupported` is more vectors than a single-value index can hold under one
+// label and is the caller's doing, `Unsupported` says this index type does not implement the
+// operation at all - so the caller has to delete the label and insert the vectors itself - and
+// `Failed` is the index having tried and not managed it. The first two leave the index untouched;
+// `Failed` does not, since the label's vectors are removed before the new ones are stored, so the
+// label may be left holding nothing and the caller has to re-insert to get back to a known state.
 typedef enum {
     VecSimUpdate_OK = VecSim_OK,    // for returning VecSim_OK as an enum value
     VecSimUpdate_MultiNotSupported, // more than one vector was given to a single-value index
-    VecSimUpdate_Unsupported        // this index type does not implement updating a label
+    VecSimUpdate_Unsupported,       // this index type does not implement updating a label
+    VecSimUpdate_Failed // the index could not store them, and the label's contents are undefined
 } VecSimUpdateCode;
 
 typedef struct AsyncJob AsyncJob; // forward declaration.
