@@ -3090,6 +3090,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
         // Kept apart so no write can land on a label another one owns.
         const labelType moved_offset = 10 * n;
         const labelType fresh_base = 5 * n;
+        // Each role writes into its own value range, so the checks at the end can tell which
+        // write a vector came from.
         const size_t per_label = is_multi ? 2 : 1;
 
         for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
@@ -3103,7 +3105,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
         for (size_t i = 0; i < n; i++) {
             TEST_DATA_T replacements[2 * dim];
             for (size_t j = 0; j < per_label; j++) {
-                GenerateVector<TEST_DATA_T>(replacements + j * dim, dim, 100000.0f * (j + 1) + i);
+                GenerateVector<TEST_DATA_T>(replacements + j * dim, dim,
+                                            1000.0f + 3000.0f * j + 10.0f * i);
             }
             const labelType moved = i + moved_offset;
 
@@ -3122,7 +3125,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
             }
 
             TEST_DATA_T fresh[dim];
-            GenerateVector<TEST_DATA_T>(fresh, dim, 300000.0f + i);
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
             EXPECT_EQ(tiered_index->addVector(fresh, fresh_base + i), 1);
         }
         mock_thread_pool.thread_pool_join();
@@ -3140,6 +3143,22 @@ TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
             EXPECT_TRUE(hnsw_index->getElementIds(i).empty()) << "stale label " << i;
             EXPECT_EQ(hnsw_index->getElementIds(fresh_base + i).size(), 1)
                 << "label " << fresh_base + i;
+        }
+
+        // And holds the values they wrote, asked of each label directly. Not through a query: a
+        // k-nearest search over a graph this churned is approximate and does miss the vector
+        // itself, which says nothing about whether the write landed.
+        for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
+            for (size_t j = 0; j < per_label; j++) {
+                TEST_DATA_T stored[dim];
+                GenerateVector<TEST_DATA_T>(stored, dim, 1000.0f + 3000.0f * j + 10.0f * i);
+                EXPECT_EQ(tiered_index->getDistanceFrom_Unsafe(i + moved_offset, stored), 0)
+                    << "label " << i + moved_offset << " does not hold what the update gave it";
+            }
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
+            EXPECT_EQ(tiered_index->getDistanceFrom_Unsafe(fresh_base + i, fresh), 0)
+                << "label " << fresh_base + i << " does not hold what it was added with";
         }
 
         // Disposing of the tombstones the updates left behind must leave a whole graph.

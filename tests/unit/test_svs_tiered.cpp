@@ -455,6 +455,8 @@ TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
     // Label ranges are kept apart so no write can land on a label another one owns.
     const labelType moved_offset = 10 * n;
     const labelType fresh_base = 5 * n;
+    // Each role writes into its own value range, so the checks at the end can tell which write a
+    // vector came from.
     const size_t per_label = TypeParam::isMulti() ? 2 : 1;
 
     // A pre-built SVS cannot relabel and the tier reports it, which is a build difference rather
@@ -471,7 +473,8 @@ TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T replacements[2 * dim];
         for (size_t j = 0; j < per_label; j++) {
-            GenerateVector<TEST_DATA_T>(replacements + j * dim, dim, 100000.0f * (j + 1) + i);
+            GenerateVector<TEST_DATA_T>(replacements + j * dim, dim,
+                                        1000.0f + 3000.0f * j + 10.0f * i);
         }
         const labelType moved = i + moved_offset;
 
@@ -495,7 +498,7 @@ TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
 
         // A new document arriving in the middle of all that, so the jobs never run out of work.
         TEST_DATA_T fresh[dim];
-        GenerateVector<TEST_DATA_T>(fresh, dim, 300000.0f + i);
+        GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
         ASSERT_EQ(VecSimIndex_AddVector(tiered_index, fresh, fresh_base + i), 1);
     }
     mock_thread_pool.thread_pool_join();
@@ -528,24 +531,25 @@ TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
     ASSERT_EQ(tiered_index->indexSize() - svs_index->getNumMarkedDeleted(), n * per_label + n);
 
     if (!svs_index->isCompressed()) {
-        // Each label answers to what it holds now. Uncompressed only: a compressed backend trains
-        // its stored form on the vectors it was given, so these replacement values are clipped.
+        // Each label holds exactly what the writes put there, asked of the label directly rather
+        // than through a query: a k-nearest search over a graph that has just absorbed n deletes
+        // and n moves is approximate, and it does miss - it answered a neighbour 400 away instead
+        // of the vector itself often enough to fail about one run in fifteen. That says nothing
+        // about whether the writes landed, which is what this test is for, so it asks for the
+        // distance from the label to the vector it should hold. Uncompressed only: a compressed
+        // backend stores a lossy form and does not answer 0 for its own vector.
         for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
             const labelType expected = can_relabel ? i + moved_offset : i;
             for (size_t j = 0; j < per_label; j++) {
-                TEST_DATA_T query[dim];
-                GenerateVector<TEST_DATA_T>(query, dim, 100000.0f * (j + 1) + i);
-                auto verify = [&](size_t id, double score, size_t rank) {
-                    ASSERT_EQ(id, expected);
-                };
-                runTopKSearchTest(tiered_index, query, 1, verify);
+                TEST_DATA_T stored[dim];
+                GenerateVector<TEST_DATA_T>(stored, dim, 1000.0f + 3000.0f * j + 10.0f * i);
+                ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, expected, stored), 0)
+                    << "label " << expected << " does not hold the vector the update gave it";
             }
             TEST_DATA_T fresh[dim];
-            GenerateVector<TEST_DATA_T>(fresh, dim, 300000.0f + i);
-            auto verify_fresh = [&](size_t id, double score, size_t rank) {
-                ASSERT_EQ(id, fresh_base + i);
-            };
-            runTopKSearchTest(tiered_index, fresh, 1, verify_fresh);
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
+            ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, fresh_base + i, fresh), 0)
+                << "label " << fresh_base + i << " does not hold the vector it was added with";
         }
     }
 }
