@@ -9,6 +9,7 @@ import math
 import multiprocessing
 import os
 import time
+import pytest
 from VecSim import *
 from common import *
 import pytest
@@ -36,6 +37,16 @@ def create_svs_index(dim, num_elements, data_type, metric = VecSimMetric_L2,
     svs_params.num_threads = num_threads
 
     return SVSIndex(svs_params)
+
+
+@pytest.mark.parametrize("data_type", [VecSimType_FLOAT64, VecSimType_INT32])
+def test_rejects_unsupported_type(data_type):
+    """A rejected SVS factory result must raise before an invalid index can escape."""
+    assert create_svs_index(16, 2, VecSimType_FLOAT32).index_size() == 0
+
+    with pytest.raises(ValueError, match="Unsupported vector index parameters"):
+        create_svs_index(16, 2, data_type)
+
 
 def compute_k_euclidean(dataset, query, k):
     dists = [(spatial.distance.euclidean(query, vec), key) for key, vec in dataset]

@@ -6,7 +6,17 @@
 # GNU Affero General Public License v3 (AGPLv3).
 
 import logging
+import pytest
 from common import *
+
+
+@pytest.mark.parametrize("data_type", [VecSimType_INT32, VecSimType_INT64])
+def test_rejects_unsupported_type(data_type):
+    """A rejected BF factory result must raise before an invalid index can escape."""
+    assert create_flat_index(64, VecSimMetric_L2, VecSimType_FLOAT32).index_size() == 0
+    with pytest.raises(ValueError, match="Unsupported vector index parameters"):
+        create_flat_index(64, VecSimMetric_L2, data_type)
+
 
 class Data:
     def __init__(self, data_type, metric, dist_func, np_fuc, dim=16, num_labels=10, num_per_label=1):

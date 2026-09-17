@@ -17,6 +17,20 @@ def create_tiered_svs_params(trainingThreshold = 0, updateThreshold = 0):
     tiered_svs_params.updateJobWaitTime = 0
     return tiered_svs_params
 
+
+@pytest.mark.parametrize("data_type", [VecSimType_FLOAT64, VecSimType_INT32])
+def test_rejects_unsupported_type(data_type):
+    """Tiered rejection must raise without leaving the mock thread pool holding a null index."""
+    def create(index_data_type):
+        svs_params = create_svs_params(
+            dim=16, num_elements=2, data_type=index_data_type, metric=VecSimMetric_L2)
+        return Tiered_SVSIndex(svs_params, create_tiered_svs_params(), 1024)
+
+    assert create(VecSimType_FLOAT32).index_size() == 0
+
+    with pytest.raises(ValueError, match="Unsupported vector index parameters"):
+        create(data_type)
+
 class IndexCtx:
     array_conversion_func = {
         VecSimType_FLOAT32: np.float32,

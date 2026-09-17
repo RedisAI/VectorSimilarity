@@ -229,10 +229,10 @@ VecSimIndex *NewIndex(const TieredIndexParams *params) {
     case VecSimType_FLOAT16:
         return TieredSVSFactory::NewIndex<float16>(params);
     default:
-        assert(false && "Unsupported data type");
-        return nullptr; // Invalid type.
+        // The type comes straight from the caller's params, so reject it like the HNSW and
+        // brute-force factories do rather than aborting an assertion-enabled build.
+        return nullptr;
     }
-    return nullptr; // Invalid type.
 }
 
 // This is a temporary solution to avoid breaking the build when SVS is not available
