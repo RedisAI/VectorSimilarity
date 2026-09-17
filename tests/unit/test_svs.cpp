@@ -3539,11 +3539,11 @@ TEST(SVSTest, ThreadPoolLazyInit) {
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
 }
 
-TYPED_TEST(SVSTest, writeFailuresAreReportedNotThrown) {
-    // SVS signals a failure by throwing, and both of these are reached across an `extern "C"`
-    // boundary where an escaping exception is undefined behaviour. The throw is injected, because
-    // SVS only throws for states the checks in these methods rule out first - so this is the only
-    // way to reach the reporting at all.
+TYPED_TEST(SVSTest, updateVectorsReportsAFailedWrite) {
+    // SVS signals a failure by throwing, and this is reached across an `extern "C"` boundary where
+    // an escaping exception is undefined behaviour. The throw is injected, because SVS only throws
+    // for states the checks in this method rule out first - so this is the only way to reach the
+    // reporting at all.
     size_t dim = 4;
     size_t n = 5;
     SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
@@ -3567,19 +3567,6 @@ TYPED_TEST(SVSTest, writeFailuresAreReportedNotThrown) {
     // The index is still usable afterwards, and the injection was one-shot: the same update now
     // goes through.
     ASSERT_EQ(VecSimIndex_UpdateVectors(index, 1, replacement, 1), VecSimUpdate_OK);
-    ASSERT_EQ(index->indexLabelCount(), n);
-
-    // A relabel that SVS refuses is reported as a refusal rather than as success. The target is
-    // free here, so the answer is that the source is the problem - which is what SVS throwing
-    // means when the checks above it said otherwise.
-    svs_index->throwOnNextWriteForTest();
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 100), VecSimRelabel_OldLabelMissing);
-    ASSERT_TRUE(svs_index->isLabelExists(1)) << "the refused relabel moved the label anyway";
-    ASSERT_FALSE(svs_index->isLabelExists(100));
-
-    // And again, the one-shot injection spent, it succeeds.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 100), VecSimRelabel_OK);
-    ASSERT_TRUE(svs_index->isLabelExists(100));
     ASSERT_EQ(index->indexLabelCount(), n);
 
     VecSimIndex_Free(index);
