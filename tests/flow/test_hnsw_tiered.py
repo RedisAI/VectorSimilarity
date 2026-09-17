@@ -325,51 +325,63 @@ def test_sq8_cosine_needs_a_normalized_backend(data_type):
     assert Tiered_HNSWIndex(hnsw_params, create_tiered_hnsw_params(), 1024).index_size() == 0
 
 
-def test_sq8_deletion_during_accumulation():
+@pytest.mark.parametrize("is_multi", [False, True], ids=["single", "multi"])
+@pytest.mark.parametrize("data_type", SQ8_TYPES)
+def test_sq8_deletion_during_accumulation(data_type, is_multi):
     """A label deleted while accumulating must not migrate once the threshold is crossed."""
     threshold = 8
     total = 16
+    per_label = 2 if is_multi else 1
     rng = np.random.default_rng(seed=42)
-    vectors = np.float32(rng.random((total, SQ8_MIN_DIM)))
-    index = create_sq8_tiered_index(SQ8_MIN_DIM, total, VecSimMetric_L2, VecSimType_FLOAT32,
-                                    training_threshold=threshold)
+    vectors = to_index_dtype(np.float32(rng.random((total * per_label, SQ8_MIN_DIM))), data_type)
+    labels = np.repeat(np.arange(total), per_label)
+    index = create_sq8_tiered_index(SQ8_MIN_DIM, len(vectors), VecSimMetric_L2, data_type,
+                                    training_threshold=threshold, is_multi=is_multi)
 
-    for label in range(3):
-        index.add_vector(vectors[label], label)
+    initial_count = 3 * per_label
+    for vector, label in zip(vectors[:initial_count], labels[:initial_count]):
+        index.add_vector(vector, label)
     index.wait_for_index(1)
     # Below the threshold the vectors are still held uncompressed in the flat buffer.
     assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (3, 0)
+    assert index.index_size() == initial_count
 
     index.delete_vector(1)
     index.wait_for_index(1)
     assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (2, 0)
-    assert index.index_size() == 2
+    assert index.index_size() == 2 * per_label
 
-    # Eight historical inserts leave only seven live vectors after the deletion.
-    for label in range(3, threshold):
-        index.add_vector(vectors[label], label)
+    # Deleted vectors do not count toward training, including both vectors of a multi-value label.
+    below_end = threshold - 1 + per_label
+    for vector, label in zip(vectors[initial_count:below_end], labels[initial_count:below_end]):
+        index.add_vector(vector, label)
     index.wait_for_index(1)
-    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (threshold - 1, 0)
+    below_labels = set(labels[:below_end]) - {1}
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (len(below_labels), 0)
     assert index.index_size() == threshold - 1
 
     # Training starts when the live vector count reaches the threshold.
-    index.add_vector(vectors[threshold], threshold)
+    index.add_vector(vectors[below_end], labels[below_end])
     index.wait_for_index(1)
-    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (0, threshold)
+    crossing_labels = set(labels[:below_end + 1]) - {1}
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (0, len(crossing_labels))
     assert index.index_size() == threshold
 
-    for label in range(threshold + 1, total):
-        index.add_vector(vectors[label], label)
+    for vector, label in zip(vectors[below_end + 1:], labels[below_end + 1:]):
+        index.add_vector(vector, label)
     index.wait_for_index(1)
 
     surviving = [label for label in range(total) if label != 1]
     assert index.get_curr_bf_size() == 0
     assert index.hnsw_label_count() == len(surviving)
-    assert index.index_size() == len(surviving)
+    assert index.index_size() == len(surviving) * per_label
 
-    # The deleted label must not reappear through the migrated, quantized index.
-    found, _ = index.knn_query(vectors[1], len(surviving))
-    assert 1 not in found[0], found
+    # Query with every deleted vector: only the complete set of surviving labels may return.
+    for query in vectors[labels == 1]:
+        found, distances = index.knn_query(query, len(surviving))
+        assert found.shape == distances.shape == (1, len(surviving))
+        assert set(found[0]) == set(surviving), found
+        assert np.isfinite(distances).all(), distances
 
 
 def test_sq8_queries_across_transition():
