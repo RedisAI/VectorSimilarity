@@ -23,6 +23,24 @@ struct VecSimAllocator {
 private:
     std::atomic_uint64_t allocated;
 
+    // Relaxed add to `allocated` whose previous value is discarded. The counter is
+    // shared by every thread touching the index and only ever read as a snapshot
+    // (getAllocationSize), so the default seq_cst `+=` is stronger than needed. On
+    // LSE-enabled AArch64 emit the store-only form (LDADD with an XZR destination),
+    // which the core may execute as a far atomic in the interconnect instead of
+    // pulling the line into L1; compilers never emit this form themselves.
+    static inline void addNoRet(std::atomic_uint64_t &counter, uint64_t delta) {
+#if defined(__aarch64__) && defined(__ARM_FEATURE_ATOMICS)
+        static_assert(sizeof(counter) == sizeof(uint64_t));
+        __asm__ volatile("stadd %x1, %0"
+                         : "+Q"(*reinterpret_cast<uint64_t *>(&counter))
+                         : "r"(delta)
+                         : "memory");
+#else
+        counter.fetch_add(delta, std::memory_order_relaxed);
+#endif
+    }
+
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
     static VecSimMemoryFunctions memFunctions;

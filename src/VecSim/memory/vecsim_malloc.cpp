@@ -36,7 +36,7 @@ void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
 void *VecSimAllocator::allocate(size_t size) {
     auto ptr = static_cast<VecSimAllocationHeader *>(vecsim_malloc(size + allocation_header_size));
     if (ptr) {
-        this->allocated += size + allocation_header_size;
+        addNoRet(this->allocated, size + allocation_header_size);
         *ptr = {size, false};
         return ptr + 1;
     }
@@ -51,7 +51,7 @@ void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
     size += alignment; // Add enough space for alignment.
     auto ptr = static_cast<unsigned char *>(vecsim_malloc(size + allocation_header_size));
     if (ptr) {
-        this->allocated += size + allocation_header_size;
+        addNoRet(this->allocated, size + allocation_header_size);
         size_t remainder = (((uintptr_t)ptr) + allocation_header_size) % alignment;
         unsigned char offset = alignment - remainder;
         // Store the allocation header in the 8 bytes before the returned pointer.
@@ -87,7 +87,7 @@ void VecSimAllocator::free_allocation(void *p) {
     auto hdr = ((VecSimAllocationHeader *)p) - 1;
     unsigned char offset = hdr->is_aligned ? ((unsigned char *)hdr)[-1] : 0;
 
-    this->allocated -= (hdr->allocation_size + allocation_header_size);
+    addNoRet(this->allocated, -(hdr->allocation_size + allocation_header_size));
     vecsim_free((char *)p - offset - allocation_header_size);
 }
 
@@ -95,7 +95,7 @@ void *VecSimAllocator::callocate(size_t size) {
     size_t *ptr = (size_t *)vecsim_calloc(1, size + allocation_header_size);
 
     if (ptr) {
-        this->allocated += size + allocation_header_size;
+        addNoRet(this->allocated, size + allocation_header_size);
         *ptr = size;
         return ptr + 1;
     }
