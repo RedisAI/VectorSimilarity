@@ -270,63 +270,6 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     mock_thread_pool.thread_pool_join();
 }
 
-#if HAVE_SVS_REPLACE_EXTERNAL_ID
-
-// Relabel on a tier, in the two write states a vector can be in: buffered with its update job
-// still pending, and moved to the backend. These are the states `addVector` and `insertJob` cover
-// for insertion, and the tier has to move the label in whichever one holds it.
-//
-// The fixture's type set spans single-value, multi-value and Quant_8, so this also answers whether
-// a compressed backend can move a label -- `replace_external_id` renames an id and never touches
-// the stored vector, so it can, even where the backend cannot report values.
-TYPED_TEST(SVSTieredIndexTest, relabelVectorMovesTheLabelInBothWriteStates) {
-    size_t dim = 4;
-    SVSParams params = {.type = TypeParam::get_index_type(),
-                        .dim = dim,
-                        .metric = VecSimMetric_L2,
-                        .multi = TypeParam::isMulti(),
-                        .quantBits = TypeParam::get_quant_bits()};
-    VecSimParams svs_params = CreateParams(params);
-    auto mock_thread_pool = tieredIndexMock();
-    // Thresholds of 1, as `insertJob` uses, so one vector is enough to trigger the update job.
-    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
-    ASSERT_INDEX(tiered_index);
-
-    TEST_DATA_T vector[dim];
-    GenerateVector<TEST_DATA_T>(vector, dim, 7);
-    VecSimIndex_AddVector(tiered_index, vector, 7);
-
-    // Buffered: nothing has run, so the label lives only in the flat buffer.
-    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
-    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(70));
-    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(7));
-    ASSERT_EQ(tiered_index->indexLabelCount(), 1) << "the move must not add a label";
-
-    // Drain: the update job carries the vector to the backend, and must carry the *new* label,
-    // not the one it had when the job was queued.
-    mock_thread_pool.init_threads();
-    mock_thread_pool.thread_pool_join();
-    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
-    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70));
-    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(7));
-
-    // Backend only: the same move again, now served by the backend tier.
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 70, 700), VecSimRelabel_OK);
-    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(700));
-    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
-
-    // Still the same vector, and findable under the label it ended up with. Asserted by search
-    // rather than by reading values back, because a compressed backend reports no values.
-    auto verify = [&](size_t label, double score, size_t rank) {
-        ASSERT_EQ(label, 700);
-        ASSERT_NEAR(score, 0, 1e-4);
-    };
-    runTopKSearchTest(tiered_index, vector, 1, verify);
-}
-
 TYPED_TEST(SVSTieredIndexTest, updateVectors) {
     size_t dim = 4;
     SVSParams params = {.type = TypeParam::get_index_type(),
@@ -407,6 +350,63 @@ TYPED_TEST(SVSTieredIndexTest, updateVectors) {
 
 // Each rejection, asked of a tier: the target has to be free in *both* of them, so a target taken
 // in the buffer and a target taken in the backend are separate cases.
+#if HAVE_SVS_REPLACE_EXTERNAL_ID
+
+// Relabel on a tier, in the two write states a vector can be in: buffered with its update job
+// still pending, and moved to the backend. These are the states `addVector` and `insertJob` cover
+// for insertion, and the tier has to move the label in whichever one holds it.
+//
+// The fixture's type set spans single-value, multi-value and Quant_8, so this also answers whether
+// a compressed backend can move a label -- `replace_external_id` renames an id and never touches
+// the stored vector, so it can, even where the backend cannot report values.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorMovesTheLabelInBothWriteStates) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1, as `insertJob` uses, so one vector is enough to trigger the update job.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    TEST_DATA_T vector[dim];
+    GenerateVector<TEST_DATA_T>(vector, dim, 7);
+    VecSimIndex_AddVector(tiered_index, vector, 7);
+
+    // Buffered: nothing has run, so the label lives only in the flat buffer.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(7));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1) << "the move must not add a label";
+
+    // Drain: the update job carries the vector to the backend, and must carry the *new* label,
+    // not the one it had when the job was queued.
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(7));
+
+    // Backend only: the same move again, now served by the backend tier.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 70, 700), VecSimRelabel_OK);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(700));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
+
+    // Still the same vector, and findable under the label it ended up with. Asserted by search
+    // rather than by reading values back, because a compressed backend reports no values.
+    auto verify = [&](size_t label, double score, size_t rank) {
+        ASSERT_EQ(label, 700);
+        ASSERT_NEAR(score, 0, 1e-4);
+    };
+    runTopKSearchTest(tiered_index, vector, 1, verify);
+}
+
 TYPED_TEST(SVSTieredIndexTest, relabelVectorRejectsOnATier) {
     size_t dim = 4;
     SVSParams params = {.type = TypeParam::get_index_type(),

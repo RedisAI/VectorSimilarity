@@ -3539,6 +3539,77 @@ TEST(SVSTest, ThreadPoolLazyInit) {
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
 }
 
+TYPED_TEST(SVSTest, updateVectors) {
+    size_t dim = 4;
+    size_t n = 5;
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_EQ(index->indexLabelCount(), n);
+
+    auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    const labelType label = 3;
+    TEST_DATA_T old_vector[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(old_vector, dim, label);
+    GenerateVector<TEST_DATA_T>(replacement, dim, n + 5);
+
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, label, replacement, 1), VecSimUpdate_OK);
+
+    // One vector took another's place, so no label was gained or lost. The entry that left is
+    // marked, not gone - SVS deletes softly and drops the entry at a later consolidation - which
+    // is what tells us the update went through the delete path rather than writing over the data
+    // SVS placed the vector by.
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_TRUE(svs_index->isLabelExists(label));
+    ASSERT_GT(svs_index->getNumMarkedDeleted(), 0);
+
+    // Counted without the marked entries, the index holds as many vectors as it did.
+    ASSERT_EQ(VecSimIndex_IndexSize(index) - svs_index->getNumMarkedDeleted(), n);
+
+    if (!svs_index->isCompressed()) {
+        // The label is found at its new value, and a query at the old one finds its neighbours by
+        // value instead. Asserted only for an uncompressed index: a compressed one trains its
+        // stored form on the vectors it was given, so a replacement outside that range - which
+        // this one is - is clipped, and neither the nearest neighbour nor the distance to it says
+        // anything reliable afterwards.
+        auto verify_new = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, label); };
+        runTopKSearchTest(index, replacement, 1, verify_new);
+        auto verify_old = [&](size_t id, double score, size_t rank) { ASSERT_NE(id, label); };
+        runTopKSearchTest(index, old_vector, 1, verify_old);
+    }
+
+    // A label the index does not hold yet is simply stored: with nothing to remove, the end state
+    // the caller asked for is reached anyway.
+    TEST_DATA_T fresh[dim];
+    GenerateVector<TEST_DATA_T>(fresh, dim, n + 6);
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 100, fresh, 1), VecSimUpdate_OK);
+    ASSERT_EQ(index->indexLabelCount(), n + 1);
+    ASSERT_TRUE(svs_index->isLabelExists(100));
+
+    // Two vectors under one label is not a state this index can hold. Refused before anything is
+    // removed, rather than served by storing one of them.
+    TEST_DATA_T two_vectors[2 * dim];
+    GenerateVector<TEST_DATA_T>(two_vectors, dim, n + 7);
+    GenerateVector<TEST_DATA_T>(two_vectors + dim, dim, n + 8);
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, label, two_vectors, 2),
+              VecSimUpdate_MultiNotSupported);
+    ASSERT_EQ(index->indexLabelCount(), n + 1);
+    ASSERT_TRUE(svs_index->isLabelExists(label));
+
+    // An empty update leaves the label holding nothing, which is a delete.
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 100, nullptr, 0), VecSimUpdate_OK);
+    ASSERT_EQ(index->indexLabelCount(), n);
+    ASSERT_FALSE(svs_index->isLabelExists(100));
+
+    VecSimIndex_Free(index);
+}
+
 #if HAVE_SVS_REPLACE_EXTERNAL_ID
 
 TYPED_TEST(SVSTest, relabelVector) {
@@ -3638,77 +3709,6 @@ TYPED_TEST(SVSTest, relabelVectorRejects) {
         ASSERT_FALSE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, label, v)))
             << "label " << label << " was modified";
     }
-
-    VecSimIndex_Free(index);
-}
-
-TYPED_TEST(SVSTest, updateVectors) {
-    size_t dim = 4;
-    size_t n = 5;
-    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
-    VecSimIndex *index = this->CreateNewIndex(params);
-    ASSERT_INDEX(index);
-
-    for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
-    }
-    ASSERT_EQ(index->indexLabelCount(), n);
-
-    auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
-    ASSERT_NE(svs_index, nullptr);
-
-    const labelType label = 3;
-    TEST_DATA_T old_vector[dim], replacement[dim];
-    GenerateVector<TEST_DATA_T>(old_vector, dim, label);
-    GenerateVector<TEST_DATA_T>(replacement, dim, n + 5);
-
-    ASSERT_EQ(VecSimIndex_UpdateVectors(index, label, replacement, 1), VecSimUpdate_OK);
-
-    // One vector took another's place, so no label was gained or lost. The entry that left is
-    // marked, not gone - SVS deletes softly and drops the entry at a later consolidation - which
-    // is what tells us the update went through the delete path rather than writing over the data
-    // SVS placed the vector by.
-    ASSERT_EQ(index->indexLabelCount(), n);
-    ASSERT_TRUE(svs_index->isLabelExists(label));
-    ASSERT_GT(svs_index->getNumMarkedDeleted(), 0);
-
-    // Counted without the marked entries, the index holds as many vectors as it did.
-    ASSERT_EQ(VecSimIndex_IndexSize(index) - svs_index->getNumMarkedDeleted(), n);
-
-    if (!svs_index->isCompressed()) {
-        // The label is found at its new value, and a query at the old one finds its neighbours by
-        // value instead. Asserted only for an uncompressed index: a compressed one trains its
-        // stored form on the vectors it was given, so a replacement outside that range - which
-        // this one is - is clipped, and neither the nearest neighbour nor the distance to it says
-        // anything reliable afterwards.
-        auto verify_new = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, label); };
-        runTopKSearchTest(index, replacement, 1, verify_new);
-        auto verify_old = [&](size_t id, double score, size_t rank) { ASSERT_NE(id, label); };
-        runTopKSearchTest(index, old_vector, 1, verify_old);
-    }
-
-    // A label the index does not hold yet is simply stored: with nothing to remove, the end state
-    // the caller asked for is reached anyway.
-    TEST_DATA_T fresh[dim];
-    GenerateVector<TEST_DATA_T>(fresh, dim, n + 6);
-    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 100, fresh, 1), VecSimUpdate_OK);
-    ASSERT_EQ(index->indexLabelCount(), n + 1);
-    ASSERT_TRUE(svs_index->isLabelExists(100));
-
-    // Two vectors under one label is not a state this index can hold. Refused before anything is
-    // removed, rather than served by storing one of them.
-    TEST_DATA_T two_vectors[2 * dim];
-    GenerateVector<TEST_DATA_T>(two_vectors, dim, n + 7);
-    GenerateVector<TEST_DATA_T>(two_vectors + dim, dim, n + 8);
-    ASSERT_EQ(VecSimIndex_UpdateVectors(index, label, two_vectors, 2),
-              VecSimUpdate_MultiNotSupported);
-    ASSERT_EQ(index->indexLabelCount(), n + 1);
-    ASSERT_TRUE(svs_index->isLabelExists(label));
-
-    // An empty update leaves the label holding nothing, which is a delete.
-    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 100, nullptr, 0), VecSimUpdate_OK);
-    ASSERT_EQ(index->indexLabelCount(), n);
-    ASSERT_FALSE(svs_index->isLabelExists(100));
 
     VecSimIndex_Free(index);
 }
