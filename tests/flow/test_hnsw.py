@@ -1068,6 +1068,20 @@ class GeneralTest():
         hnsw_labels, hnsw_distances = hnsw_index.range_query(self.query_data[0], radius=0)
         assert len(hnsw_labels[0]) == 0
 
+    def get_vector(self, test_logger):
+        hnsw_index, label_to_vec_list = self.get_cached_single_L2_index()
+
+        # An integer index stores its elements exactly as they were inserted, so reading them back
+        # is an equality check rather than a tolerance one.
+        for label, vector in (label_to_vec_list[0], label_to_vec_list[-1]):
+            stored = hnsw_index.get_vector(label)
+            assert stored.shape == (1, self.dim)
+            assert np.array_equal(stored[0], vector)
+
+        # An absent label is reported as no vectors rather than as an error.
+        assert hnsw_index.get_vector(self.num_elements + 1).shape == (0, self.dim)
+        test_logger.info("get_vector returned the stored elements")
+
     def multi_value(self, create_data_func, test_logger, num_per_label = 5):
         num_per_label = 5
         num_labels = self.num_elements // num_per_label
@@ -1135,6 +1149,9 @@ class TestINT8(GeneralTest):
     def test_multi_value(self, test_logger):
         self.multi_value(create_int8_vectors, test_logger)
 
+    def test_get_vector(self, test_logger):
+        self.get_vector(test_logger)
+
 class TestUINT8(GeneralTest):
 
     data_type = VecSimType_UINT8
@@ -1156,3 +1173,67 @@ class TestUINT8(GeneralTest):
 
     def test_multi_value(self, test_logger):
         self.multi_value(create_uint8_vectors, test_logger)
+
+    def test_get_vector(self, test_logger):
+        self.get_vector(test_logger)
+
+
+def test_relabel_vector(test_logger):
+    dim = 16
+    num_elements = 100
+    index = create_hnsw_index(dim, num_elements, VecSimMetric_L2, VecSimType_FLOAT32)
+
+    data = np.float32(np.random.random((num_elements, dim)))
+    for label, vector in enumerate(data):
+        index.add_vector(vector, label)
+
+    old_label, new_label = 7, num_elements + 500
+    assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # A relabel is bookkeeping only: the graph is untouched, so the vector keeps its data and its
+    # place in the index rather than being reinserted.
+    assert index.index_size() == num_elements
+    assert_allclose(index.get_vector(new_label)[0], data[old_label], rtol=1e-6)
+    assert index.get_vector(old_label).shape == (0, dim)
+    assert index.check_integrity()
+
+    labels, distances = index.knn_query(data[old_label], 1)
+    assert labels[0][0] == new_label
+    assert distances[0][0] < 1e-6
+
+    # Each rejection is reported distinctly, and none of them modifies the index.
+    assert index.relabel_vector(num_elements + 1, 0) == VecSimRelabel_OldLabelMissing
+    assert index.relabel_vector(0, 1) == VecSimRelabel_NewLabelTaken
+    assert index.relabel_vector(0, 0) == VecSimRelabel_SameLabel
+    assert index.index_size() == num_elements
+    assert index.check_integrity()
+    test_logger.info("HNSW relabel_vector moved the label, leaving the graph intact")
+
+
+def test_relabel_vector_multi(test_logger):
+    dim = 16
+    num_labels = 20
+    per_label = 3
+    index = create_hnsw_index(dim, num_labels * per_label, VecSimMetric_L2, VecSimType_FLOAT32,
+                              is_multi=True)
+
+    data = np.float32(np.random.random((num_labels, per_label, dim)))
+    for label in range(num_labels):
+        for vector in data[label]:
+            index.add_vector(vector, label)
+
+    old_label, new_label = 7, num_labels + 500
+    assert index.relabel_vector(old_label, new_label) == VecSimRelabel_OK
+
+    # All the label's internal ids are re-pointed together, and the graph is left alone.
+    assert index.index_size() == num_labels * per_label
+    assert_allclose(index.get_vector(new_label), data[old_label], rtol=1e-6)
+    assert index.get_vector(old_label).shape == (0, dim)
+    assert index.check_integrity()
+
+    # Accepting a move onto an occupied label would merge two labels' vectors.
+    assert index.relabel_vector(new_label, 0) == VecSimRelabel_NewLabelTaken
+    assert index.get_vector(new_label).shape == (per_label, dim)
+    assert index.get_vector(0).shape == (per_label, dim)
+    assert index.check_integrity()
+    test_logger.info("HNSW multi relabel_vector moved every vector under the label")

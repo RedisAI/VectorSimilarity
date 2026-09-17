@@ -310,24 +310,36 @@ TYPED_TEST(HNSWSQ8Test, SearchEmptyIndex) { this->search_empty_index_test(); }
 template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::test_override() {
     constexpr size_t count = 250;
+    // Scale the values to keep every distance inside the FP16 range. FP16 tops out at 65504 and
+    // L2² = dim × diff², so unscaled labels would need 4 × 250² = 250000. A vector that is still
+    // waiting in an FP16 flat buffer is compared by an FP16 kernel, which accumulates in half
+    // precision, so an out-of-range distance saturates to infinity there. With scale = 0.1 the
+    // largest distance is 4 × (250 × 0.1)² = 10000.
+    constexpr float scale = 0.1f;
     HNSWParams params = {
         .dim = 4, .initialCapacity = 100, .M = 8, .efConstruction = 20, .efRuntime = count};
     SetUp(params);
 
     for (size_t i = 0; i < 100; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 0);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 0);
     }
     for (size_t i = 100; i < count; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 1);
     }
 
     data_t query[4];
-    GenerateVector(query, static_cast<float>(count));
+    GenerateVector(query, static_cast<float>(count) * scale);
     // Distance decreases as the label increases, so results are in descending label order.
+    const float query_value = to_fp32<data_t>(ToDataType(static_cast<float>(count) * scale));
     auto verify = [&](size_t id, double score, size_t result_index) {
         EXPECT_EQ(id, count - result_index - 1);
-        EXPECT_FLOAT_EQ(score, 4.0f * (count - id) * (count - id));
+        // Compare against the values as they are stored: FP16 cannot hold 0.1 × i exactly, and
+        // half-precision accumulation drops a few more bits, hence the relative tolerance.
+        const float diff =
+            query_value - to_fp32<data_t>(ToDataType(static_cast<float>(id) * scale));
+        const float expected = 4.0f * diff * diff;
+        EXPECT_NEAR(score, expected, 1e-4f + expected * 0.002f);
     };
     runTopKSearchTest(index, query, count, verify);
 }
@@ -393,17 +405,20 @@ template <typename index_type_t>
 void HNSWSQ8Test<index_type_t>::test_batch_iterator_basic() {
     constexpr size_t count = 250;
     constexpr size_t batch_size = 5;
+    // Scaled for the same reason as test_override: an FP16 kernel saturates a distance above
+    // 65504 to infinity, which would leave the farthest labels tied and unordered.
+    constexpr float scale = 0.1f;
     HNSWParams params = {
         .dim = 4, .initialCapacity = count, .M = 8, .efConstruction = 20, .efRuntime = count};
     SetUp(params);
 
-    // Store [i, i, i, i] under label i.
+    // Store [i, i, i, i] * scale under label i.
     for (size_t i = 0; i < count; i++) {
-        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i)), 1);
+        ASSERT_EQ(GenerateAndAddVector(i, static_cast<float>(i) * scale), 1);
     }
 
     data_t query[4];
-    GenerateVector(query, static_cast<float>(count));
+    GenerateVector(query, static_cast<float>(count) * scale);
     VecSimBatchIterator *iterator = VecSimBatchIterator_New(index, query, nullptr);
     ASSERT_NE(iterator, nullptr);
 
@@ -683,11 +698,14 @@ public:
     using data_t = typename index_type_t::data_t;
 
     void create_index_test();
+    void frontend_size_estimation_test(VecSimMetric metric);
 
 protected:
     static constexpr size_t normalization_set_size = 10;
 
-    void SetUp(HNSWParams &hnsw_params) override {
+    void SetUp(HNSWParams &hnsw_params) override { SetUp(hnsw_params, 0); }
+
+    void SetUp(HNSWParams &hnsw_params, size_t flat_buffer_limit) {
         hnsw_params.type = index_type_t::get_index_type();
         hnsw_params.quantType = VecSimQuant_SQ8;
         VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
@@ -695,6 +713,7 @@ protected:
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
             .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &vecsim_hnsw_params,
             .specificParams = {TieredHNSWParams{
                 .QuantNormalizationSetSize =
@@ -772,6 +791,62 @@ TYPED_TEST(SQ8TieredHNSWTest, SizeEstimation) {
     EXPECT_EQ(this->index->indexCapacity(), 2 * block_size);
     EXPECT_GE(estimation, actual * 0.99);
     EXPECT_LE(estimation, actual * 1.01);
+}
+
+template <typename index_type_t>
+void SQ8TieredHNSWTest<index_type_t>::frontend_size_estimation_test(VecSimMetric metric) {
+    constexpr size_t block_size = 64;
+    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
+                              .dim = 1024,
+                              .metric = metric,
+                              .blockSize = block_size,
+                              .M = 32,
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams backend_params = CreateParams(hnsw_params);
+    TieredIndexParams tiered_params = {
+        .flatBufferLimit = block_size + 1,
+        .primaryIndexParams = &backend_params,
+        .specificParams = {
+            TieredHNSWParams{.QuantNormalizationSetSize =
+                                 index_type_t::with_quant_params ? normalization_set_size : 0}}};
+
+    // Wide full-precision vectors make the frontend's block larger than the SQ8 backend's.
+    const size_t estimation = EstimateElementSize(tiered_params) * block_size;
+    this->SetUp(hnsw_params, tiered_params.flatBufferLimit);
+    auto *tiered_index = static_cast<TieredHNSWIndex<data_t, float> *>(this->index);
+    auto *frontend = tiered_index->getFlatBufferIndex();
+
+    // Leave insertion jobs queued so the full-precision frontend must grow another block.
+    for (size_t label = 0; label < block_size; label++) {
+        ASSERT_EQ(this->GenerateAndAddVector(label, 0.25f, 0.001f), 1);
+    }
+    ASSERT_EQ(frontend->indexSize(), block_size);
+    ASSERT_EQ(frontend->indexCapacity(), block_size);
+    ASSERT_EQ(this->CastToHNSW()->indexSize(), 0);
+
+    const size_t before = frontend->getAllocationSize();
+    ASSERT_EQ(this->GenerateAndAddVector(block_size, 0.25f, 0.001f), 1);
+    const size_t actual = frontend->getAllocationSize() - before;
+
+    EXPECT_EQ(frontend->indexCapacity(), 2 * block_size);
+    EXPECT_GE(estimation, actual * 0.99);
+    EXPECT_LE(estimation, actual * 1.01);
+
+    while (!this->mock_thread_pool.jobQ.empty()) {
+        this->mock_thread_pool.thread_iteration();
+    }
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, FrontendSizeEstimationL2) {
+    this->frontend_size_estimation_test(VecSimMetric_L2);
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, FrontendSizeEstimationIP) {
+    this->frontend_size_estimation_test(VecSimMetric_IP);
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, FrontendSizeEstimationCosine) {
+    this->frontend_size_estimation_test(VecSimMetric_Cosine);
 }
 
 TYPED_TEST(SQ8TieredHNSWTest, SearchByID) { this->search_by_id_test(); }
