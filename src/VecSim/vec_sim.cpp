@@ -235,6 +235,11 @@ extern "C" VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_
     return index->relabelVector(old_label, new_label);
 }
 
+extern "C" VecSimUpdateCode VecSimIndex_UpdateVectors(VecSimIndex *index, size_t label,
+                                                      const void *new_blobs, size_t n) {
+    return index->updateVectors(label, new_blobs, n);
+}
+
 extern "C" double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label,
                                                      const void *blob) {
     return index->getDistanceFrom_Unsafe(label, blob);

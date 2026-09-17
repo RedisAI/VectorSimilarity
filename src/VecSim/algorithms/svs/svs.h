@@ -60,6 +60,11 @@ struct SVSIndexBase
     virtual void setImpl(std::unique_ptr<ImplHandler> impl) = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
+    // Makes the next write throw, once, the way SVS itself would. The paths that turn an SVS
+    // exception into a reported code cannot be reached otherwise: SVS throws only for the states
+    // the checks preceding those calls rule out, and it grows its dataset rather than refusing a
+    // write, so without this the code that reports a failed write would go untested.
+    virtual void throwOnNextWriteForTest() = 0;
 #endif
 protected:
     // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
@@ -259,7 +264,26 @@ protected:
     // for the operation.
     // Important NOTE: For single vector operations (n=1), parallelism should be 1.
     // For bulk operations (n>1), parallelism should reflect the number of available threads.
+#ifdef BUILD_TESTS
+public:
+    void throwOnNextWriteForTest() override { throw_on_next_write_ = true; }
+
+private:
+    bool throw_on_next_write_ = false;
+    void maybeThrowForTest() {
+        if (throw_on_next_write_) {
+            throw_on_next_write_ = false;
+            throw std::runtime_error("injected write failure");
+        }
+    }
+#else
+    void maybeThrowForTest() {
+        // In production, we do nothing.
+    }
+#endif
+
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
+        maybeThrowForTest();
         if (n == 0) {
             return 0;
         }
@@ -547,6 +571,53 @@ public:
 
     int deleteVectors(const labelType *labels, size_t n) override {
         return deleteVectorsImpl(labels, n);
+    }
+
+    /**
+     * Set the vectors stored under `label` to the given ones. Removed and re-added rather than
+     * written over: SVS owns both the stored form and the graph built from it, so the values a
+     * vector was placed by cannot be changed underneath it.
+     *
+     * The delete is what makes this a replacement in both label kinds. A single-value add already
+     * replaces the label - `addVectorsImpl` deletes it before adding - but a multi-value one
+     * appends, so without it the label would end up holding its old vectors as well.
+     *
+     * The insertion is one batch add, which is the shape SVS wants anyway: it preprocesses the
+     * whole buffer in one pass and, for a compressed index, lets the quantizer see all the
+     * vectors at once.
+     */
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override {
+        if (!isMulti && n > 1) {
+            return VecSimUpdate_MultiNotSupported;
+        }
+
+        // SVS reports a failure by throwing - `ANNException`, derived from `std::runtime_error` -
+        // and neither the add nor the delete has a status to return: the batch add answers with the
+        // number of *new* labels, which says nothing about whether it succeeded. This is reached
+        // through an `extern "C"` boundary, where an escaping exception is undefined behaviour, so
+        // a throw is reported as a failure instead. A real one, not a no-op: the label's vectors go
+        // before the new ones are stored, so the label can be left holding nothing.
+        try {
+            // One vector replacing a single-value label *is* an overwrite, and `addVectorsImpl`
+            // performs that itself - it deletes an existing single-value label before adding, since
+            // SVS cannot store two vectors under one id - so the delete below would only cost a
+            // second lookup for the same end state.
+            if (!isMulti && n == 1) {
+                addVectorsImpl(new_blobs, &label, 1);
+                return VecSimUpdate_OK;
+            }
+
+            deleteVectorImpl(label);
+            if (n > 0) {
+                // Every vector goes under the same label, which is what the batch add takes a
+                // label per vector for.
+                std::vector<labelType> labels(n, label);
+                addVectorsImpl(new_blobs, labels.data(), n);
+            }
+        } catch (const std::exception &) {
+            return VecSimUpdate_Failed;
+        }
+        return VecSimUpdate_OK;
     }
 
 #if HAVE_SVS_REPLACE_EXTERNAL_ID

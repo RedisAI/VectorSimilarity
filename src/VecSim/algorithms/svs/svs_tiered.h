@@ -964,6 +964,46 @@ public:
         }
         return ret;
     }
+    /**
+     * Set the vectors stored under `label` to the given ones, in whichever tier holds them.
+     *
+     * Both halves go through this index's own delete and add, which is what makes every tier and
+     * write mode fall out: the delete removes the label's buffered vectors - journaling the label
+     * so that an update job running at the same time does not carry them into the backend - and
+     * deletes its backend vectors, and each insert then lands where a fresh vector would, with the
+     * training and update thresholds deciding when the batch moves.
+     *
+     * Not atomic: a query landing between the two halves sees the label with none of its vectors,
+     * the same window the delete-then-insert it replaces would leave.
+     */
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override {
+        if (!this->backendIndex->isMultiValue() && n > 1) {
+            return VecSimUpdate_MultiNotSupported;
+        }
+        // Reported rather than let through, for the reason `SVSIndex::updateVectors` gives: the
+        // backend signals failure by throwing, and this is reached across an `extern "C"` boundary.
+        // The locks the paths below take are scoped, so unwinding releases them.
+        try {
+            // One vector replacing a single-value label *is* an overwrite, which `addVector`
+            // already performs across the tiers: it writes over the buffered copy in place and
+            // journals the overwrite so an update job in flight does not carry the replaced vector
+            // away, where a delete followed by an insert would drop that copy and buffer a new one.
+            if (n == 1 && !this->backendIndex->isMultiValue()) {
+                this->addVector(new_blobs, label);
+                return VecSimUpdate_OK;
+            }
+
+            this->deleteVector(label);
+            const char *blob = static_cast<const char *>(new_blobs);
+            for (size_t i = 0; i < n; i++) {
+                this->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
+            }
+        } catch (const std::exception &) {
+            return VecSimUpdate_Failed;
+        }
+        return VecSimUpdate_OK;
+    }
+
 #if HAVE_SVS_REPLACE_EXTERNAL_ID
     // Only declared when the SVS this was built against offers `replace_external_id`, mirroring
     // `SVSIndex::relabelVector`. Left out otherwise, so the interface default reports
