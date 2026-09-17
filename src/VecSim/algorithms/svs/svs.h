@@ -638,7 +638,20 @@ public:
             return VecSimRelabel_NewLabelTaken;
         }
 
-        impl_->replace_external_id(old_label, new_label);
+        // `replace_external_id` returns void and signals a refusal by throwing `ANNException` -
+        // for a source it does not hold, or a target it already holds. The checks above rule both
+        // out, so a throw here means SVS's view of the index disagrees with the one they read;
+        // reported as the refusal that matches *SVS's* view rather than let through, since this is
+        // reached across an `extern "C"` boundary where an escaping exception is undefined
+        // behaviour - and returning OK after a move that did not happen is the one answer that
+        // would leave the caller with a label it believes it moved.
+        try {
+            maybeThrowForTest();
+            impl_->replace_external_id(old_label, new_label);
+        } catch (const std::exception &) {
+            return isLabelExists(new_label) ? VecSimRelabel_NewLabelTaken
+                                            : VecSimRelabel_OldLabelMissing;
+        }
         return VecSimRelabel_OK;
     }
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID

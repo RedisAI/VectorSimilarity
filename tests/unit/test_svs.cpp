@@ -3539,6 +3539,48 @@ TEST(SVSTest, ThreadPoolLazyInit) {
     VecSimSVSThreadPoolImpl::instance()->resetForTest();
 }
 
+TYPED_TEST(SVSTest, relabelRefusalIsReportedNotThrown) {
+    // `replace_external_id` returns void and signals a refusal by throwing, so the only thing the
+    // code could not do was notice - it returned OK regardless. The throw is injected, because SVS
+    // throws only for the two states the checks in `relabelVector` rule out first, which is why
+    // this could not be covered before.
+    size_t dim = 4;
+    size_t n = 5;
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
+    ASSERT_NE(svs_index, nullptr);
+
+    // Relabeling only exists where the SVS this was built against offers `replace_external_id`; a
+    // pre-built one does not, and the whole method is left out so the interface default answers
+    // instead. Probed rather than compiled out - and before arming the injection, so a build
+    // without relabeling does not leave it armed. Equal labels are a no-op that still answers
+    // whether the capability is there.
+    if (VecSimIndex_RelabelVector(index, 1, 1) == VecSimRelabel_Unsupported) {
+        GTEST_SKIP() << "this SVS build has no replace_external_id";
+    }
+
+    // Reported as the refusal that matches SVS's own view rather than as success. The target is
+    // free here, so the answer is that the source is the problem - which is what SVS throwing
+    // means when the checks above it said otherwise.
+    svs_index->throwOnNextWriteForTest();
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 100), VecSimRelabel_OldLabelMissing);
+    ASSERT_TRUE(svs_index->isLabelExists(1)) << "the refused relabel moved the label anyway";
+    ASSERT_FALSE(svs_index->isLabelExists(100));
+
+    // And with the one-shot injection spent, the same move goes through.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 100), VecSimRelabel_OK);
+    ASSERT_TRUE(svs_index->isLabelExists(100));
+    ASSERT_EQ(index->indexLabelCount(), n);
+
+    VecSimIndex_Free(index);
+}
+
 TYPED_TEST(SVSTest, updateVectorsReportsAFailedWrite) {
     // SVS signals a failure by throwing, and this is reached across an `extern "C"` boundary where
     // an escaping exception is undefined behaviour. The throw is injected, because SVS only throws
