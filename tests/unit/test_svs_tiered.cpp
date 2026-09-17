@@ -270,6 +270,45 @@ TYPED_TEST(SVSTieredIndexTest, ThreadsReservation) {
     mock_thread_pool.thread_pool_join();
 }
 
+TYPED_TEST(SVSTieredIndexTest, updateVectorsReportsAFailedWrite) {
+    // The tier's update reports a failed write rather than letting the backend's exception cross
+    // the API boundary. In-place write mode, so the write reaches the backend synchronously and
+    // the injected throw is on the path; in async mode the vector would only land in the flat
+    // buffer and the backend would not be touched until a job ran.
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    TEST_DATA_T replacement[dim];
+    GenerateVector<TEST_DATA_T>(replacement, dim, 10);
+    // Several labels, not one: a multi-value update deletes the label's vectors before adding the
+    // new ones, and had the backend held only that label it would be left empty - after which the
+    // add buffers in the flat index instead of reaching the backend, and the injected throw would
+    // never be on the path.
+    for (size_t i = 0; i < 5; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_GT(tiered_index->GetBackendIndex()->indexSize(), 1);
+
+    tiered_index->setWriteMode(VecSim_WriteInPlace);
+    tiered_index->GetSVSIndex()->throwOnNextWriteForTest();
+    ASSERT_EQ(tiered_index->updateVectors(1, replacement, 1), VecSimUpdate_Failed);
+
+    // Still usable, and the injection was one-shot.
+    ASSERT_EQ(tiered_index->updateVectors(1, replacement, 1), VecSimUpdate_OK);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 5);
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+}
+
 TYPED_TEST(SVSTieredIndexTest, updateVectors) {
     size_t dim = 4;
     SVSParams params = {.type = TypeParam::get_index_type(),

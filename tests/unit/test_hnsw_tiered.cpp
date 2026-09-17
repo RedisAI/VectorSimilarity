@@ -3170,6 +3170,99 @@ TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
     }
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, queryWhileUpdating) {
+    // Searches in flight while labels are being replaced. `parallelInsertSearch` covers reading
+    // against insertion; this covers reading against an update, which is where a reader is most
+    // exposed: the element it may be walking is marked deleted and a replacement inserted under
+    // the same label, and for a multi-value label the removal lands before the insertion.
+    //
+    // Deliberately not asserting *what* a search returns. A query that overlaps an update may see
+    // the label's old vectors, its new ones, or - for a multi-value label, between the two halves
+    // - neither, and a nearest-neighbour search over a graph being churned is approximate anyway.
+    // What it does assert is that no reply invents anything: every label returned is one this test
+    // wrote, which is what a use-after-free on a swapped id or a torn label lookup would break,
+    // and that the searches actually ran.
+    size_t dim = 4;
+    size_t n = 500;
+    size_t k = 10;
+    for (bool is_multi : {false, true}) {
+        SCOPED_TRACE(is_multi ? "multi" : "single");
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto allocator = tiered_index->getAllocator();
+        const size_t per_label = is_multi ? 2 : 1;
+        const labelType fresh_base = 10 * n;
+
+        std::atomic_int successful_searches(0);
+        std::atomic_int invalid_labels(0);
+        auto search_while_writing = [](AsyncJob *job) {
+            auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+            auto *invalid = reinterpret_cast<std::atomic_int *>(search_job->all_results);
+            const size_t universe = search_job->n;
+            auto verify_res = [&](size_t id, double score, size_t res_index) {
+                // Every label this index ever held is below `universe`; anything else came from
+                // reading memory that had been reused or freed.
+                if (id >= universe) {
+                    (*invalid)++;
+                }
+            };
+            runTopKSearchTest(job->index, search_job->query, search_job->k, verify_res);
+            (*search_job->successful_searches)++;
+            delete job;
+        };
+
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+        mock_thread_pool.init_threads();
+
+        for (size_t i = 0; i < n; i++) {
+            // A search over the range the writes are touching, queued so a worker picks it up
+            // while the writes below are still going.
+            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+            GenerateVector<TEST_DATA_T>(query, dim, 1000.0f + 10.0f * (i % n));
+            auto *search_job = new (allocator)
+                tieredIndexMock::SearchJobMock(allocator, search_while_writing, tiered_index, k,
+                                               query, fresh_base + n, dim, &successful_searches);
+            // `all_results` is unused by this callback's contract, so it carries the counter the
+            // verifier reports through.
+            search_job->all_results = reinterpret_cast<VecSimQueryReply **>(&invalid_labels);
+            tiered_index->submitSingleJob(search_job);
+
+            TEST_DATA_T replacements[2 * dim];
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateVector<TEST_DATA_T>(replacements + j * dim, dim, 1000.0f + 10.0f * i + j);
+            }
+            EXPECT_EQ(tiered_index->updateVectors(i, replacements, per_label), VecSimUpdate_OK)
+                << "label " << i;
+
+            // An insert alongside, so the readers also overlap a growing index.
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
+            EXPECT_EQ(tiered_index->addVector(fresh, fresh_base + i), 1);
+        }
+        mock_thread_pool.thread_pool_join();
+
+        EXPECT_EQ(successful_searches, n) << "searches did not all run, so they raced nothing";
+        EXPECT_EQ(invalid_labels, 0) << "a search returned a label this index never held";
+
+        // The writes still landed correctly through all of it.
+        EXPECT_EQ(tiered_index->indexLabelCount(), 2 * n);
+        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->statisticInfo().numberOfMarkedDeleted,
+                  n * per_label + n);
+        tiered_index->runGC();
+        auto report = this->CastToHNSW(tiered_index)->checkIntegrity();
+        EXPECT_EQ(report.connections_to_repair, 0);
+        EXPECT_EQ(report.valid_state, true);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;

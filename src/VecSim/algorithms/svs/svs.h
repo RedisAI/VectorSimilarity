@@ -60,6 +60,11 @@ struct SVSIndexBase
     virtual void setImpl(std::unique_ptr<ImplHandler> impl) = 0;
 #ifdef BUILD_TESTS
     virtual svs::logging::logger_ptr getLogger() const = 0;
+    // Makes the next write throw, once, the way SVS itself would. The paths that turn an SVS
+    // exception into a reported code cannot be reached otherwise: SVS throws only for the states
+    // the checks preceding those calls rule out, and it grows its dataset rather than refusing a
+    // write, so without this the code that reports a failed write would go untested.
+    virtual void throwOnNextWriteForTest() = 0;
 #endif
 protected:
     // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
@@ -259,7 +264,26 @@ protected:
     // for the operation.
     // Important NOTE: For single vector operations (n=1), parallelism should be 1.
     // For bulk operations (n>1), parallelism should reflect the number of available threads.
+#ifdef BUILD_TESTS
+public:
+    void throwOnNextWriteForTest() override { throw_on_next_write_ = true; }
+
+private:
+    bool throw_on_next_write_ = false;
+    void maybeThrowForTest() {
+        if (throw_on_next_write_) {
+            throw_on_next_write_ = false;
+            throw std::runtime_error("injected write failure");
+        }
+    }
+#else
+    void maybeThrowForTest() {
+        // In production, we do nothing.
+    }
+#endif
+
     int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
+        maybeThrowForTest();
         if (n == 0) {
             return 0;
         }
@@ -622,6 +646,7 @@ public:
         // behaviour - and returning OK after a move that did not happen is the one answer that
         // would leave the caller with a label it believes it moved.
         try {
+            maybeThrowForTest();
             impl_->replace_external_id(old_label, new_label);
         } catch (const std::exception &) {
             return isLabelExists(new_label) ? VecSimRelabel_NewLabelTaken
