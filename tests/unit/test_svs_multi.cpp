@@ -1347,3 +1347,71 @@ TYPED_TEST(SVSMultiTest, relabelVectorMultiRejects) {
 }
 
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
+
+TYPED_TEST(SVSMultiTest, updateVectorsMulti) {
+    size_t dim = 4;
+    size_t per_label = 3;
+    SVSParams params = {.dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    ASSERT_INDEX(index);
+
+    // Label 0 holds the values 0, 1, 2 and label 1 holds 10, 11, 12.
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, i + 10);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
+    ASSERT_NE(svs_index, nullptr);
+    // SVS deletes softly - an entry is marked and only dropped by a later consolidation - so the
+    // index size below counts the replaced vectors until then, and the live count is what is left
+    // after subtracting the marked ones.
+    auto live_vectors = [&]() {
+        return VecSimIndex_IndexSize(index) - svs_index->getNumMarkedDeleted();
+    };
+
+    // Replace label 0's three vectors with two different ones. How many the label ends up holding
+    // is decided by the update, not by what was there - and `addVector` cannot express this at
+    // all here, since in a multi-value index it appends.
+    TEST_DATA_T two[2 * dim];
+    GenerateVector<TEST_DATA_T>(two, dim, 100);
+    GenerateVector<TEST_DATA_T>(two + dim, dim, 101);
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, two, 2), VecSimUpdate_OK);
+
+    ASSERT_EQ(live_vectors(), per_label + 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    if (!svs_index->isCompressed()) {
+        // Each of the label's new vectors finds it, and the untouched label kept all of its own.
+        // Asserted only for an uncompressed index: a compressed one trains its stored form on the
+        // vectors it was given, so the replacements - outside that range - are clipped.
+        for (size_t i = 0; i < 2; i++) {
+            auto verify_new = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 0); };
+            runTopKSearchTest(index, two + i * dim, 1, verify_new);
+        }
+        for (size_t value : {10, 11, 12}) {
+            TEST_DATA_T other[dim];
+            GenerateVector<TEST_DATA_T>(other, dim, value);
+            auto verify_other = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 1); };
+            runTopKSearchTest(index, other, 1, verify_other);
+        }
+    }
+
+    // Growing the label works the same way.
+    TEST_DATA_T four[4 * dim];
+    for (size_t i = 0; i < 4; i++) {
+        GenerateVector<TEST_DATA_T>(four + i * dim, dim, 200 + i);
+    }
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, four, 4), VecSimUpdate_OK);
+    ASSERT_EQ(live_vectors(), per_label + 4);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    // And an empty update removes the label altogether.
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, nullptr, 0), VecSimUpdate_OK);
+    ASSERT_EQ(live_vectors(), per_label);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+
+    VecSimIndex_Free(index);
+}

@@ -988,6 +988,31 @@ public:
      * rename landing inside its window would be invisible to it and the vector would reach the
      * backend under the old label.
      */
+    /**
+     * Set the vectors stored under `label` to the given ones, in whichever tier holds them.
+     *
+     * Both halves go through this index's own delete and add, which is what makes every tier and
+     * write mode fall out: the delete removes the label's buffered vectors - journaling the label
+     * so that an update job running at the same time does not carry them into the backend - and
+     * deletes its backend vectors, and each insert then lands where a fresh vector would, with the
+     * training and update thresholds deciding when the batch moves.
+     *
+     * Not atomic: a query landing between the two halves sees the label with none of its vectors,
+     * the same window the delete-then-insert it replaces would leave.
+     */
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override {
+        if (!this->backendIndex->isMultiValue() && n > 1) {
+            return VecSimUpdate_MultiNotSupported;
+        }
+
+        this->deleteVector(label);
+        const char *blob = static_cast<const char *>(new_blobs);
+        for (size_t i = 0; i < n; i++) {
+            this->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
+        }
+        return VecSimUpdate_OK;
+    }
+
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override {
         if (old_label == new_label) {
             return VecSimRelabel_SameLabel;

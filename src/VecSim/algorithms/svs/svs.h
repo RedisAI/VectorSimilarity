@@ -549,6 +549,34 @@ public:
         return deleteVectorsImpl(labels, n);
     }
 
+    /**
+     * Set the vectors stored under `label` to the given ones. Removed and re-added rather than
+     * written over: SVS owns both the stored form and the graph built from it, so the values a
+     * vector was placed by cannot be changed underneath it.
+     *
+     * The delete is what makes this a replacement in both label kinds. A single-value add already
+     * replaces the label - `addVectorsImpl` deletes it before adding - but a multi-value one
+     * appends, so without it the label would end up holding its old vectors as well.
+     *
+     * The insertion is one batch add, which is the shape SVS wants anyway: it preprocesses the
+     * whole buffer in one pass and, for a compressed index, lets the quantizer see all the
+     * vectors at once.
+     */
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override {
+        if (!isMulti && n > 1) {
+            return VecSimUpdate_MultiNotSupported;
+        }
+
+        deleteVectorImpl(label);
+        if (n > 0) {
+            // Every vector goes under the same label, which is what the batch add takes a label
+            // per vector for.
+            std::vector<labelType> labels(n, label);
+            addVectorsImpl(new_blobs, labels.data(), n);
+        }
+        return VecSimUpdate_OK;
+    }
+
 #if HAVE_SVS_REPLACE_EXTERNAL_ID
     // Only declared when the SVS this was built against offers `replace_external_id`. The
     // pre-built SVS releases predate it, so where it is missing this override is left out and the

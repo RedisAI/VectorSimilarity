@@ -327,6 +327,84 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorMovesTheLabelInBothWriteStates) {
     runTopKSearchTest(tiered_index, vector, 1, verify);
 }
 
+TYPED_TEST(SVSTieredIndexTest, updateVectors) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1, so one vector is enough to trigger the update job that moves it back.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    TEST_DATA_T buffered[dim], first_replacement[dim], second_replacement[dim];
+    GenerateVector<TEST_DATA_T>(buffered, dim, 7);
+    GenerateVector<TEST_DATA_T>(first_replacement, dim, 70);
+    GenerateVector<TEST_DATA_T>(second_replacement, dim, 700);
+
+    VecSimIndex_AddVector(tiered_index, buffered, 7);
+
+    // Buffered: nothing has run, so the label lives only in the flat buffer and it is the copy
+    // there that has to be replaced.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->updateVectors(7, first_replacement, 1), VecSimUpdate_OK);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1) << "the update must not add a label";
+    auto verify_first = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 7); };
+    runTopKSearchTest(tiered_index, first_replacement, 1, verify_first);
+
+    // Drain: the update job carries the label to the backend, and has to carry the value the
+    // update left in the buffer rather than the one that was there when it was queued.
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_GT(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    runTopKSearchTest(tiered_index, first_replacement, 1, verify_first);
+
+    // Backend only: the same update again, now served by the backend tier.
+    ASSERT_EQ(tiered_index->updateVectors(7, second_replacement, 1), VecSimUpdate_OK);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    auto verify_second = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 7); };
+    runTopKSearchTest(tiered_index, second_replacement, 1, verify_second);
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    runTopKSearchTest(tiered_index, second_replacement, 1, verify_second);
+
+    if (TypeParam::isMulti()) {
+        // A multi-value label may be given as many vectors as the caller likes, and ends up
+        // holding exactly those.
+        TEST_DATA_T two[2 * dim];
+        GenerateVector<TEST_DATA_T>(two, dim, 800);
+        GenerateVector<TEST_DATA_T>(two + dim, dim, 801);
+        ASSERT_EQ(tiered_index->updateVectors(7, two, 2), VecSimUpdate_OK);
+        mock_thread_pool.init_threads();
+        mock_thread_pool.thread_pool_join();
+        ASSERT_EQ(tiered_index->indexSize(), 2);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+        for (size_t i = 0; i < 2; i++) {
+            auto verify_pair = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 7); };
+            runTopKSearchTest(tiered_index, two + i * dim, 1, verify_pair);
+        }
+    } else {
+        // Two vectors under one label is not a state a single-value index can hold, in either
+        // tier. Refused before anything is removed.
+        TEST_DATA_T two[2 * dim];
+        GenerateVector<TEST_DATA_T>(two, dim, 800);
+        GenerateVector<TEST_DATA_T>(two + dim, dim, 801);
+        ASSERT_EQ(tiered_index->updateVectors(7, two, 2), VecSimUpdate_MultiNotSupported);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+        runTopKSearchTest(tiered_index, second_replacement, 1, verify_second);
+    }
+}
+
 // Each rejection, asked of a tier: the target has to be free in *both* of them, so a target taken
 // in the buffer and a target taken in the backend are separate cases.
 TYPED_TEST(SVSTieredIndexTest, relabelVectorRejectsOnATier) {
