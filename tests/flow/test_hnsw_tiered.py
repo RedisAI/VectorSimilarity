@@ -4,6 +4,8 @@
 # Licensed under your choice of the Redis Source Available License 2.0
 # (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
 # GNU Affero General Public License v3 (AGPLv3).
+import subprocess
+import sys
 import time
 import pytest
 from common import *
@@ -106,14 +108,14 @@ SQ8_EF_RUNTIME = 100
 
 
 def create_sq8_tiered_index(dim, num_elements, metric, data_type, training_threshold=0,
-                            is_multi=False):
+                            is_multi=False, manual_jobs=False):
     hnsw_params = create_hnsw_params(dim=dim, num_elements=num_elements, metric=metric,
                                      data_type=data_type, is_multi=is_multi,
                                      ef_runtime=SQ8_EF_RUNTIME)
     hnsw_params.quantType = VecSimQuant_SQ8
     tiered_params = create_tiered_hnsw_params()
     tiered_params.QuantNormalizationSetSize = training_threshold
-    return Tiered_HNSWIndex(hnsw_params, tiered_params, 1024)
+    return Tiered_HNSWIndex(hnsw_params, tiered_params, 1024, manual_jobs=manual_jobs)
 
 
 def to_index_dtype(vectors, data_type):
@@ -141,7 +143,10 @@ def topk_recall(index, queries, vectors, labels, metric, k):
         for distance, label in zip(distances, labels):
             best[label] = min(distance, best.get(label, np.inf))
         expected = [label for label, _ in sorted(best.items(), key=lambda kv: kv[1])[:k]]
-        found, _ = index.knn_query(query, k)
+        found, scores = index.knn_query(query, k)
+        assert found.shape == scores.shape == (1, k), (found, scores)
+        assert len(set(found[0])) == k, found
+        assert np.isfinite(scores).all(), scores
         hits += len(set(found[0]) & set(expected))
     return hits / (k * len(queries))
 
@@ -149,7 +154,8 @@ def topk_recall(index, queries, vectors, labels, metric, k):
 @pytest.mark.parametrize("is_multi", [False, True], ids=["single", "multi"])
 @pytest.mark.parametrize("metric", SQ8_TIERED_METRICS)
 @pytest.mark.parametrize("data_type", SQ8_TYPES)
-def test_sq8_tiered_supported_matrix(data_type, metric, is_multi):
+@pytest.mark.parametrize("training_threshold", [0, 24], ids=["threshold-0", "threshold-positive"])
+def test_sq8_tiered_supported_matrix(data_type, metric, is_multi, training_threshold):
     """Every SQ8-supported type/metric/multiplicity combination indexes, migrates and searches."""
     num_labels = 100
     per_label = 2 if is_multi else 1
@@ -157,20 +163,153 @@ def test_sq8_tiered_supported_matrix(data_type, metric, is_multi):
     vectors = to_index_dtype(
         np.float32(rng.random((num_labels * per_label, SQ8_MIN_DIM))), data_type)
     queries = to_index_dtype(np.float32(rng.random((10, SQ8_MIN_DIM))), data_type)
-    labels = [i % num_labels for i in range(num_labels * per_label)]
+    labels = [i // per_label for i in range(num_labels * per_label)]
 
     index = create_sq8_tiered_index(SQ8_MIN_DIM, len(vectors), metric, data_type,
-                                    is_multi=is_multi)
-    for vector, label in zip(vectors, labels):
+                                    training_threshold=training_threshold, is_multi=is_multi)
+    if training_threshold:
+        # The threshold is measured in vectors. Keep one vector below it and use enough labels for
+        # a k=10 query, while contiguous repeated labels exercise the multi-value path.
+        below = training_threshold - 1
+        for vector, label in zip(vectors[:below], labels[:below]):
+            index.add_vector(vector, label)
+        index.wait_for_index(1)
+
+        assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (
+            len(set(labels[:below])), 0)
+        assert index.index_size() == below
+        assert topk_recall(index, queries, vectors[:below], labels[:below], metric, k=10) == 1.0
+
+        # Insert exactly the crossing vector to verify that training starts at the vector threshold.
+        index.add_vector(vectors[below], labels[below])
+        index.wait_for_index(1)
+        assert index.get_curr_bf_size() == 0
+        assert index.hnsw_label_count() == len(set(labels[:training_threshold]))
+        assert index.index_size() == training_threshold
+        assert topk_recall(index, queries, vectors[:training_threshold],
+                           labels[:training_threshold], metric, k=10) >= 0.9
+
+        remaining_vectors = vectors[training_threshold:]
+        remaining_labels = labels[training_threshold:]
+    else:
+        remaining_vectors = vectors
+        remaining_labels = labels
+
+    for vector, label in zip(remaining_vectors, remaining_labels):
         index.add_vector(vector, label)
     index.wait_for_index(1)
 
-    # A zero training threshold migrates on ingest, so nothing may remain in the flat buffer.
+    # A zero training threshold migrates on ingest, while a positive threshold drains after it is
+    # crossed. get_curr_bf_size counts labels; index_size counts vectors.
     assert index.get_curr_bf_size() == 0
     assert index.hnsw_label_count() == num_labels
     assert index.index_size() == len(vectors)
 
     assert topk_recall(index, queries, vectors, labels, metric, k=10) >= 0.9
+
+
+@pytest.mark.parametrize("is_multi", [False, True], ids=["single", "multi"])
+@pytest.mark.parametrize("metric", SQ8_TIERED_METRICS)
+@pytest.mark.parametrize("data_type", SQ8_TYPES)
+def test_sq8_queries_with_partially_migrated_index(data_type, metric, is_multi):
+    """SQ8 queries merge labels and scores correctly while migration is partially complete."""
+    num_labels = 6
+    per_label = 2 if is_multi else 1
+    primary = np.eye(num_labels, SQ8_MIN_DIM, dtype=np.float32)
+    if is_multi:
+        secondary = 0.8 * primary + 0.2 * np.roll(primary, -1, axis=0)
+        vectors = np.stack((primary, secondary), axis=1).reshape(-1, SQ8_MIN_DIM)
+    else:
+        vectors = primary
+    vectors = to_index_dtype(vectors, data_type)
+    labels = np.repeat(np.arange(num_labels), per_label)
+    index = create_sq8_tiered_index(
+        SQ8_MIN_DIM, len(vectors), metric, data_type, training_threshold=len(vectors),
+        is_multi=is_multi, manual_jobs=True)
+
+    for vector, label in zip(vectors, labels):
+        index.add_vector(vector, label)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (num_labels, 0)
+
+    assert index._run_pending_jobs(3 if is_multi else 2) == (3 if is_multi else 2)
+    mixed_sizes = (index.get_curr_bf_size(), index.hnsw_label_count())
+    # Multi-value insertion jobs are grouped by label. Three jobs therefore leave one label in
+    # both tiers, alongside labels exclusive to each tier, regardless of map iteration order.
+    expected_sizes = (num_labels - 1, 2) if is_multi else (num_labels - 2, 2)
+    assert mixed_sizes == expected_sizes
+
+    def check_queries():
+        for query_label, query in enumerate(to_index_dtype(primary, data_type)):
+            found, distances = index.knn_query(query, num_labels)
+            assert len(set(found[0])) == num_labels
+            assert np.isfinite(distances).all(), distances
+            expected = {}
+            for label, distance in zip(labels, exact_distances(query, vectors, metric)):
+                expected[label] = min(distance, expected.get(label, np.inf))
+            actual = dict(zip(found[0], distances[0]))
+            assert_allclose([actual[label] for label in range(num_labels)],
+                            [expected[label] for label in range(num_labels)], rtol=0, atol=0.03)
+
+            nearest, nearest_distances = index.knn_query(query, 1)
+            assert_equal(nearest, [[query_label]])
+            assert np.isfinite(nearest_distances).all(), nearest_distances
+            in_radius, range_distances = index.range_query(query, 0.1)
+            assert_equal(in_radius, [[query_label]])
+            assert np.isfinite(range_distances).all(), range_distances
+            assert_allclose(range_distances, [[expected[query_label]]], rtol=0, atol=0.03)
+
+    check_queries()
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == mixed_sizes
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (0, num_labels)
+    check_queries()
+
+
+def test_manual_tiered_job_control():
+    index = create_sq8_tiered_index(
+        SQ8_MIN_DIM, 3, VecSimMetric_L2, VecSimType_FLOAT32, training_threshold=3,
+        manual_jobs=True)
+    assert index.get_threads_num() == 0
+    assert index._run_pending_jobs() == 0
+    for label in range(3):
+        index.add_vector(np.eye(3, SQ8_MIN_DIM, dtype=np.float32)[label], label)
+    assert index._run_pending_jobs(0) == 0
+    assert index._run_pending_jobs(10) == 3
+    assert index._run_pending_jobs() == 0
+
+    automatic = create_sq8_tiered_index(
+        SQ8_MIN_DIM, 1, VecSimMetric_L2, VecSimType_FLOAT32)
+    with pytest.raises(RuntimeError, match="manual_jobs mode"):
+        automatic._run_pending_jobs()
+
+    unsupported = create_hnsw_params(
+        dim=SQ8_MIN_DIM, num_elements=1, metric=VecSimMetric_L2,
+        data_type=VecSimType_FLOAT64)
+    unsupported.quantType = VecSimQuant_SQ8
+    with pytest.raises(ValueError, match="Unsupported vector index parameters"):
+        Tiered_HNSWIndex(
+            unsupported, create_tiered_hnsw_params(), 1024, manual_jobs=True)
+
+
+def test_manual_tiered_destruction_with_pending_jobs():
+    code = """
+import numpy as np
+from VecSim import *
+p = HNSWParams()
+p.dim = 64
+p.type = VecSimType_FLOAT32
+p.metric = VecSimMetric_L2
+p.initialCapacity = 2
+p.quantType = VecSimQuant_SQ8
+t = TieredHNSWParams()
+t.QuantNormalizationSetSize = 2
+i = Tiered_HNSWIndex(p, t, 1024, manual_jobs=True)
+i.add_vector(np.eye(2, 64, dtype=np.float32)[0], 0)
+i.add_vector(np.eye(2, 64, dtype=np.float32)[1], 1)
+assert (i.get_curr_bf_size(), i.hnsw_label_count()) == (2, 0)
+del i
+"""
+    subprocess.run([sys.executable, "-c", code], check=True, timeout=10)
 
 
 @pytest.mark.parametrize("data_type", SQ8_TYPES)
@@ -206,7 +345,20 @@ def test_sq8_deletion_during_accumulation():
     assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (2, 0)
     assert index.index_size() == 2
 
-    for label in range(3, total):
+    # Eight historical inserts leave only seven live vectors after the deletion.
+    for label in range(3, threshold):
+        index.add_vector(vectors[label], label)
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (threshold - 1, 0)
+    assert index.index_size() == threshold - 1
+
+    # Training starts when the live vector count reaches the threshold.
+    index.add_vector(vectors[threshold], threshold)
+    index.wait_for_index(1)
+    assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (0, threshold)
+    assert index.index_size() == threshold
+
+    for label in range(threshold + 1, total):
         index.add_vector(vectors[label], label)
     index.wait_for_index(1)
 

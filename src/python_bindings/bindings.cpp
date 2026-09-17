@@ -513,6 +513,7 @@ public:
 class PyTieredIndex : public PyVecSimIndex {
 protected:
     tieredIndexMock mock_thread_pool;
+    bool manual_jobs;
 
     void initializeIndex(const VecSimParams &params) {
         try {
@@ -541,15 +542,47 @@ protected:
     }
 
 public:
-    explicit PyTieredIndex() { mock_thread_pool.init_threads(); }
+    explicit PyTieredIndex(bool manual_jobs = false) : manual_jobs(manual_jobs) {
+        if (!manual_jobs) {
+            mock_thread_pool.init_threads();
+        }
+    }
+
+    // Testing-only control for observing a tiered index while migration is partially complete.
+    // Keep the GIL held while executing jobs so Python callers cannot consume the queue
+    // concurrently. Any live batch iterator must be destroyed first because it retains the
+    // tiered index guard for its full lifetime.
+    size_t runPendingJobs(size_t max_jobs = 1) {
+        if (!manual_jobs) {
+            throw std::runtime_error("Pending jobs can only be run in manual_jobs mode");
+        }
+
+        size_t jobs_run = 0;
+        while (jobs_run < max_jobs) {
+            {
+                std::lock_guard<std::mutex> lock(mock_thread_pool.queue_guard);
+                if (mock_thread_pool.jobQ.empty()) {
+                    break;
+                }
+            }
+            mock_thread_pool.thread_iteration();
+            jobs_run++;
+        }
+        return jobs_run;
+    }
 
     void WaitForIndex(size_t waiting_duration = 10) {
-        mock_thread_pool.thread_pool_wait(waiting_duration);
+        if (manual_jobs) {
+            while (runPendingJobs() != 0) {
+            }
+        } else {
+            mock_thread_pool.thread_pool_wait(waiting_duration);
+        }
     }
 
     size_t getFlatIndexSize() { return getFlatBuffer()->indexLabelCount(); }
 
-    size_t getThreadsNum() { return mock_thread_pool.thread_pool_size; }
+    size_t getThreadsNum() { return manual_jobs ? 0 : mock_thread_pool.thread_pool_size; }
 
     size_t getBufferLimit() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
@@ -560,7 +593,9 @@ public:
 class PyTiered_HNSWIndex : public PyTieredIndex {
 public:
     explicit PyTiered_HNSWIndex(const HNSWParams &hnsw_params,
-                                const TieredHNSWParams &tiered_hnsw_params, size_t buffer_limit) {
+                                const TieredHNSWParams &tiered_hnsw_params, size_t buffer_limit,
+                                bool manual_jobs = false)
+        : PyTieredIndex(manual_jobs) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
         VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB,
@@ -868,11 +903,14 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<PyTiered_HNSWIndex, PyTieredIndex>(m, "Tiered_HNSWIndex")
         .def(py::init([](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params,
-                         size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {
-                 return new PyTiered_HNSWIndex(hnsw_params, tiered_hnsw_params, flat_buffer_size);
+                         size_t flat_buffer_size, bool manual_jobs) {
+                 return new PyTiered_HNSWIndex(hnsw_params, tiered_hnsw_params, flat_buffer_size,
+                                               manual_jobs);
              }),
-             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"), py::arg("flat_buffer_size"))
-        .def("hnsw_label_count", &PyTiered_HNSWIndex::HNSWLabelCount);
+             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"), py::arg("flat_buffer_size"),
+             py::kw_only(), py::arg("manual_jobs") = false)
+        .def("hnsw_label_count", &PyTiered_HNSWIndex::HNSWLabelCount)
+        .def("_run_pending_jobs", &PyTiered_HNSWIndex::runPendingJobs, py::arg("max_jobs") = 1);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
