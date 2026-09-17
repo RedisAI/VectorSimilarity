@@ -223,7 +223,19 @@ public:
     // Accepts a single vector or a 2D array of them, so that the multi-value case reads as one
     // call with the whole new contents of the label.
     VecSimUpdateCode updateVectors(labelType label, const py::object &input) {
-        py::array vectors(input);
+        // The vectors are handed over as one packed buffer, which the index walks with a stride of
+        // its own element size - so a caller's array that is not C-contiguous (a strided view, or
+        // Fortran order) has to be copied into packed form first, or every vector after the first
+        // would be read from the wrong offset. `addVector` and the parallel helpers get away
+        // without this because they index one row at a time, which numpy resolves through the
+        // array's own strides. The dtype is left alone: it has to keep matching the index's.
+        py::array vectors = py::array::ensure(input, py::array::c_style);
+        if (!vectors) {
+            throw std::runtime_error("Input vectors must be a numpy array");
+        }
+        if (vectors.ndim() > 2) {
+            throw std::runtime_error("Input vectors array must be 1D or 2D");
+        }
         // A single vector may be passed on its own rather than as a one-row array, so that the
         // common case reads the way `add_vector` does.
         const size_t n = vectors.ndim() > 1 ? vectors.shape(0) : (vectors.size() == 0 ? 0 : 1);

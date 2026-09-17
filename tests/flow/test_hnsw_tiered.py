@@ -869,6 +869,19 @@ def test_update_vectors_multi(test_logger):
             labels, distances = index.knn_query(np.array([vector]), 1)
             assert not (labels[0][0] == i and distances[0][0] == pytest.approx(0, abs=1e-6))
 
+    # A caller's array need not be packed the way the index wants it: a Fortran-ordered one holds
+    # the same two vectors, and the label has to end up with them rather than with the values that
+    # sit at the offsets a packed buffer would have had.
+    fortran = np.asfortranarray(final[1])
+    assert not fortran.flags["C_CONTIGUOUS"]
+    assert index.update_vectors(1, fortran) == VecSimUpdate_OK
+    index.wait_for_index()
+    assert index.get_vector(1).shape == (new_per_label, dim)
+    for vector in final[1]:
+        labels, distances = index.knn_query(np.array([vector]), 1)
+        assert labels[0][0] == 1
+        assert distances[0][0] == pytest.approx(0, abs=1e-6)
+
     # An empty update leaves the label holding nothing, which is a delete.
     assert index.update_vectors(0, np.empty((0, dim), dtype=indices_ctx.data.dtype)) == VecSimUpdate_OK
     index.wait_for_index()
