@@ -3067,6 +3067,90 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsAsync) {
     }
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
+    // The three writes a partial update puts through an index - inserting a new document, moving a
+    // label onto a new doc id, and replacing a label's vectors - against one index while the
+    // workers ingest, repair and swap. Each has its own test; what this covers is their
+    // interaction: a label updated while its insert job is pending and then moved before that job
+    // runs, a label moved and only then updated, and fresh inserts throughout so the workers never
+    // run dry.
+    size_t dim = 4;
+    size_t n = 200;
+    for (bool is_multi : {false, true}) {
+        SCOPED_TRACE(is_multi ? "multi" : "single");
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        // Kept apart so no write can land on a label another one owns.
+        const labelType moved_offset = 10 * n;
+        const labelType fresh_base = 5 * n;
+        const size_t per_label = is_multi ? 2 : 1;
+
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                      std::ref(mock_thread_pool));
+        }
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T replacements[2 * dim];
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateVector<TEST_DATA_T>(replacements + j * dim, dim, 100000.0f * (j + 1) + i);
+            }
+            const labelType moved = i + moved_offset;
+
+            // Both orders, because they are different races: updating a label whose insert job is
+            // still pending and then moving it, against moving it first and updating what the move
+            // left behind.
+            if (i % 2 == 0) {
+                EXPECT_EQ(tiered_index->updateVectors(i, replacements, per_label), VecSimUpdate_OK)
+                    << "label " << i;
+                EXPECT_EQ(tiered_index->relabelVector(i, moved), VecSimRelabel_OK) << "label " << i;
+            } else {
+                EXPECT_EQ(tiered_index->relabelVector(i, moved), VecSimRelabel_OK) << "label " << i;
+                EXPECT_EQ(tiered_index->updateVectors(moved, replacements, per_label),
+                          VecSimUpdate_OK)
+                    << "label " << moved;
+            }
+
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 300000.0f + i);
+            EXPECT_EQ(tiered_index->addVector(fresh, fresh_base + i), 1);
+        }
+        mock_thread_pool.thread_pool_join();
+
+        // The join drains the queue, so everything has been ingested and the flat buffer is empty.
+        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), 2 * n);
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->statisticInfo().numberOfMarkedDeleted,
+                  n * per_label + n);
+
+        // Every label holds what the writes left it, under the name they left it under.
+        for (size_t i = 0; i < n; i++) {
+            EXPECT_EQ(hnsw_index->getElementIds(i + moved_offset).size(), per_label)
+                << "label " << i + moved_offset;
+            EXPECT_TRUE(hnsw_index->getElementIds(i).empty()) << "stale label " << i;
+            EXPECT_EQ(hnsw_index->getElementIds(fresh_base + i).size(), 1)
+                << "label " << fresh_base + i;
+        }
+
+        // Disposing of the tombstones the updates left behind must leave a whole graph.
+        tiered_index->runGC();
+        EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+        auto report = hnsw_index->checkIntegrity();
+        EXPECT_EQ(report.connections_to_repair, 0);
+        EXPECT_EQ(report.valid_state, true);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;

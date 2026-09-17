@@ -431,6 +431,125 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
     }
 }
 
+TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
+    // The three writes that a partial update puts through an index - inserting a new document,
+    // moving a label onto a new doc id, and replacing a label's vectors - all run here against the
+    // same index while its update jobs are in flight. Individually each has its own test; what
+    // this covers is their interaction: a label updated while its insert job is still pending and
+    // then moved before that job runs, a label moved and only then updated, and fresh inserts
+    // arriving throughout so the batch the jobs are moving never settles.
+    size_t dim = 4;
+    size_t n = 100;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // Thresholds of 1, so the backend is live from the first vector and every batch that follows
+    // triggers another update job for these writes to race.
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    // Label ranges are kept apart so no write can land on a label another one owns.
+    const labelType moved_offset = 10 * n;
+    const labelType fresh_base = 5 * n;
+    const size_t per_label = TypeParam::isMulti() ? 2 : 1;
+
+    // A pre-built SVS cannot relabel and the tier reports it, which is a build difference rather
+    // than a runtime one. Probed instead of compiled out, so that the add and update halves of
+    // this test run in either build: `relabelVector` with equal labels is a no-op that still
+    // answers whether the capability is there.
+    const bool can_relabel = tiered_index->relabelVector(0, 0) != VecSimRelabel_Unsupported;
+
+    mock_thread_pool.init_threads();
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        TEST_DATA_T replacements[2 * dim];
+        for (size_t j = 0; j < per_label; j++) {
+            GenerateVector<TEST_DATA_T>(replacements + j * dim, dim, 100000.0f * (j + 1) + i);
+        }
+        const labelType moved = i + moved_offset;
+
+        // Both orders, because they are different races: updating a label whose insert job is
+        // still pending and then moving it, against moving it first and updating what the move
+        // left behind.
+        if (i % 2 == 0) {
+            ASSERT_EQ(tiered_index->updateVectors(i, replacements, per_label), VecSimUpdate_OK)
+                << "label " << i;
+            if (can_relabel) {
+                ASSERT_EQ(tiered_index->relabelVector(i, moved), VecSimRelabel_OK) << "label " << i;
+            }
+        } else {
+            if (can_relabel) {
+                ASSERT_EQ(tiered_index->relabelVector(i, moved), VecSimRelabel_OK) << "label " << i;
+            }
+            const labelType target = can_relabel ? moved : i;
+            ASSERT_EQ(tiered_index->updateVectors(target, replacements, per_label), VecSimUpdate_OK)
+                << "label " << target;
+        }
+
+        // A new document arriving in the middle of all that, so the jobs never run out of work.
+        TEST_DATA_T fresh[dim];
+        GenerateVector<TEST_DATA_T>(fresh, dim, 300000.0f + i);
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, fresh, fresh_base + i), 1);
+    }
+    mock_thread_pool.thread_pool_join();
+
+    auto *svs_index = tiered_index->GetSVSIndex();
+    ASSERT_GT(tiered_index->GetBackendIndex()->indexSize(), 0)
+        << "the backend never came into play";
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0) << "jobs were left unrun, so the join raced";
+
+    // Every label ended up where the writes left it, exactly once: the n moved (or original, where
+    // this build cannot move) labels and the n new ones.
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2 * n);
+    for (size_t i = 0; i < n; i++) {
+        const labelType expected = can_relabel ? i + moved_offset : i;
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(expected) ||
+                    svs_index->isLabelExists(expected))
+            << "lost label " << expected;
+        if (can_relabel) {
+            ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(i)) << "stale label " << i;
+            ASSERT_FALSE(svs_index->isLabelExists(i)) << "stale label " << i;
+        }
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(fresh_base + i) ||
+                    svs_index->isLabelExists(fresh_base + i))
+            << "lost label " << fresh_base + i;
+    }
+
+    // And holds only what those writes put there - the replaced vectors are marked, not gone, so
+    // they are subtracted. This is what fails if an update's delete or a move crossed with a job
+    // moving the same batch.
+    ASSERT_EQ(tiered_index->indexSize() - svs_index->getNumMarkedDeleted(), n * per_label + n);
+
+    if (!svs_index->isCompressed()) {
+        // Each label answers to what it holds now. Uncompressed only: a compressed backend trains
+        // its stored form on the vectors it was given, so these replacement values are clipped.
+        for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
+            const labelType expected = can_relabel ? i + moved_offset : i;
+            for (size_t j = 0; j < per_label; j++) {
+                TEST_DATA_T query[dim];
+                GenerateVector<TEST_DATA_T>(query, dim, 100000.0f * (j + 1) + i);
+                auto verify = [&](size_t id, double score, size_t rank) {
+                    ASSERT_EQ(id, expected);
+                };
+                runTopKSearchTest(tiered_index, query, 1, verify);
+            }
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 300000.0f + i);
+            auto verify_fresh = [&](size_t id, double score, size_t rank) {
+                ASSERT_EQ(id, fresh_base + i);
+            };
+            runTopKSearchTest(tiered_index, fresh, 1, verify_fresh);
+        }
+    }
+}
+
 #if HAVE_SVS_REPLACE_EXTERNAL_ID
 
 // Relabel on a tier, in the two write states a vector can be in: buffered with its update job
