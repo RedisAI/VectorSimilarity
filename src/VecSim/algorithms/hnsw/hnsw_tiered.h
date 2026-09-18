@@ -210,6 +210,13 @@ private:
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelFromHNSWInplace(labelType label);
 
+    // Remove the label's vectors from the flat buffer and take its pending insert jobs out of
+    // circulation. Takes `flatIndexGuard` exclusively, so a caller must not already hold it.
+    // Returns the number of vectors removed.
+    int deleteFromFrontAndInsertJobs(labelType label);
+
+    void eraseInvalidJob(idType job_id);
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -653,6 +660,13 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
     return ids.size();
 }
 
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::eraseInvalidJob(idType job_id) {
+    this->invalidJobsLookupGuard.lock();
+    this->invalidJobs.erase(job_id);
+    this->invalidJobsLookupGuard.unlock();
+}
+
 /******************** Job's callbacks **********************************/
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
@@ -662,9 +676,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         this->flatIndexGuard.unlock_shared();
         // Job has been invalidated in the meantime - nothing to execute, and remove it from the
         // lookup.
-        this->invalidJobsLookupGuard.lock();
-        this->invalidJobs.erase(job->id);
-        this->invalidJobsLookupGuard.unlock();
+        eraseInvalidJob(job->id);
         return;
     }
 
@@ -715,9 +727,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         }
     } else {
         // Remove the current job from the invalid jobs' lookup, as we are about to delete it now.
-        this->invalidJobsLookupGuard.lock();
-        this->invalidJobs.erase(job->id);
-        this->invalidJobsLookupGuard.unlock();
+        eraseInvalidJob(job->id);
     }
     this->flatIndexGuard.unlock();
 }
@@ -737,9 +747,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
         this->idToRepairJobsGuard.unlock();
         this->mainIndexGuard.unlock_shared();
         // The current node has already been removed and disposed.
-        this->invalidJobsLookupGuard.lock();
-        this->invalidJobs.erase(job->node_id);
-        this->invalidJobsLookupGuard.unlock();
+        eraseInvalidJob(job->node_id);
         return;
     }
     HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
@@ -1069,6 +1077,35 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 }
 
 template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::deleteFromFrontAndInsertJobs(labelType label) {
+    auto num_deleted_vectors = 0;
+    this->flatIndexGuard.lock();
+    // Check again if the label exists, as it may have been removed while we released the lock.
+    if (this->frontendIndex->isLabelExists(label)) {
+        // Invalidate the pending insert job(s) into HNSW associated with this label
+        auto &insert_jobs = this->labelToInsertJobs.at(label);
+        for (auto *job : insert_jobs) {
+            job->id = this->setAndSaveInvalidJob(job);
+        }
+        num_deleted_vectors += insert_jobs.size();
+        // Remove the pending insert job(s) from the labelToInsertJobs mapping.
+        this->labelToInsertJobs.erase(label);
+        // Go over the every id that corresponds the label and remove it from the flat buffer.
+        // Every delete may cause a swap of the deleted id with the last id, and we return a
+        // mapping from id to the original id that resides in this id after the deletion(s) (see
+        // an example in this function implementation in MULTI index).
+        auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
+        for (auto &it : updated_ids) {
+            idType prev_id = it.second.first;
+            labelType updated_vec_label = it.second.second;
+            this->updateInsertJobInternalId(prev_id, it.first, updated_vec_label);
+        }
+    }
+    this->flatIndexGuard.unlock();
+    return num_deleted_vectors;
+}
+
+template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     if (sqAccumulationState) {
         return deleteVectorDuringAccumulation(label);
@@ -1077,29 +1114,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     this->flatIndexGuard.lock_shared();
     if (this->frontendIndex->isLabelExists(label)) {
         this->flatIndexGuard.unlock_shared();
-        this->flatIndexGuard.lock();
-        // Check again if the label exists, as it may have been removed while we released the lock.
-        if (this->frontendIndex->isLabelExists(label)) {
-            // Invalidate the pending insert job(s) into HNSW associated with this label
-            auto &insert_jobs = this->labelToInsertJobs.at(label);
-            for (auto *job : insert_jobs) {
-                job->id = this->setAndSaveInvalidJob(job);
-            }
-            num_deleted_vectors += insert_jobs.size();
-            // Remove the pending insert job(s) from the labelToInsertJobs mapping.
-            this->labelToInsertJobs.erase(label);
-            // Go over the every id that corresponds the label and remove it from the flat buffer.
-            // Every delete may cause a swap of the deleted id with the last id, and we return a
-            // mapping from id to the original id that resides in this id after the deletion(s) (see
-            // an example in this function implementation in MULTI index).
-            auto updated_ids = this->frontendIndex->deleteVectorAndGetUpdatedIds(label);
-            for (auto &it : updated_ids) {
-                idType prev_id = it.second.first;
-                labelType updated_vec_label = it.second.second;
-                this->updateInsertJobInternalId(prev_id, it.first, updated_vec_label);
-            }
-        }
-        this->flatIndexGuard.unlock();
+        num_deleted_vectors += deleteFromFrontAndInsertJobs(label);
     } else {
         this->flatIndexGuard.unlock_shared();
     }
