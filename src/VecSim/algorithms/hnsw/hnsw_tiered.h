@@ -798,7 +798,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     this->idToRepairJobsGuard.lock();
     for (auto &it : job->associatedSwapJobs) {
         if (it->atomicDecreasePendingJobsNum() == 0) {
-            readySwapJobs++;
             fully_repaired_ids.push_back(it->deleted_id);
         }
     }
@@ -809,6 +808,15 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // Done outside the repair jobs guard, as isolating takes the per-element links locks.
     for (idType deleted_id : fully_repaired_ids) {
         this->isolateRepairedElement(deleted_id);
+    }
+
+    // Counted as ready only now, after the isolation: an element is published as claimable once it
+    // is out of the graph, not while it still has edges. Before releasing the main guard, so a GC
+    // round - which takes it exclusively - cannot run in between and dispose of an element this
+    // count has not accounted for yet, which would take the count below zero.
+    if (!fully_repaired_ids.empty()) {
+        std::lock_guard<std::mutex> repair_jobs_lock(this->idToRepairJobsGuard);
+        readySwapJobs += fully_repaired_ids.size();
     }
 
     this->mainIndexGuard.unlock_shared();
