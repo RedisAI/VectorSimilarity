@@ -102,6 +102,16 @@ private:
     // associated swap jobs.
     std::mutex idToRepairJobsGuard;
 
+    // Guards the `idToSwapJob` lookup. Until now the main index guard held exclusively was what
+    // kept that map to one writer at a time - every path that touches it holds it that way - so a
+    // reader that only wants a swap job has to exclude insertion and search as well. With its own
+    // guard the map's contents stop depending on the main guard's mode, which is what a future
+    // reader that runs under shared ownership needs.
+    //
+    // Lock order is main -> swap -> repair: `executeReadySwapJobs` takes this and then reaches
+    // `invalidateRepairJobs`, and nothing takes this while holding `idToRepairJobsGuard`.
+    std::mutex idToSwapJobGuard;
+
     // Counter for vectors inserted directly into HNSW by the main thread (bypassing flat buffer).
     // This happens in WriteInPlace mode or when the flat buffer is full.
     // Not atomic since it's only accessed from the main thread.
@@ -158,7 +168,8 @@ private:
     void executeRepairJob(HNSWRepairJob *job);
 
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper. Main HNSW
-    // lock is assumed to be held exclusive here.
+    // lock is assumed to be held exclusive here, and `idToSwapJobGuard` held by the caller - it
+    // re-keys `idToSwapJob` for the id the swap moved.
     void fixJobsAfterSwap(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
 
     // Drop the pending repair jobs *of* a disposed element and account for them in the swap jobs
@@ -200,7 +211,7 @@ private:
     // ownership (we do it right after we update the HNSW global data and receive the new state).
     template <bool releaseFlatGuard>
     void insertVectorToHNSW(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
-                            const void *blob);
+                            const void *blob, idType id_to_use = INVALID_ID);
 
     // Set an insert/repair job as invalid, put the job pointer in the invalid jobs lookup under
     // the current available id, increase it and return it (while holding invalidJobsLookupGuard).
@@ -446,6 +457,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
                "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
                readySwapJobs, std::min(readySwapJobs, maxJobsToRun));
 
+    std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());
     for (auto &it : idToSwapJob) {
@@ -534,8 +546,11 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         this->submitJobs(repair_jobs);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
         // node id is changed due to swap job).
-        assert(idToSwapJob.find(id) == idToSwapJob.end());
-        idToSwapJob[id] = swap_job;
+        {
+            std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
+            assert(idToSwapJob.find(id) == idToSwapJob.end());
+            idToSwapJob[id] = swap_job;
+        }
     }
     this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
@@ -560,7 +575,8 @@ void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_
 template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
-    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
+    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob,
+    idType id_to_use) {
 
     // Preprocess for storage and indexing in the hnsw index
     ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
@@ -584,7 +600,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
         // we hold the main index lock for exclusive access.
-        auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, id_to_use);
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -642,6 +658,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
 
     auto ids = hnsw_index->getElementIds(label);
     // Dispose pending repair and swap jobs for the removed ids.
+    std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(ids.size());
     readySwapJobs += ids.size(); // account for the current ids that are going to be removed.
