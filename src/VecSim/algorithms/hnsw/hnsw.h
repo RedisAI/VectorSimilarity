@@ -1849,7 +1849,8 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::isolatedElementClaimed(idType internalId) {
-    assert(isMarkedDeleted(internalId) && "Only a marked-deleted element may have its slot reclaimed");
+    assert(isMarkedDeleted(internalId) &&
+           "Only a marked-deleted element may have its slot reclaimed");
     // The element is gone from here on, but its slot keeps the stale metadata - deletion mark
     // included, which is what keeps searches off it - until `storeNewElement` overwrites it.
     getGraphDataByInternalId(internalId)->destroy(this->levelDataSize, this->allocator);

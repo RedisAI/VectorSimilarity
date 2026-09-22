@@ -931,9 +931,8 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
-      idToSwapJob(this->allocator), isolatedReadyIds(this->allocator),
-      invalidJobs(this->allocator), currInvalidJobId(0),
-      readySwapJobs(0), isQuantized(hnsw_index->usesQuantizedStorage()) {
+      idToSwapJob(this->allocator), isolatedReadyIds(this->allocator), invalidJobs(this->allocator),
+      currInvalidJobId(0), readySwapJobs(0), isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
     if (isQuantized && normalization_set_size > 0) {
