@@ -141,6 +141,46 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 }
 
+TYPED_TEST(HNSWTieredIndexTest, WrapExistingIndexWithoutPrimaryParams) {
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    TEST_DATA_T vector[4] = {};
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    for (size_t normalization_set_size : {0, 100}) {
+        SCOPED_TRACE(normalization_set_size);
+        auto *backend =
+            static_cast<HNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&hnsw_params));
+        VecSimIndex_AddVector(backend, vector, 1);
+        auto mock_thread_pool = tieredIndexMock();
+        TieredIndexParams tiered_params = {
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = SIZE_MAX,
+            .primaryIndexParams = nullptr,
+            .specificParams = {
+                TieredHNSWParams{.QuantNormalizationSetSize = normalization_set_size}}};
+        auto *tiered_index = static_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            TieredFactory::TieredHNSWFactory::NewIndex(&tiered_params, backend));
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+        EXPECT_EQ(tiered_index->indexSize(), 1);
+        runTopKSearchTest(tiered_index, vector, 1, [](size_t label, double score, size_t) {
+            EXPECT_EQ(label, 1);
+            EXPECT_EQ(score, 0);
+        });
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 2), 1);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+        mock_thread_pool.thread_iteration();
+        EXPECT_EQ(backend->indexSize(), 2);
+        EXPECT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 0);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTest, UnquantizedIndexIgnoresNormalizationThreshold) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = 4,
