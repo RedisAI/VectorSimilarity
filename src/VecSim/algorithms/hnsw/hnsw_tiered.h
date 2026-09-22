@@ -799,14 +799,11 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
       idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
-      readySwapJobs(0),
-      isQuantized(tiered_index_params.primaryIndexParams->algoParams.hnswParams.quantType !=
-                  VecSimQuant_NONE) {
-    const auto &hnsw_params = tiered_index_params.primaryIndexParams->algoParams.hnswParams;
+      readySwapJobs(0), isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
-    if (hnsw_params.quantType == VecSimQuant_SQ8 && normalization_set_size > 0) {
-        sqAccumulationState.emplace(this->allocator, hnsw_params.dim, normalization_set_size);
+    if (isQuantized && normalization_set_size > 0) {
+        sqAccumulationState.emplace(this->allocator, hnsw_index->getDim(), normalization_set_size);
     }
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
