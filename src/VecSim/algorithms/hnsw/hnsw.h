@@ -331,8 +331,8 @@ public:
     //   destroyed (see `ElementGraphData::destroy`), otherwise its link lists are leaked.
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
                                        idType elementId = INVALID_ID);
-    void removeAndSwapMarkDeletedElement(idType internalId);
-    void removeFromGraph(idType internalId);
+    void swapMarkDeletedElement(idType internalId);
+    void removeMarkDeletedElementFromGraph(idType internalId);
     // Whether `level_data` holds a link to `id`.
     static bool hasLink(const ElementLevelData &level_data, idType id) {
         for (size_t i = 0; i < level_data.getNumLinks(); i++) {
@@ -350,6 +350,14 @@ public:
     // Takes the per-element links locks (one at a time), so holding the main index guard for shared
     // ownership is enough.
     void isolateDeletedElement(idType internalId);
+    // Free what an isolated element still owns, leaving its slot in place for `storeNewElement` to
+    // write a new element over. Unlike `swapMarkDeletedElement`, `curElementCount` is left
+    // alone: the slot is not given back to the index, it is handed to the next insertion.
+    // Expects the index data guard, which is what keeps the deleted count to one writer, and the
+    // main index guard *exclusively* - not because of the graph data, which no scan can reach once
+    // the element is isolated, but because of the id: see `claimIsolatedElementSlot` for who may
+    // still be holding it.
+    void isolatedElementClaimed(idType internalId);
     void repairNodeConnections(idType node_id, size_t level);
     // For prefetching only.
     const ElementMetaData *getMetaDataAddress(idType internal_id) const {
@@ -516,7 +524,7 @@ void HNSWIndex<DataType, DistType>::markDeletedInternal(idType internalId) {
         // Atomically set the deletion mark flag (note that other parallel threads may set the flags
         // at the same time (for changing the IN_PROCESS flag).
         markAs<DELETE_MARK>(internalId);
-        this->numMarkedDeleted++;
+        ++this->numMarkedDeleted;
     }
 }
 
@@ -1770,6 +1778,8 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
     assert(isMarkedDeleted(internalId) && "Only a marked-deleted element may be isolated");
+    // Called once per element: either upon its deletion, if nothing pointed at it to begin with, or
+    // by the one thread that brought its pending repair jobs count down to zero.
     auto element = getGraphDataByInternalId(internalId);
     for (size_t level = 0; level <= element->toplevel; level++) {
         // Collect the elements this one shares an edge with at this level, in either direction. No
@@ -1838,7 +1848,16 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeFromGraph(idType internalId) {
+void HNSWIndex<DataType, DistType>::isolatedElementClaimed(idType internalId) {
+    assert(isMarkedDeleted(internalId) && "Only a marked-deleted element may have its slot reclaimed");
+    // The element is gone from here on, but its slot keeps the stale metadata - deletion mark
+    // included, which is what keeps searches off it - until `storeNewElement` overwrites it.
+    getGraphDataByInternalId(internalId)->destroy(this->levelDataSize, this->allocator);
+    --numMarkedDeleted;
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeMarkDeletedElementFromGraph(idType internalId) {
     // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
     // upon marking it as deleted.
     assert(entrypointNode != internalId);
@@ -1891,8 +1910,7 @@ void HNSWIndex<DataType, DistType>::swapWithLast(idType removedId) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType internalId) {
-    removeFromGraph(internalId);
+void HNSWIndex<DataType, DistType>::swapMarkDeletedElement(idType internalId) {
     swapWithLast(internalId);
     // element is permanently removed from the index, it is no longer counted as marked deleted.
     --numMarkedDeleted;
@@ -1956,7 +1974,7 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
     }
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
-    removeFromGraph(element_internal_id);
+    removeMarkDeletedElementFromGraph(element_internal_id);
     swapWithLast(element_internal_id);
 }
 

@@ -86,6 +86,13 @@ private:
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<HNSWInsertJob *>> labelToInsertJobs;
     vecsim_stl::unordered_map<idType, vecsim_stl::vector<HNSWRepairJob *>> idToRepairJobs;
     vecsim_stl::unordered_map<idType, HNSWSwapJob *> idToSwapJob;
+    // The subset of `idToSwapJob` whose element is both ready (no pending repair jobs) and
+    // isolated (out of the graph already) - the two are not the same condition, see
+    // `claimIsolatedElementSlot`. Populated by `isolateRepairedElement`, the only place both hold
+    // at once; consumed by `claimIsolatedElementSlot`, and dropped by `executeSwapJob` when the
+    // element is disposed of by a swap job instead of being reclaimed. Guarded by
+    // `idToSwapJobGuard`, like the rest of this lookup's contents.
+    vecsim_stl::unordered_set<idType> isolatedReadyIds;
 
     // A mapping to hold invalid jobs, so we can dispose them upon index deletion.
     vecsim_stl::unordered_map<idType, AsyncJob *> invalidJobs;
@@ -205,13 +212,48 @@ private:
     // reclaim its slot. Called in the repair context, while the main index guard is held for shared
     // ownership and `idToRepairJobsGuard` is not held.
     void isolateRepairedElement(idType deleted_id);
+    void executeSwapJob(const HNSWSwapJob *swap_job, vecsim_stl::vector<idType> &idsToRemove);
+
+    // Take over the slot of an element whose asynchronous deletion is done: its swap job has no
+    // pending repair job left and the element is already out of the graph. Its swap job is disposed
+    // of here, and the element itself is freed, so what the returned id names is a bare slot for
+    // the caller to fill. Returns `INVALID_ID` if there is no such element, in which case the
+    // caller allocates a new slot as before.
+    // The caller must hold the main index guard *exclusively*, and keep holding it until the slot
+    // is filled - and must not have released it since checking `hasIsolatedReadyIds`. It is not
+    // enough for the bookkeeping alone (`idToSwapJob`, `isolatedReadyIds`) to say the id is spoken
+    // for: a GC round disposing of some *other* swap job can still relocate this element's slot out
+    // from under a reservation that only lives in those maps, via `swapWithLast` picking it as the
+    // current last element - `swapWithLast` has no notion of "reserved," only of what is and isn't
+    // still in the array. So the reservation itself has to happen inside the same exclusive
+    // ownership as the eventual use, with nothing released in between; there is no safe way to
+    // reserve a slot ahead of acquiring that ownership. Beyond the swap jobs, a repair job, a
+    // deletion and an insertion all read a set of elements into a snapshot of their own, work off
+    // it without a lock that would keep those elements in place, and identify the elements in it
+    // by id alone. Handing an id out from under such a snapshot has its holder read, or write, the
+    // element that took the slot over - at a level the new element may not even have. Exclusive
+    // ownership is what says there is no snapshot in flight. The index data guard is expected as
+    // well, for the deleted count.
+    idType claimIsolatedElementSlot();
+
+    // Cheap peek at whether `claimIsolatedElementSlot` currently has anything to hand out, taking
+    // only `idToSwapJobGuard` - not the main index guard. Lets a caller holding the main guard
+    // *shared* decide whether reclaiming is worth escalating to exclusive ownership, without
+    // paying for that escalation on every insert. A hint only: by the time the caller re-checks
+    // under exclusive ownership, the specific reason this returned true may be gone (claimed by
+    // another thread's escalation, or disposed of by a GC round) - `claimIsolatedElementSlot`
+    // already returns `INVALID_ID` for that, same as if this had returned false to begin with.
+    bool hasIsolatedReadyIds() {
+        std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
+        return !this->isolatedReadyIds.empty();
+    }
 
     // Insert a single vector to HNSW. This can be called in both write modes - insert async and
     // in-place. For the async mode, we have to release the flat index guard that is held for shared
     // ownership (we do it right after we update the HNSW global data and receive the new state).
     template <bool releaseFlatGuard>
     void insertVectorToHNSW(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
-                            const void *blob, idType id_to_use = INVALID_ID);
+                            const void *blob);
 
     // Set an insert/repair job as invalid, put the job pointer in the invalid jobs lookup under
     // the current available id, increase it and return it (while holding invalidJobsLookupGuard).
@@ -403,6 +445,12 @@ void TieredHNSWIndex<DataType, DistType>::fixJobsAfterSwap(
         // If id was deleted in-place and there is no swap job for it, this will create a new entry
         // in idToSwapJob for the swapped id, otherwise it will update the existing entry.
         idToSwapJob[deleted_id] = idToSwapJob.at(prev_last_id);
+        // `prev_last_id` may itself have been isolated and reclaimable - the element didn't stop
+        // being either, it just goes by `deleted_id` now. Leaving the old id behind here would
+        // have a later reclaim look it up in `idToSwapJob` under a key that no longer exists there.
+        if (this->isolatedReadyIds.erase(prev_last_id) > 0) {
+            this->isolatedReadyIds.insert(deleted_id);
+        }
     } else {
         idsToRemove.push_back(deleted_id);
     }
@@ -446,6 +494,26 @@ void TieredHNSWIndex<DataType, DistType>::isolateRepairedElement(idType deleted_
     // element whose repairs completed without this shortcut. Cascading the isolation instead would
     // make that removal the cheap one as well - left for a follow-up.
     this->invalidateRepairJobs(deleted_id);
+    // Published as reclaimable only now, isolated and with no repair job left standing against it -
+    // see `claimIsolatedElementSlot` for why both are required.
+    std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
+    this->isolatedReadyIds.insert(deleted_id);
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::executeSwapJob(const HNSWSwapJob *swap_job,
+                                                         vecsim_stl::vector<idType> &idsToRemove) {
+    auto deleted_id = swap_job->deleted_id;
+    // This id is about to be disposed of by walking its (nonexistent, if isolated) edges, not
+    // reclaimed - drop it from the ready-to-reclaim set so a later `claimIsolatedElementSlot` never
+    // hands out an id this call is about to invalidate. A no-op if the element was never isolated
+    // (the cascade case in `invalidateRepairJobs`, where the swap job is ready but its element
+    // still has to be walked off the graph here).
+    this->isolatedReadyIds.erase(deleted_id);
+    this->getHNSWIndex()->removeMarkDeletedElementFromGraph(deleted_id);
+    this->getHNSWIndex()->swapMarkDeletedElement(deleted_id);
+    this->invalidateRepairJobs(deleted_id);
+    this->fixJobsAfterSwap(deleted_id, idsToRemove);
 }
 
 template <typename DataType, typename DistType>
@@ -464,10 +532,7 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
         auto *swap_job = it.second;
         // Swap job is ready for execution - execute and delete it.
         if (swap_job->pending_repair_jobs_counter.load() == 0) {
-            auto deleted_id = swap_job->deleted_id;
-            this->getHNSWIndex()->removeAndSwapMarkDeletedElement(deleted_id);
-            this->invalidateRepairJobs(deleted_id);
-            this->fixJobsAfterSwap(deleted_id, idsToRemove);
+            executeSwapJob(swap_job, idsToRemove);
             delete swap_job;
         }
         if (maxJobsToRun > 0 && idsToRemove.size() >= maxJobsToRun) {
@@ -536,6 +601,17 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         }
         this->idToRepairJobsGuard.unlock();
 
+        // Insert the swap job into the swap jobs lookup (for fast update in case that the
+        // node id is changed due to swap job) - before isolating below, and not after: isolating
+        // may publish this id as reclaimable, and a concurrent reclaim (which needs the main guard
+        // only *shared*, same as this whole loop) must always find the swap job already here once
+        // it does, or it has nothing to dispose of the entry it just popped.
+        {
+            std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
+            assert(idToSwapJob.find(id) == idToSwapJob.end());
+            idToSwapJob[id] = swap_job;
+        }
+
         if (incomingEdges.size() == 0) {
             // No repair job will ever run for this element, so this is already the point at which
             // it can be taken out of the graph (outside the repair jobs guard, as isolating takes
@@ -544,13 +620,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         }
 
         this->submitJobs(repair_jobs);
-        // Insert the swap job into the swap jobs lookup (for fast update in case that the
-        // node id is changed due to swap job).
-        {
-            std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
-            assert(idToSwapJob.find(id) == idToSwapJob.end());
-            idToSwapJob[id] = swap_job;
-        }
     }
     this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
@@ -573,10 +642,34 @@ void TieredHNSWIndex<DataType, DistType>::updateInsertJobInternalId(idType prev_
 }
 
 template <typename DataType, typename DistType>
+idType TieredHNSWIndex<DataType, DistType>::claimIsolatedElementSlot() {
+    HNSWIndex<DataType, DistType> *hnsw_index = this->getHNSWIndex();
+    std::lock_guard<std::mutex> swap_jobs_lock(this->idToSwapJobGuard);
+    if (this->isolatedReadyIds.empty()) {
+        // Nothing to reclaim, which is the common case - don't pay for the rest below.
+        return INVALID_ID;
+    }
+    auto ready_it = this->isolatedReadyIds.begin();
+    idType reused_id = *ready_it;
+    this->isolatedReadyIds.erase(ready_it);
+    // An element can still collect a repair job *after* it was isolated: a deletion works off
+    // a snapshot of its element's neighbours, and a neighbour that leaves the graph before the
+    // jobs are filed gets one anyway. Such a job has nothing to repair - the element it was
+    // filed against has no edges - but it would read the element's levels, so it has to go
+    // before the slot does. Invalidating it also releases the swap jobs it was counted against.
+    this->invalidateRepairJobs(reused_id);
+    delete this->idToSwapJob.at(reused_id);
+    this->idToSwapJob.erase(reused_id);
+    --this->readySwapJobs;
+    // Free what the element still owns, so that what is left behind is a bare slot.
+    hnsw_index->isolatedElementClaimed(reused_id);
+    return reused_id;
+}
+
+template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
-    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob,
-    idType id_to_use) {
+    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
 
     // Preprocess for storage and indexing in the hnsw index
     ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
@@ -587,8 +680,11 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     // the main r/w lock before to avoid deadlocks.
     this->mainIndexGuard.lock_shared();
     hnsw_index->lockIndexDataGuard();
-    // Check if resizing is needed for HNSW index (requires write lock).
-    if (hnsw_index->isCapacityFull()) {
+    // Escalate to the exclusive lock if the index needs to grow, or if there is a reclaimable slot
+    // worth taking - `claimIsolatedElementSlot` needs exclusive ownership either way. Checked with
+    // `hasIsolatedReadyIds`, which pays only for `idToSwapJobGuard`, so an insertion that finds
+    // neither condition true stays on the cheap shared-lock path below.
+    if (hnsw_index->isCapacityFull() || this->hasIsolatedReadyIds()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
         this->mainIndexGuard.unlock_shared();
         hnsw_index->unlockIndexDataGuard();
@@ -600,7 +696,16 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // graph scans will not occur, as they will try access the entry point's neighbors.
         // If an index resize is still needed, `storeNewElement` will perform it. This is OK since
         // we hold the main index lock for exclusive access.
-        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, id_to_use);
+        //
+        // Take over the slot of an element whose deletion is done, if there is one to take: it is
+        // within the current capacity by definition, so the index does not have to grow to fit the
+        // new element even if it would otherwise have to. Claimed here, and only here, because
+        // exclusive ownership is what makes it safe - see `claimIsolatedElementSlot`. The
+        // `hasIsolatedReadyIds` check above is only a peek and can race with another thread
+        // claiming the same id in between, so this may still come back `INVALID_ID` - in which
+        // case `storeNewElement` falls back to growing (or just appending) as usual.
+        const idType reused_id = this->claimIsolatedElementSlot();
+        auto state = hnsw_index->storeNewElement(label, processed_storage_blob, reused_id);
         if constexpr (releaseFlatGuard) {
             this->flatIndexGuard.unlock_shared();
         }
@@ -831,7 +936,8 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       labelToInsertJobs(this->allocator), idToRepairJobs(this->allocator),
-      idToSwapJob(this->allocator), invalidJobs(this->allocator), currInvalidJobId(0),
+      idToSwapJob(this->allocator), isolatedReadyIds(this->allocator),
+      invalidJobs(this->allocator), currInvalidJobId(0),
       readySwapJobs(0), isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
