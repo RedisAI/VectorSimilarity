@@ -57,6 +57,79 @@ struct TieredInsertJob : public AsyncJob {
         : AsyncJob(allocator, type, insertCb, index_), label(label_), id(id_) {}
 };
 
+class TieredIndex_BatchIterator : public VecSimBatchIterator {
+protected:
+    VecSimQueryResultContainer flat_results;
+    VecSimQueryResultContainer backend_results;
+
+    // On single value indices, this set holds the IDs of the results that were returned from
+    // the flat buffer.
+    // On multi value indices, this set holds the IDs of all the results that were returned.
+    // The difference between the two cases is that on multi value indices, the same ID can
+    // appear in both indexes and results with different scores, and therefore we can't tell in
+    // advance when we expect a possibility of a duplicate.
+    vecsim_stl::unordered_set<labelType> returned_results_set;
+
+    TieredIndex_BatchIterator(void *query_vector, void *tctx,
+                              std::shared_ptr<VecSimAllocator> allocator)
+        : VecSimBatchIterator(query_vector, tctx, std::move(allocator)),
+          flat_results(this->allocator), backend_results(this->allocator),
+          returned_results_set(this->allocator) {}
+
+    template <bool needsDedup>
+    VecSimQueryReply *compute_current_batch(size_t n_res) {
+        // Merge results
+        auto batch_res = new VecSimQueryReply(this->allocator);
+        std::pair<size_t, size_t> p;
+        if (needsDedup) {
+            p = merge_results<true>(batch_res->results, this->backend_results, this->flat_results,
+                                    n_res);
+        } else {
+            p = merge_results<false>(batch_res->results, this->backend_results, this->flat_results,
+                                     n_res);
+        }
+        auto [from_backend, from_flat] = p;
+
+        if (!needsDedup) {
+            // Update the set of results returned from the FLAT
+            // index before popping them.
+            for (size_t i = 0; i < from_flat; ++i) {
+                this->returned_results_set.insert(this->flat_results[i].id);
+            }
+        } else {
+            // Update the set of results returned (from `batch_res`)
+            for (size_t i = 0; i < batch_res->results.size(); ++i) {
+                this->returned_results_set.insert(batch_res->results[i].id);
+            }
+        }
+
+        // Update results
+        this->flat_results.erase(this->flat_results.begin(),
+                                 this->flat_results.begin() + from_flat);
+        this->backend_results.erase(this->backend_results.begin(),
+                                    this->backend_results.begin() + from_backend);
+
+        // clean up the results
+        // One (or both) results lists may contain results that are already
+        // returned form the other list (with a different score). We need to filter them out.
+        if (needsDedup) {
+            this->filter_irrelevant_results(this->flat_results);
+            this->filter_irrelevant_results(this->backend_results);
+        }
+
+        // Return current batch
+        return batch_res;
+    }
+
+    void filter_irrelevant_results(VecSimQueryResultContainer &results) {
+        // Filter out results that were already returned.
+        const auto it = std::remove_if(results.begin(), results.end(), [this](const auto &r) {
+            return returned_results_set.count(r.id) != 0;
+        });
+        results.erase(it, results.end());
+    }
+};
+
 // All read operations (including KNN, range, batch iterators and get-distance-from) are guaranteed
 // to consider all vectors that were added to the index before the query was submitted. The results
 // may include vectors that were added after the query was submitted, with no guarantees.
