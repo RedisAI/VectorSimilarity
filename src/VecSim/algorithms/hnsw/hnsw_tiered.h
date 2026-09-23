@@ -210,6 +210,13 @@ private:
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelFromHNSWInplace(labelType label);
 
+    // Drop the label's buffered vector(s) from the flat buffer and invalidate their pending insert
+    // jobs, without touching the backend. Split out of `deleteVector` so an in-place overwrite can
+    // run just this half and leave the backend label alone for `addVector` to overwrite in place -
+    // reusing its internal id - instead of deleting it outright first. Takes `flatIndexGuard`
+    // exclusively, so a caller must not already hold it.
+    int deleteFromFlatAndInsertJobs(labelType label);
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -978,20 +985,37 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteInPlace) {
-        // First, check if we need to overwrite the vector in-place for single (from both indexes).
+        // Drop any buffered copy and its pending insert job first (single-value only - multi never
+        // overwrites). The backend copy, if any, is deliberately left alone here: `addVector` below
+        // overwrites it in place, reusing its internal id, instead of deleting it outright first and
+        // losing that id to the swap-to-last compaction a real removal would use.
+        int flat_deleted = 0;
         if (!this->backendIndex->isMultiValue()) {
-            ret -= this->deleteVector(label);
+            flat_deleted = this->deleteFromFlatAndInsertJobs(label);
         }
 
         // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
         // index.
         auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-        // Insert the vector to the HNSW index. Internally, we will never have to overwrite the
-        // label since we already checked it outside.
+        // Insert the vector to the HNSW index - overwriting it in place if the label already lives
+        // there.
+        int backend_ret;
         {
             const auto main_index_lock = this->acquireMainIndexGuard();
-            hnsw_index->addVector(storage_blob.get(), label);
+            if (!this->backendIndex->isMultiValue() && hnsw_index->isLabelExists(label)) {
+                // The id about to be overwritten in place may still have a repair job pending
+                // against it, filed by some earlier, unrelated async deletion that found it as a
+                // neighbor and expects to fix *its* connections later. That job would otherwise run
+                // against the brand new element now sitting in this slot - dropping it here is
+                // exactly what `deleteLabelFromHNSWInplace` already does before a real removal.
+                idType old_id = hnsw_index->getElementIds(label).at(0);
+                this->invalidateRepairJobs(old_id);
+            }
+            backend_ret = hnsw_index->addVector(storage_blob.get(), label);
         }
+        // The label was already known to exist if it had a buffered copy, even if the backend
+        // itself had never seen it yet - that isn't "new" from the caller's perspective.
+        ret = (flat_deleted == 0) ? backend_ret : 0;
         // Track direct insertion to HNSW (bypassing flat buffer)
         ++this->directHNSWInsertions;
         return ret;
@@ -1071,10 +1095,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 }
 
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
-    if (sqAccumulationState) {
-        return deleteVectorDuringAccumulation(label);
-    }
+int TieredHNSWIndex<DataType, DistType>::deleteFromFlatAndInsertJobs(labelType label) {
     int num_deleted_vectors = 0;
     this->flatIndexGuard.lock_shared();
     if (this->frontendIndex->isLabelExists(label)) {
@@ -1105,6 +1126,15 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     } else {
         this->flatIndexGuard.unlock_shared();
     }
+    return num_deleted_vectors;
+}
+
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
+    if (sqAccumulationState) {
+        return deleteVectorDuringAccumulation(label);
+    }
+    int num_deleted_vectors = this->deleteFromFlatAndInsertJobs(label);
 
     // Next, check if there vector(s) stored under the given label in HNSW and delete them as well.
     // Note that we may remove the same vector that has been removed from the flat index, if it was

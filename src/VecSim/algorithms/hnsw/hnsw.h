@@ -237,6 +237,13 @@ protected:
 
     HNSWAddVectorState storeVector(const void *vector_data, const labelType label);
 
+    // Overwrite the vector at `old_id` in place, keeping its internal id: detaches it from the
+    // graph (see `repairConnectionsAndDetach`) and immediately writes `vector_data` into that same
+    // slot instead of appending a fresh one, so a single-value label being replaced never touches
+    // `curElementCount` or the swap-to-last compaction a real removal would use. `old_id` must not
+    // be the id of any other, still-live element - callers overwrite a label they hold the id of.
+    void overwriteVectorInPlace(idType old_id, const void *vector_data, labelType label);
+
     // Protected internal functions for index resizing.
     void growByBlock();
     void shrinkByBlock();
@@ -320,8 +327,22 @@ public:
     bool isMarkedDeleted(idType internalId) const;
     bool isInProcess(idType internalId) const;
     void unmarkInProcess(idType internalId);
-    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data);
+    // `elementId` is optional:
+    // - INVALID_ID (the default): a new id is allocated by advancing `curElementCount`, and the
+    //   vector and graph data are *appended* to their containers (growing the index by a block
+    //   first if it is full).
+    // - otherwise: the given id must already be a valid slot with no owned graph data left in it -
+    //   the caller must have detached it (see `repairConnectionsAndDetach`) first, otherwise its
+    //   link lists are leaked by the overwrite here. `curElementCount` is left untouched, since the
+    //   slot isn't being handed back to the index, just overwritten in place.
+    HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
+                                       idType elementId = INVALID_ID);
     void removeAndSwapMarkDeletedElement(idType internalId);
+    // Take back what an element still owns - its incoming-edge bookkeeping on remaining neighbors,
+    // and its own graph data - without touching `curElementCount`. Shared by `removeFromGraph`
+    // (which also gives the slot back to the index) and `repairConnectionsAndDetach` (which
+    // doesn't, since its caller is about to overwrite the slot in place).
+    void disposeElementData(idType internalId);
     void removeFromGraph(idType internalId);
     // Whether `level_data` holds a link to `id`.
     static bool hasLink(const ElementLevelData &level_data, idType id) {
@@ -350,6 +371,13 @@ public:
     void insertElementToGraph(idType element_id, size_t element_max_level, idType entry_point,
                               size_t global_max_level, const void *vector_data);
     void removeVectorInPlace(idType id);
+    // The repair-and-detach half of `removeVectorInPlace`, without the trailing compaction
+    // (`removeFromGraph` + `swapWithLast`): repairs every affected neighbor's connections exactly
+    // as a real removal would, replaces the entry point if `internalId` held it, and frees the
+    // element's own graph data - leaving `curElementCount` and every other id untouched, so the
+    // caller can immediately overwrite this exact slot (see `overwriteVectorInPlace`) instead of
+    // giving it back to the index.
+    void repairConnectionsAndDetach(idType internalId);
 
     /*************************** Labels lookup API ***************************/
 
@@ -1866,10 +1894,7 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeFromGraph(idType internalId) {
-    // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
-    // upon marking it as deleted.
-    assert(entrypointNode != internalId);
+void HNSWIndex<DataType, DistType>::disposeElementData(idType internalId) {
     auto element = getGraphDataByInternalId(internalId);
 
     // Remove the deleted id form the relevant incoming edges sets in which it appears. For an
@@ -1894,7 +1919,14 @@ void HNSWIndex<DataType, DistType>::removeFromGraph(idType internalId) {
 
     // Free the element's resources
     element->destroy(this->levelDataSize, this->allocator);
+}
 
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeFromGraph(idType internalId) {
+    // Sanity check - the id to remove cannot be the entry point, as it should have been replaced
+    // upon marking it as deleted.
+    assert(entrypointNode != internalId);
+    disposeElementData(internalId);
     // We can say now that the element has removed completely from index.
     --curElementCount;
 }
@@ -1927,7 +1959,7 @@ void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType inter
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_internal_id) {
+void HNSWIndex<DataType, DistType>::repairConnectionsAndDetach(const idType element_internal_id) {
 
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
 
@@ -1982,18 +2014,54 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
         assert(element->toplevel == maxLevel);
         replaceEntryPoint();
     }
+    // The element is fully detached now - every neighbor has been repaired, and nothing refers to
+    // it. Free what it owns, but leave the slot itself (and `curElementCount`) to the caller: a
+    // real removal gives it back to the index (see `removeVectorInPlace`), an overwrite reuses it
+    // in place (see `overwriteVectorInPlace`).
+    disposeElementData(element_internal_id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_internal_id) {
+    repairConnectionsAndDetach(element_internal_id);
     // Finally, remove the element from the index and make a swap with the last internal id to
     // avoid fragmentation and reclaim memory when needed.
-    removeFromGraph(element_internal_id);
+    --curElementCount;
     swapWithLast(element_internal_id);
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::overwriteVectorInPlace(idType old_id, const void *vector_data,
+                                                            labelType label) {
+    ProcessedBlobs processedBlobs = this->preprocess(vector_data);
+    this->lockIndexDataGuard();
+    repairConnectionsAndDetach(old_id);
+    HNSWAddVectorState state =
+        storeNewElement(label, processedBlobs.getStorageBlob(), old_id);
+    if (state.currMaxLevel >= state.elementMaxLevel) {
+        this->unlockIndexDataGuard();
+    }
+
+    this->indexVector(processedBlobs.getQueryBlob(), label, state);
+
+    if (state.currMaxLevel < state.elementMaxLevel) {
+        this->unlockIndexDataGuard();
+    }
 }
 
 // Store the new element in the global data structures and keep the new state. In multithreaded
 // scenario, the index data guard should be held by the caller (exclusive lock).
 template <typename DataType, typename DistType>
 HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType label,
-                                                                  const void *vector_data) {
-    if (isCapacityFull()) {
+                                                                  const void *vector_data,
+                                                                  idType elementId) {
+    // When an id is given we are reusing an existing (already detached) slot, so the index
+    // doesn't grow and no capacity check is needed - the slot is within the current capacity by
+    // definition.
+    const bool reuseSlot = (elementId != INVALID_ID);
+    assert((!reuseSlot || elementId < curElementCount) &&
+           "The given id must be an existing slot in the index");
+    if (!reuseSlot && isCapacityFull()) {
         growByBlock();
     }
     HNSWAddVectorState state{};
@@ -2002,7 +2070,8 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
     state.elementMaxLevel = getRandomLevel(mult);
 
     // Access and update the index global data structures with the new element meta-data.
-    state.newElementId = curElementCount++;
+    // Allocate a fresh id only if the caller didn't provide one.
+    state.newElementId = reuseSlot ? elementId : curElementCount++;
 
     // Create the new element's graph metadata.
     // We must assign manually enough memory on the stack and not just declare an `ElementGraphData`
@@ -2023,9 +2092,18 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
         throw e;
     }
 
-    // Insert the new element to the data block
-    this->vectors->addElement(vector_data, state.newElementId);
-    this->graphDataBlocks.back().addElement(cur_egd);
+    // Insert the new element to the data block. The containers only support *appending* at
+    // `curElementCount`, so when reusing an existing slot we have to overwrite it in place
+    // instead. The previous occupant's graph data must have already been destroyed by the caller
+    // (see `repairConnectionsAndDetach`), otherwise its link lists are leaked by the overwrite.
+    if (reuseSlot) {
+        this->vectors->updateElement(state.newElementId, vector_data);
+        this->graphDataBlocks[state.newElementId / this->blockSize].updateElement(
+            state.newElementId % this->blockSize, cur_egd);
+    } else {
+        this->vectors->addElement(vector_data, state.newElementId);
+        this->graphDataBlocks.back().addElement(cur_egd);
+    }
     // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
     // set when checking if label .
     this->idToMetaData[state.newElementId] = ElementMetaData(label);

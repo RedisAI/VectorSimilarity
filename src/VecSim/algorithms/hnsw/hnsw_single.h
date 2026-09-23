@@ -191,14 +191,16 @@ template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                     const labelType label) {
     // Checking if an element with the given label already exists.
-    bool label_exists = labelLookup.find(label) != labelLookup.end();
-    if (label_exists) {
-        // Remove the vector in place if override allowed (in non-async scenario).
-        deleteVector(label);
+    auto it = labelLookup.find(label);
+    if (it != labelLookup.end()) {
+        // Overwrite in place, keeping the same internal id - no need to detach and re-append to a
+        // fresh one, and `labelLookup` already points at the right id either way.
+        this->overwriteVectorInPlace(it->second, vector_data, label);
+        return 0;
     }
 
     this->appendVector(vector_data, label);
-    return label_exists ? 0 : 1;
+    return 1;
 }
 
 template <typename DataType, typename DistType>
