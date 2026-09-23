@@ -150,6 +150,11 @@ private:
     // To be executed synchronously upon deleting a vector, doesn't require a wrapper. Main HNSW
     // lock is assumed to be held exclusive here.
     void fixJobsAfterSwap(idType deleted_id, vecsim_stl::vector<idType> &idsToRemove);
+
+    // Drop the pending repair jobs *of* a disposed element and account for them in the swap jobs
+    // that were waiting on them. Takes `idToRepairJobsGuard` itself, so it may be called while the
+    // main index guard is held for shared ownership -- which is what lets `isolateRepairedElement`
+    // use it. Callers must not hold that guard.
     void invalidateRepairJobs(idType deleted_id);
 
     // Execute the ready swap jobs, run no more than 'maxSwapsToRun' jobs (run all of them for -1).
@@ -388,6 +393,10 @@ void TieredHNSWIndex<DataType, DistType>::fixJobsAfterSwap(
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::invalidateRepairJobs(idType deleted_id) {
     // Invalidate repair jobs for the disposed id (if exist), and update the associated swap jobs.
+    // Under the guard rather than under the main guard held exclusively: a job still listed here
+    // has not been claimed by a worker yet -- `executeRepairJob` claims it under this same guard
+    // before touching it -- so it is alive for as long as this is held.
+    std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
     if (idToRepairJobs.find(deleted_id) == idToRepairJobs.end()) {
         return;
     }
@@ -411,6 +420,14 @@ HNSWIndex<DataType, DistType> *TieredHNSWIndex<DataType, DistType>::getHNSWIndex
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::isolateRepairedElement(idType deleted_id) {
     this->getHNSWIndex()->isolateDeletedElement(deleted_id);
+    // No edge in or out of the element is left, so a repair job waiting to fix *its* connections
+    // has nothing to fix. Dropping them here rather than leaving them to the swap job also
+    // releases the swap jobs they were counted against, which is what they were holding up.
+    // Note that a swap job released here is not isolated in turn: it is only marked ready, and
+    // `executeReadySwapJobs` will later remove its element by walking its edges, as it does for any
+    // element whose repairs completed without this shortcut. Cascading the isolation instead would
+    // make that removal the cheap one as well - left for a follow-up.
+    this->invalidateRepairJobs(deleted_id);
 }
 
 template <typename DataType, typename DistType>
@@ -650,7 +667,15 @@ template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // Lock the HNSW shared lock before accessing its internals.
     this->mainIndexGuard.lock_shared();
+
+    // Whether this job was invalidated, and whether it is still listed as pending, are decided
+    // together under one lock. An invalidation landing between the two -- which
+    // `isolateRepairedElement` can do while holding the main guard for shared ownership, so it
+    // does not exclude us -- rewrites `node_id` with the invalid-job key, and the lookup below
+    // would miss.
+    this->idToRepairJobsGuard.lock();
     if (!job->isValid) {
+        this->idToRepairJobsGuard.unlock();
         this->mainIndexGuard.unlock_shared();
         // The current node has already been removed and disposed.
         this->invalidJobsLookupGuard.lock();
@@ -664,7 +689,6 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     // it after executing the repair job, we might have see that there is a pending repair job for
     // this node id upon deleting another neighbor of this node, and we may avoid creating another
     // repair job even though *it has already been executed*.
-    this->idToRepairJobsGuard.lock();
     auto &repair_jobs = this->idToRepairJobs.at(job->node_id);
     assert(repair_jobs.size() > 0);
     if (repair_jobs.size() == 1) {
@@ -715,13 +739,11 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       idToRepairJobs(this->allocator), idToSwapJob(this->allocator), readySwapJobs(0),
-      isQuantized(tiered_index_params.primaryIndexParams->algoParams.hnswParams.quantType !=
-                  VecSimQuant_NONE) {
-    const auto &hnsw_params = tiered_index_params.primaryIndexParams->algoParams.hnswParams;
+      isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
-    if (hnsw_params.quantType == VecSimQuant_SQ8 && normalization_set_size > 0) {
-        sqAccumulationState.emplace(this->allocator, hnsw_params.dim, normalization_set_size);
+    if (isQuantized && normalization_set_size > 0) {
+        sqAccumulationState.emplace(this->allocator, hnsw_index->getDim(), normalization_set_size);
     }
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.

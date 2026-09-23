@@ -42,6 +42,9 @@ size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
  * that block. This value can be used later to decide what is the best block size for the block
  * size, when the memory limit is known.
  * ("memory limit for a block" / "size of a single vector in a block" = "block size")
+ * For tiered HNSW indexes, the estimate is the larger of the frontend and backend per-vector
+ * estimates, so the shared block size accounts for either tier's growth. It does not estimate
+ * combined growth of both tiers or total index memory.
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
  * @return The estimated single vector memory consumption, considering the parameters.
