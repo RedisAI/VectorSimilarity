@@ -116,6 +116,8 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    // Single-value has at most one id per label, so removing "an id" is removing the label.
+    void removeIdFromLabel(labelType label, idType id) override { labelLookup.erase(label); }
     bool isLabelExists(labelType label) override {
         return labelLookup.find(label) != labelLookup.end();
     }

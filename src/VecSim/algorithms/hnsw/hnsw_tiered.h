@@ -217,6 +217,13 @@ private:
     // exclusively, so a caller must not already hold it.
     int deleteFromFlatAndInsertJobs(labelType label);
 
+    // In-place replacement of a multi-value label's vectors, pairing the label's existing ids with
+    // the new blobs one for one and overwriting each pair in place - reusing the id, exactly as the
+    // single-value overwrite in `addVector` does - instead of deleting every id and re-appending n
+    // fresh ones. If the label is shrinking, the ids beyond `n` are removed for real (compaction and
+    // all); if it's growing, the blobs beyond the label's current count are freshly appended.
+    void updateMultiValueInPlace(labelType label, const void *new_blobs, size_t n);
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -1184,7 +1191,7 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
         return VecSimUpdate_MultiNotSupported;
     }
     // One vector replacing a single-value label *is* an overwrite, and `addVector` serves that
-    // better than a delete and an insert would: it writes over the buffered copy in place, keeping
+    // better than a deleted and an insert would: it writes over the buffered copy in place, keeping
     // its id and the pending job that will ingest it, and only then marks the backend's copy
     // deleted - so the label is never without a vector, where removing first would leave a window
     // with none. It is also the case a caller hits most, a hash document holding one vector per
@@ -1194,12 +1201,73 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
         return VecSimUpdate_OK;
     }
 
+    // From here on the backend is always multi-value - single-value with n > 1 already returned
+    // above.
+    if (this->getWriteMode() == VecSim_WriteInPlace) {
+        this->updateMultiValueInPlace(label, new_blobs, n);
+        return VecSimUpdate_OK;
+    }
+
     this->deleteVector(label);
     const char *blob = static_cast<const char *>(new_blobs);
     for (size_t i = 0; i < n; i++) {
         this->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
     }
     return VecSimUpdate_OK;
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::updateMultiValueInPlace(labelType label,
+                                                                   const void *new_blobs,
+                                                                   size_t n) {
+    auto *hnsw_index = this->getHNSWIndex();
+    const char *blob = static_cast<const char *>(new_blobs);
+
+    // Drop any buffered copies and their pending insert jobs first - same reasoning as the
+    // single-value in-place overwrite: the backend copies, if any, are deliberately left alone
+    // here, for the reuse loop below to overwrite in place instead of deleting them outright and
+    // losing their ids to the swap-to-last compaction a real removal would use.
+    this->deleteFromFlatAndInsertJobs(label);
+
+    const auto main_index_lock = this->acquireMainIndexGuard();
+
+    // If the label is shrinking, remove its ids beyond what we're about to write, one at a time -
+    // re-fetching the current set every time, since removing one may relocate another of this same
+    // label's own remaining ids via the swap-to-last compaction (exactly as
+    // `deleteLabelFromHNSWInplace` already accounts for when it removes several of a label's ids).
+    size_t old_count = hnsw_index->getElementIds(label).size();
+    size_t n_to_remove = old_count > n ? old_count - n : 0;
+    vecsim_stl::vector<idType> idsToRemove(this->allocator);
+    idsToRemove.reserve(n_to_remove);
+    readySwapJobs += n_to_remove; // account for the ids that are going to be removed.
+    for (size_t k = 0; k < n_to_remove; k++) {
+        idType id = hnsw_index->getElementIds(label).back();
+        hnsw_index->removeIdFromLabel(label, id);
+        hnsw_index->removeVectorInPlace(id);
+        this->invalidateRepairJobs(id);
+        this->fixJobsAfterSwap(id, idsToRemove);
+    }
+    for (idType id : idsToRemove) {
+        idToSwapJob.erase(id);
+    }
+    readySwapJobs -= idsToRemove.size();
+
+    // Reuse whatever ids remain (up to n), overwriting them in place with the first n new blobs.
+    auto old_ids = hnsw_index->getElementIds(label);
+    size_t reused = std::min(old_ids.size(), n);
+    for (size_t i = 0; i < reused; i++) {
+        idType id = old_ids[i];
+        // Same reasoning as the single-value overwrite in `addVector`: a repair job filed by some
+        // earlier, unrelated async deletion may still be pending against this id.
+        this->invalidateRepairJobs(id);
+        hnsw_index->overwriteVectorInPlace(id, blob + i * this->frontendIndex->getInputBlobSize(),
+                                           label);
+    }
+    // Any blobs beyond what we had ids to reuse (the label is growing) are freshly appended.
+    for (size_t i = reused; i < n; i++) {
+        hnsw_index->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
+    }
+    ++this->directHNSWInsertions;
 }
 
 /**

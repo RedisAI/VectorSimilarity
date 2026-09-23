@@ -237,13 +237,6 @@ protected:
 
     HNSWAddVectorState storeVector(const void *vector_data, const labelType label);
 
-    // Overwrite the vector at `old_id` in place, keeping its internal id: detaches it from the
-    // graph (see `repairConnectionsAndDetach`) and immediately writes `vector_data` into that same
-    // slot instead of appending a fresh one, so a single-value label being replaced never touches
-    // `curElementCount` or the swap-to-last compaction a real removal would use. `old_id` must not
-    // be the id of any other, still-live element - callers overwrite a label they hold the id of.
-    void overwriteVectorInPlace(idType old_id, const void *vector_data, labelType label);
-
     // Protected internal functions for index resizing.
     void growByBlock();
     void shrinkByBlock();
@@ -378,6 +371,12 @@ public:
     // caller can immediately overwrite this exact slot (see `overwriteVectorInPlace`) instead of
     // giving it back to the index.
     void repairConnectionsAndDetach(idType internalId);
+    // Overwrite the vector at `old_id` in place, keeping its internal id: detaches it from the
+    // graph (see `repairConnectionsAndDetach`) and immediately writes `vector_data` into that same
+    // slot instead of appending a fresh one, so a label being replaced never touches
+    // `curElementCount` or the swap-to-last compaction a real removal would use. `old_id` must not
+    // be the id of any other, still-live element - callers overwrite a label they hold the id of.
+    void overwriteVectorInPlace(idType old_id, const void *vector_data, labelType label);
 
     /*************************** Labels lookup API ***************************/
 
@@ -389,6 +388,12 @@ public:
 
     // Remove label from the index.
     virtual int removeLabel(labelType label) = 0;
+
+    // Remove one specific id from the set a label maps to, without necessarily removing the
+    // label entirely - for a multi-value label, others may remain; for single-value this is the
+    // same as `removeLabel`. Used when only some of a label's ids are being disposed of (see
+    // `overwriteVectorsInPlace`), unlike a full delete which always removes the whole label.
+    virtual void removeIdFromLabel(labelType label, idType id) = 0;
 
     // Check whether a label currently maps to at least one element. Note that a label whose
     // element was marked deleted is *not* considered to exist, matching `getElementIds`.
@@ -2107,7 +2112,13 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
     // We mark id as in process *before* we set it in the label lookup, so that IN_PROCESS flag is
     // set when checking if label .
     this->idToMetaData[state.newElementId] = ElementMetaData(label);
-    setVectorId(label, state.newElementId);
+    // When reusing a slot the label lookup already maps `label` to this exact id - that's how the
+    // caller found it to reuse in the first place - so there is nothing to add here. Skipping this
+    // matters beyond being redundant: a multi-value label lookup appends rather than assigns, so
+    // calling it again on a reused id would record it twice under the same label.
+    if (!reuseSlot) {
+        setVectorId(label, state.newElementId);
+    }
 
     state.currMaxLevel = (int)maxLevel;
     state.currEntryPoint = entrypointNode;

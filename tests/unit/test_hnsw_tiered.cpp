@@ -5620,6 +5620,90 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiChangesCount) {
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
+// In write-in-place mode, updating a multi-value label pairs its existing ids with the new blobs
+// one for one and overwrites each pair in place, instead of deleting every id and re-appending -
+// exactly like the single-value in-place overwrite, generalized to more than one id. Ids beyond
+// the new count are removed for real; blobs beyond the old count are freshly appended. Exercised
+// over a real, connected graph so the neighbor repair each reuse runs isn't a trivial case.
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    size_t n_labels = 10;
+    size_t per_label = 3;
+    for (size_t label = 0; label < n_labels; label++) {
+        for (size_t j = 0; j < per_label; j++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, label * 10 + j);
+        }
+    }
+    ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label);
+
+    labelType label = n_labels / 2;
+    auto old_ids = hnsw_index->getElementIds(label);
+    ASSERT_EQ(old_ids.size(), per_label);
+    std::sort(old_ids.begin(), old_ids.end());
+
+    // Same count: every one of the label's ids should be reused, so nothing grows.
+    TEST_DATA_T same_count[3 * dim];
+    for (size_t j = 0; j < per_label; j++) {
+        GenerateVector<TEST_DATA_T>(same_count + j * dim, dim, 1000 + j);
+    }
+    ASSERT_EQ(tiered_index->updateVectors(label, same_count, per_label), VecSimUpdate_OK);
+    auto same_count_ids = hnsw_index->getElementIds(label);
+    ASSERT_EQ(same_count_ids.size(), per_label);
+    std::sort(same_count_ids.begin(), same_count_ids.end());
+    ASSERT_EQ(same_count_ids, old_ids);
+    ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    for (size_t j = 0; j < per_label; j++) {
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, same_count + j * dim), 0)
+            << "missing " << j;
+    }
+
+    // Shrinking to a single vector reuses one of the current ids and removes the other two for
+    // real - the index actually shrinks.
+    TEST_DATA_T one[dim];
+    GenerateVector<TEST_DATA_T>(one, dim, 2000);
+    ASSERT_EQ(tiered_index->updateVectors(label, one, 1), VecSimUpdate_OK);
+    ASSERT_EQ(hnsw_index->getElementIds(label).size(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label - (per_label - 1));
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(label, one), 0);
+
+    // Growing back to the original count reuses the one remaining id and freshly appends the rest.
+    TEST_DATA_T grown[3 * dim];
+    for (size_t j = 0; j < per_label; j++) {
+        GenerateVector<TEST_DATA_T>(grown + j * dim, dim, 3000 + j);
+    }
+    ASSERT_EQ(tiered_index->updateVectors(label, grown, per_label), VecSimUpdate_OK);
+    ASSERT_EQ(hnsw_index->getElementIds(label).size(), per_label);
+    ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    for (size_t j = 0; j < per_label; j++) {
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, grown + j * dim), 0) << "missing " << j;
+    }
+
+    // Every other label's vectors survived all three updates untouched.
+    for (size_t other = 0; other < n_labels; other++) {
+        if (other == label) {
+            continue;
+        }
+        for (size_t j = 0; j < per_label; j++) {
+            TEST_DATA_T untouched[dim];
+            GenerateVector<TEST_DATA_T>(untouched, dim, other * 10 + j);
+            ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(other, untouched), 0)
+                << "label " << other << " vector " << j;
+        }
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsInTheIngestWindow) {
     size_t dim = 4;
     TEST_DATA_T ingesting[dim], replacement[dim];
