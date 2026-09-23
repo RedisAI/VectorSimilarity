@@ -141,6 +141,46 @@ TYPED_TEST(HNSWTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->labelToInsertJobs.at(vector_label).size(), 0);
 }
 
+TYPED_TEST(HNSWTieredIndexTest, WrapExistingIndexWithoutPrimaryParams) {
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = 4,
+                         .metric = VecSimMetric_L2,
+                         .multi = TypeParam::isMulti()};
+    VecSimParams hnsw_params = CreateParams(params);
+    TEST_DATA_T vector[4] = {};
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    for (size_t normalization_set_size : {0, 100}) {
+        SCOPED_TRACE(normalization_set_size);
+        auto *backend =
+            static_cast<HNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(HNSWFactory::NewIndex(&hnsw_params));
+        VecSimIndex_AddVector(backend, vector, 1);
+        auto mock_thread_pool = tieredIndexMock();
+        TieredIndexParams tiered_params = {
+            .jobQueue = &mock_thread_pool.jobQ,
+            .jobQueueCtx = mock_thread_pool.ctx,
+            .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = SIZE_MAX,
+            .primaryIndexParams = nullptr,
+            .specificParams = {
+                TieredHNSWParams{.QuantNormalizationSetSize = normalization_set_size}}};
+        auto *tiered_index = static_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+            TieredFactory::TieredHNSWFactory::NewIndex(&tiered_params, backend));
+        mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+
+        EXPECT_EQ(tiered_index->indexSize(), 1);
+        runTopKSearchTest(tiered_index, vector, 1, [](size_t label, double score, size_t) {
+            EXPECT_EQ(label, 1);
+            EXPECT_EQ(score, 0);
+        });
+        ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vector, 2), 1);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+        mock_thread_pool.thread_iteration();
+        EXPECT_EQ(backend->indexSize(), 2);
+        EXPECT_EQ(this->GetFlatIndex(tiered_index)->indexSize(), 0);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTest, UnquantizedIndexIgnoresNormalizationThreshold) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = 4,
@@ -1743,9 +1783,15 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 2);
     mock_thread_pool.thread_iteration();
+    // The job above was the last one pending for id 1, so id 1 was taken out of the graph - and
+    // with it the very edge that the remaining job (on id 1) was created to remove. That job is
+    // invalidated instead of executed, so its node id field now holds its invalid job key.
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
+    ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id,
+              invalidJobsCounter++);
     mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->invalidJobs.size(), 0);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMultiFromFlatAdvanced) {
@@ -2000,6 +2046,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // memory (that is equivalent to the memory consumption upon reserving 0 buckets).
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
+    tiered_index->invalidJobs.reserve(0);
 
     TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
                                tiered_index->getHNSWIndex())
@@ -2052,6 +2099,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // started inserting vectors.
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
+    tiered_index->invalidJobs.reserve(0);
     tiered_index->getHNSWIndex()->resizeLabelLookup(0);
 
     // Manually shrink the vectors so that memory would be as it was before we started inserting
@@ -2143,9 +2191,9 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic2) {
 // job is denoted below as the edge it removes: u->v is the job that repairs u's connections after
 // its neighbour v was deleted.
 // A deleted element is taken out of the graph as soon as the jobs of *its own* deletion are done,
-// so for a job on it to still be pending when it is disposed of, that job has to belong to
-// *another* element's deletion: 0 is deleted first, then 1 is deleted while 0 still points to it
-// (registering a 0->1 job), and only then the 1->0 and 2->0 jobs complete and 0 is swapped out.
+// so for a job on it to still be pending at that point, that job has to belong to *another*
+// element's deletion: 0 is deleted first, then 1 is deleted while 0 still points to it (registering
+// a 0->1 job), and only then the 1->0 and 2->0 jobs complete and 0 is isolated.
 TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
     size_t dim = 4;
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -2174,37 +2222,34 @@ TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
     // pending), so a 0->1 job is created here and stays pending.
     EXPECT_EQ(tiered_index->deleteVector(1), 1);
     ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
-
-    // Execute the 1->0 and 2->0 jobs, so that 0 has no pending repair job left and is taken out of
-    // the graph, making its swap job ready. The 0->1 job, which belongs to 1's swap job, is still
-    // queued.
-    while (tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load() > 0) {
-        ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
-        mock_thread_pool.thread_iteration();
-    }
-    ASSERT_TRUE(tiered_index->idToRepairJobs.contains(0));
     ASSERT_EQ(tiered_index->invalidJobs.size(), 0);
     int pending_for_1 = tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load();
     ASSERT_GT(pending_for_1, 0);
 
-    // Dispose of 0. The pending 0->1 job has to be invalidated, and 1's swap job should stop
-    // waiting for it.
-    tiered_index->runGC();
-    EXPECT_EQ(tiered_index->indexSize(), 2);
+    // Execute the 1->0 and 2->0 jobs, so that 0 has no pending repair job left and is taken out of
+    // the graph, making its swap job ready. Isolating 0 also removes the 0->1 edge, so the pending
+    // 0->1 job has nothing left to repair: it is invalidated right here, and 1's swap job stops
+    // waiting for it - without waiting for 0's slot to be reclaimed.
+    while (tiered_index->idToSwapJob.at(0)->pending_repair_jobs_counter.load() > 0) {
+        ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+        mock_thread_pool.thread_iteration();
+    }
+    EXPECT_FALSE(tiered_index->idToRepairJobs.contains(0));
     EXPECT_EQ(tiered_index->invalidJobs.size(), 1);
-    EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(),
-              pending_for_1 - 1);
+    EXPECT_LT(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), pending_for_1);
 
     // Drain the remaining jobs: the invalidated 0->1 job is disposed of without being executed, and
-    // the 2->1 job (whose node id was renamed by the swap above) completes 1's repairs - so 1 is
-    // taken out of the graph as well.
+    // any job still pending on 1 completes its repairs - so 1 is taken out of the graph as well.
     while (!mock_thread_pool.jobQ.empty()) {
         mock_thread_pool.thread_iteration();
     }
     EXPECT_EQ(tiered_index->invalidJobs.size(), 0);
     EXPECT_EQ(tiered_index->idToSwapJob.at(1)->pending_repair_jobs_counter.load(), 0);
 
-    // Disposing of 1 as well leaves a single element in the index, with a valid graph.
+    // Both deleted elements are out of the graph now, so disposing of them leaves a single element
+    // in the index, with a valid graph. The GC runs a batch of at most `pendingSwapJobsThreshold`
+    // swap jobs per round, which is 1 here, so it takes two rounds.
+    tiered_index->runGC();
     tiered_index->runGC();
     EXPECT_EQ(tiered_index->indexSize(), 1);
     EXPECT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 0);

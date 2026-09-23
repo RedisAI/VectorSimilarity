@@ -698,11 +698,14 @@ public:
     using data_t = typename index_type_t::data_t;
 
     void create_index_test();
+    void frontend_size_estimation_test(VecSimMetric metric);
 
 protected:
     static constexpr size_t normalization_set_size = 10;
 
-    void SetUp(HNSWParams &hnsw_params) override {
+    void SetUp(HNSWParams &hnsw_params) override { SetUp(hnsw_params, 0); }
+
+    void SetUp(HNSWParams &hnsw_params, size_t flat_buffer_limit) {
         hnsw_params.type = index_type_t::get_index_type();
         hnsw_params.quantType = VecSimQuant_SQ8;
         VecSimParams vecsim_hnsw_params = CreateParams(hnsw_params);
@@ -710,6 +713,7 @@ protected:
             .jobQueue = &mock_thread_pool.jobQ,
             .jobQueueCtx = mock_thread_pool.ctx,
             .submitCb = tieredIndexMock::submit_callback,
+            .flatBufferLimit = flat_buffer_limit,
             .primaryIndexParams = &vecsim_hnsw_params,
             .specificParams = {TieredHNSWParams{
                 .QuantNormalizationSetSize =
@@ -787,6 +791,62 @@ TYPED_TEST(SQ8TieredHNSWTest, SizeEstimation) {
     EXPECT_EQ(this->index->indexCapacity(), 2 * block_size);
     EXPECT_GE(estimation, actual * 0.99);
     EXPECT_LE(estimation, actual * 1.01);
+}
+
+template <typename index_type_t>
+void SQ8TieredHNSWTest<index_type_t>::frontend_size_estimation_test(VecSimMetric metric) {
+    constexpr size_t block_size = 64;
+    HNSWParams hnsw_params = {.type = index_type_t::get_index_type(),
+                              .dim = 1024,
+                              .metric = metric,
+                              .blockSize = block_size,
+                              .M = 32,
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams backend_params = CreateParams(hnsw_params);
+    TieredIndexParams tiered_params = {
+        .flatBufferLimit = block_size + 1,
+        .primaryIndexParams = &backend_params,
+        .specificParams = {
+            TieredHNSWParams{.QuantNormalizationSetSize =
+                                 index_type_t::with_quant_params ? normalization_set_size : 0}}};
+
+    // Wide full-precision vectors make the frontend's block larger than the SQ8 backend's.
+    const size_t estimation = EstimateElementSize(tiered_params) * block_size;
+    this->SetUp(hnsw_params, tiered_params.flatBufferLimit);
+    auto *tiered_index = static_cast<TieredHNSWIndex<data_t, float> *>(this->index);
+    auto *frontend = tiered_index->getFlatBufferIndex();
+
+    // Leave insertion jobs queued so the full-precision frontend must grow another block.
+    for (size_t label = 0; label < block_size; label++) {
+        ASSERT_EQ(this->GenerateAndAddVector(label, 0.25f, 0.001f), 1);
+    }
+    ASSERT_EQ(frontend->indexSize(), block_size);
+    ASSERT_EQ(frontend->indexCapacity(), block_size);
+    ASSERT_EQ(this->CastToHNSW()->indexSize(), 0);
+
+    const size_t before = frontend->getAllocationSize();
+    ASSERT_EQ(this->GenerateAndAddVector(block_size, 0.25f, 0.001f), 1);
+    const size_t actual = frontend->getAllocationSize() - before;
+
+    EXPECT_EQ(frontend->indexCapacity(), 2 * block_size);
+    EXPECT_GE(estimation, actual * 0.99);
+    EXPECT_LE(estimation, actual * 1.01);
+
+    while (!this->mock_thread_pool.jobQ.empty()) {
+        this->mock_thread_pool.thread_iteration();
+    }
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, FrontendSizeEstimationL2) {
+    this->frontend_size_estimation_test(VecSimMetric_L2);
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, FrontendSizeEstimationIP) {
+    this->frontend_size_estimation_test(VecSimMetric_IP);
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, FrontendSizeEstimationCosine) {
+    this->frontend_size_estimation_test(VecSimMetric_Cosine);
 }
 
 TYPED_TEST(SQ8TieredHNSWTest, SearchByID) { this->search_by_id_test(); }

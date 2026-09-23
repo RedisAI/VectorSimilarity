@@ -15,6 +15,8 @@
 #include "VecSim/types/float16.h"
 #include "VecSim/index_factories/svs_factory.h"
 
+#include <algorithm>
+
 #if HAVE_SVS
 #include "VecSim/algorithms/svs/svs_tiered.h"
 #endif
@@ -280,6 +282,8 @@ size_t EstimateElementSize(const TieredIndexParams *params) {
         const bool with_mean = TieredHNSWFactory::RequiresQuantizationTraining(params) ||
                                hnsw_params.quantParams != nullptr;
         est = HNSWFactory::EstimateElementSize(&hnsw_params, /* with_mean = */ with_mean);
+        const auto bf_params = TieredHNSWFactory::NewBFParams(params);
+        est = std::max(est, BruteForceFactory::EstimateElementSize(&bf_params));
     }
     if (params->primaryIndexParams->algo == VecSimAlgo_SVS) {
         est = SVSFactory::EstimateElementSize(&params->primaryIndexParams->algoParams.svsParams);
