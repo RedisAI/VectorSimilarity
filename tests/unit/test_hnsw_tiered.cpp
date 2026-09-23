@@ -1696,10 +1696,11 @@ TYPED_TEST(HNSWTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->indexSize(), 2);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
 
-    // Move the vector to HNSW by executing the insert job.
+    // Move the vector to HNSW by executing the insert job. The slot the deleted vector left behind
+    // is isolated and ready by now, so this insertion reclaims it instead of growing the index.
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 1);
     // Check that the distance from the deleted vector (of zeros) to the label is the distance
     // to the new vector (L2 distance).
     TEST_DATA_T deleted_vector[dim];
@@ -1767,24 +1768,28 @@ TYPED_TEST(HNSWTieredIndexTestBasic, deleteVectorMulti) {
     // Test deleting a label for which both of its vector's is in HNSW index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, other_vec_val);
+    // The first of these two insertions finds id 0 - isolated since the earlier deletion above
+    // left it with no edges - reclaimable, and reuses its slot instead of growing; the second
+    // finds nothing left to reclaim and grows normally. So the two vectors land on ids 0 and 1
+    // rather than on two freshly grown ids, and the backend never grows past a single slot.
     mock_thread_pool.thread_iteration();
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
-    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 3);
+    ASSERT_EQ(tiered_index->backendIndex->indexSize(), 2);
     ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->backendIndex->indexLabelCount(), 0);
-    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 3);
-    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 3);
+    ASSERT_EQ(tiered_index->getHNSWIndex()->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 2);
 
-    // Expect to see two repair jobs - one for each deleted vector internal id.
+    // Expect to see two repair jobs - one for each deleted vector internal id (0 and 1).
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
-    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 2);
+    ASSERT_EQ(reinterpret_cast<HNSWRepairJob *>(mock_thread_pool.jobQ.front().job)->node_id, 1);
     mock_thread_pool.thread_iteration();
-    // The job above was the last one pending for id 1, so id 1 was taken out of the graph - and
-    // with it the very edge that the remaining job (on id 1) was created to remove. That job is
+    // The job above was the last one pending for id 0, so id 0 was taken out of the graph - and
+    // with it the very edge that the remaining job (on id 0) was created to remove. That job is
     // invalidated instead of executed, so its node id field now holds its invalid job key.
     ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, HNSW_REPAIR_NODE_CONNECTIONS_JOB);
     ASSERT_FALSE(mock_thread_pool.jobQ.front().job->isValid);
@@ -2046,6 +2051,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // memory (that is equivalent to the memory consumption upon reserving 0 buckets).
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
+    tiered_index->isolatedReadyIds.reserve(0);
     tiered_index->invalidJobs.reserve(0);
 
     TypeParam::isMulti() ? reinterpret_cast<HNSWIndex_Multi<TEST_DATA_T, TEST_DIST_T> *>(
@@ -2099,6 +2105,7 @@ TYPED_TEST(HNSWTieredIndexTest, swapJobBasic) {
     // started inserting vectors.
     tiered_index->idToRepairJobs.reserve(0);
     tiered_index->idToSwapJob.reserve(0);
+    tiered_index->isolatedReadyIds.reserve(0);
     tiered_index->invalidJobs.reserve(0);
     tiered_index->getHNSWIndex()->resizeLabelLookup(0);
 
@@ -3796,7 +3803,21 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
         }
     }
     mock_thread_pool.thread_pool_join();
-    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
+    if (TypeParam::isMulti()) {
+        // Multi mode never deletes anything in this test - every `addVector` call above just adds
+        // another vector under the label - so there is nothing to isolate or reclaim, and the
+        // second pass grows the backend by another n vectors on top of the first, as before.
+        EXPECT_EQ(tiered_index->backendIndex->indexSize(), 2 * n);
+    } else {
+        // Every overwrite in the second pass deletes the label's old vector and inserts a new one.
+        // Once the old vector's async deletion finishes isolating it, a later insertion reclaims
+        // its slot instead of growing - so where the final size lands depends on how many of the n
+        // old slots finished becoming isolated in time to be reclaimed before the run's jobs all
+        // drained, from every slot being reused (best case, size stays at n) to none being reused
+        // in time (worst case, same as the old always-grow behavior).
+        EXPECT_GE(tiered_index->backendIndex->indexSize(), n);
+        EXPECT_LE(tiered_index->backendIndex->indexSize(), 2 * n);
+    }
     EXPECT_EQ(tiered_index->indexLabelCount(), n_labels);
 }
 
@@ -5174,6 +5195,73 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
               hnsw_index->indexMetaDataCapacity() +
                   tiered_index->frontendIndex->indexMetaDataCapacity());
+}
+
+// An insertion that would otherwise have to grow the index takes over the slot of a deleted element
+// whose asynchronous removal is done with, instead of growing.
+TYPED_TEST(HNSWTieredIndexTestBasic, insertReusesIsolatedElementSlot) {
+    size_t dim = 4;
+    constexpr size_t blockSize = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_L2,
+                         .blockSize = blockSize};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // The default swap jobs threshold, so that the GC does not run: what this test is about is a
+    // slot being taken over by an insertion, not disposed of by a swap job.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Fill the index exactly to capacity, so that the next insertion has to either grow it or find
+    // a slot to reuse.
+    for (size_t i = 0; i < blockSize; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+
+    // Delete a label and let the repair jobs run: that is what takes its element out of the graph,
+    // which is the point at which its slot may be handed to someone else.
+    ASSERT_EQ(tiered_index->deleteVector(1), 1);
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 1);
+    const idType deleted_id = tiered_index->idToSwapJob.begin()->first;
+    ASSERT_EQ(tiered_index->idToSwapJob.at(deleted_id)->pending_repair_jobs_counter.load(), 0);
+    ASSERT_TRUE(tiered_index->isolatedReadyIds.count(deleted_id));
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+    const size_t write_locks_before = tiered_index->getMainIndexGuardWriteLockCount();
+
+    // This insertion finds the index full, and the deleted element's slot free.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, blockSize, blockSize);
+    mock_thread_pool.thread_iteration();
+
+    // The new element sits where the deleted one did, so the index neither grew nor resized - which
+    // is the whole point: without the reuse, both counts below would be one block higher.
+    ASSERT_EQ(hnsw_index->getExternalLabel(deleted_id), blockSize);
+    ASSERT_EQ(hnsw_index->indexSize(), blockSize);
+    ASSERT_EQ(hnsw_index->indexCapacity(), blockSize);
+    // It does take the main guard exclusively, as any insertion into a full index does - that is
+    // what makes taking the slot safe - it just has nothing to resize.
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), write_locks_before + 1);
+
+    // Nothing of the deleted element is left behind: not its swap job, and not its tombstone.
+    ASSERT_TRUE(tiered_index->idToSwapJob.empty());
+    ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The label that took the slot over is the one found in it, and the one that gave it up is gone
+    // from the index entirely.
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, blockSize);
+    ASSERT_EQ(tiered_index->indexLabelCount(), blockSize);
+    ASSERT_FALSE(hnsw_index->isLabelExists(1));
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, blockSize, query), 0);
+    ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(tiered_index, 1, query)));
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorFlatOnly) {
