@@ -5705,6 +5705,49 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
     }
 }
 
+// Shrinking a multi-value label all the way to zero vectors is the one shrink outcome the reuse
+// loop above never leaves an id behind for: every other shrink keeps at least one id to reuse, so
+// this is the only case that exercises `removeIdFromLabel` actually dropping the label once its
+// last id is gone, instead of just shortening its id list.
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceShrinkToZeroRemovesLabel) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    // Padding labels bracket the target label so a wrongly-erased entry, or a leftover mapping,
+    // can't hide inside another label's ids.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    labelType label = 1;
+    size_t per_label = 3;
+    for (size_t j = 0; j < per_label; j++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, 10 + j);
+    }
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 20);
+    ASSERT_EQ(hnsw_index->indexSize(), per_label + 2);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 3);
+
+    ASSERT_EQ(tiered_index->updateVectors(label, nullptr, 0), VecSimUpdate_OK);
+
+    ASSERT_FALSE(hnsw_index->isLabelExists(label));
+    ASSERT_EQ(hnsw_index->getElementIds(label).size(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
+    ASSERT_EQ(hnsw_index->indexSize(), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The bracketing labels are untouched.
+    TEST_DATA_T v0[dim], v2[dim];
+    GenerateVector<TEST_DATA_T>(v0, dim, 0);
+    GenerateVector<TEST_DATA_T>(v2, dim, 20);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, v0), 0);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(2, v2), 0);
+}
+
 // updateMultiValueInPlace must preprocess each new blob the same way any other direct-to-backend
 // write does: the backend assumes already-normalized input for cosine (it doesn't normalize
 // itself), so writing a raw caller blob straight into it - skipping the frontend's

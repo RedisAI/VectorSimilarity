@@ -109,9 +109,9 @@ private:
 
     // Whether addVector/updateVectors, in write-in-place mode, overwrite an existing label's
     // vector(s) in place - reusing their internal id(s) - instead of deleting them and appending
-    // fresh ones. A kill switch for that behavior, not a write-mode-style dispatch: like writeMode,
+    // fresh ones.
     // unprotected because it is only ever read or written from the main thread.
-    bool reuseOnUpdate{true};
+    bool reuseIdOnUpdate{true};
 
     bool isQuantized;
 
@@ -218,10 +218,8 @@ private:
     int deleteLabelFromHNSWInplace(labelType label);
 
     // Drop the label's buffered vector(s) from the flat buffer and invalidate their pending insert
-    // jobs, without touching the backend. Split out of `deleteVector` so an in-place overwrite can
-    // run just this half and leave the backend label alone for `addVector` to overwrite in place -
-    // reusing its internal id - instead of deleting it outright first. Takes `flatIndexGuard`
-    // exclusively, so a caller must not already hold it.
+    // jobs, without touching the backend. Takes `flatIndexGuard` exclusively,
+    // so a caller must not already hold it.
     int deleteFromFlatAndInsertJobs(labelType label);
 
     // In-place replacement of a multi-value label's vectors, pairing the label's existing ids with
@@ -295,9 +293,9 @@ public:
 
     // Toggle whether write-in-place overwrites an existing label's vector(s) in place, reusing
     // their internal id(s), or falls back to deleting them and appending fresh ones - the
-    // behavior before this existed. Defaults to enabled; a kill switch, not a tuning knob.
-    void setReuseOnUpdate(bool reuse) { this->reuseOnUpdate = reuse; }
-    bool isReuseOnUpdate() const { return this->reuseOnUpdate; }
+    // behavior before this existed. Defaults to enabled.
+    void setReuseOnUpdate(bool reuse) { this->reuseIdOnUpdate = reuse; }
+    bool isReuseOnUpdate() const { return this->reuseIdOnUpdate; }
 
 #ifdef BUILD_TESTS
     void setBeforeQuantizationFinalizationHook(std::function<void()> hook) {
@@ -321,6 +319,8 @@ public:
     size_t getNumMarkedDeleted() const override { return getHNSWIndex()->getNumMarkedDeleted(); }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
+    int updateVectorInPlace(labelType label, HNSWIndex<DataType, DistType> *hnsw_index,
+                            const MemoryUtils::unique_blob &storage_blob);
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
@@ -997,6 +997,38 @@ size_t TieredHNSWIndex<DataType, DistType>::indexCapacity() const {
     return this->backendIndex->indexCapacity() + this->frontendIndex->indexCapacity();
 }
 
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::updateVectorInPlace(
+    labelType label, HNSWIndex<DataType, DistType> *hnsw_index,
+    const MemoryUtils::unique_blob &storage_blob) {
+    int flat_deleted = 0;
+    if (!this->backendIndex->isMultiValue()) {
+        flat_deleted = this->deleteFromFlatAndInsertJobs(label);
+    }
+
+    // Insert the vector to the HNSW index - overwriting it in place if the label already
+    // lives there.
+    int backend_ret;
+    {
+        const auto main_index_lock = this->acquireMainIndexGuard();
+        if (!this->backendIndex->isMultiValue() && hnsw_index->isLabelExists(label)) {
+            // The id about to be overwritten in place may still have a repair job pending
+            // against it, filed by some earlier, unrelated async deletion that found it as
+            // a neighbor and expects to fix *its* connections later. That job would
+            // otherwise run against the brand new element now sitting in this slot -
+            // dropping it here is exactly what `deleteLabelFromHNSWInplace` already does
+            // before a real removal.
+            idType old_id = hnsw_index->getElementIds(label).at(0);
+            this->invalidateRepairJobs(old_id);
+        }
+        backend_ret = hnsw_index->addVector(storage_blob.get(), label);
+    }
+    // The label was already known to exist if it had a buffered copy, even if the
+    // backend itself had never seen it yet - that isn't "new" from the caller's
+    // perspective.
+    int ret = (flat_deleted == 0) ? backend_ret : 0;
+    return ret;
+}
 // In the tiered index, we assume that the blobs are processed by the flat buffer
 // before being transferred to the HNSW index.
 // When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
@@ -1015,38 +1047,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
         // index.
         auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-        if (this->reuseOnUpdate) {
-            // Drop any buffered copy and its pending insert job first (single-value only - multi
-            // never overwrites). The backend copy, if any, is deliberately left alone here:
-            // `addVector` below overwrites it in place, reusing its internal id, instead of
-            // deleting it outright first and losing that id to the swap-to-last compaction a real
-            // removal would use.
-            int flat_deleted = 0;
-            if (!this->backendIndex->isMultiValue()) {
-                flat_deleted = this->deleteFromFlatAndInsertJobs(label);
-            }
-
-            // Insert the vector to the HNSW index - overwriting it in place if the label already
-            // lives there.
-            int backend_ret;
-            {
-                const auto main_index_lock = this->acquireMainIndexGuard();
-                if (!this->backendIndex->isMultiValue() && hnsw_index->isLabelExists(label)) {
-                    // The id about to be overwritten in place may still have a repair job pending
-                    // against it, filed by some earlier, unrelated async deletion that found it as
-                    // a neighbor and expects to fix *its* connections later. That job would
-                    // otherwise run against the brand new element now sitting in this slot -
-                    // dropping it here is exactly what `deleteLabelFromHNSWInplace` already does
-                    // before a real removal.
-                    idType old_id = hnsw_index->getElementIds(label).at(0);
-                    this->invalidateRepairJobs(old_id);
-                }
-                backend_ret = hnsw_index->addVector(storage_blob.get(), label);
-            }
-            // The label was already known to exist if it had a buffered copy, even if the
-            // backend itself had never seen it yet - that isn't "new" from the caller's
-            // perspective.
-            ret = (flat_deleted == 0) ? backend_ret : 0;
+        if (this->reuseIdOnUpdate) {
+            ret = updateVectorInPlace(label, hnsw_index, storage_blob);
         } else {
             // Reuse disabled: delete the label outright (from both tiers) and append a fresh
             // element, as this index did before id reuse existed.
@@ -1236,7 +1238,7 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
 
     // From here on the backend is always multi-value - single-value with n > 1 already returned
     // above.
-    if (this->getWriteMode() == VecSim_WriteInPlace && this->reuseOnUpdate) {
+    if (this->getWriteMode() == VecSim_WriteInPlace && this->reuseIdOnUpdate) {
         this->updateMultiValueInPlace(label, new_blobs, n);
         return VecSimUpdate_OK;
     }
@@ -1255,10 +1257,6 @@ void TieredHNSWIndex<DataType, DistType>::updateMultiValueInPlace(labelType labe
     auto *hnsw_index = this->getHNSWIndex();
     const char *blob = static_cast<const char *>(new_blobs);
 
-    // Drop any buffered copies and their pending insert jobs first - same reasoning as the
-    // single-value in-place overwrite: the backend copies, if any, are deliberately left alone
-    // here, for the reuse loop below to overwrite in place instead of deleting them outright and
-    // losing their ids to the swap-to-last compaction a real removal would use.
     this->deleteFromFlatAndInsertJobs(label);
 
     const auto main_index_lock = this->acquireMainIndexGuard();
@@ -1285,10 +1283,6 @@ void TieredHNSWIndex<DataType, DistType>::updateMultiValueInPlace(labelType labe
     readySwapJobs -= idsToRemove.size();
 
     // Reuse whatever ids remain (up to n), overwriting them in place with the first n new blobs.
-    // Each blob is manually preprocessed with the frontend's parameters first, same as any other
-    // direct-to-backend write in write-in-place mode: the backend itself expects already-processed
-    // data (assumes normalized input for cosine, for instance), and going straight to it bypasses
-    // the flat buffer's own preprocessing.
     auto old_ids = hnsw_index->getElementIds(label);
     size_t reused = std::min(old_ids.size(), n);
     for (size_t i = 0; i < reused; i++) {
