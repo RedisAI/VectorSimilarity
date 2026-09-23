@@ -289,6 +289,8 @@ public:
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
+
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override;
     size_t getNumMarkedDeleted() const override { return getHNSWIndex()->getNumMarkedDeleted(); }
     size_t indexSize() const override;
     size_t indexCapacity() const override;
@@ -1123,6 +1125,51 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     }
 
     return num_deleted_vectors;
+}
+
+/**
+ * Replace everything stored under a label with the given vectors.
+ *
+ * Both halves go through this index's own delete and add, which is what makes every mode and tier
+ * fall out for free: the delete drops the label's buffered copies and invalidates their pending
+ * insert jobs, and marks its indexed elements deleted (or removes them in place, in the
+ * corresponding write mode); each insert then lands wherever a fresh vector would - the flat
+ * buffer, or HNSW directly once that buffer is full or in in-place mode. The elements of the label
+ * that survive are none: unlike `relabelVector` this is not a bookkeeping change, and unlike a
+ * quantized index's stored data it needs no comparison against the values, so nothing here refuses
+ * a quantized backend.
+ *
+ * The consequence to know is the one the delete already has: an indexed element leaves a tombstone
+ * behind, to be repaired and disposed of by the usual jobs. A label whose vectors are all still
+ * buffered costs no tombstone at all.
+ *
+ * Not atomic - a query landing between the two halves sees the label with none of its vectors -
+ * which is the same window the delete-then-insert it replaces would leave.
+ */
+template <typename DataType, typename DistType>
+VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType label,
+                                                                    const void *new_blobs,
+                                                                    size_t n) {
+    if (!this->backendIndex->isMultiValue() && n > 1) {
+        return VecSimUpdate_MultiNotSupported;
+    }
+    // One vector replacing a single-value label *is* an overwrite, and `addVector` serves that
+    // better than a delete and an insert would: it writes over the buffered copy in place, keeping
+    // its id and the pending job that will ingest it, and only then marks the backend's copy
+    // deleted - so the label is never without a vector, where removing first would leave a window
+    // with none. It is also the case a caller hits most, a hash document holding one vector per
+    // field.
+    if (n == 1 && !this->backendIndex->isMultiValue()) {
+        this->addVector(new_blobs, label);
+        return VecSimUpdate_OK;
+    }
+
+    this->deleteVector(label);
+    const char *blob = static_cast<const char *>(new_blobs);
+    for (size_t i = 0; i < n; i++) {
+        this->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
+    }
+    return VecSimUpdate_OK;
 }
 
 /**

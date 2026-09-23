@@ -368,6 +368,8 @@ public:
 
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
 
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override;
+
 #ifdef BUILD_TESTS
     void fitMemory() override {
         if (maxElements > 0) {
@@ -566,6 +568,42 @@ VecSimRelabelCode HNSWIndex<DataType, DistType>::relabelVector(labelType old_lab
         setVectorId(new_label, id);
     }
     return VecSimRelabel_OK;
+}
+
+/**
+ * Replace everything stored under a label with the given vectors.
+ *
+ * Removal and insertion rather than a write over the stored data: an element's neighbours, and the
+ * elements that chose it as one, were selected from its old value, so overwriting the bytes would
+ * leave the graph describing vectors that are no longer there. Both halves go through this index's
+ * own delete and add, so the elements are taken out and the new ones linked in exactly as they
+ * would be on their own - the caller is spared having to know how many vectors were there, not the
+ * work of moving them.
+ *
+ * Callers are the single writer, as they are for `addVector` and `deleteVector`; a query between
+ * the two halves sees the label without its vectors.
+ */
+template <typename DataType, typename DistType>
+VecSimUpdateCode HNSWIndex<DataType, DistType>::updateVectors(labelType label,
+                                                              const void *new_blobs, size_t n) {
+    if (!this->isMultiValue() && n > 1) {
+        return VecSimUpdate_MultiNotSupported;
+    }
+    // One vector replacing a single-value label *is* an overwrite, which is what `addVector`
+    // already does for that case - and it is the case a caller hits most, since a hash document
+    // holds one vector per field. Delegating keeps the two operations from drifting apart, and
+    // avoids paying for a removal whose slot the insertion below would only fill again.
+    if (n == 1 && !this->isMultiValue()) {
+        this->addVector(new_blobs, label);
+        return VecSimUpdate_OK;
+    }
+
+    this->deleteVector(label);
+    const char *blob = static_cast<const char *>(new_blobs);
+    for (size_t i = 0; i < n; i++) {
+        this->addVector(blob + i * this->getInputBlobSize(), label);
+    }
+    return VecSimUpdate_OK;
 }
 
 template <typename DataType, typename DistType>
