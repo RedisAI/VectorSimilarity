@@ -330,7 +330,7 @@ public:
     //   slot isn't being handed back to the index, just overwritten in place.
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
                                        idType elementId = INVALID_ID);
-    void removeAndSwapMarkDeletedElement(idType internalId);
+    void swapDeletedElement(idType internalId);
     // Take back what an element still owns - its incoming-edge bookkeeping on remaining neighbors,
     // and its own graph data - without touching `curElementCount`. Shared by `removeFromGraph`
     // (which also gives the slot back to the index) and `repairConnectionsAndDetach` (which
@@ -1956,8 +1956,7 @@ void HNSWIndex<DataType, DistType>::swapWithLast(idType removedId) {
 }
 
 template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::removeAndSwapMarkDeletedElement(idType internalId) {
-    removeFromGraph(internalId);
+void HNSWIndex<DataType, DistType>::swapDeletedElement(idType internalId) {
     swapWithLast(internalId);
     // element is permanently removed from the index, it is no longer counted as marked deleted.
     --numMarkedDeleted;
@@ -2037,12 +2036,11 @@ void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_int
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::overwriteVectorInPlace(idType old_id, const void *vector_data,
-                                                            labelType label) {
+                                                           labelType label) {
     ProcessedBlobs processedBlobs = this->preprocess(vector_data);
     this->lockIndexDataGuard();
     repairConnectionsAndDetach(old_id);
-    HNSWAddVectorState state =
-        storeNewElement(label, processedBlobs.getStorageBlob(), old_id);
+    HNSWAddVectorState state = storeNewElement(label, processedBlobs.getStorageBlob(), old_id);
     if (state.currMaxLevel >= state.elementMaxLevel) {
         this->unlockIndexDataGuard();
     }

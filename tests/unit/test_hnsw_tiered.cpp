@@ -5687,7 +5687,8 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
     ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
     for (size_t j = 0; j < per_label; j++) {
-        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, grown + j * dim), 0) << "missing " << j;
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, grown + j * dim), 0)
+            << "missing " << j;
     }
 
     // Every other label's vectors survived all three updates untouched.
@@ -5700,6 +5701,162 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
             GenerateVector<TEST_DATA_T>(untouched, dim, other * 10 + j);
             ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(other, untouched), 0)
                 << "label " << other << " vector " << j;
+        }
+    }
+}
+
+// updateMultiValueInPlace must preprocess each new blob the same way any other direct-to-backend
+// write does: the backend assumes already-normalized input for cosine (it doesn't normalize
+// itself), so writing a raw caller blob straight into it - skipping the frontend's
+// `preprocessForStorage` - would store the wrong values and later searches would return wrong
+// distances. Covers both the reused (`overwriteVectorInPlace`) and freshly appended (`addVector`)
+// code paths, since each had its own place to (and initially didn't) preprocess.
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceNormalizesCosine) {
+    size_t dim = 4;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    labelType label = 0;
+    size_t per_label = 2;
+    for (size_t j = 0; j < per_label; j++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, j + 1);
+    }
+    ASSERT_EQ(hnsw_index->getElementIds(label).size(), per_label);
+
+    // Grow to 3: two ids get reused (overwriteVectorInPlace) and one is freshly appended
+    // (addVector) - exercising both places that must preprocess.
+    size_t new_count = 3;
+    TEST_DATA_T grown[3 * dim];
+    for (size_t j = 0; j < new_count; j++) {
+        GenerateVector<TEST_DATA_T>(grown + j * dim, dim, 10 + j);
+    }
+    ASSERT_EQ(tiered_index->updateVectors(label, grown, new_count), VecSimUpdate_OK);
+
+    auto new_ids = hnsw_index->getElementIds(label);
+    ASSERT_EQ(new_ids.size(), new_count);
+    for (size_t j = 0; j < new_count; j++) {
+        TEST_DATA_T expected[dim];
+        memcpy(expected, grown + j * dim, dim * sizeof(TEST_DATA_T));
+        VecSim_Normalize(expected, dim, TypeParam::get_index_type());
+        ASSERT_NO_FATAL_FAILURE(CompareVectors(
+            reinterpret_cast<const TEST_DATA_T *>(hnsw_index->getDataByInternalId(new_ids[j])),
+            expected, dim))
+            << "vector " << j;
+    }
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// setReuseOnUpdate(false) is a kill switch back to the pre-reuse behavior: an overwrite in
+// write-in-place mode deletes the label's old id(s) outright and appends fresh one(s), rather than
+// reusing them in place.
+TYPED_TEST(HNSWTieredIndexTestBasic, reuseOnUpdateToggleDisablesReuse) {
+    size_t dim = 4;
+
+    // Single-value: the overwritten label lands on a brand new id, and the index grows by one
+    // rather than staying the same size.
+    {
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = false};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        VecSim_SetWriteMode(VecSim_WriteInPlace);
+        tiered_index->setReuseOnUpdate(false);
+        ASSERT_FALSE(tiered_index->isReuseOnUpdate());
+
+        size_t n = 10;
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+        ASSERT_EQ(hnsw_index->indexSize(), n);
+
+        labelType label = n / 2;
+        idType id_before = hnsw_index->getElementIds(label).at(0);
+
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, 1000);
+        TEST_DATA_T new_val[dim];
+        GenerateVector<TEST_DATA_T>(new_val, dim, 1000);
+
+        // The delete's own swap-to-last compaction shrinks the index by one, and the fresh append
+        // right after grows it back by one - net unchanged - but the label lands on whatever id
+        // that compaction happened to free up, not the one it had before.
+        ASSERT_EQ(hnsw_index->indexSize(), n);
+        idType id_after = hnsw_index->getElementIds(label).at(0);
+        ASSERT_NE(id_after, id_before);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(label, new_val), 0);
+    }
+
+    // Multi-value: updating a label's vectors deletes every one of its old ids and appends the
+    // same number of fresh ones, rather than reusing any of them - the index still grows by the
+    // full count instead of staying flat.
+    {
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = true};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        VecSim_SetWriteMode(VecSim_WriteInPlace);
+        tiered_index->setReuseOnUpdate(false);
+
+        // Pad with other labels before *and* after the target, so its ids sit in the middle
+        // (not at the tail) - otherwise, with the target as the whole index, removing and
+        // re-adding the same count would coincidentally land back on the very same numbers,
+        // which would prove nothing either way. `after_count` is chosen larger than `per_label`
+        // so the fresh-append range is guaranteed to fall below (never overlap) the original one.
+        size_t before_count = 2;
+        size_t per_label = 3;
+        size_t after_count = 5;
+        for (size_t i = 0; i < before_count; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1000 + i, i);
+        }
+        labelType label = 0;
+        for (size_t j = 0; j < per_label; j++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, j);
+        }
+        for (size_t i = 0; i < after_count; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2000 + i, i);
+        }
+        size_t total = before_count + per_label + after_count;
+        ASSERT_EQ(hnsw_index->indexSize(), total);
+        auto old_ids = hnsw_index->getElementIds(label);
+        ASSERT_EQ(old_ids.size(), per_label);
+
+        TEST_DATA_T replacement[3 * dim];
+        for (size_t j = 0; j < per_label; j++) {
+            GenerateVector<TEST_DATA_T>(replacement + j * dim, dim, 100 + j);
+        }
+        ASSERT_EQ(tiered_index->updateVectors(label, replacement, per_label), VecSimUpdate_OK);
+
+        // None of the old ids survive - the delete's own per-id compaction shrinks the index by
+        // per_label, and the fresh-append loop right after grows it back by the same amount, net
+        // unchanged, but landing on whichever ids that compaction happened to free up (which,
+        // thanks to the padding above, cannot coincide with the original ones).
+        auto new_ids = hnsw_index->getElementIds(label);
+        ASSERT_EQ(new_ids.size(), per_label);
+        for (idType old_id : old_ids) {
+            ASSERT_EQ(std::find(new_ids.begin(), new_ids.end(), old_id), new_ids.end());
+        }
+        ASSERT_EQ(hnsw_index->indexSize(), total);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+        for (size_t j = 0; j < per_label; j++) {
+            ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, replacement + j * dim), 0);
         }
     }
 }
