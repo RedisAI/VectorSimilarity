@@ -285,7 +285,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     //  TieredSVS_BatchIterator //
     ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    class TieredSVS_BatchIterator : public VecSimBatchIterator {
+    class TieredSVS_BatchIterator : public TieredIndex_BatchIterator {
         // Defining spacial values for the svs_iterator field, to indicate if the iterator is
         // uninitialized or depleted when we don't have a valid iterator.
         static constexpr VecSimBatchIterator *depleted() {
@@ -298,53 +298,8 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         const Index *index;
         VecSimQueryParams *queryParams;
 
-        VecSimQueryResultContainer flat_results;
-        VecSimQueryResultContainer svs_results;
-
         VecSimBatchIterator *flat_iterator;
         VecSimBatchIterator *svs_iterator;
-
-        // IDs of all the results returned so far, so that neither tier can yield one twice.
-        // Both directions have to be covered: nothing freezes the backend for the iterator's
-        // lifetime, so an insert job can publish a label into SVS and only then drop it from the
-        // flat buffer, while the flat iterator still holds it in the snapshot it computed on its
-        // first call. Either tier can therefore surface a label first.
-        vecsim_stl::unordered_set<labelType> returned_results_set;
-
-        VecSimQueryReply *compute_current_batch(size_t n_res) {
-            // Merge results
-            // This call will update `svs_res` and `bf_res` to point to the end of the merged
-            // results.
-            auto batch_res = new VecSimQueryReply(allocator);
-            // VecSim and SVS distance computation is implemented differently, so we always have to
-            // merge results with set.
-            auto [from_svs, from_flat] =
-                merge_results<true>(batch_res->results, svs_results, flat_results, n_res);
-
-            for (size_t i = 0; i < batch_res->results.size(); ++i) {
-                this->returned_results_set.insert(batch_res->results[i].id);
-            }
-
-            // Update results
-            flat_results.erase(flat_results.begin(), flat_results.begin() + from_flat);
-            svs_results.erase(svs_results.begin(), svs_results.begin() + from_svs);
-
-            // Either list may still hold a label just returned from the other one (with a different
-            // score), so drop those before the next batch.
-            filter_irrelevant_results(this->flat_results);
-            filter_irrelevant_results(this->svs_results);
-
-            // Return current batch
-            return batch_res;
-        }
-
-        void filter_irrelevant_results(VecSimQueryResultContainer &results) {
-            // Filter out results that were already returned.
-            const auto it = std::remove_if(results.begin(), results.end(), [this](const auto &r) {
-                return returned_results_set.count(r.id) != 0;
-            });
-            results.erase(it, results.end());
-        }
 
         void acquire_svs_iterator() {
             assert(svs_iterator == nullptr);
@@ -376,11 +331,11 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             // own copies: flat_iterator copy is created during TieredSVS_BatchIterator
             // construction When TieredSVS_BatchIterator::getNextResults() is called and
             // svs_iterator is not initialized, it retrieves the blob from flat_iterator
-            : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
-                                  std::move(allocator)),
-              index(index), flat_results(this->allocator), svs_results(this->allocator),
+            : TieredIndex_BatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
+                                        std::move(allocator)),
+              index(index),
               flat_iterator(index->frontendIndex->newBatchIterator(query_vector, queryParams)),
-              svs_iterator(nullptr), returned_results_set(this->allocator) {
+              svs_iterator(nullptr) {
             if (queryParams) {
                 this->queryParams =
                     (VecSimQueryParams *)this->allocator->allocate(sizeof(VecSimQueryParams));
@@ -420,7 +375,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                 acquire_svs_iterator();
                 auto cur_svs_results = svs_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
                 svs_code = cur_svs_results->code;
-                svs_results.swap(cur_svs_results->results);
+                backend_results.swap(cur_svs_results->results);
                 VecSimQueryReply_Free(cur_svs_results);
                 handle_svs_depletion();
             } else {
@@ -435,20 +390,20 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                     filter_irrelevant_results(this->flat_results);
                 }
 
-                while (svs_results.size() < n_res && svs_iterator != depleted() &&
+                while (backend_results.size() < n_res && svs_iterator != depleted() &&
                        svs_code == VecSim_OK) {
-                    auto tail =
-                        svs_iterator->getNextResults(n_res - svs_results.size(), BY_SCORE_THEN_ID);
+                    auto tail = svs_iterator->getNextResults(n_res - backend_results.size(),
+                                                             BY_SCORE_THEN_ID);
                     svs_code =
                         tail->code; // Set the svs_results code to the last `getNextResults` code.
                     // New batch may contain better results than the previous batch, so we need to
                     // merge. We don't expect duplications (hence the <false>), as the iterator
                     // guarantees that no result is returned twice.
                     VecSimQueryResultContainer cur_svs_results(this->allocator);
-                    merge_results<false>(cur_svs_results, svs_results, tail->results, n_res);
+                    merge_results<false>(cur_svs_results, backend_results, tail->results, n_res);
                     VecSimQueryReply_Free(tail);
-                    svs_results.swap(cur_svs_results);
-                    filter_irrelevant_results(svs_results);
+                    backend_results.swap(cur_svs_results);
+                    filter_irrelevant_results(backend_results);
                     handle_svs_depletion();
                 }
             }
@@ -458,7 +413,8 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             }
 
             VecSimQueryReply *batch;
-            batch = compute_current_batch(n_res);
+            // In concurent execution we can observe a vector duplication in backend and frontend
+            batch = compute_current_batch<true>(n_res);
 
             if (order == BY_ID) {
                 sort_results_by_id(batch);
@@ -476,7 +432,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         // The next call to `getNextResults` will return an empty batch, and then the iterators will
         // correctly report that they are depleted.
         bool isDepleted() override {
-            return flat_results.empty() && flat_iterator->isDepleted() && svs_results.empty() &&
+            return flat_results.empty() && flat_iterator->isDepleted() && backend_results.empty() &&
                    svs_iterator == depleted();
         }
 
@@ -486,7 +442,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
             flat_iterator->reset();
             svs_iterator = nullptr;
             flat_results.clear();
-            svs_results.clear();
+            backend_results.clear();
             returned_results_set.clear();
         }
     };

@@ -218,34 +218,14 @@ protected:
     }
 
 public:
-    class TieredHNSW_BatchIterator : public VecSimBatchIterator {
+    class TieredHNSW_BatchIterator : public TieredIndex_BatchIterator {
     private:
         const TieredHNSWIndex<DataType, DistType> *index;
         std::shared_lock<std::shared_mutex> backend_index_lock;
         VecSimQueryParams *queryParams;
 
-        VecSimQueryResultContainer flat_results;
-        VecSimQueryResultContainer hnsw_results;
-
         VecSimBatchIterator *flat_iterator;
         VecSimBatchIterator *hnsw_iterator;
-
-        // On single value indices, this set holds the IDs of the results that were returned from
-        // the flat buffer.
-        // On multi value indices, this set holds the IDs of all the results that were returned.
-        // The difference between the two cases is that on multi value indices, the same ID can
-        // appear in both indexes and results with different scores, and therefore we can't tell in
-        // advance when we expect a possibility of a duplicate.
-        // On single value indices, a duplicate may appear at the same batch (and we will handle it
-        // when merging the results) Or it may appear in a different batches, first from the flat
-        // buffer and then from the HNSW, in the cases where a better result if found later in HNSW
-        // because of the approximate nature of the algorithm.
-        vecsim_stl::unordered_set<labelType> returned_results_set;
-
-    private:
-        template <bool isMultiValue>
-        inline VecSimQueryReply *compute_current_batch(size_t n_res);
-        inline void filter_irrelevant_results(VecSimQueryResultContainer &);
 
     public:
         TieredHNSW_BatchIterator(const void *query_vector,
@@ -1157,11 +1137,10 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
     // copies: flat_iterator copy is created during TieredHNSW_BatchIterator construction When
     // TieredHNSW_BatchIterator::getNextResults() is called and hnsw_iterator is not initialized, it
     // retrieves the blob from flat_iterator
-    : VecSimBatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
-                          std::move(allocator)),
+    : TieredIndex_BatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
+                                std::move(allocator)),
       index(index), backend_index_lock(index->mainIndexGuard, std::defer_lock),
-      flat_results(this->allocator), hnsw_results(this->allocator), flat_iterator(UNINITIALIZED),
-      hnsw_iterator(UNINITIALIZED), returned_results_set(this->allocator) {
+      flat_iterator(UNINITIALIZED), hnsw_iterator(UNINITIALIZED) {
     {
         std::shared_lock<std::shared_mutex> flat_index_lock(this->index->flatIndexGuard);
         this->flat_iterator =
@@ -1218,7 +1197,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             this->flat_iterator->getQueryBlob(), queryParams);
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
         hnsw_code = cur_hnsw_results->code;
-        this->hnsw_results.swap(cur_hnsw_results->results);
+        this->backend_results.swap(cur_hnsw_results->results);
         VecSimQueryReply_Free(cur_hnsw_results);
         if (this->hnsw_iterator->isDepleted()) {
             delete this->hnsw_iterator;
@@ -1246,19 +1225,19 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             }
         }
 
-        while (this->hnsw_results.size() < n_res && this->hnsw_iterator != DEPLETED &&
+        while (this->backend_results.size() < n_res && this->hnsw_iterator != DEPLETED &&
                hnsw_code == VecSim_OK) {
-            auto tail = this->hnsw_iterator->getNextResults(n_res - this->hnsw_results.size(),
+            auto tail = this->hnsw_iterator->getNextResults(n_res - this->backend_results.size(),
                                                             BY_SCORE_THEN_ID);
             hnsw_code = tail->code; // Set the hnsw_results code to the last `getNextResults` code.
             // New batch may contain better results than the previous batch, so we need to merge.
             // We don't expect duplications (hence the <false>), as the iterator guarantees that
             // no result is returned twice.
             VecSimQueryResultContainer cur_hnsw_results(this->allocator);
-            merge_results<false>(cur_hnsw_results, this->hnsw_results, tail->results, n_res);
+            merge_results<false>(cur_hnsw_results, this->backend_results, tail->results, n_res);
             VecSimQueryReply_Free(tail);
-            this->hnsw_results.swap(cur_hnsw_results);
-            filter_irrelevant_results(this->hnsw_results);
+            this->backend_results.swap(cur_hnsw_results);
+            filter_irrelevant_results(this->backend_results);
             if (this->hnsw_iterator->isDepleted()) {
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
@@ -1295,7 +1274,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
 template <typename DataType, typename DistType>
 bool TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::isDepleted() {
     return this->flat_results.empty() && this->flat_iterator->isDepleted() &&
-           this->hnsw_results.empty() && this->hnsw_iterator == DEPLETED;
+           this->backend_results.empty() && this->hnsw_iterator == DEPLETED;
 }
 
 template <typename DataType, typename DistType>
@@ -1308,83 +1287,8 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
     this->flat_iterator->reset();
     this->hnsw_iterator = UNINITIALIZED;
     this->flat_results.clear();
-    this->hnsw_results.clear();
+    this->backend_results.clear();
     returned_results_set.clear();
-}
-
-/****************** Helper Functions **************/
-
-template <typename DataType, typename DistType>
-template <bool isMultiValue>
-VecSimQueryReply *
-TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::compute_current_batch(size_t n_res) {
-    // Merge results
-    // This call will update `hnsw_res` and `bf_res` to point to the end of the merged results.
-    auto batch_res = new VecSimQueryReply(this->allocator);
-    std::pair<size_t, size_t> p;
-    if (isMultiValue) {
-        p = merge_results<true>(batch_res->results, this->hnsw_results, this->flat_results, n_res);
-    } else {
-        p = merge_results<false>(batch_res->results, this->hnsw_results, this->flat_results, n_res);
-    }
-    auto [from_hnsw, from_flat] = p;
-
-    if (!isMultiValue) {
-        // If we're on a single-value index, update the set of results returned from the FLAT index
-        // before popping them, to prevent them to be returned from the HNSW index in later batches.
-        for (size_t i = 0; i < from_flat; ++i) {
-            this->returned_results_set.insert(this->flat_results[i].id);
-        }
-    } else {
-        // If we're on a multi-value index, update the set of results returned (from `batch_res`)
-        for (size_t i = 0; i < batch_res->results.size(); ++i) {
-            this->returned_results_set.insert(batch_res->results[i].id);
-        }
-    }
-
-    // Update results
-    this->flat_results.erase(this->flat_results.begin(), this->flat_results.begin() + from_flat);
-    this->hnsw_results.erase(this->hnsw_results.begin(), this->hnsw_results.begin() + from_hnsw);
-
-    // clean up the results
-    // On multi-value indexes, one (or both) results lists may contain results that are already
-    // returned form the other list (with a different score). We need to filter them out.
-    if (isMultiValue) {
-        filter_irrelevant_results(this->flat_results);
-        filter_irrelevant_results(this->hnsw_results);
-    }
-
-    // Return current batch
-    return batch_res;
-}
-
-template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::filter_irrelevant_results(
-    VecSimQueryResultContainer &results) {
-    // Filter out results that were already returned.
-    auto it = results.begin();
-    const auto end = results.end();
-    // Skip results that not returned yet
-    while (it != end && this->returned_results_set.count(it->id) == 0) {
-        ++it;
-    }
-    // If none of the results were returned, return
-    if (it == end) {
-        return;
-    }
-    // Mark the current result as the first result to be filtered
-    auto cur_end = it;
-    ++it;
-    // "Append" all results that were not returned from the FLAT index
-    while (it != end) {
-        if (this->returned_results_set.count(it->id) == 0) {
-            *cur_end = *it;
-            ++cur_end;
-        }
-        ++it;
-    }
-    // Update number of results (pop the tail)
-    results.resize(cur_end - results.begin());
 }
 
 template <typename DataType, typename DistType>
