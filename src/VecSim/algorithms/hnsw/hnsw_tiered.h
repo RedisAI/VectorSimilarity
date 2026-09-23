@@ -1238,7 +1238,13 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
 
     // From here on the backend is always multi-value - single-value with n > 1 already returned
     // above.
-    if (this->getWriteMode() == VecSim_WriteInPlace && this->reuseIdOnUpdate) {
+    // During SQ accumulation, training writes must stay in FLAT regardless of write mode - the
+    // in-place path writes straight into the (still untrained) HNSW backend and bypasses the
+    // running-sum bookkeeping that `addVector`/`deleteVector` maintain for it, so it is skipped
+    // here in favor of the generic delete-then-add path below, which routes through both of those
+    // and so stays accumulation-safe.
+    if (this->getWriteMode() == VecSim_WriteInPlace && this->reuseIdOnUpdate &&
+        !sqAccumulationState) {
         this->updateMultiValueInPlace(label, new_blobs, n);
         return VecSimUpdate_OK;
     }

@@ -7577,6 +7577,47 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, updateVectorsDuringAccumulation) {
     }
 }
 
+// The in-place reuse fast path (`updateMultiValueInPlace`) writes straight into the HNSW backend
+// and skips the running-sum/insert-job bookkeeping that `addVector`/`deleteVector` maintain during
+// accumulation - unlike them, it never checks `sqAccumulationState`. It must not run while
+// accumulating, even when write mode is in-place; the label has to fall back to the ordinary
+// delete-then-add path below it, which does route through both.
+TYPED_TEST(HNSWTieredIndexTestSQ8Multi, updateVectorsMultiInPlaceDuringAccumulationStaysInFlat) {
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+
+    labelType label = 7;
+    TEST_DATA_T vec1[dim], vec2[dim];
+    this->GenerateVectorData(vec1, dim, 1.0f);
+    this->GenerateVectorData(vec2, dim, 2.0f);
+    VecSimIndex_AddVector(tiered_index, vec1, label);
+    VecSimIndex_AddVector(tiered_index, vec2, label);
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 2);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
+
+    TEST_DATA_T replacement[2 * dim];
+    this->GenerateVectorData(replacement, dim, 10.0f);
+    this->GenerateVectorData(replacement + dim, dim, 20.0f);
+    ASSERT_EQ(tiered_index->updateVectors(label, replacement, 2), VecSimUpdate_OK);
+
+    // Still accumulating, and still entirely in FLAT - the backend must never have been touched.
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 2);
+    ASSERT_EQ(this->getBackendIndex(tiered_index)->indexSize(), 0);
+
+    // The running sum reflects only the replacement vectors - the originals were subtracted.
+    for (size_t d = 0; d < dim; d++) {
+        float expected = this->ToFloat(replacement[d]) + this->ToFloat(replacement[dim + d]);
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], expected, 1e-2f);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteThenReinsertDuringAccumulation) {
     // Delete and re-insert a vector during accumulation.
     size_t dim = 4;
