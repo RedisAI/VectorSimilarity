@@ -16,6 +16,9 @@
 #include <thread>
 
 #include <chrono>
+#ifdef __linux__
+#include <filesystem>
+#endif
 
 #include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/algorithms/svs/svs_utils.h"
@@ -53,8 +56,10 @@ protected:
         VecSimSVSThreadPool::resize(1);
     }
     void TearDown() override {
-        // Reset the shared singleton pool to size 1 so tests don't leak state.
+        // Reset the shared singleton pool to size 1 so tests don't leak state, and
+        // join any threads parked above the logical limit by the shrink.
         VecSimSVSThreadPool::resize(1);
+        VecSimSVSThreadPoolImpl::instance()->reclaimExcessThreads();
         VecSimIndexInterface::logCallback = saved_callback_;
     }
 
@@ -455,8 +460,8 @@ TEST_F(SVSThreadPoolTest, ConcurrentRentalFromTwoIndexes) {
 // Test 8: All threads occupied — graceful degradation
 // When all pool threads are rented by wrapper A, wrapper B's parallel_for
 // cannot rent any workers. In debug builds, rent() asserts. In release
-// builds, parallel_for uses rented.count() (0 workers) and runs only
-// partition 0 on the calling thread.
+// builds, the degraded-execution path runs ALL partitions on the calling
+// thread — a rent shortfall reduces parallelism, never the amount of work.
 //
 // NOTE: This should never happen in production. RediSearch's reserve job
 // mechanism guarantees that the number of concurrent renters never exceeds
@@ -496,11 +501,12 @@ TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
     wrapperB.setParallelism(2);
 
 #ifdef NDEBUG
-    // Release: graceful degradation — rent() returns 0 workers, parallel_for
-    // runs only partition 0 on the calling thread. Work is silently dropped.
+    // Release: graceful degradation — rent() returns 0 workers, and the
+    // degraded-execution path runs both partitions on the calling thread.
+    // Partitions are never dropped.
     std::atomic_int resultB{0};
     wrapperB.parallel_for([&](size_t) { resultB++; }, 2);
-    ASSERT_EQ(resultB, 1); // only partition 0 ran
+    ASSERT_EQ(resultB, 2); // all partitions ran (serially, on the caller)
 #else
     // Debug: rent() asserts because it can't fulfill the request.
     ASSERT_DEATH(wrapperB.parallel_for([&](size_t) {}, 2),
@@ -511,6 +517,167 @@ TEST_F(SVSThreadPoolTest, AllThreadsOccupied) {
     hold.count_down();
     t.join();
     ASSERT_EQ(resultA, 4);
+}
+
+#ifdef __linux__
+// Count the OS threads of this process. Unlike the pool's allocation-size
+// accounting (which only tracks slot objects, not OS stacks), this observes
+// actual thread creation, which is what lazy spawn is about.
+static size_t osThreadCount() {
+    size_t count = 0;
+    for ([[maybe_unused]] const auto &entry :
+         std::filesystem::directory_iterator("/proc/self/task")) {
+        ++count;
+    }
+    return count;
+}
+
+// pthread_join returning does NOT guarantee the joined thread's /proc/self/task
+// entry is gone: the kernel wakes the joiner before it releases the task entry,
+// so a just-joined thread can linger in the count briefly (observed under
+// sanitizer slowdown in CI). Assertions about counts reached via joins must
+// poll. Thread *creation* is synchronous (the entry exists when pthread_create
+// returns), so upper-bound assertions after spawns can stay exact.
+static bool waitForOsThreadCount(size_t expected) {
+    auto deadline = std::chrono::steady_clock::now() + kTestTimeout;
+    while (osThreadCount() != expected) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+// Baseline capture after a reclaim has the same exit-lag problem: a lingering
+// task entry would inflate the baseline and make later equality checks fail
+// low. Poll until the count holds steady for a while before trusting it.
+static size_t settledOsThreadCount() {
+    auto deadline = std::chrono::steady_clock::now() + kTestTimeout;
+    size_t last = osThreadCount();
+    auto stable_since = std::chrono::steady_clock::now();
+    while (std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        size_t cur = osThreadCount();
+        if (cur != last) {
+            last = cur;
+            stable_since = std::chrono::steady_clock::now();
+        } else if (std::chrono::steady_clock::now() - stable_since >=
+                   std::chrono::milliseconds(50)) {
+            break;
+        }
+    }
+    return last;
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: Lazy spawn — resize allocates slots without creating OS threads;
+// threads are spawned on first rent, reused on later rents, and shrink joins
+// only the threads that were actually spawned (MOD-16610).
+// ---------------------------------------------------------------------------
+TEST_F(SVSThreadPoolTest, LazySpawnOnFirstRent) {
+    // Reach a steady state first: join any threads parked by earlier tests, so
+    // the baseline is stable.
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    pool->reclaimExcessThreads();
+    const size_t baseline = settledOsThreadCount();
+
+    // Growing the pool must not spawn any OS thread — this is the main-thread
+    // cost CONFIG SET WORKERS pays.
+    VecSimSVSThreadPool::resize(9); // 8 worker slots
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 9);
+    ASSERT_EQ(osThreadCount(), baseline);
+
+    // First parallel_for with 4 partitions rents 3 slots and spawns exactly
+    // 3 threads — the 5 never-rented slots stay unspawned.
+    std::atomic_int counter{0};
+    pool->parallel_for([&](size_t) { counter++; }, 4);
+    ASSERT_EQ(counter, 4);
+    ASSERT_EQ(osThreadCount(), baseline + 3);
+
+    // Second run at the same width reuses the spawned threads (rent() scans
+    // slots in order, so the same 3 slots are picked).
+    pool->parallel_for([&](size_t) { counter++; }, 4);
+    ASSERT_EQ(counter, 8);
+    ASSERT_EQ(osThreadCount(), baseline + 3);
+
+    // Shrink to 1 is logical: no slot is destroyed and no thread is joined on
+    // the resize caller (that would stall the Redis main thread). The 3 spawned
+    // threads park above the logical limit.
+    VecSimSVSThreadPool::resize(1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1);
+    ASSERT_EQ(osThreadCount(), baseline + 3); // parked, not yet joined
+
+    // Reclamation joins them (in production this runs on the worker-executed
+    // job completion path; the integration test lives in test_svs_tiered.cpp).
+    pool->reclaimExcessThreads();
+    ASSERT_TRUE(waitForOsThreadCount(baseline))
+        << "reclaimed threads still in /proc/self/task: " << osThreadCount() << " vs baseline "
+        << baseline;
+}
+
+// ---------------------------------------------------------------------------
+// Test 11: Warm reuse across shrink/grow — threads parked by a logical shrink
+// are reused (not respawned) if the pool grows again before any reclaim pass.
+// Also: a deferred logical shrink applied at the endScheduledJob zero point
+// joins nothing (endScheduledJob is counter-only; teardown paths run on the
+// Redis main thread).
+// ---------------------------------------------------------------------------
+TEST_F(SVSThreadPoolTest, LogicalShrinkParksAndReusesThreads) {
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+    pool->reclaimExcessThreads();
+    const size_t baseline = settledOsThreadCount();
+
+    VecSimSVSThreadPool::resize(4); // 3 worker slots
+    std::atomic_int counter{0};
+    pool->parallel_for([&](size_t) { counter++; }, 4);
+    ASSERT_EQ(counter, 4);
+    ASSERT_EQ(osThreadCount(), baseline + 3);
+
+    // Deferred logical shrink: recorded while a scheduled job is pending,
+    // applied at the zero point — and applying it must NOT join any thread.
+    size_t snapshot = pool->beginScheduledJob();
+    ASSERT_EQ(snapshot, 4);
+    VecSimSVSThreadPool::resize(1);
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 4); // deferred while pending
+    pool->endScheduledJob();
+    ASSERT_EQ(VecSimSVSThreadPool::poolSize(), 1); // applied...
+    ASSERT_EQ(osThreadCount(), baseline + 3);      // ...but nothing joined
+
+    // Regrow before any reclaim pass: the parked threads are reused warm —
+    // the next parallel_for spawns nothing new.
+    VecSimSVSThreadPool::resize(4);
+    pool->parallel_for([&](size_t) { counter++; }, 4);
+    ASSERT_EQ(counter, 8);
+    ASSERT_EQ(osThreadCount(), baseline + 3);
+}
+#endif // __linux__
+
+// ---------------------------------------------------------------------------
+// Test 10: A worker that crashes (its partition throws) is retired to the
+// unspawned state and the slot lazily respawns a healthy thread on the next
+// rent — the pool stays fully usable after a partition failure.
+// ---------------------------------------------------------------------------
+TEST_F(SVSThreadPoolTest, CrashedWorkerRetiresAndRespawns) {
+    VecSimSVSThreadPool::resize(3);
+    auto pool = VecSimSVSThreadPoolImpl::instance();
+
+    // Partition 1 throws inside a worker thread; parallel_for collects the
+    // error and rethrows a combined ThreadingException.
+    ASSERT_THROW(pool->parallel_for(
+                     [](size_t tid) {
+                         if (tid == 1) {
+                             throw std::runtime_error("partition failure");
+                         }
+                     },
+                     3),
+                 svs::threads::ThreadingException);
+
+    // The crashed worker was retired (joined, slot back to unspawned). The
+    // next parallel_for respawns it lazily and all partitions run.
+    std::atomic_int counter{0};
+    pool->parallel_for([&](size_t) { counter++; }, 3);
+    ASSERT_EQ(counter, 3);
 }
 
 #endif // HAVE_SVS
