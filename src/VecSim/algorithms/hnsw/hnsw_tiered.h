@@ -769,11 +769,7 @@ int TieredHNSWIndex<DataType, DistType>::addVectorDuringAccumulation(const void 
         if (!job) {
             job = new (this->allocator)
                 HNSWInsertJob(this->allocator, label, id, executeInsertJobWrapper, this);
-            auto [it, inserted] =
-                this->labelToInsertJobs.try_emplace(label, 1, job, this->allocator);
-            if (!inserted) {
-                it->second.push_back(job);
-            }
+            this->registerInsertJob(label, job);
         }
         const size_t count = this->frontendIndex->indexSize();
         const bool should_finalize = count >= sqAccumulationState->normalizationSetSize;
@@ -916,16 +912,10 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
-        // Overwrite the vector and invalidate its only pending job (since we are not in MULTI).
-        auto *old_job = this->labelToInsertJobs.at(label).at(0);
-        old_job->id = this->setAndSaveInvalidJob(old_job);
-        this->labelToInsertJobs.erase(label);
         ret = 0;
         // We are going to update the internal id that currently holds the vector associated with
         // the given label.
-        new_flat_id =
-            dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
-                ->getIdOfLabel(label);
+        new_flat_id = this->invalidatePendingInsertJob(label);
         // If we are adding a new element (rather than updating an exiting one) we may need to
         // increase index capacity.
     }
@@ -934,13 +924,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
     auto *new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
-    // Construct the job vector only for a new label; multi-value labels append to the existing one.
-    auto [it, inserted] =
-        this->labelToInsertJobs.try_emplace(label, 1, new_insert_job, this->allocator);
-    if (!inserted) {
-        assert(this->backendIndex->isMultiValue());
-        it->second.push_back(new_insert_job);
-    }
+    this->registerInsertJob(label, new_insert_job);
     this->flatIndexGuard.unlock();
 
     // Here, a worker might ingest the previous vector that was stored under "label"

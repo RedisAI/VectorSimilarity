@@ -11,6 +11,7 @@
 
 #include "vec_sim_index.h"
 #include "algorithms/brute_force/brute_force.h"
+#include "algorithms/brute_force/brute_force_single.h"
 #include "VecSim/batch_iterator.h"
 #include "VecSim/tombstone_interface.h"
 #include "VecSim/utils/query_result_utils.h"
@@ -276,6 +277,26 @@ public:
         }
         if (jobs.empty()) {
             this->labelToInsertJobs.erase(it);
+        }
+    }
+
+    // A caller must hold flatIndexGuard.
+    idType invalidatePendingInsertJob(labelType label) {
+        auto *old_job = this->labelToInsertJobs.at(label).at(0);
+        old_job->id = this->setAndSaveInvalidJob(old_job);
+        this->labelToInsertJobs.erase(label);
+        return dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
+            ->getIdOfLabel(label);
+    }
+
+    // A caller must hold flatIndexGuard.
+    void registerInsertJob(labelType label, TieredInsertJob *job) {
+        // Construct the job vector only for a new label; multi-value labels append to the existing
+        // one.
+        auto [it, inserted] = this->labelToInsertJobs.try_emplace(label, 1, job, this->allocator);
+        if (!inserted) {
+            assert(this->backendIndex->isMultiValue());
+            it->second.push_back(job);
         }
     }
 
