@@ -293,6 +293,7 @@ public:
     void unlockIndexDataGuard() const;
     void lockSharedIndexDataGuard() const;
     void unlockSharedIndexDataGuard() const;
+    [[nodiscard]] std::unique_lock<std::shared_mutex> acquireIndexDataGuard() const;
     std::shared_lock<std::shared_mutex> acquireSharedIndexDataGuard() const;
     void lockNodeLinks(idType node_id) const;
     void unlockNodeLinks(idType node_id) const;
@@ -373,8 +374,7 @@ public:
 #ifdef BUILD_TESTS
     void fitMemory() override {
         if (maxElements > 0) {
-            idToMetaData.shrink_to_fit();
-            resizeLabelLookup(idToMetaData.size());
+            resizeIndexCommon(maxElements);
         }
     }
 
@@ -624,6 +624,11 @@ void HNSWIndex<DataType, DistType>::lockSharedIndexDataGuard() const {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::unlockSharedIndexDataGuard() const {
     indexDataGuard.unlock_shared();
+}
+
+template <typename DataType, typename DistType>
+std::unique_lock<std::shared_mutex> HNSWIndex<DataType, DistType>::acquireIndexDataGuard() const {
+    return std::unique_lock<std::shared_mutex>(indexDataGuard);
 }
 
 template <typename DataType, typename DistType>
@@ -1438,15 +1443,25 @@ void HNSWIndex<DataType, DistType>::resizeIndexCommon(size_t new_max_elements) {
     assert(new_max_elements % this->blockSize == 0 &&
            "new_max_elements must be a multiple of blockSize");
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING, "Resizing HNSW index from %zu to %zu",
-              idToMetaData.capacity(), new_max_elements);
-    resizeLabelLookup(new_max_elements);
-    visitedNodesHandlerPool.resize(new_max_elements);
-    elementLocks.resize(new_max_elements);
-    elementLocks.shrink_to_fit();
-    assert(idToMetaData.capacity() == idToMetaData.size());
-    idToMetaData.resize(new_max_elements);
-    idToMetaData.shrink_to_fit();
-    assert(idToMetaData.capacity() == idToMetaData.size());
+              idToMetaData.size(), new_max_elements);
+    if (new_max_elements > idToMetaData.size()) {
+        resizeLabelLookup(new_max_elements);
+        visitedNodesHandlerPool.ensureCapacity(new_max_elements);
+        // Explicit reserve also lets an allocation-failure retry request only the required size.
+        elementLocks.reserve(new_max_elements);
+        elementLocks.resize(new_max_elements);
+        idToMetaData.reserve(new_max_elements);
+        // Publish the usable auxiliary bound only after every supporting allocation succeeds.
+        idToMetaData.resize(new_max_elements);
+    } else {
+        // Lower the usable bound before any potentially failing reclamation.
+        idToMetaData.resize(new_max_elements);
+        elementLocks.resize(new_max_elements);
+        idToMetaData.shrink_to_fit();
+        elementLocks.shrink_to_fit();
+        resizeLabelLookup(new_max_elements);
+        visitedNodesHandlerPool.resize(new_max_elements);
+    }
 }
 
 template <typename DataType, typename DistType>
@@ -1454,19 +1469,36 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
     assert(this->maxElements % this->blockSize == 0);
     assert(this->maxElements == indexSize());
     assert(graphDataBlocks.size() == this->maxElements / this->blockSize);
-    assert(idToMetaData.capacity() == maxElements ||
-           idToMetaData.capacity() == maxElements + this->blockSize);
+    assert(idToMetaData.size() >= maxElements);
+
+    const size_t capacity_limit = (size_t(UINT_MAX) / this->blockSize) * this->blockSize;
+    if (maxElements > capacity_limit || this->blockSize > capacity_limit - maxElements) {
+        throw std::length_error("HNSW capacity exceeds visited-node capacity limit");
+    }
 
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
               "Updating HNSW index capacity from %zu to %zu", maxElements,
               maxElements + this->blockSize);
-    maxElements += this->blockSize;
-
-    graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
-
-    if (idToMetaData.capacity() == indexSize()) {
-        resizeIndexCommon(maxElements);
+    const size_t new_max_elements = maxElements + this->blockSize;
+    if (idToMetaData.size() < new_max_elements) {
+        const size_t old_capacity = idToMetaData.size();
+        const size_t doubled_capacity =
+            old_capacity <= capacity_limit / 2 ? old_capacity * 2 : capacity_limit;
+        const size_t target_capacity = std::max(new_max_elements, doubled_capacity);
+        try {
+            resizeIndexCommon(target_capacity);
+        } catch (const std::bad_alloc &) {
+            if (target_capacity == new_max_elements) {
+                throw;
+            }
+            resizeIndexCommon(new_max_elements);
+        }
     }
+
+    // Publish the graph capacity only after the supporting allocations succeed.
+    graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
+    maxElements = new_max_elements;
+    assert(idToMetaData.size() >= maxElements);
 }
 
 template <typename DataType, typename DistType>
@@ -1480,17 +1512,17 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
                   maxElements - this->blockSize);
         graphDataBlocks.pop_back();
         assert(graphDataBlocks.size() == indexSize() / this->blockSize);
-
-        // assuming idToMetaData reflects the capacity of the heavy reallocation containers.
-        if (indexSize() == 0) {
-            resizeIndexCommon(0);
-        } else if (idToMetaData.capacity() >= (indexSize() + 2 * this->blockSize)) {
-            assert(this->maxElements + this->blockSize == idToMetaData.capacity());
-            resizeIndexCommon(idToMetaData.capacity() - this->blockSize);
-        }
-
-        // Take the lower bound into account.
         maxElements -= this->blockSize;
+
+        if (indexSize() <= idToMetaData.size() / 4) {
+            try {
+                // Keep headroom so alternating insertions and deletions do not repeatedly resize.
+                resizeIndexCommon(2 * indexSize());
+            } catch (const std::bad_alloc &) {
+                // Reclamation is optional after the deletion and graph-block removal succeeded.
+            }
+        }
+        assert(idToMetaData.size() >= maxElements);
     }
 }
 
@@ -2051,10 +2083,11 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeVector(const void *vector
                                                               const labelType label) {
     HNSWAddVectorState state{};
 
-    this->lockIndexDataGuard();
+    std::unique_lock<std::shared_mutex> lock(indexDataGuard);
     state = storeNewElement(label, vector_data);
-    if (state.currMaxLevel >= state.elementMaxLevel) {
-        this->unlockIndexDataGuard();
+    if (state.currMaxLevel < state.elementMaxLevel) {
+        // The caller keeps the guard through the new entry point's graph insertion.
+        lock.release();
     }
 
     return state;
@@ -2084,12 +2117,11 @@ void HNSWIndex<DataType, DistType>::appendVector(const void *vector_data, const 
     ProcessedBlobs processedBlobs = this->preprocess(vector_data);
     HNSWAddVectorState state = this->storeVector(processedBlobs.getStorageBlob(), label);
 
-    this->indexVector(processedBlobs.getQueryBlob(), label, state);
-
+    std::unique_lock<std::shared_mutex> lock;
     if (state.currMaxLevel < state.elementMaxLevel) {
-        // No external auxiliaryCtx, so it's this function responsibility to release the lock.
-        this->unlockIndexDataGuard();
+        lock = std::unique_lock<std::shared_mutex>(indexDataGuard, std::adopt_lock);
     }
+    this->indexVector(processedBlobs.getQueryBlob(), label, state);
 }
 
 template <typename DataType, typename DistType>

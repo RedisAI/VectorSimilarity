@@ -7,6 +7,9 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 #include <cassert>
+#include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include "visited_nodes_handler.h"
 
 VisitedNodesHandler::VisitedNodesHandler(unsigned int cap,
@@ -18,15 +21,41 @@ VisitedNodesHandler::VisitedNodesHandler(unsigned int cap,
 }
 
 void VisitedNodesHandler::reset() {
-    memset(elements_tags, 0, sizeof(tag_t) * num_elements);
+    if (num_elements != 0) {
+        memset(elements_tags, 0, sizeof(tag_t) * num_elements);
+    }
     cur_tag = 0;
 }
 
 void VisitedNodesHandler::resize(size_t new_size) {
-    this->num_elements = new_size;
-    this->elements_tags = reinterpret_cast<tag_t *>(
-        allocator->reallocate(this->elements_tags, sizeof(tag_t) * new_size));
+    if (new_size > std::numeric_limits<unsigned int>::max()) {
+        throw std::length_error("Visited-node capacity exceeds unsigned int range");
+    }
+    if (new_size == num_elements) {
+        reset();
+        return;
+    }
+    if (new_size == 0) {
+        allocator->free_allocation(elements_tags);
+        elements_tags = nullptr;
+        num_elements = 0;
+        cur_tag = 0;
+        return;
+    }
+    auto *new_tags =
+        reinterpret_cast<tag_t *>(allocator->reallocate(elements_tags, sizeof(tag_t) * new_size));
+    if (!new_tags) {
+        throw std::bad_alloc();
+    }
+    elements_tags = new_tags;
+    num_elements = new_size;
     this->reset();
+}
+
+void VisitedNodesHandler::ensureCapacity(size_t new_size) {
+    if (new_size > num_elements) {
+        resize(new_size);
+    }
 }
 
 tag_t VisitedNodesHandler::getFreshTag() {
@@ -67,12 +96,30 @@ void VisitedNodesHandlerPool::returnVisitedNodesHandlerToPool(VisitedNodesHandle
 }
 
 void VisitedNodesHandlerPool::resize(size_t new_size) {
+    if (new_size > std::numeric_limits<unsigned int>::max()) {
+        throw std::length_error("Visited-node capacity exceeds unsigned int range");
+    }
     assert(total_handlers_in_use ==
            pool.size()); // validate that there is no handlers in use outside the pool.
-    this->num_elements = new_size;
+    // A failed shrink may leave larger handlers, but none smaller than the published bound.
+    if (new_size < num_elements) {
+        num_elements = new_size;
+    }
     for (auto &handler : this->pool) {
         handler->resize(new_size);
     }
+    num_elements = new_size;
+}
+
+void VisitedNodesHandlerPool::ensureCapacity(size_t new_size) {
+    if (new_size > std::numeric_limits<unsigned int>::max()) {
+        throw std::length_error("Visited-node capacity exceeds unsigned int range");
+    }
+    assert(total_handlers_in_use == pool.size());
+    for (auto *handler : pool) {
+        handler->ensureCapacity(new_size);
+    }
+    num_elements = std::max<size_t>(num_elements, new_size);
 }
 
 void VisitedNodesHandlerPool::clearPool() {

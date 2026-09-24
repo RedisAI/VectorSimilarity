@@ -8,6 +8,7 @@
  */
 
 #include "VecSim/friend_test_decl.h"
+friend class HNSWCapacityTest_TieredGrowthFailureReleasesLocks_Test;
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTest)
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTest_CreateIndexInstance_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWTieredIndexTest_addVector_Test)

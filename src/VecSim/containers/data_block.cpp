@@ -13,7 +13,11 @@
 DataBlock::DataBlock(size_t blockSize, size_t elementBytesCount,
                      std::shared_ptr<VecSimAllocator> allocator, unsigned char alignment)
     : VecsimBaseObject(allocator), element_bytes_count(elementBytesCount), length(0),
-      data((char *)this->allocator->allocate_aligned(blockSize * elementBytesCount, alignment)) {}
+      data((char *)this->allocator->allocate_aligned(blockSize * elementBytesCount, alignment)) {
+    if (!data) {
+        throw std::bad_alloc();
+    }
+}
 
 DataBlock::DataBlock(DataBlock &&other) noexcept
     : VecsimBaseObject(other.allocator), element_bytes_count(other.element_bytes_count),

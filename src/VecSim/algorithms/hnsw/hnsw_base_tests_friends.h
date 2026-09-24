@@ -8,6 +8,7 @@
  */
 #include "VecSim/friend_test_decl.h"
 INDEX_TEST_FRIEND_CLASS(HNSWTest_test_dynamic_hnsw_info_iterator_Test)
+friend class HNSWCapacityTest_TieredGrowthFailureReleasesLocks_Test;
 INDEX_TEST_FRIEND_CLASS(HNSWTest_preferAdHocOptimization_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test)
 INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_preferAdHocOptimization_Test)
