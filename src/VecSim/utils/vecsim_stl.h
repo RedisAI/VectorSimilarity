@@ -11,6 +11,7 @@
 #include "VecSim/memory/vecsim_base.h"
 #include <atomic>
 #include <cstdint>
+#include <iterator>
 #include <vector>
 #include <algorithm>
 #include <set>
@@ -33,6 +34,12 @@ public:
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, alloc) {}
     explicit vector(size_t cap, T val, const std::shared_ptr<VecSimAllocator> &alloc)
         : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(cap, val, alloc) {}
+    // Range constructor. Constrained to input iterators (same idiom std::vector uses) so that
+    // calls like vector<size_t>(10, 5, alloc) resolve to the fill constructor above instead of
+    // being deduced as a range of ints.
+    template <std::input_iterator Iter>
+    explicit vector(Iter first, Iter last, const std::shared_ptr<VecSimAllocator> &alloc)
+        : VecsimBaseObject(alloc), std::vector<T, VecsimSTLAllocator<T>>(first, last, alloc) {}
 
     bool remove(T element) {
         auto it = std::find(this->begin(), this->end(), element);
