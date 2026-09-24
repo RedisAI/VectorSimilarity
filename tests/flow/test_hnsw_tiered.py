@@ -130,21 +130,23 @@ def exact_distances(query, vectors, metric):
     return 1.0 - (v @ q) / (np.linalg.norm(v, axis=1) * np.linalg.norm(q))
 
 
-def topk_recall(index, queries, vectors, labels, metric, k):
-    """Recall of the index's top-k labels against the exact ranking over the stored vectors."""
-    hits = 0
+def assert_matches_flat_index(index, queries, vectors, labels, metric, data_type,
+                              is_multi=False, k=10):
+    # Match native arithmetic, including CPU-specific FP16 accumulation and normalization.
+    reference = create_flat_index(vectors.shape[1], metric, data_type, is_multi=is_multi)
+    for vector, label in zip(vectors, labels):
+        reference.add_vector(vector, label)
     for query in queries:
-        distances = exact_distances(query, vectors, metric)
-        best = {}
-        for distance, label in zip(distances, labels):
-            best[label] = min(distance, best.get(label, np.inf))
-        expected = [label for label, _ in sorted(best.items(), key=lambda kv: kv[1])[:k]]
+        expected_labels, expected_scores = reference.knn_query(query, len(set(labels)))
         found, scores = index.knn_query(query, k)
         assert found.shape == scores.shape == (1, k), (found, scores)
         assert len(set(found[0])) == k, found
         assert np.isfinite(scores).all(), scores
-        hits += len(set(found[0]) & set(expected))
-    return hits / (k * len(queries))
+        # Equal-distance labels may exchange places, including at the top-k boundary.
+        assert_array_equal(scores[0], expected_scores[0][:k])
+        score_by_label = dict(zip(expected_labels[0], expected_scores[0]))
+        assert set(found[0]).issubset(score_by_label), found
+        assert_array_equal(scores[0], [score_by_label[label] for label in found[0]])
 
 
 def assert_valid_knn_results(index, queries, labels, k=10):
@@ -361,7 +363,8 @@ def test_sq8_tiered_supported_matrix(data_type, metric, is_multi, training_thres
         assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (
             len(set(labels[:below])), 0)
         assert index.index_size() == below
-        assert topk_recall(index, queries, vectors[:below], labels[:below], metric, k=10) == 1.0
+        assert_matches_flat_index(index, queries, vectors[:below], labels[:below], metric,
+                                  data_type, is_multi=is_multi)
 
         # Insert exactly the crossing vector to verify that training starts at the vector threshold.
         index.add_vector(vectors[below], labels[below])
@@ -572,9 +575,9 @@ def test_sq8_queries_across_transition():
         index.add_vector(vectors[label], label)
     index.wait_for_index(1)
     assert (index.get_curr_bf_size(), index.hnsw_label_count()) == (below, 0)
-    # The flat buffer is an uncompressed brute-force index, so its ranking is exact.
-    assert topk_recall(index, queries, vectors[:below], labels[:below],
-                       VecSimMetric_L2, k=10) == 1.0
+    # Before training, queries must match an uncompressed flat index.
+    assert_matches_flat_index(index, queries, vectors[:below], labels[:below],
+                              VecSimMetric_L2, VecSimType_FLOAT32)
 
     for label in range(below, threshold):
         index.add_vector(vectors[label], label)
