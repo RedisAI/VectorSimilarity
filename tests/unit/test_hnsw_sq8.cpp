@@ -699,6 +699,7 @@ public:
 
     void create_index_test();
     void frontend_size_estimation_test(VecSimMetric metric);
+    void destruction_releases_pending_migration_jobs_test();
 
 protected:
     static constexpr size_t normalization_set_size = 10;
@@ -869,6 +870,44 @@ TYPED_TEST(SQ8TieredHNSWTest, GetDistanceMultiIP) {
 }
 
 TYPED_TEST(SQ8TieredHNSWTest, BatchIteratorBasic) { this->test_batch_iterator_basic(); }
+
+template <typename index_type_t>
+void SQ8TieredHNSWTest<index_type_t>::destruction_releases_pending_migration_jobs_test() {
+    HNSWParams params = {.dim = 64, .metric = VecSimMetric_L2};
+    SetUp(params, 1024);
+    auto *tiered_index = dynamic_cast<TieredHNSWIndex<data_t, float> *>(this->index);
+    ASSERT_NE(tiered_index, nullptr);
+
+    // Keep each allocator alive so its accounting can be checked after destruction.
+    auto allocator = this->index->getAllocator();
+    auto frontend_allocator = tiered_index->frontendIndex->getAllocator();
+    auto backend_allocator = tiered_index->backendIndex->getAllocator();
+    const size_t num_vectors = index_type_t::with_quant_params ? normalization_set_size : 2;
+    for (size_t label = 0; label < num_vectors; ++label) {
+        ASSERT_EQ(this->GenerateAndAddVector(label, static_cast<float>(label), 1.0f), 1);
+        if (index_type_t::with_quant_params && label + 1 < normalization_set_size) {
+            EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        }
+    }
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_vectors);
+    EXPECT_EQ(tiered_index->frontendIndex->indexSize(), num_vectors);
+    EXPECT_EQ(tiered_index->backendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), num_vectors);
+
+    mock_thread_pool.reset_ctx();
+    while (!mock_thread_pool.jobQ.empty()) {
+        EXPECT_TRUE(mock_thread_pool.jobQ.front().index_weak_ref.expired());
+        // The index already deleted the jobs; only discard their queue wrappers.
+        mock_thread_pool.jobQ.pop();
+    }
+    EXPECT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator));
+    EXPECT_EQ(frontend_allocator->getAllocationSize(), sizeof(VecSimAllocator));
+    EXPECT_EQ(backend_allocator->getAllocationSize(), sizeof(VecSimAllocator));
+}
+
+TYPED_TEST(SQ8TieredHNSWTest, DestructionReleasesPendingMigrationJobs) {
+    this->destruction_releases_pending_migration_jobs_test();
+}
 
 TEST(SQ8TieredHNSWTest, TrainingAccessorsAndRelabelUseEmptyBackend) {
     constexpr size_t dim = 4;
@@ -1192,6 +1231,64 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
     float query[dim] = {1.0f, 1.0f, 1.0f, 1.0f};
     ASSERT_EQ(VecSimIndex_AddVector(index, first_vector, 0), 1);
 
+    const auto reply_is_valid = [&](VecSimQueryReply *reply) {
+        if (!reply || reply->code != VecSim_QueryReply_OK ||
+            VecSimQueryReply_Len(reply) != normalization_set_size) {
+            return false;
+        }
+
+        labelType expected_label = 0;
+        bool valid = true;
+        auto *iterator = VecSimQueryReply_GetIterator(reply);
+        while (VecSimQueryReply_IteratorHasNext(iterator)) {
+            auto *result = VecSimQueryReply_IteratorNext(iterator);
+            const labelType label = VecSimQueryResult_GetId(result);
+            const double score = VecSimQueryResult_GetScore(result);
+            if (label >= normalization_set_size) {
+                valid = false;
+                continue;
+            }
+            const double expected = label == 0 ? 0.0 : 4.0;
+            const double tolerance = 1e-4 + expected * 0.002;
+            // BY_SCORE must return label 0 (distance 0) before label 1 (distance 4).
+            if (label != expected_label++ || !std::isfinite(score) ||
+                std::abs(score - expected) > tolerance) {
+                valid = false;
+            }
+        }
+        VecSimQueryReply_IteratorFree(iterator);
+        return valid && expected_label == normalization_set_size;
+    };
+    const auto batch_iterator_is_valid = [&] {
+        auto *iterator = VecSimBatchIterator_New(index, query, nullptr);
+        if (!iterator) {
+            return false;
+        }
+
+        bool valid = VecSimBatchIterator_HasNext(iterator);
+        if (valid) {
+            auto *reply = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+            valid = reply_is_valid(reply);
+            if (reply) {
+                VecSimQueryReply_Free(reply);
+            }
+
+            // A tiered iterator may need one empty read to discover that deduplicated backend
+            // results are exhausted.
+            if (VecSimBatchIterator_HasNext(iterator)) {
+                reply = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
+                valid = valid && reply && reply->code == VecSim_QueryReply_OK &&
+                        VecSimQueryReply_Len(reply) == 0;
+                if (reply) {
+                    VecSimQueryReply_Free(reply);
+                }
+            }
+            valid = valid && !VecSimBatchIterator_HasNext(iterator);
+        }
+        VecSimBatchIterator_Free(iterator);
+        return valid;
+    };
+
     std::mutex transition_mutex;
     std::condition_variable transition_cv;
     bool finalization_entered = false;
@@ -1219,8 +1316,7 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
         bool announced = false;
         while (keep_reading.load()) {
             auto *reply = VecSimIndex_TopKQuery(index, query, 2, nullptr, BY_SCORE);
-            if (!reply || reply->code != VecSim_QueryReply_OK ||
-                VecSimQueryReply_Len(reply) != normalization_set_size) {
+            if (!reply_is_valid(reply)) {
                 failures.fetch_add(1);
             }
             if (reply) {
@@ -1228,28 +1324,15 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
             }
 
             reply = VecSimIndex_RangeQuery(index, query, 100.0, nullptr, BY_SCORE);
-            if (!reply || reply->code != VecSim_QueryReply_OK ||
-                VecSimQueryReply_Len(reply) != normalization_set_size) {
+            if (!reply_is_valid(reply)) {
                 failures.fetch_add(1);
             }
             if (reply) {
                 VecSimQueryReply_Free(reply);
             }
 
-            auto *iterator = VecSimBatchIterator_New(index, query, nullptr);
-            if (!iterator) {
+            if (!batch_iterator_is_valid()) {
                 failures.fetch_add(1);
-            } else {
-                if (VecSimBatchIterator_HasNext(iterator)) {
-                    reply = VecSimBatchIterator_Next(iterator, 2, BY_SCORE);
-                    if (!reply || reply->code != VecSim_QueryReply_OK) {
-                        failures.fetch_add(1);
-                    }
-                    if (reply) {
-                        VecSimQueryReply_Free(reply);
-                    }
-                }
-                VecSimBatchIterator_Free(iterator);
             }
 
             (void)VecSimIndex_IndexSize(index);
@@ -1290,9 +1373,15 @@ TEST(SQ8TieredHNSWTest, ConcurrentQueriesDuringNormalizationTransition) {
 
     auto *reply = VecSimIndex_TopKQuery(index, query, 2, nullptr, BY_SCORE);
     ASSERT_NE(reply, nullptr);
-    EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
-    EXPECT_EQ(VecSimQueryReply_Len(reply), normalization_set_size);
+    EXPECT_TRUE(reply_is_valid(reply));
     VecSimQueryReply_Free(reply);
+
+    reply = VecSimIndex_RangeQuery(index, query, 100.0, nullptr, BY_SCORE);
+    ASSERT_NE(reply, nullptr);
+    EXPECT_TRUE(reply_is_valid(reply));
+    VecSimQueryReply_Free(reply);
+
+    EXPECT_TRUE(batch_iterator_is_valid());
 
     // Keep the allocator alive while reset_ctx releases the index's final reference.
     auto allocator = index->getAllocator();
