@@ -256,9 +256,7 @@ protected:
         return std::make_unique<SVSImplHandler>(initImpl(points, ids));
     }
 
-    void storeImpl(impl_type *impl) {
-        this->impl_.store(impl, std::memory_order_release);
-    }
+    void storeImpl(impl_type *impl) { this->impl_.store(impl, std::memory_order_release); }
 
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
         SVSImplHandler *svs_handler = dynamic_cast<SVSImplHandler *>(handler.get());
