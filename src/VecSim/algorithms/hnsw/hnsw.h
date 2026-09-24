@@ -61,6 +61,7 @@ using graphNodeType = pair<idType, unsigned short>; // represented as: (element_
 typedef enum {
     DELETE_MARK = 0x1, // element is logically deleted, but still exists in the graph
     IN_PROCESS = 0x2,  // element is being inserted into the graph
+    ISOLATING = 0x4,   // isolation has started; no new outgoing edges may be added
 } Flags;
 
 // The state of the index and the newly stored vector to be passed to indexVector.
@@ -1504,11 +1505,12 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
                       node_id);
             break;
         }
-        // We don't add new neighbors for deleted nodes - if node_id is deleted we can finish.
+        // Isolation snapshots the remaining edges, so it must prevent new outgoing edges even
+        // when an earlier repair of this deleted node is still running.
         // Also, don't add new neighbors to a node who is currently being indexed in parallel, as it
         // may choose the same element as its neighbor right after the repair is done and connect it
         // to it, and have a duplicate neighbor as a result.
-        if (isMarkedDeleted(node_id) || isInProcess(node_id)) {
+        if (isMarkedAs<ISOLATING>(node_id) || isInProcess(node_id)) {
             break;
         }
         // If this specific new neighbor is deleted, we don't add this connection and continue.
@@ -1548,6 +1550,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // candidates, so we will not collect them again as candidates if we run into them from another
     // path.
     vecsim_stl::vector<bool> neighbors_candidates_set(maxElements, false, this->allocator);
+    vecsim_stl::vector<bool> visited_deleted(maxElements, false, this->allocator);
     vecsim_stl::vector<idType> deleted_neighbors(this->allocator);
 
     // Go over the repaired node neighbors, collect the non-deleted ones to be neighbors candidates
@@ -1560,6 +1563,7 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
         // Don't add the removed element to the candidates.
         if (isMarkedDeleted(node_level_data.getLinkAtPos(j))) {
             deleted_neighbors.push_back(node_level_data.getLinkAtPos(j));
+            visited_deleted[node_level_data.getLinkAtPos(j)] = true;
             continue;
         }
         neighbors_candidates_set[node_level_data.getLinkAtPos(j)] = true;
@@ -1578,30 +1582,43 @@ void HNSWIndex<DataType, DistType>::repairNodeConnections(idType node_id, size_t
     // neighbors that are going to be removed.
     vecsim_stl::vector<idType> nodes_to_update(this->allocator);
     vecsim_stl::vector<idType> chosen_neighbors(this->allocator);
+    nodes_to_update.insert(nodes_to_update.end(), deleted_neighbors.begin(),
+                           deleted_neighbors.end());
 
-    // Go over the deleted nodes and collect their neighbors to the candidates set.
-    for (idType deleted_neighbor_id : deleted_neighbors) {
-        nodes_to_update.push_back(deleted_neighbor_id);
+    const size_t max_M_cur = level ? M : M0;
+    size_t remaining_deleted_budget = 4 * max_M_cur;
+    // Deleted chains can hide live candidates. Always inspect the direct deleted neighbors,
+    // then bound the additional traversal so a large deleted component cannot dominate a repair.
+    // Deeper deleted nodes are read-only and do not belong in nodes_to_update.
+    for (size_t i = 0; i < deleted_neighbors.size(); i++) {
+        const idType deleted_neighbor_id = deleted_neighbors[i];
 
         auto *neighbor = getGraphDataByInternalId(deleted_neighbor_id);
         lockNodeLinks(deleted_neighbor_id);
         ElementLevelData &neighbor_level_data = getElementLevelData(neighbor, level);
 
         for (size_t j = 0; j < neighbor_level_data.getNumLinks(); j++) {
-            // Don't add removed elements to the candidates, nor nodes that are already in the
-            // candidates set, nor the original node to repair itself.
-            if (isMarkedDeleted(neighbor_level_data.getLinkAtPos(j)) ||
-                neighbors_candidates_set[neighbor_level_data.getLinkAtPos(j)] ||
-                neighbor_level_data.getLinkAtPos(j) == node_id) {
+            const idType candidate_id = neighbor_level_data.getLinkAtPos(j);
+            if (candidate_id == node_id) {
                 continue;
             }
-            neighbors_candidates_set[neighbor_level_data.getLinkAtPos(j)] = true;
-            neighbors_candidate_ids.push_back(neighbor_level_data.getLinkAtPos(j));
+            if (isMarkedDeleted(candidate_id)) {
+                if (!visited_deleted[candidate_id] && remaining_deleted_budget > 0) {
+                    visited_deleted[candidate_id] = true;
+                    deleted_neighbors.push_back(candidate_id);
+                    remaining_deleted_budget--;
+                }
+                continue;
+            }
+            if (neighbors_candidates_set[candidate_id]) {
+                continue;
+            }
+            neighbors_candidates_set[candidate_id] = true;
+            neighbors_candidate_ids.push_back(candidate_id);
         }
         unlockNodeLinks(deleted_neighbor_id);
     }
 
-    size_t max_M_cur = level ? M : M0;
     if (neighbors_candidate_ids.size() > max_M_cur) {
         // We have more candidates than the maximum number of neighbors, so we need to select which
         // ones to keep. We use the heuristic to select the neighbors, and then remove the ones that
@@ -1760,11 +1777,14 @@ HNSWIndex<DataType, DistType>::~HNSWIndex() {
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
     assert(isMarkedDeleted(internalId) && "Only a marked-deleted element may be isolated");
+    lockNodeLinks(internalId);
+    markAs<ISOLATING>(internalId);
+    unlockNodeLinks(internalId);
     auto element = getGraphDataByInternalId(internalId);
     for (size_t level = 0; level <= element->toplevel; level++) {
         // Collect the elements this one shares an edge with at this level, in either direction. No
-        // edge can be added to a deleted element, so this set only shrinks from here on (a repair
-        // job of another element may still remove an edge concurrently).
+        // incoming edge can target a deleted element, and ISOLATING prevents new outgoing edges,
+        // so this set only shrinks from here on.
         lockNodeLinks(internalId);
         ElementLevelData &level_data = getElementLevelData(element, level);
         auto others = level_data.copyLinks();

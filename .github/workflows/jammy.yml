@@ -1,10 +1,48 @@
 name: jammy flow
 
-on: [workflow_dispatch, workflow_call]
+on:
+  workflow_dispatch:
+    inputs:
+      repair_comparison:
+        description: 'Compare the HNSW repair regressions against ec835be8'
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      repair_comparison:
+        type: boolean
+        default: false
 
 jobs:
   jammy:
+    if: ${{ !inputs.repair_comparison }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:jammy
       pre-checkout-script: apt-get update && apt-get install -y git
+
+  repair-comparison:
+    if: ${{ inputs.repair_comparison }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CC: gcc-12
+      CXX: g++-12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Install compiler
+        run: sudo apt-get update -qq && sudo apt-get install -y gcc-12 g++-12 cmake
+      - name: Compare baseline and proposed repair
+        run: bash .github/scripts/hnsw_repair_comparison.sh
+      - name: Upload comparison results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hnsw-repair-comparison
+          path: repair-results/
+          if-no-files-found: error
