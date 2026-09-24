@@ -794,17 +794,12 @@ private:
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 assert(labels_to_move.size() ==
                        vectors_to_move.size() / this->frontendIndex->getDim());
-                // The backend may already have been initialized while this job was queued
-                if (svs_index->ready()) {
-                    svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
-                                          labels_to_move.size());
-                    svs_index->setParallelism(1);
-                } else {
-                    auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
-                                                      labels_to_move.size());
-                    svs_index->setParallelism(1);
-                    svs_index->setImpl(std::move(impl));
-                }
+                assert(!svs_index->ready());
+
+                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
+                                                  labels_to_move.size());
+                svs_index->setParallelism(1);
+                svs_index->setImpl(std::move(impl));
             }
 
             std::sort(ids_to_move.begin(), ids_to_move.end());
@@ -931,30 +926,10 @@ public:
             this->flatIndexGuard.lock();
             idType new_flat_id = this->frontendIndex->indexSize();
             if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
-                if (this->labelToInsertJobs.count(label) == 0) {
-                    // No pending insert job.
-                    // Just replace vector in the frontend
-                    // If this label already exists, this will do overwrite.
-                    ret = this->frontendIndex->addVector(blob, label);
-                    this->flatIndexGuard.unlock();
-                    return ret;
-                }
-
-                // Overwrite the vector and invalidate its only pending job (since we are not in
-                // MULTI). Label exists, but job doesn't. It means the label is used for
-                // initialization. Just create new job, this job will remove duplicate from the
-                // backend.
-                auto *old_job = this->labelToInsertJobs.at(label).at(0);
-                old_job->id = this->setAndSaveInvalidJob(old_job);
-                this->labelToInsertJobs.erase(label);
-                ret = 0;
                 // We are going to update the internal id that currently holds the vector associated
                 // with the given label.
-                new_flat_id =
-                    dynamic_cast<BruteForceIndex_Single<DataType, DistType> *>(this->frontendIndex)
-                        ->getIdOfLabel(label);
-                // If we are adding a new element (rather than updating an exiting one) we may need
-                // to increase index capacity.
+                new_flat_id = this->invalidatePendingInsertJob(label);
+                ret = 0;
             }
             // If this label already exists, this will do overwrite.
             ret += this->frontendIndex->addVector(blob, label);
@@ -1065,16 +1040,7 @@ public:
     TieredInsertJob *createInsertJob(labelType label, idType flat_id) {
         TieredInsertJob *job = new (this->allocator)
             SVSInsertJob(this->allocator, label, flat_id, executeInsertJobWrapper, this);
-        auto it = this->labelToInsertJobs.find(label);
-        if (it != this->labelToInsertJobs.end()) {
-            // There's already a pending insert job for this label, add another one (without
-            // overwrite, only possible in multi index)
-            assert(this->backendIndex->isMultiValue());
-            it->second.push_back(job);
-        } else {
-            vecsim_stl::vector<TieredInsertJob *> new_jobs_vec(1, job, this->allocator);
-            this->labelToInsertJobs.insert({label, new_jobs_vec});
-        }
+        this->registerInsertJob(label, job);
         return job;
     }
 
