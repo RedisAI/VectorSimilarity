@@ -111,7 +111,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered(benchmark::State &st, unsigned s
     std::atomic_int iter = 0;
     auto tiered_index =
         dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW));
-    size_t total_iters = 50;
+    constexpr size_t total_iters = BM_VecSimGeneral::tiered_topk_iterations;
     VecSimQueryReply *all_results[total_iters];
 
     auto parallel_knn_search = [](AsyncJob *job) {
@@ -159,7 +159,7 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered_SQ8(benchmark::State &st) {
     std::atomic_int iter = 0;
     auto tiered_index =
         dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW_SQ8));
-    size_t total_iters = 50;
+    constexpr size_t total_iters = BM_VecSimGeneral::tiered_topk_iterations;
     VecSimQueryReply *all_results[total_iters];
 
     auto parallel_knn_search = [](AsyncJob *job) {
@@ -228,5 +228,5 @@ void BM_VecSimCommon<index_type_t>::TopK_Tiered_SQ8(benchmark::State &st) {
         ->Args({200, 100})                                                                         \
         ->Args({500, 500})                                                                         \
         ->ArgNames({"ef_runtime", "k"})                                                            \
-        ->Iterations(50)                                                                           \
+        ->Iterations(BM_VecSimGeneral::tiered_topk_iterations)                                     \
         ->Unit(benchmark::kMillisecond)

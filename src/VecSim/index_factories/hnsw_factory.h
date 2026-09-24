@@ -24,6 +24,8 @@ namespace HNSWFactory {
  */
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
 VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized = false);
+
+size_t GetSQ8StoredDataSize(VecSimMetric metric, size_t dim, bool with_mean);
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized = false);
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean);
 size_t EstimateElementSize(const HNSWParams *params);

@@ -43,6 +43,14 @@ template <VecSimMetric Metric>
                      : sq8::storage_bytes_count<Metric, false>(dim);
 }
 
+size_t GetSQ8StoredDataSize(VecSimMetric metric, size_t dim, bool with_mean) {
+    if (metric == VecSimMetric_L2) {
+        return GetSQ8StoredDataSize<VecSimMetric_L2>(dim, with_mean);
+    }
+    assert(metric == VecSimMetric_IP || metric == VecSimMetric_Cosine);
+    return GetSQ8StoredDataSize<VecSimMetric_IP>(dim, with_mean);
+}
+
 // Cosine over pre-normalized vectors is computed as inner product.
 [[nodiscard]] constexpr VecSimMetric ResolveSQ8Metric(VecSimMetric metric, bool is_normalized) {
     return (is_normalized && metric == VecSimMetric_Cosine) ? VecSimMetric_IP : metric;
@@ -357,16 +365,22 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&params, nullptr, is_normalized);
 
-    // SQ8 quantized index path
-    if (params.quantType == VecSimQuant_SQ8) {
+    if (params.quantType != VecSimQuant_NONE) {
+        // Reject unknown quantizers instead of silently loading an unquantized index.
+        if (params.quantType != VecSimQuant_SQ8) {
+            return NULL;
+        }
+
         const float *mean_ptr = meanVector.empty() ? nullptr : meanVector.data();
-        VecSimMetric metric = params.metric;
-        if (is_normalized && metric == VecSimMetric_Cosine) {
-            metric = VecSimMetric_IP;
+        const VecSimMetric metric = ResolveSQ8Metric(params.metric, is_normalized);
+
+        if (!SQ8ParamsSupported(params.type, metric)) {
+            return NULL;
         }
 
         // Override blob sizes for SQ8 storage layout.
         size_t dim = params.dim;
+        abstractInitParams.isQuantized = true;
         if (metric == VecSimMetric_L2) {
             abstractInitParams.storedDataSize =
                 GetSQ8StoredDataSize<VecSimMetric_L2>(dim, mean_ptr != nullptr);

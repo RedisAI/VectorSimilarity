@@ -16,6 +16,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/algorithms/svs/svs_tiered.h"
 #include "VecSim/algorithms/brute_force/brute_force.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/factory_utils.h"
 
 namespace TieredFactory {
@@ -43,9 +44,12 @@ VecSimIndex *NewIndex(const TieredIndexParams *params, HNSWIndex<DataType, DistT
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&bf_params, nullptr, false);
     assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
-    const HNSWParams *hnsw_params = &params->primaryIndexParams->algoParams.hnswParams;
-    assert(hnsw_params->quantType != VecSimQuant_NONE ||
-           hnsw_index->getStoredDataSize() == abstractInitParams.storedDataSize);
+    [[maybe_unused]] const size_t expected_stored_size =
+        hnsw_index->quantType == VecSimQuant_SQ8
+            ? HNSWFactory::GetSQ8StoredDataSize(bf_params.metric, bf_params.dim,
+                                                !hnsw_index->serializedMeanVector.empty())
+            : abstractInitParams.storedDataSize;
+    assert(hnsw_index->getStoredDataSize() == expected_stored_size);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(
         BruteForceFactory::NewIndex(&bf_params, abstractInitParams, false));
 
