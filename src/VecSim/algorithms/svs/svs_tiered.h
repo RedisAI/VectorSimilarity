@@ -700,6 +700,10 @@ private:
             std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+            this->backendIndex->log(
+                VecSimCommonStrings::LOG_NOTICE_STRING,
+                "MOD-18890: updateSVSIndex batch=%zu backend_size_before=%zu availableThreads=%zu",
+                labels_to_move.size(), this->backendIndex->indexSize(), availableThreads);
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index is empty, we need to initialize it first.
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));

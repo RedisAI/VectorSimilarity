@@ -243,6 +243,8 @@ protected:
         // Wrap data into SVS SimpleDataView for SVS API
         auto points = svs::data::SimpleDataView<DataType>{typed_vectors_data, n, this->dim};
 
+        this->log(VecSimCommonStrings::LOG_NOTICE_STRING,
+                  "MOD-18890: createImpl cold-start with n=%zu points", n);
         return std::make_unique<SVSImplHandler>(initImpl(points, ids));
     }
 
@@ -303,9 +305,14 @@ private:
 
         if (!impl_) {
             // SVS index instance cannot be empty, so we have to construct it at first rows
+            this->log(VecSimCommonStrings::LOG_NOTICE_STRING,
+                      "MOD-18890: cold-start initImpl with n=%zu points", n);
             impl_ = initImpl(points, ids);
         } else {
             // Add new points to existing SVS index
+            this->log(VecSimCommonStrings::LOG_NOTICE_STRING,
+                      "MOD-18890: add_points n=%zu (existing label count=%zu)", n,
+                      indexLabelCount());
             impl_->add_points(points, ids);
         }
 
