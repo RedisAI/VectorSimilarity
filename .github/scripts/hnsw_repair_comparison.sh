@@ -12,7 +12,7 @@ trap 'git restore --source=HEAD -- "$header"' EXIT
 
 git restore --source="$baseline" -- "$header"
 cmake -S . -B build-repair -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -g" -DUSE_SVS=OFF \
+    -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O2 -g" \
     2>&1 | tee repair-results/configure.log | tail -40
 cmake --build build-repair --target test_hnsw --parallel 2 \
     2>&1 | tee repair-results/baseline-build.log | tail -40
