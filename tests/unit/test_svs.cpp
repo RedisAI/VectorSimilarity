@@ -187,11 +187,22 @@ TYPED_TEST(SVSTest, svs_vector_update_test) {
     // Prepare new vector data and call addVector with the same id, different data.
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, 2.0);
 
-    // Index size shouldn't change.
+    // Now we have one deleted (not empty) slot
+    // and one live slot
+    EXPECT_EQ(VecSimIndex_IndexSize(index), 2);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 1);
+
+    index->runGC();
+    // GC consolidated and compacted deleted slot.
     EXPECT_EQ(VecSimIndex_IndexSize(index), 1);
 
     // Delete the last vector.
     VecSimIndex_DeleteVector(index, 1);
+    // Still have a single "deleted" slot
+    EXPECT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 1);
+
+    index->runGC();
     EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
 
@@ -282,8 +293,11 @@ TYPED_TEST(SVSTest, svs_bulk_vectors_add_delete_test) {
     // Delete rest of the vectors
     // num_marked_deleted should reset.
     ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
+    index->runGC();
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
     VecSimIndex_Free(index);
 }
@@ -348,14 +362,13 @@ TYPED_TEST(SVSTest, two_stage_initialization_test) {
     impl = svs_index->createImpl(v.data(), ids.data(), n);
     EXPECT_THROW(svs_index->setImpl(std::move(impl)), std::logic_error);
 
-    // Delete rest of the vectors - index should be empty now and setImpl() should succeed.
+    // Delete rest of the vectors - index should be empty, but impl still alive.
     ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
-    // Re-initialization should succeed.
-    impl = svs_index->createImpl(v.data(), ids.data(), n);
-    svs_index->setImpl(std::move(impl));
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
-    runTopKSearchTest(index, query, k, verify_res, nullptr, BY_ID);
+
+    // Re-initialization should fail again.
+    impl = svs_index->createImpl(v.data(), ids.data(), n);
+    EXPECT_THROW(svs_index->setImpl(std::move(impl)), std::logic_error);
 
     VecSimIndex_Free(index);
 }
@@ -964,10 +977,11 @@ TYPED_TEST(SVSTest, svs_empty_index) {
     VecSimIndex_DeleteVector(index, 1);
 
     // Size equals 0.
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // The expected capacity should be 0 for empty index.
-    ASSERT_EQ(index->indexCapacity(), 0);
+    // Even an empty index holds the first block for nonquantized data
+    // ASSERT_EQ(index->indexCapacity(), 0);
     ASSERT_EQ(index->indexMetaDataCapacity(), index->indexCapacity());
 
     // Try to remove it again.
@@ -1215,6 +1229,7 @@ TYPED_TEST(SVSTest, test_dynamic_svs_info_iterator) {
 
         // Delete vector.
         VecSimIndex_DeleteVector(index, 0);
+        index->runGC();
         info = VecSimIndex_DebugInfo(index);
         infoIter = VecSimIndex_DebugInfoIterator(index);
         ASSERT_EQ(0, info.commonInfo.indexSize);
@@ -1426,6 +1441,7 @@ TYPED_TEST(SVSTest, svs_search_empty_index) {
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Again - we do not expect any results.

@@ -1096,16 +1096,14 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
 
     if constexpr (TypeParam::isMulti()) {
-        // Add another vector under the same label. The backend init was already submitted
-        // by the first vector (thread_pool_size batch-init jobs), so this second vector takes
-        // the per-vector async path and schedules one additional SVSInsertJob of its own.
+        // Add another vector under the same label.
         VecSimIndex_AddVector(tiered_index, vector, vec_label);
         ASSERT_EQ(tiered_index->indexSize(), 2);
         ASSERT_EQ(tiered_index->indexLabelCount(), 1);
         ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
         ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 2);
-        // The batch-init jobs plus the extra per-vector insert job.
-        ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size + 1);
+        // The batch-init jobs.
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
     }
 }
 
@@ -1618,6 +1616,10 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     // Remove from main index.
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
+
     ASSERT_EQ(tiered_index->indexSize(), 0);
 
     // Re-insert a deleted label with a different vector.
@@ -1713,7 +1715,10 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
         VecSimIndex_DeleteVector(tiered_index, i);
     }
 
-    // Consolidate should be triggered and mark deleted count should be zeroed.
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
+
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
@@ -1751,12 +1756,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->indexSize(), 2);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
+
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-
-    mock_thread_pool.thread_iteration();
-    mock_thread_pool.thread_iteration();
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in the flat index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
@@ -3192,11 +3197,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     // Overriding vector in tiered index should remove the vector from SVS to avoid duplicates.
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Ingest the updated vector to SVS.
+    VecSimTieredIndex_GC(tiered_index);
     while (mock_thread_pool.jobQ.size() > 0)
         mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
@@ -3381,6 +3387,10 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     }
 
     VecSimIndex_DeleteVector(tiered_index, 1);
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
+
     info = tiered_index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 0);
@@ -4000,8 +4010,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalSingle) {
     // Nothing remains in flat.
     EXPECT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 2);
 
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 2);
-    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n + 3);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 5);
     // Flat buffer fully drained by the insert jobs.
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), tiered_index->GetBackendIndex()->indexSize() +
@@ -4136,8 +4146,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalMulti) {
     // the flat buffer into the backend, so nothing remains in flat.
     EXPECT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 2);
 
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n - 1);
-    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n + 3);
+    ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 4);
     // Flat buffer fully drained by the insert jobs.
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), tiered_index->GetBackendIndex()->indexSize() +

@@ -199,12 +199,24 @@ TYPED_TEST(FP16SVSTest, svs_vector_update_test) {
     // Prepare new vector data and call addVector with the same id, different data.
     this->GenerateAndAddVector(index, dim, 1, 2.0);
 
-    // Index size shouldn't change.
+    // Now we have one deleted (not empty) slot
+    // and one live slot
+    EXPECT_EQ(VecSimIndex_IndexSize(index), 2);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 1);
+
+    index->runGC();
+    // GC consolidated and compacted deleted slot.
     EXPECT_EQ(VecSimIndex_IndexSize(index), 1);
 
     // Delete the last vector.
     VecSimIndex_DeleteVector(index, 1);
+    // Still have a single "deleted" slot
+    EXPECT_EQ(VecSimIndex_IndexSize(index), 1);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 1);
+
+    index->runGC();
     EXPECT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
 
     VecSimIndex_Free(index);
 }
@@ -264,8 +276,11 @@ TYPED_TEST(FP16SVSTest, svs_bulk_vectors_add_delete_test) {
     // Delete rest of the vectors
     // num_marked_deleted should reset.
     ASSERT_EQ(svs_index->deleteVectors(ids.data() + n - keep_num, keep_num), keep_num);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     ASSERT_EQ(index->indexLabelCount(), 0);
+    ASSERT_EQ(svs_index->getNumMarkedDeleted(), n);
+    index->runGC();
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(svs_index->getNumMarkedDeleted(), 0);
     VecSimIndex_Free(index);
 }
@@ -760,10 +775,11 @@ TYPED_TEST(FP16SVSTest, svs_empty_index) {
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
-    // The expected capacity should be 0 for empty index.
-    ASSERT_EQ(index->indexCapacity(), 0);
+    // Even an empty index holds the first block for nonquantized data
+    // ASSERT_EQ(index->indexCapacity(), 0);
 
     // Try to remove it again.
     VecSimIndex_DeleteVector(index, 1);
@@ -1025,6 +1041,7 @@ TYPED_TEST(FP16SVSTest, test_dynamic_svs_info_iterator) {
 
         // Delete vector.
         VecSimIndex_DeleteVector(index, 0);
+        index->runGC();
         info = VecSimIndex_DebugInfo(index);
         infoIter = VecSimIndex_DebugInfoIterator(index);
         ASSERT_EQ(0, info.commonInfo.indexSize);
@@ -1805,6 +1822,7 @@ TYPED_TEST(FP16SVSMultiTest, vector_add_multiple_test) {
 
     // Deleting the label. All the vectors should be deleted.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, label), n);
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(index->indexLabelCount(), 0);
 
@@ -2042,6 +2060,7 @@ TYPED_TEST(FP16SVSMultiTest, reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Reinsert the same vectors under different ids than before.
@@ -2850,6 +2869,9 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVector) {
     // Remove from main index.
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 0);
 
     // Re-insert a deleted label with a different vector.
@@ -2906,6 +2928,10 @@ TYPED_TEST(FP16SVSTieredIndexTest, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
 
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
+
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
 
