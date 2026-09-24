@@ -3746,6 +3746,31 @@ TYPED_TEST(SVSTest, relabelVectorRejects) {
     VecSimIndex_Free(index);
 }
 
+#else // HAVE_SVS_REPLACE_EXTERNAL_ID
+
+// Built against an SVS without `replace_external_id`, so SVSIndex leaves relabelVector to the
+// interface default. Asserting the code here rather than skipping keeps the contract covered in
+// this configuration too: a caller has to be able to tell "this index never relabels" from a
+// rejection it could resolve itself.
+TEST(SVSTest, relabelVectorUnsupported) {
+    size_t dim = 4;
+    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams index_params = CreateParams(params);
+    VecSimIndex *index = VecSimIndex_New(&index_params);
+    ASSERT_NE(index, nullptr);
+
+    GenerateAndAddVector<float>(index, dim, 1, 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    // The label exists and the target is free, so only the unsupported default can produce this.
+    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_Unsupported);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
+
+    VecSimIndex_Free(index);
+}
+
+#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
+
 // MOD-18890: reproduces the intermittent wrong-result recall bug behind
 // test_hybrid_query_with_text_vamana's flakiness (RediSearch tests/pytests/test_vecsim.py).
 //
@@ -3837,31 +3862,6 @@ TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecallManyTrials) {
                   << std::endl;
     }
 }
-
-#else // HAVE_SVS_REPLACE_EXTERNAL_ID
-
-// Built against an SVS without `replace_external_id`, so SVSIndex leaves relabelVector to the
-// interface default. Asserting the code here rather than skipping keeps the contract covered in
-// this configuration too: a caller has to be able to tell "this index never relabels" from a
-// rejection it could resolve itself.
-TEST(SVSTest, relabelVectorUnsupported) {
-    size_t dim = 4;
-    SVSParams params = {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2};
-    VecSimParams index_params = CreateParams(params);
-    VecSimIndex *index = VecSimIndex_New(&index_params);
-    ASSERT_NE(index, nullptr);
-
-    GenerateAndAddVector<float>(index, dim, 1, 1);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-
-    // The label exists and the target is free, so only the unsupported default can produce this.
-    ASSERT_EQ(VecSimIndex_RelabelVector(index, 1, 2), VecSimRelabel_Unsupported);
-    ASSERT_EQ(VecSimIndex_IndexSize(index), 1);
-
-    VecSimIndex_Free(index);
-}
-
-#endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
 #else // HAVE_SVS
 
