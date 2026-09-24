@@ -40,8 +40,6 @@ public:
 
     void resize(size_t new_size);
 
-    void ensureCapacity(size_t new_size);
-
     // Mark node_id with tag, to have an indication that this node has been visited.
     inline void tagNode(unsigned int node_id, tag_t tag) { elements_tags[node_id] = tag; }
 
@@ -70,9 +68,6 @@ public:
 
     // This should be called under a guarded section only (NOT in parallel).
     void resize(size_t new_size);
-
-    // Unlike resize, preserve spare capacity from a partially completed growth attempt.
-    void ensureCapacity(size_t new_size);
 
     size_t getPoolSize() { return pool.size(); }
 

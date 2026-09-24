@@ -557,12 +557,6 @@ template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
 
-    std::shared_lock<std::shared_mutex> flat_index_lock;
-    if constexpr (releaseFlatGuard) {
-        flat_index_lock =
-            std::shared_lock<std::shared_mutex>(this->flatIndexGuard, std::adopt_lock);
-    }
-
     // Preprocess for storage and indexing in the hnsw index
     ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
     const void *processed_storage_blob = processed_blobs.getStorageBlob();
@@ -570,15 +564,15 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
 
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
-    std::shared_lock<std::shared_mutex> main_index_lock(this->mainIndexGuard);
-    auto index_data_lock = hnsw_index->acquireIndexDataGuard();
+    this->mainIndexGuard.lock_shared();
+    hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
     if (hnsw_index->isCapacityFull()) {
         // Release the inner HNSW data lock before we re-acquire the global HNSW lock.
-        main_index_lock.unlock();
-        index_data_lock.unlock();
-        const auto main_write_lock = this->acquireMainIndexGuard();
-        auto write_data_lock = hnsw_index->acquireIndexDataGuard();
+        this->mainIndexGuard.unlock_shared();
+        hnsw_index->unlockIndexDataGuard();
+        this->lockMainIndexGuard();
+        hnsw_index->lockIndexDataGuard();
 
         // Hold the index data lock while we store the new element. If the new node's max level is
         // higher than the current one, hold the lock through the entire insertion to ensure that
@@ -587,7 +581,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // we hold the main index lock for exclusive access.
         auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
         if constexpr (releaseFlatGuard) {
-            flat_index_lock.unlock();
+            this->flatIndexGuard.unlock_shared();
         }
 
         // If we're still holding the index data guard, we cannot take the main index lock for
@@ -595,10 +589,14 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // lock between, since we cannot allow swap jobs to happen, as they will make the
         // saved state invalid. Hence, we insert the vector with the current exclusive lock held.
         if (state.elementMaxLevel <= state.currMaxLevel) {
-            write_data_lock.unlock();
+            hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
         hnsw_index->indexVector(processed_for_index, label, state);
+        if (state.elementMaxLevel > state.currMaxLevel) {
+            hnsw_index->unlockIndexDataGuard();
+        }
+        this->unlockMainIndexGuard();
     } else {
         // Do the same as above except for changing the capacity, but with *shared* lock held:
         // Hold the index data lock while we store the new element. If the new node's max level is
@@ -608,14 +606,18 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
         // this call will not resize the index.
         auto state = hnsw_index->storeNewElement(label, processed_storage_blob);
         if constexpr (releaseFlatGuard) {
-            flat_index_lock.unlock();
+            this->flatIndexGuard.unlock_shared();
         }
 
         if (state.elementMaxLevel <= state.currMaxLevel) {
-            index_data_lock.unlock();
+            hnsw_index->unlockIndexDataGuard();
         }
         // Take the vector from the flat buffer and insert it to HNSW (overwrite should not occur).
         hnsw_index->indexVector(processed_for_index, label, state);
+        if (state.elementMaxLevel > state.currMaxLevel) {
+            hnsw_index->unlockIndexDataGuard();
+        }
+        this->mainIndexGuard.unlock_shared();
     }
 }
 

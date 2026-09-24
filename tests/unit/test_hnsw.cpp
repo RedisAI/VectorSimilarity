@@ -201,7 +201,31 @@ TYPED_TEST(HNSWTest, resizeIndex) {
     ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
     // The capacity shouldn't be changed.
     ASSERT_EQ(index->indexCapacity(), n + extra_cap);
-    ASSERT_GE(index->indexMetaDataCapacity(), 8 * bs);
+    ASSERT_EQ(index->indexMetaDataCapacity(), 8 * bs);
+
+    for (size_t label = 0; label < 7; ++label) {
+        ASSERT_EQ(VecSimIndex_DeleteVector(index, label), 1);
+    }
+    ASSERT_EQ(index->indexCapacity(), 2 * bs);
+    ASSERT_EQ(index->indexMetaDataCapacity(), 4 * bs);
+
+    for (size_t label = 0; label < 7; ++label) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label);
+    }
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap);
+    ASSERT_EQ(index->indexMetaDataCapacity(), 8 * bs);
+    ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
+
+    index->fitMemory();
+    ASSERT_EQ(index->indexMetaDataCapacity(), index->indexCapacity());
+
+    for (size_t label = 0; label < n; ++label) {
+        ASSERT_EQ(VecSimIndex_DeleteVector(index, label), 1);
+    }
+    ASSERT_EQ(index->indexMetaDataCapacity(), 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+    ASSERT_EQ(index->indexCapacity(), bs);
+    ASSERT_EQ(index->indexMetaDataCapacity(), bs);
 
     VecSimIndex_Free(index);
 }

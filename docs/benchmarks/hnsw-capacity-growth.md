@@ -1,8 +1,8 @@
 # HNSW auxiliary capacity growth experiment
 
 An earlier geometric-growth prototype reduced measured insertion-loop time for
-one populated 10M-vector HNSW index. The failure-handling changes in this draft
-were added afterward; these timings are not a benchmark of the final draft.
+one populated 10M-vector HNSW index. These timings come from that prototype;
+the final draft on its newer base has not yet been benchmarked at this scale.
 
 ## Workload
 
@@ -19,10 +19,10 @@ were added afterward; these timings are not a benchmark of the final draft.
 
 The measured prototype doubled auxiliary capacity when exhausted and reclaimed
 it at one-quarter utilization. Graph and vector storage still grew in blocks.
-It used the original shared resize helper, including its exact-fit vector
-reclamation. The draft additionally separates growth from reclamation, handles
-failed growth and retries with required capacity, and releases the data guard
-when growth throws.
+Both the prototype and this draft retain the original shared resize helper,
+including its exact-fit vector reclamation, but call it less frequently. The
+draft changes the capacity policy without changing allocation-failure handling
+or insertion locking. Existing allocator accounting includes the spare capacity.
 
 ## Results
 
@@ -64,5 +64,6 @@ sampled queries do not establish full ANN recall.
 
 Before marking the draft ready, rerun performance on the final implementation
 and measure concurrent-query latency during ingestion at representative local
-index sizes and vector dimensions. Broader insertion allocation failures after
-capacity growth remain outside this draft's failure-recovery guarantee.
+index sizes and vector dimensions. Larger speculative allocations can fail
+earlier under memory pressure; allocation-failure recovery is not addressed by
+this capacity-policy change.

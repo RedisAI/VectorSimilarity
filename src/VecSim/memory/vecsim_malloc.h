@@ -12,7 +12,6 @@
 #include <memory>
 #include <atomic>
 #include <cstring>
-#include <new>
 
 struct VecSimAllocator {
     // Allow global vecsim memory functions to access this class.
@@ -138,13 +137,7 @@ public:
         return *this;
     }
 
-    T *allocate(size_t size) {
-        auto *ptr = static_cast<T *>(this->vecsim_allocator->allocate(size * sizeof(T)));
-        if (!ptr) {
-            throw std::bad_alloc();
-        }
-        return ptr;
-    }
+    T *allocate(size_t size) { return (T *)this->vecsim_allocator->allocate(size * sizeof(T)); }
 
     void deallocate(T *ptr, size_t size) {
         this->vecsim_allocator->deallocate(ptr, size * sizeof(T));
