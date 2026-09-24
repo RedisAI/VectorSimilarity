@@ -40,14 +40,9 @@ struct SVSIndexBase
 {
     SVSIndexBase() : num_marked_deleted{0} {};
     virtual ~SVSIndexBase() = default;
-    // Returned by addVectorsIfInitialized() when nothing was added.
-    static constexpr int kNotInitialized = -1;
 
     virtual int addVector(const void *vector_data, labelType label) = 0;
     virtual int addVectors(const void *vectors_data, const labelType *labels, size_t n) = 0;
-    // Add vectors into an already initialized instance.
-    virtual int addVectorsIfInitialized(const void *vectors_data, const labelType *labels,
-                                        size_t n) = 0;
     virtual int deleteVector(labelType label) = 0;
     virtual int deleteVectors(const labelType *labels, size_t n) = 0;
     virtual void consolidate(const std::vector<labelType> &labels) = 0;
@@ -132,18 +127,9 @@ protected:
     // SVS Index implementation instance.
     // initImpl() needs at least one point to compute an entry point.
     // so impl_ is null until the first insert
-    std::shared_ptr<impl_type> impl_;
+    std::atomic<impl_type *> impl_{nullptr};
 
-    mutable std::shared_mutex pimplGuard_;
-    // Serialize mutators of the impl_ pointer (exclusive)
-    // vs add_points() (shared) to avoid silent drops of additions
-    // Lock order: implMutationGuard_ -> pimplGuard_.
-    std::shared_mutex implMutationGuard_;
-
-    std::shared_ptr<impl_type> getImpl() const {
-        std::shared_lock lock(this->pimplGuard_);
-        return this->impl_;
-    }
+    impl_type *getImpl() const { return this->impl_.load(std::memory_order_acquire); }
 
     static double toVecSimDistance(float v) { return svs_details::toVecSimDistance<distance_f>(v); }
 
@@ -186,7 +172,7 @@ protected:
     // Create SVS index instance with initial data
     // Data should not be empty
     template <svs::data::ImmutableMemoryDataset Dataset>
-    std::shared_ptr<impl_type> initImpl(const Dataset &points,
+    std::unique_ptr<impl_type> initImpl(const Dataset &points,
                                         std::span<const labelType> ids) const {
         svs::threads::ThreadPoolHandle threadpool_handle{VecSimSVSThreadPool{threadpool_}};
 
@@ -207,7 +193,7 @@ protected:
                                          this->blockSize, this->getAllocator(), logger_);
 
         // Create SVS MutableIndex instance
-        auto impl = std::make_shared<impl_type>(std::move(graph), std::move(data), entry_point,
+        auto impl = std::make_unique<impl_type>(std::move(graph), std::move(data), entry_point,
                                                 std::move(distance), ids, threadpool_, logger_);
 
         // Set SVS MutableIndex build parameters to be used in future updates
@@ -250,8 +236,8 @@ protected:
 
     // Handler to manage SVS implementation instance
     struct SVSImplHandler : public SVSIndexBase::ImplHandler {
-        std::shared_ptr<impl_type> impl;
-        SVSImplHandler(std::shared_ptr<impl_type> impl) : impl{std::move(impl)} {}
+        std::unique_ptr<impl_type> impl;
+        SVSImplHandler(std::unique_ptr<impl_type> impl) : impl{std::move(impl)} {}
     };
 
     std::unique_ptr<ImplHandler> createImpl(const void *vectors_data, const labelType *labels,
@@ -270,19 +256,21 @@ protected:
         return std::make_unique<SVSImplHandler>(initImpl(points, ids));
     }
 
+    void storeImpl(impl_type *impl) {
+        this->impl_.store(impl, std::memory_order_release);
+    }
+
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
         SVSImplHandler *svs_handler = dynamic_cast<SVSImplHandler *>(handler.get());
         if (!svs_handler) {
             throw std::logic_error("Failed to cast to SVSImplHandler");
         }
 
-        std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
         if (getImpl()) {
             throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
         }
 
-        std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
-        this->impl_ = std::move(svs_handler->impl);
+        storeImpl(svs_handler->impl.release());
     }
 
     // Assuming parallelism was updated to reflect the number of available threads before this
@@ -291,8 +279,7 @@ protected:
     // for the operation.
     // Important NOTE: For single vector operations (n=1), parallelism should be 1.
     // For bulk operations (n>1), parallelism should reflect the number of available threads.
-    int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n,
-                       bool allow_init = true) {
+    int addVectorsImpl(const void *vectors_data, const labelType *labels, size_t n) {
         if (n == 0) {
             return 0;
         }
@@ -311,78 +298,46 @@ protected:
             deleted_num = deleteVectorsImpl(labels, n);
         }
 
-        this->implMutationGuard_.lock_shared();
         if (auto impl = getImpl()) {
+            // Add new points to existing SVS index
             impl->add_points(points, ids, /*reuse_empty*/ false);
-            this->implMutationGuard_.unlock_shared();
         } else {
-            this->implMutationGuard_.unlock_shared();
-            this->implMutationGuard_.lock();
-            if (auto existing = getImpl()) {
-                existing->add_points(points, ids, /*reuse_empty*/ false);
-            } else if (!allow_init) {
-                this->implMutationGuard_.unlock();
-                return kNotInitialized;
-            } else {
-                auto built = initImpl(points, ids);
-                assert(built != nullptr);
-                std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
-                this->impl_ = std::move(built);
-            }
-            this->implMutationGuard_.unlock();
+            // SVS index instance cannot be empty, so we have to construct it at first rows
+            storeImpl(initImpl(points, ids).release());
         }
 
         return n - deleted_num;
     }
 
     void consolidate(const std::vector<labelType> &labels) override {
-        if (auto impl = getImpl()) {
+        if (auto impl = getImpl(); impl && labelCountOf(*impl) > 0) {
             impl->consolidate(labels);
         }
     }
 
     int deleteVectorImpl(const labelType label) {
-        auto impl = getImpl();
-        if (!impl) {
+        if (auto impl = getImpl()) {
+            const int deleted_num = impl->delete_entries(std::span{&label, 1});
+            this->markIndexUpdate(deleted_num);
+            return deleted_num;
+        } else {
             return 0;
         }
-
-        const int deleted_num = impl->delete_entries(std::span{&label, 1});
-        this->markIndexUpdate(impl, deleted_num);
-        return deleted_num;
     }
 
     int deleteVectorsImpl(const labelType *labels, size_t n) {
-        auto impl = getImpl();
-        if (!impl) {
+        if (auto impl = getImpl()) {
+            const int deleted_num = impl->delete_entries(std::span{labels, n});
+            if (deleted_num > 0) {
+                this->markIndexUpdate(deleted_num);
+            }
+            return deleted_num;
+        } else {
             return 0;
         }
-
-        const int deleted_num = impl->delete_entries(std::span{labels, n});
-        if (deleted_num > 0) {
-            this->markIndexUpdate(impl, deleted_num);
-        }
-        return deleted_num;
     }
 
-    void markIndexUpdate(const std::shared_ptr<impl_type> &impl, size_t n = 1) {
-        // SVS index instance should not be empty
-        if (labelCountOf(*impl) == 0) {
-            std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
-            if (getImpl() != impl) {
-                // The instance was already droped
-                return;
-            }
-            if (labelCountOf(*impl) == 0) {
-                {
-                    std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
-                    this->impl_.reset();
-                }
-                num_marked_deleted.store(0, std::memory_order_relaxed);
-                return;
-            }
-        }
-
+    void markIndexUpdate(size_t n = 1) {
         num_marked_deleted.fetch_add(n, std::memory_order_relaxed);
     }
 
@@ -419,7 +374,7 @@ public:
               svs_details::getOrDefault(params.leanvec_dim, SVS_VAMANA_DEFAULT_LEANVEC_DIM)},
           epsilon{svs_details::getOrDefault(params.epsilon, SVS_VAMANA_DEFAULT_EPSILON)},
           is_two_level_lvq{isTwoLevelLVQ(params.quantBits)},
-          threadpool_{this->allocator, this->logCallbackCtx}, impl_{nullptr} {
+          threadpool_{this->allocator, this->logCallbackCtx} {
         logger_ = makeLogger();
         if (params.num_threads != 0) {
             this->log(VecSimCommonStrings::LOG_WARNING_STRING,
@@ -428,12 +383,9 @@ public:
         }
     }
 
-    ~SVSIndex() = default;
+    ~SVSIndex() { delete this->impl_.load(std::memory_order_relaxed); }
 
-    bool ready() const override {
-        std::shared_lock lock(this->pimplGuard_);
-        return this->impl_ != nullptr;
-    }
+    bool ready() const override { return getImpl() != nullptr; }
 
     size_t indexSize() const override { return indexStorageSize(); }
 
@@ -605,13 +557,6 @@ public:
         return addVectorsImpl(vectors_data, labels, n);
     }
 
-    int addVectorsIfInitialized(const void *vectors_data, const labelType *labels,
-                                size_t n) override {
-        assert(!(n == 1 && getParallelism() > 1) &&
-               "Can't use more than one thread to insert a single vector");
-        return addVectorsImpl(vectors_data, labels, n, /*allow_init=*/false);
-    }
-
     int deleteVector(labelType label) override { return deleteVectorImpl(label); }
 
     int deleteVectors(const labelType *labels, size_t n) override {
@@ -628,7 +573,6 @@ public:
             return VecSimRelabel_SameLabel;
         }
 
-        std::shared_lock mutation_lock(this->implMutationGuard_);
         auto impl = getImpl();
 
         // A null impl_ is an index that never held a vector, so it holds neither label.
@@ -812,8 +756,7 @@ public:
                 NullSVS_BatchIterator(queryBlobCopyPtr, queryParams, this->getAllocator());
         } else {
             return new (this->getAllocator()) SVS_BatchIterator<impl_type, data_type>(
-                queryBlobCopyPtr, std::move(impl), queryParams, this->getAllocator(),
-                is_two_level_lvq);
+                queryBlobCopyPtr, impl, queryParams, this->getAllocator(), is_two_level_lvq);
         }
     }
 
@@ -863,8 +806,7 @@ private:
     void appendStoredDataByLabel(labelType label,
                                  std::vector<std::vector<OutputElement>> &vectors_output) const {
         // The spans handed to `append_datum` point straight into the dataset, so the instance has
-        // to stay alive for the whole walk. The snapshot's reference keeps it alive even if
-        // markIndexUpdate() drops impl_ meanwhile.
+        // to stay alive for the whole walk.
         auto impl = getImpl();
         if (!impl) {
             return;

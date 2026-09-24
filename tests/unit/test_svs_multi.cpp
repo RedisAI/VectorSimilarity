@@ -128,6 +128,7 @@ TYPED_TEST(SVSMultiTest, vector_add_multiple_test) {
 
     // Deleting the label. All the vectors should be deleted.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, id), rep);
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(index->indexLabelCount(), 0);
 
@@ -164,6 +165,7 @@ TYPED_TEST(SVSMultiTest, empty_index) {
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 3);
 
     // Size equals 0.
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove it again.
@@ -431,6 +433,7 @@ TYPED_TEST(SVSMultiTest, reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Reinsert the same vectors under different ids than before.
@@ -616,6 +619,7 @@ TYPED_TEST(SVSMultiTest, search_empty_index) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     VecSimIndex_DeleteVector(index, 46);
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Again - we do not expect any results.
@@ -786,16 +790,15 @@ TYPED_TEST(SVSMultiTest, emptyIndex) {
     // Try to remove it.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 1);
 
-    // The capacity should change to be zero.
-    ASSERT_EQ(index->indexCapacity(), 0);
+    // Even an empty index holds the first block for nonquantized data
+    // ASSERT_EQ(index->indexCapacity(), 0);
 
     // Size equals 0.
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove it again.
-    // The capacity should remain unchanged, as we are trying to delete a label that doesn't exist.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 0);
-    ASSERT_EQ(index->indexCapacity(), 0);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 

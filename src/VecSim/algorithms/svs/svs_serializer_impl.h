@@ -96,7 +96,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
     // Verify metadata compatibility, will throw runtime exception if not compatible
     compareMetadataFile(folder_path + "/metadata");
 
-    std::shared_ptr<impl_type> loaded_impl;
+    std::unique_ptr<impl_type> loaded_impl;
     if constexpr (isMulti) {
         auto loaded = svs::concurrent::auto_multi_dynamic_assemble(
             folder_path + "/config",
@@ -106,7 +106,7 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
                                             this->getAllocator())),
             distance_f(), std::move(threadpool_handle),
             svs::concurrent::MultiMutableVamanaLoad::FROM_MULTI, logger_);
-        loaded_impl = std::make_shared<impl_type>(std::move(loaded));
+        loaded_impl = std::make_unique<impl_type>(std::move(loaded));
     } else {
         auto loaded = svs::concurrent::auto_dynamic_assemble(
             folder_path + "/config",
@@ -115,12 +115,10 @@ void SVSIndex<MetricType, DataType, isMulti, QuantBits, ResidualBits, IsLeanVec>
             SVS_LAZY(storage_traits_t::load(folder_path + "/data", this->blockSize, this->dim,
                                             this->getAllocator())),
             distance_f(), std::move(threadpool_handle), false, logger_);
-        loaded_impl = std::make_shared<impl_type>(std::move(loaded));
+        loaded_impl = std::make_unique<impl_type>(std::move(loaded));
     }
 
-    std::lock_guard<std::shared_mutex> replace_lock(this->implMutationGuard_);
-    std::lock_guard<std::shared_mutex> lock(this->pimplGuard_);
-    impl_ = std::move(loaded_impl);
+    delete impl_.exchange(loaded_impl.release(), std::memory_order_release);
 }
 
 template <typename MetricType, typename DataType, bool isMulti, size_t QuantBits,

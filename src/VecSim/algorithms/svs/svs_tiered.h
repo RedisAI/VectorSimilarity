@@ -271,7 +271,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // The reason of following container just to properly destroy jobs which not executed yet
     SVSMultiThreadJob::JobsRegistry uncompletedJobs;
 
-    // frontend ids holding training data for the backend (re)initialization
+    // frontend ids holding training data for the backend initialization
     std::unordered_set<idType> ids_to_init_;
 
     vecsim_stl::unordered_map<labelType, vecsim_stl::vector<SVSConsolidateJob *>>
@@ -525,11 +525,7 @@ private:
         assert(index);
         // prevent parallel updates
         std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
-        // flag stays set while init runs: !ready() + !flag means "no one will init the backend"
-        struct ClearOnExit {
-            std::atomic_flag &flag;
-            ~ClearOnExit() { flag.clear(std::memory_order_release); }
-        } clear_on_exit{index->indexUpdateScheduled};
+        // Update the SVS index
         index->initSVSIndex(availableThreads);
     }
 
@@ -749,15 +745,6 @@ private:
             return InsertJobOutcome::Deferred;
         }
 
-        // a job never inits the backend: one point cannot train the compression
-        if (!svs_index->ready()) {
-            this->flatIndexGuard.unlock_shared();
-            // init pending -> wait for it. no init pending -> back to the training buffer
-            return this->indexUpdateScheduled.test(std::memory_order_acquire)
-                       ? InsertJobOutcome::Deferred
-                       : adoptJobIntoInitBuffer(job);
-        }
-
         // Copy the vector blob out of the flat buffer while holding flatIndexGuard, so we
         // can release the flat lock before indexing into the SVS backend
         size_t data_size = this->frontendIndex->getStoredDataSize();
@@ -767,16 +754,9 @@ private:
         job->status.store(SVSInsertJob::Status::Executing, std::memory_order_release);
         this->flatIndexGuard.unlock_shared();
 
-        // if a concurrent deletion drops the instance
-        // initializing it from this single point would refit the compression
-        const int added = svs_index->addVectorsIfInitialized(blob_copy.get(), &job->label, 1);
-        const bool published = added != SVSIndexBase::kNotInitialized;
+        svs_index->addVector(blob_copy.get(), job->label);
 
-        job->status.store(published ? SVSInsertJob::Status::Done : SVSInsertJob::Status::Pending,
-                          std::memory_order_release);
-        if (!published) {
-            return adoptJobIntoInitBuffer(job);
-        }
+        job->status.store(SVSInsertJob::Status::Done, std::memory_order_release);
         // Remove the vector and the insert job from the flat buffer.
         this->removeIngestedVectorFromFlat(job);
         return InsertJobOutcome::Completed;
@@ -847,6 +827,11 @@ private:
 
             assert(total_deleted == labels_to_move.size() &&
                    "Deleted vectors count does not match the number of labels to delete");
+
+            // Release the scheduled flag to allow scheduling again.
+            // Repeted sheduling is required if labels_to_move.empty() 
+            // Under the guard, so a vector buffered after it schedules its own init.
+            indexUpdateScheduled.clear();
         } // release frontend index
         executeTracingCallback("UpdateJob::after_add_to_svs");
     }
@@ -908,38 +893,23 @@ public:
             }
             // backend index is initialized - we can add the vector directly
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-            int deleted = 0;
-            {
-                // prevent update job from running in parallel and lock any access to the backend
-                // index
-                // Only updateJobMutex is needed here, not mainIndexGuard: the concurrent
-                // backend index serializes writes against concurrent readers itself.
-                std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
-                // Defensive: ensure single-threaded operation for write-in-place mode.
-                // parallelism_ defaults to 1, so this is a no-op in the normal case.
-                svs_index->setParallelism(1);
-                if (!this->backendIndex->isMultiValue()) {
-                    deleted = svs_index->deleteVector(label);
-                    if (deleted > 0)
-                        svs_index->consolidate({label});
-                }
-                if (svs_index->ready()) {
-                    return this->backendIndex->addVector(storage_blob.get(), label) - deleted;
-                }
-            }
-            // the delete above dropped the last backend vector: adding now would refit the
-            // compression to this single point
-            if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/true)) {
-                return std::max(*buffered - deleted, 0);
-            }
-            // a queued init job rebuilt the backend meanwhile
+            // Only updateJobMutex is needed here
             std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
-            return std::max(this->backendIndex->addVector(storage_blob.get(), label) - deleted, 0);
+            // Defensive: ensure single-threaded operation for write-in-place mode.
+            // parallelism_ defaults to 1, so this is a no-op in the normal case.
+            svs_index->setParallelism(1);
+            int deleted = 0;
+            if (!this->backendIndex->isMultiValue()) {
+                deleted = svs_index->deleteVector(label);
+                if (deleted > 0)
+                    svs_index->consolidate({label});
+            }
+            return this->backendIndex->addVector(storage_blob.get(), label) - deleted;
         }
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
 
         // Async mode - buffer training data until the backend can be inited from a batch.
-        if (!svs_index->ready() && !this->indexUpdateScheduled.test(std::memory_order_acquire)) {
+        if (!svs_index->ready()) {
             if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/false)) {
                 return *buffered;
             }
@@ -952,13 +922,6 @@ public:
 
             const int overwritten =
                 this->backendIndex->isMultiValue() ? 0 : this->deleteVector(label);
-
-            // the delete above may have dropped the last backend vector
-            if (!svs_index->ready()) {
-                if (auto buffered = tryBufferForTraining(blob, label, /*in_place=*/false)) {
-                    return std::max(*buffered - overwritten, 0);
-                }
-            }
 
             std::shared_lock<std::shared_mutex> lock(updateJobMutex);
             ret = svs_index->addVector(storage_blob.get(), label);
@@ -1115,7 +1078,7 @@ public:
         return job;
     }
 
-    // Buffer a vector in the frontend index as training data for the backend (re)initialization.
+    // Buffer a vector in the frontend index as training data for the backend initialization.
     // Returns 1 for a new label, 0 for an overwrite, or nullopt if the backend turned ready while
     // the guard was taken
     std::optional<int> tryBufferForTraining(const void *blob, labelType label, bool in_place) {
@@ -1129,9 +1092,7 @@ public:
             }
             int deleted = 0;
             if (!this->frontendIndex->isMultiValue() && this->frontendIndex->isLabelExists(label)) {
-                // once the backend has been dropped the buffer may also hold job-backed vectors,
-                // so the overwrite has to invalidate pending jobs
-                deleted = removeLabelFromFlat(label);
+                deleted = deleteAndUpdateInitIds(label);
             }
             ids_to_init_.insert(this->frontendIndex->indexSize());
             ret = std::max(this->frontendIndex->addVector(blob, label) - deleted, 0);
@@ -1145,26 +1106,6 @@ public:
             initSVSIndexWrapper(this, 1);
         }
         return ret;
-    }
-
-    // Move a pending job's vector from the insert-job path to the training batch. The vector stays
-    // in the frontend index, only its ownership changes.
-    InsertJobOutcome adoptJobIntoInitBuffer(SVSInsertJob *job) {
-        std::lock_guard flat_lock{this->flatIndexGuard};
-        if (!job->isValid) {
-            std::lock_guard invalid_lock{this->invalidJobsLookupGuard};
-            this->invalidJobs.erase(job->id);
-            return InsertJobOutcome::Completed;
-        }
-        if (GetSVSIndex()->ready() || this->indexUpdateScheduled.test(std::memory_order_acquire)) {
-            return InsertJobOutcome::Deferred;
-        }
-        ids_to_init_.insert(job->id);
-        this->detachInsertJob(job);
-        if (ids_to_init_.size() >= this->trainingTriggerThreshold) {
-            scheduleSVSIndexInit();
-        }
-        return InsertJobOutcome::Completed;
     }
 
     int deleteVector(labelType label) override {
