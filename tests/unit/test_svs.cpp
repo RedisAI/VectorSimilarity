@@ -3783,10 +3783,8 @@ TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecallManyTrials) {
     for (size_t first_batch : first_batch_sizes) {
         size_t failures = 0;
         for (size_t trial = 0; trial < num_trials; trial++) {
-            SVSParams params = {.type = VecSimType_FLOAT32,
-                                .dim = dim,
-                                .metric = VecSimMetric_L2,
-                                .multi = false};
+            SVSParams params = {
+                .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .multi = false};
             VecSimParams index_params = CreateParams(params);
             VecSimIndex *index = VecSimIndex_New(&index_params);
             ASSERT_NE(index, nullptr);
