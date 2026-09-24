@@ -65,6 +65,15 @@ struct RepairAccess : HNSWIndex<DataType, DistType> {
     using HNSWIndex<DataType, DistType>::repairNodeConnections;
 };
 
+struct TieredBackendAccess : VecSimTieredIndex<float, float> {
+    using VecSimTieredIndex<float, float>::backendIndex;
+};
+
+HNSWIndex<float, float> *getBackend(TieredHNSWIndex<float, float> *index) {
+    auto backend = &TieredBackendAccess::backendIndex;
+    return dynamic_cast<HNSWIndex<float, float> *>(index->*backend);
+}
+
 LargeVector makeLargeVector(size_t value) {
     return {static_cast<float>(value), static_cast<float>(value % 7), static_cast<float>(value % 5),
             static_cast<float>(value % 3)};
@@ -145,7 +154,7 @@ template <size_t Dimension, typename VectorFactory>
 void loadBackend(TieredHNSWIndex<float, float> *index, size_t count, VectorFactory make_vector) {
     for (size_t value = 0; value < count; ++value) {
         const std::array<float, Dimension> vector = make_vector(value);
-        ASSERT_EQ(1, index->getHNSWIndex()->addVector(vector.data(), value));
+        ASSERT_EQ(1, getBackend(index)->addVector(vector.data(), value));
     }
 }
 
@@ -211,7 +220,7 @@ std::vector<std::string> loadRecoverySchedule() {
 }
 
 void expectIntegrity(TieredHNSWIndex<float, float> *index) {
-    EXPECT_TRUE(index->getHNSWIndex()->checkIntegrity().valid_state);
+    EXPECT_TRUE(getBackend(index)->checkIntegrity().valid_state);
 }
 
 } // namespace
