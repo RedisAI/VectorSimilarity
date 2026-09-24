@@ -829,7 +829,7 @@ private:
                    "Deleted vectors count does not match the number of labels to delete");
 
             // Release the scheduled flag to allow scheduling again.
-            // Repeted sheduling is required if labels_to_move.empty() 
+            // Repeted sheduling is required if labels_to_move.empty()
             // Under the guard, so a vector buffered after it schedules its own init.
             indexUpdateScheduled.clear();
         } // release frontend index
