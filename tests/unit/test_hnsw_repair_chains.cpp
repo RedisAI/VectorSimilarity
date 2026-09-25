@@ -64,6 +64,8 @@ struct TieredCleanup {
 template <typename DataType, typename DistType>
 struct RepairAccess : HNSWIndex<DataType, DistType> {
     using HNSWIndex<DataType, DistType>::isolateDeletedElement;
+    using HNSWIndex<DataType, DistType>::markAs;
+    using HNSWIndex<DataType, DistType>::mutuallyConnectNewElement;
     using HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode;
     using HNSWIndex<DataType, DistType>::repairNodeConnections;
 };
@@ -271,6 +273,7 @@ TEST(DISABLED_HNSWWorkerTrace, EnterpriseFifoReplacementsRemainFullyReachable) {
         std::vector<labelType> missing;
         std::set_difference(expected.begin(), expected.end(), found.begin(), found.end(),
                             std::back_inserter(missing));
+        EXPECT_TRUE(missing.empty()) << operation << " lost " << missing.size() << " labels";
         std::vector<labelType> extra;
         std::set_difference(found.begin(), found.end(), expected.begin(), expected.end(),
                             std::back_inserter(extra));
@@ -491,6 +494,77 @@ TEST(HNSWRepairChains, PendingFiveThousandVectorReplacementJobsPreserveReachabil
     EXPECT_TRUE(before_exact);
     EXPECT_TRUE(after_exact);
     expectIntegrity(index);
+}
+
+TEST(HNSWRepairChains, InsertionPreservesSuccessorOfPendingDeletedNeighbor) {
+    constexpr idType a = 0, deleted = 1, left = 2, up = 3, down = 4, b = 5, added = 6;
+    const std::array<SmallVector, 7> vectors{
+        {{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {2, 0}, {-0.1f, 0}}};
+    HNSWParams params{.type = VecSimType_FLOAT32,
+                      .dim = 2,
+                      .metric = VecSimMetric_L2,
+                      .M = 2,
+                      .efConstruction = kEfConstruction};
+    VecSimParams index_params = CreateParams(params);
+    std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> index(VecSimIndex_New(&index_params),
+                                                                    VecSimIndex_Free);
+    auto *hnsw = dynamic_cast<HNSWIndex_Single<float, float> *>(index.get());
+    ASSERT_NE(nullptr, hnsw);
+    for (idType id = 0; id < vectors.size(); ++id) {
+        ASSERT_EQ(1, hnsw->addVector(vectors[id].data(), id));
+    }
+    ASSERT_EQ(1U, hnsw->markDelete(deleted).size());
+
+    // Fix the topology independently of random upper levels: A is full, and its only route
+    // to B is the unidirectional A -> deleted edge followed by deleted <-> B.
+    for (idType id = 0; id < vectors.size(); ++id) {
+        for (size_t level = 0; level <= hnsw->getGraphDataByInternalId(id)->toplevel; ++level) {
+            auto &links = hnsw->getElementLevelData(id, level);
+            links.setNumLinks(0);
+            links.incomingUnidirectionalEdges->clear();
+        }
+    }
+    auto &a_links = hnsw->getElementLevelData(a, 0);
+    a_links.appendLink(deleted);
+    hnsw->getElementLevelData(deleted, 0).newIncomingUnidirectionalEdge(a);
+    for (idType neighbor : {left, up, down}) {
+        a_links.appendLink(neighbor);
+        hnsw->getElementLevelData(neighbor, 0).appendLink(a);
+    }
+    hnsw->getElementLevelData(deleted, 0).appendLink(b);
+    hnsw->getElementLevelData(b, 0).appendLink(deleted);
+
+    auto expect_reachable = [&]() {
+        std::array<bool, vectors.size()> visited{};
+        std::vector<idType> pending{a};
+        visited[a] = true;
+        for (size_t i = 0; i < pending.size(); ++i) {
+            for (idType neighbor : hnsw->getElementLevelData(pending[i], 0).copyLinks()) {
+                if (!visited[neighbor]) {
+                    visited[neighbor] = true;
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+        EXPECT_TRUE(visited[b]);
+        EXPECT_TRUE(hnsw->checkIntegrity().valid_state);
+    };
+    expect_reachable();
+
+    // Exercise insertion's full-neighbor update before the queued repair of A. Merely removing
+    // the tombstone during pruning would erase the only route that repair needs to find B.
+    auto mark_in_process = &RepairAccess<float, float>::markAs<IN_PROCESS>;
+    (hnsw->*mark_in_process)(added);
+    candidatesMaxHeap<float> candidates(hnsw->getAllocator());
+    candidates.emplace(hnsw->calcDistance(vectors[a].data(), vectors[added].data()), a);
+    auto connect = &RepairAccess<float, float>::mutuallyConnectNewElement;
+    (hnsw->*connect)(added, candidates, 0);
+    hnsw->unmarkInProcess(added);
+    expect_reachable();
+
+    auto repair = &RepairAccess<float, float>::repairNodeConnections;
+    (hnsw->*repair)(a, 0);
+    expect_reachable();
 }
 
 TEST(HNSWRepairChains, PendingDeletedNodeRepairCannotReconnectAfterIsolation) {

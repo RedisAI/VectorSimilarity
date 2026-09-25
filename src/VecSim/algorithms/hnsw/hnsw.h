@@ -899,13 +899,27 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
     ElementLevelData &new_node_level, ElementLevelData &neighbor_level) {
     // Note - expect that node_lock and neighbor_lock are locked at that point.
 
+    const idType selected_neighbor = neighbor_data.second;
+    bool has_deleted_neighbor = false;
+    for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
+        has_deleted_neighbor |= isMarkedDeleted(neighbor_level.getLinkAtPos(j));
+    }
+    if (has_deleted_neighbor) {
+        // Repair first: tombstones must not suppress live candidates, but simply dropping them
+        // could lose the live successors that their pending repair still needs to discover.
+        unlockNodeLinks(new_node_id);
+        unlockNodeLinks(selected_neighbor);
+        repairNodeConnections(selected_neighbor, level);
+        lockNodeLinks(std::min(new_node_id, selected_neighbor));
+        lockNodeLinks(std::max(new_node_id, selected_neighbor));
+    }
+
     // Collect the existing neighbors and the new node as the neighbor's neighbors candidates.
     candidatesList<DistType> candidates(this->allocator);
     candidates.reserve(neighbor_level.getNumLinks() + 1);
     // Add the new node along with the pre-calculated distance to the current neighbor,
     candidates.emplace_back(neighbor_data.first, new_node_id);
 
-    idType selected_neighbor = neighbor_data.second;
     const void *selected_neighbor_data = getDataByInternalId(selected_neighbor);
     for (size_t j = 0; j < neighbor_level.getNumLinks(); j++) {
         candidates.emplace_back(
