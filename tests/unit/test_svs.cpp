@@ -3791,15 +3791,19 @@ TEST(SVSTest, relabelVectorUnsupported) {
 // observed so far (same correct or incorrect answer every trial), so a handful of trials is
 // enough to demonstrate the discriminator. Keeping it small also matters operationally: each
 // trial attaches a fresh index to the shared VecSimSVSThreadPoolImpl singleton under real
-// 8-way parallel construction, and a much larger trial count (50, tried initially) was enough
-// repeated attach/detach churn to hit a rare pre-existing race in that singleton under
-// AddressSanitizer (a heap-use-after-free in VecSimSVSThreadPoolImpl::instance(), not
-// reproducible locally, not caused by this test's logic) -- out of scope to fix here.
+// 8-way parallel construction. A larger trial count (50, tried initially) was enough repeated
+// attach/detach churn to hit a rare pre-existing race in that singleton under AddressSanitizer
+// (a heap-use-after-free in VecSimSVSThreadPoolImpl::instance(), not reproducible locally, not
+// caused by this test's logic -- out of scope to fix here); even 5 trials/batch-size (20
+// constructions total) took ~343s under the coverage (debug, unoptimized + gcov) build in CI,
+// exceeding this test binary's global 300s per-test watchdog
+// (tests/utils/test_main_with_timeout.cpp) and getting killed. 2 trials/batch-size keeps
+// comfortable margin under that on the slowest CI build config while still repeating each case.
 TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecallManyTrials) {
     constexpr size_t dim = 2;
     constexpr size_t index_size = 3000;
     constexpr size_t k = 12;
-    constexpr size_t num_trials = 5;
+    constexpr size_t num_trials = 2;
     constexpr size_t num_threads = 8;
     const std::vector<size_t> first_batch_sizes = {1024, 1110, 1162, 1342};
 
@@ -3812,6 +3816,15 @@ TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecallManyTrials) {
         }
     }
 
+    // Restore the shared pool to its original size on scope exit (including early ASSERT_*
+    // returns): other tests in this binary read the pool's size via debug info and compare it
+    // to SVS_VAMANA_DEFAULT_NUM_THREADS, so growing it to num_threads here and leaving it there
+    // would fail whichever test happens to run next in the same process. (Reported by Cursor
+    // Bugbot.)
+    struct ThreadPoolSizeRestorer {
+        size_t original_size = VecSimSVSThreadPool::poolSize();
+        ~ThreadPoolSizeRestorer() { VecSimSVSThreadPool::resize(original_size); }
+    } pool_size_restorer;
     VecSimSVSThreadPool::resize(num_threads);
 
     for (size_t first_batch : first_batch_sizes) {
