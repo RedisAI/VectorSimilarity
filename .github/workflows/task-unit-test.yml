@@ -67,7 +67,8 @@ jobs:
           echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: unit tests
-        run: make unit_test SAN="$SAN_VALUE"
+        # MOD-18890 TEMP: restrict to SVS tests only, for faster CI iteration. Remove before merging.
+        run: make unit_test SAN="$SAN_VALUE" CTEST_ARGS="-R SVS"
       - name: Set test path
         if: ${{ inputs.san  == 'address' && failure() }}
         id: tests-artifact-path

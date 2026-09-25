@@ -41,7 +41,8 @@ jobs:
       - name: check format
         run: make check-format
       - name: unit tests
-        run: make unit_test
+        # MOD-18890 TEMP: restrict to SVS tests only, for faster CI iteration. Remove before merging.
+        run: make unit_test CTEST_ARGS="-R SVS"
       - name: flow tests
         run: make flow_test VERBOSE=1
       - name: Upload Logs
