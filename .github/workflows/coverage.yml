@@ -90,7 +90,9 @@ jobs:
           echo `clang --version`
           echo `clang++ --version`
       - name: run codecov
-        run: make coverage
+        # MOD-18890 TEMP: restrict to SVS tests only, for faster CI iteration while we tune
+        # this specific test's timing. Remove before merging.
+        run: make coverage CTEST_ARGS="-R SVS"
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v6 # NOSONAR
         with:
@@ -99,7 +101,8 @@ jobs:
           disable_safe_directory: true
           disable_search: true
       - name: Sanitizer tests
-        run: make asan
+        # MOD-18890 TEMP: restrict to SVS tests only, for faster CI iteration. Remove before merging.
+        run: make asan CTEST_ARGS="-R SVS"
       - name: Set test path
         if: failure()
         id: tests-artifact-path

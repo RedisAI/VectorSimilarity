@@ -3781,31 +3781,22 @@ TEST(SVSTest, relabelVectorUnsupported) {
 // varies run to run with scheduling timing; real runs were observed with batches from 1024 to
 // 1342 points.
 //
-// This test drives that same two-stage sequence directly against SVSIndexBase (bypassing
-// RediSearch/the tiered wrapper's threshold logic) and sweeps those observed batch sizes.
-// vectors_data is built so the true top-k nearest neighbors of the query are unambiguous
-// (ids 1..k in ascending distance order), making any deviation from that a clear regression.
-// The first three sizes were observed in a real run that passed; 1342 in one that failed.
+// Runs that same two-stage sequence directly against SVSIndexBase (bypassing RediSearch/the
+// tiered wrapper's threshold logic) at a given first_batch size. vectors_data is built so the
+// true top-k nearest neighbors of the query are unambiguous (ids 1..k in ascending distance
+// order), making any deviation from that a clear regression. Returns how many of num_trials
+// showed degraded recall; log-only, no assertion here (the TEST cases below assert).
 //
-// num_trials is intentionally small: the result is deterministic per batch size in every run
-// observed so far (same correct or incorrect answer every trial), so a handful of trials is
-// enough to demonstrate the discriminator. Keeping it small also matters operationally: each
-// trial attaches a fresh index to the shared VecSimSVSThreadPoolImpl singleton under real
-// 8-way parallel construction. A larger trial count (50, tried initially) was enough repeated
-// attach/detach churn to hit a rare pre-existing race in that singleton under AddressSanitizer
-// (a heap-use-after-free in VecSimSVSThreadPoolImpl::instance(), not reproducible locally, not
-// caused by this test's logic -- out of scope to fix here); even 5 trials/batch-size (20
-// constructions total) took ~343s under the coverage (debug, unoptimized + gcov) build in CI,
-// exceeding this test binary's global 300s per-test watchdog
-// (tests/utils/test_main_with_timeout.cpp) and getting killed. 2 trials/batch-size keeps
-// comfortable margin under that on the slowest CI build config while still repeating each case.
-TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecallManyTrials) {
+// One shared implementation, called from separate TEST() cases below (one per first_batch)
+// rather than one TEST() looping over all of them: this test binary enforces a global 300s
+// per-test timeout (tests/utils/test_main_with_timeout.cpp), and a single test looping over
+// multiple batch sizes at num_trials=10 would exceed it on the slowest CI build config (see
+// the timing note below).
+size_t RunTwoStageConstructionTrials(size_t first_batch, size_t num_trials) {
     constexpr size_t dim = 2;
     constexpr size_t index_size = 3000;
     constexpr size_t k = 12;
-    constexpr size_t num_trials = 2;
     constexpr size_t num_threads = 8;
-    const std::vector<size_t> first_batch_sizes = {1024, 1110, 1162, 1342};
 
     std::vector<float> vectors_data(index_size * dim);
     std::vector<labelType> labels(index_size);
@@ -3816,64 +3807,84 @@ TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecallManyTrials) {
         }
     }
 
-    // Restore the shared pool to its original size on scope exit (including early ASSERT_*
-    // returns): other tests in this binary read the pool's size via debug info and compare it
-    // to SVS_VAMANA_DEFAULT_NUM_THREADS, so growing it to num_threads here and leaving it there
-    // would fail whichever test happens to run next in the same process. (Reported by Cursor
-    // Bugbot.)
+    // Restore the shared pool to its original size on scope exit: other tests in this binary
+    // read the pool's size via debug info and compare it to SVS_VAMANA_DEFAULT_NUM_THREADS, so
+    // growing it to num_threads here and leaving it there would fail whichever test happens to
+    // run next in the same process. (Reported by Cursor Bugbot.)
     struct ThreadPoolSizeRestorer {
         size_t original_size = VecSimSVSThreadPool::poolSize();
         ~ThreadPoolSizeRestorer() { VecSimSVSThreadPool::resize(original_size); }
     } pool_size_restorer;
     VecSimSVSThreadPool::resize(num_threads);
 
-    for (size_t first_batch : first_batch_sizes) {
-        size_t failures = 0;
-        for (size_t trial = 0; trial < num_trials; trial++) {
-            SVSParams params = {
-                .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .multi = false};
-            VecSimParams index_params = CreateParams(params);
-            VecSimIndex *index = VecSimIndex_New(&index_params);
-            ASSERT_NE(index, nullptr);
-            auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
-            svs_index->setParallelism(num_threads);
-            // Stage 1: cold-start createImpl on the first batch.
-            svs_index->addVectors(vectors_data.data(), labels.data(), first_batch);
-            ASSERT_EQ(VecSimIndex_IndexSize(index), first_batch);
-            // Stage 2: add_points on the remainder.
-            svs_index->addVectors(vectors_data.data() + first_batch * dim,
-                                  labels.data() + first_batch, index_size - first_batch);
-            ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
-
-            float query[dim] = {1.0f, 1.0f};
-            VecSimQueryReply *reply = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
-            std::vector<size_t> actual_ids;
-            VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
-            while (VecSimQueryReply_IteratorHasNext(it)) {
-                VecSimQueryResult *r = VecSimQueryReply_IteratorNext(it);
-                actual_ids.push_back(VecSimQueryResult_GetId(r));
-            }
-            VecSimQueryReply_IteratorFree(it);
-            VecSimQueryReply_Free(reply);
-
-            bool ok = actual_ids.size() == k;
-            for (size_t i = 0; ok && i < k; i++) {
-                ok = (actual_ids[i] == i + 1);
-            }
-            if (!ok) {
-                failures++;
-                std::cout << "  [first_batch=" << first_batch << " trial " << trial
-                          << "] MISMATCH, got [";
-                for (auto id : actual_ids)
-                    std::cout << id << " ";
-                std::cout << "]" << std::endl;
-            }
-            VecSimIndex_Free(index);
+    size_t failures = 0;
+    for (size_t trial = 0; trial < num_trials; trial++) {
+        SVSParams params = {
+            .type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+        VecSimParams index_params = CreateParams(params);
+        VecSimIndex *index = VecSimIndex_New(&index_params);
+        if (index == nullptr) {
+            ADD_FAILURE() << "Failed to create SVS index";
+            return failures;
         }
-        std::cout << "TwoStageConstructionRecallManyTrials[first_batch=" << first_batch
-                  << "]: " << failures << "/" << num_trials << " trials showed degraded recall"
-                  << std::endl;
+        auto *svs_index = dynamic_cast<SVSIndexBase *>(index);
+        svs_index->setParallelism(num_threads);
+        // Stage 1: cold-start createImpl on the first batch.
+        svs_index->addVectors(vectors_data.data(), labels.data(), first_batch);
+        EXPECT_EQ(VecSimIndex_IndexSize(index), first_batch);
+        // Stage 2: add_points on the remainder.
+        svs_index->addVectors(vectors_data.data() + first_batch * dim, labels.data() + first_batch,
+                              index_size - first_batch);
+        EXPECT_EQ(VecSimIndex_IndexSize(index), index_size);
+
+        float query[dim] = {1.0f, 1.0f};
+        VecSimQueryReply *reply = VecSimIndex_TopKQuery(index, query, k, nullptr, BY_SCORE);
+        std::vector<size_t> actual_ids;
+        VecSimQueryReply_Iterator *it = VecSimQueryReply_GetIterator(reply);
+        while (VecSimQueryReply_IteratorHasNext(it)) {
+            VecSimQueryResult *r = VecSimQueryReply_IteratorNext(it);
+            actual_ids.push_back(VecSimQueryResult_GetId(r));
+        }
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(reply);
+
+        bool ok = actual_ids.size() == k;
+        for (size_t i = 0; ok && i < k; i++) {
+            ok = (actual_ids[i] == i + 1);
+        }
+        if (!ok) {
+            failures++;
+            std::cout << "  [first_batch=" << first_batch << " trial " << trial
+                      << "] MISMATCH, got [";
+            for (auto id : actual_ids)
+                std::cout << id << " ";
+            std::cout << "]" << std::endl;
+        }
+        VecSimIndex_Free(index);
     }
+    std::cout << "TwoStageConstructionRecall[first_batch=" << first_batch << "]: " << failures
+              << "/" << num_trials << " trials showed degraded recall" << std::endl;
+    return failures;
+}
+
+// first_batch=1024/1162 were observed in real runs that passed overall; 1342 in one that
+// failed. num_trials=10: each trial attaches a fresh index to the shared
+// VecSimSVSThreadPoolImpl singleton under real 8-way parallel construction, and ~17s/trial was
+// measured for this in CI's coverage (debug, unoptimized + gcov) build -- the slowest config --
+// so 10 trials (~170s) stays comfortably under the 300s global per-test timeout mentioned above.
+// A much larger trial count (50, tried initially, in a single test covering all batch sizes)
+// was also enough repeated attach/detach churn to hit a rare pre-existing race in that
+// singleton under AddressSanitizer (a heap-use-after-free in
+// VecSimSVSThreadPoolImpl::instance(), not reproducible locally, not caused by this test's
+// logic -- out of scope to fix here).
+TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecall_Batch1024) {
+    RunTwoStageConstructionTrials(1024, 10);
+}
+TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecall_Batch1162) {
+    RunTwoStageConstructionTrials(1162, 10);
+}
+TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecall_Batch1342) {
+    RunTwoStageConstructionTrials(1342, 10);
 }
 
 #else // HAVE_SVS
