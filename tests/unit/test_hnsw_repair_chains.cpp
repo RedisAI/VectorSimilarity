@@ -18,7 +18,10 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
+#include <set>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -83,21 +86,23 @@ SmallVector makeSmallVector(size_t value) {
     return {static_cast<float>(value), static_cast<float>(value)};
 }
 
-TieredHNSWIndex<float, float> *createIndex(tieredIndexMock &pool, size_t dimension) {
+TieredHNSWIndex<float, float> *createIndex(tieredIndexMock &pool, size_t dimension,
+                                           bool enterprise_params = false) {
     HNSWParams hnsw_params{.type = VecSimType_FLOAT32,
                            .dim = dimension,
                            .metric = VecSimMetric_L2,
                            .M = kM,
                            .efConstruction = kEfConstruction,
-                           .efRuntime = kIndexEfRuntime};
+                           .efRuntime = enterprise_params ? 100 : kIndexEfRuntime};
     VecSimParams primary_params = CreateParams(hnsw_params);
     TieredIndexParams tiered_params = {
         .jobQueue = &pool.jobQ,
         .jobQueueCtx = pool.ctx,
         .submitCb = tieredIndexMock::submit_callback,
-        .flatBufferLimit = kDeferredThreshold,
+        .flatBufferLimit = enterprise_params ? 1024 : kDeferredThreshold,
         .primaryIndexParams = &primary_params,
-        .specificParams = {TieredHNSWParams{.swapJobThreshold = kDeferredThreshold}}};
+        .specificParams = {
+            TieredHNSWParams{.swapJobThreshold = enterprise_params ? 1024 : kDeferredThreshold}}};
     auto *index =
         reinterpret_cast<TieredHNSWIndex<float, float> *>(TieredFactory::NewIndex(&tiered_params));
     pool.ctx->index_strong_ref.reset(index);
@@ -224,6 +229,136 @@ void expectIntegrity(TieredHNSWIndex<float, float> *index) {
 }
 
 } // namespace
+
+TEST(DISABLED_HNSWWorkerTrace, EnterpriseFifoReplacementsRemainFullyReachable) {
+    AsyncWriteModeGuard write_mode;
+    tieredIndexMock pool(1);
+    TieredCleanup cleanup{pool};
+    auto *index = createIndex(pool, 4, true);
+    auto *backend = getBackend(index);
+    ASSERT_NE(nullptr, backend);
+    const LargeVector origin{};
+    std::set<labelType> expected;
+    for (size_t value = 0; value < kLargeCount; ++value) {
+        auto vector = makeLargeVector(value);
+        ASSERT_EQ(1, index->addVector(vector.data(), value + 1));
+        while (!pool.jobQ.empty()) {
+            pool.thread_iteration();
+        }
+        expected.insert(value + 1);
+    }
+    expectIntegrity(index);
+
+    std::filesystem::create_directories("worker-trace-results");
+    std::ofstream trace("worker-trace-results/operations.jsonl");
+    ASSERT_TRUE(trace.is_open());
+    std::vector<std::string> previous_nodes;
+    size_t step = 0;
+    size_t callbacks = 0;
+    size_t first_missing_step = 0;
+
+    // Record deltas after serial operations so every snapshot is stable, including tombstones.
+    auto observe = [&](const std::string &operation) {
+        VecSimQueryParams params{};
+        params.hnswRuntimeParams.efRuntime = kLargeCount;
+        std::unique_ptr<VecSimQueryReply> reply(
+            index->topKQuery(origin.data(), kLargeCount, &params));
+        EXPECT_EQ(VecSim_QueryReply_OK, reply->code);
+        std::set<labelType> found;
+        for (const auto &result : reply->results) {
+            found.insert(result.id);
+        }
+        std::vector<labelType> missing;
+        std::set_difference(expected.begin(), expected.end(), found.begin(), found.end(),
+                            std::back_inserter(missing));
+        std::vector<labelType> extra;
+        std::set_difference(found.begin(), found.end(), expected.begin(), expected.end(),
+                            std::back_inserter(extra));
+        EXPECT_TRUE(extra.empty());
+        EXPECT_EQ(found.size(), reply->results.size());
+        if (!missing.empty() && first_missing_step == 0) {
+            first_missing_step = step;
+        }
+        VecSimQueryReply_Code code = VecSim_QueryReply_OK;
+        const idType landing = backend->searchBottomLayerEP(origin.data(), nullptr, &code);
+        EXPECT_EQ(VecSim_QueryReply_OK, code);
+        const auto [entry, max_level] = backend->safeGetEntryPointState();
+        trace << "{\"step\":" << step++ << ",\"operation\":\"" << operation
+              << "\",\"callbacks\":" << callbacks << ",\"pending_jobs\":" << pool.jobQ.size()
+              << ",\"count\":" << reply->results.size() << ",\"expected_count\":" << expected.size()
+              << ",\"nearest\":" << (reply->results.empty() ? 0 : reply->results.front().id)
+              << ",\"entry\":" << entry << ",\"max_level\":" << max_level
+              << ",\"landing\":" << landing << ",\"missing\":[";
+        for (size_t i = 0; i < missing.size(); ++i) {
+            trace << (i ? "," : "") << missing[i];
+        }
+        trace << "],\"node_count\":" << backend->indexSize() << ",\"changed_nodes\":[";
+        std::vector<std::string> nodes;
+        bool first_change = true;
+        for (idType id = 0; id < backend->indexSize(); ++id) {
+            std::ostringstream node;
+            node << "{\"id\":" << id << ",\"label\":" << backend->getExternalLabel(id)
+                 << ",\"value\":"
+                 << reinterpret_cast<const float *>(backend->getDataByInternalId(id))[0]
+                 << ",\"deleted\":" << backend->isMarkedDeleted(id)
+                 << ",\"in_process\":" << backend->isInProcess(id) << ",\"levels\":[";
+            auto *graph = backend->getGraphDataByInternalId(id);
+            for (size_t level = 0; level <= graph->toplevel; ++level) {
+                node << (level ? ",[" : "[");
+                const auto &links = backend->getElementLevelData(id, level);
+                for (size_t i = 0; i < links.getNumLinks(); ++i) {
+                    node << (i ? "," : "") << links.getLinkAtPos(i);
+                }
+                node << ']';
+            }
+            node << "]}";
+            nodes.push_back(node.str());
+            if (id >= previous_nodes.size() || previous_nodes[id] != nodes.back()) {
+                trace << (first_change ? "" : ",") << nodes.back();
+                first_change = false;
+            }
+        }
+        trace << "]}\n";
+        trace.flush();
+        EXPECT_TRUE(trace.good());
+        previous_nodes = std::move(nodes);
+        return found.size();
+    };
+
+    const size_t initial_count = observe("initial");
+    ASSERT_EQ(kLargeCount, initial_count);
+    ::testing::Test::RecordProperty("initial_count", initial_count);
+    for (size_t value = 0; value < 128; ++value) {
+        ASSERT_EQ(1, index->deleteVector(value + 1));
+        expected.erase(value + 1);
+        observe("delete:" + std::to_string(value + 1));
+        auto vector = makeLargeVector(value);
+        ASSERT_EQ(1, index->addVector(vector.data(), kLargeCount + value + 1));
+        expected.insert(kLargeCount + value + 1);
+        observe("enqueue:" + std::to_string(kLargeCount + value + 1));
+    }
+    const size_t queued = pool.jobQ.size();
+    EXPECT_EQ(286U, queued);
+    observe("queued");
+    while (!pool.jobQ.empty()) {
+        const std::string identity = jobIdentity(pool.jobQ.front().job);
+        pool.thread_iteration();
+        ++callbacks;
+        observe(identity);
+    }
+    const size_t before_gc = observe("final-idle");
+    expectIntegrity(index);
+    index->runGC();
+    const size_t after_gc = observe("after-gc");
+    expectIntegrity(index);
+    ::testing::Test::RecordProperty("callback_count", callbacks);
+    ::testing::Test::RecordProperty("first_missing_step", first_missing_step);
+    ::testing::Test::RecordProperty("final_count_before_gc", before_gc);
+    ::testing::Test::RecordProperty("final_count_after_gc", after_gc);
+    EXPECT_EQ(queued, callbacks);
+    EXPECT_EQ(kLargeCount, before_gc);
+    EXPECT_EQ(kLargeCount, after_gc);
+}
 
 TEST(HNSWRepairChains, AdjacentReplacementsRemainFullyReachable) {
     AsyncWriteModeGuard write_mode;

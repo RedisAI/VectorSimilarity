@@ -3,26 +3,33 @@ name: jammy flow
 on:
   workflow_dispatch:
     inputs:
+      worker_trace:
+        description: 'Trace the Enterprise 128-replacement FIFO scenario'
+        type: boolean
+        default: false
       repair_comparison:
         description: 'Compare the HNSW repair regressions against ec835be8'
         type: boolean
         default: false
   workflow_call:
     inputs:
+      worker_trace:
+        type: boolean
+        default: false
       repair_comparison:
         type: boolean
         default: false
 
 jobs:
   jammy:
-    if: ${{ !inputs.repair_comparison }}
+    if: ${{ !inputs.repair_comparison && !inputs.worker_trace }}
     uses: ./.github/workflows/task-unit-test.yml
     with:
       container: ubuntu:jammy
       pre-checkout-script: apt-get update && apt-get install -y git
 
   repair-comparison:
-    if: ${{ inputs.repair_comparison }}
+    if: ${{ inputs.repair_comparison && !inputs.worker_trace }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     permissions:
@@ -45,4 +52,30 @@ jobs:
         with:
           name: hnsw-repair-comparison
           path: repair-results/
+          if-no-files-found: error
+
+  worker-trace:
+    if: ${{ inputs.worker_trace }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CC: gcc-12
+      CXX: g++-12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Install compiler
+        run: sudo apt-get update -qq && sudo apt-get install -y gcc-12 g++-12 cmake
+      - name: Trace FIFO worker jobs
+        run: bash .github/scripts/hnsw_worker_trace.sh
+      - name: Upload trace
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hnsw-worker-trace
+          path: worker-trace-results/
           if-no-files-found: error
