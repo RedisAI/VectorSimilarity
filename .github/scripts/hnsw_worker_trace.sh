@@ -22,3 +22,9 @@ build-worker-trace/unit_tests/test_hnsw \
 build-worker-trace/unit_tests/test_hnsw_sq8 \
     --gtest_output=xml:worker-trace-results/sq8-suite.xml \
     2>&1 | tee worker-trace-results/sq8-suite.log | tail -60
+
+# Exercise the schedule-sensitive insert/delete failure beyond the ordinary suite run.
+build-worker-trace/unit_tests/test_hnsw \
+    --gtest_filter='HNSWTieredIndexTest/*.alternateInsertDeleteAsync' --gtest_repeat=20 \
+    --gtest_output=xml:worker-trace-results/insert-delete-repeat.xml \
+    2>&1 | tee worker-trace-results/insert-delete-repeat.log | tail -60

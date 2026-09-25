@@ -25,6 +25,7 @@
 #include "VecSim/tombstone_interface.h"
 
 #ifdef BUILD_TESTS
+#include <functional>
 #include "hnsw_serialization_utils.h"
 #include "VecSim/utils/serializer.h"
 #include "hnsw_serializer.h"
@@ -168,6 +169,8 @@ protected:
     mutable std::shared_mutex indexDataGuard;
 
 #ifdef BUILD_TESTS
+    std::function<void(idType, size_t)> afterIncomingNeighborsSnapshot;
+
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
 #include "hnsw_serializer_declarations.h"
@@ -370,6 +373,10 @@ public:
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
 
 #ifdef BUILD_TESTS
+    void setAfterIncomingNeighborsSnapshotHook(std::function<void(idType, size_t)> hook) {
+        afterIncomingNeighborsSnapshot = std::move(hook);
+    }
+
     void fitMemory() override {
         if (maxElements > 0) {
             idToMetaData.shrink_to_fit();
@@ -1380,7 +1387,16 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
         auto &node_level_data = getElementLevelData(element, level);
         // Store the deleted element's neighbours.
         auto neighbors_copy = node_level_data.copyLinks();
+        // A repair can turn an incoming edge into a mutual edge even after deletion. Snapshot
+        // both representations together so that moving an edge cannot hide its source.
+        auto incoming_copy = node_level_data.getIncomingEdges();
         unlockNodeLinks(node_id);
+
+#ifdef BUILD_TESTS
+        if (afterIncomingNeighborsSnapshot) {
+            afterIncomingNeighborsSnapshot(node_id, level);
+        }
+#endif
 
         // Go over the neighbours and collect tho ones that also points back to the removed node.
         for (auto neighbour_id : neighbors_copy) {
@@ -1399,13 +1415,9 @@ HNSWIndex<DataType, DistType>::safeCollectAllNodeIncomingNeighbors(idType node_i
             unlockNodeLinks(neighbour_id);
         }
 
-        // Next, collect the rest of incoming edges (the ones that are not bidirectional) in the
-        // current level to repair them.
-        lockNodeLinks(node_id);
-        for (auto incoming_edge : node_level_data.getIncomingEdges()) {
+        for (auto incoming_edge : incoming_copy) {
             incoming_neighbors.emplace_back(incoming_edge, (unsigned short)level);
         }
-        unlockNodeLinks(node_id);
     }
     return incoming_neighbors;
 }

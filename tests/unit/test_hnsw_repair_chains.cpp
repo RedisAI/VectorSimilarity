@@ -570,6 +570,71 @@ TEST(HNSWRepairChains, InsertionPreservesSuccessorOfPendingDeletedNeighbor) {
     expect_reachable();
 }
 
+TEST(HNSWRepairChains, IncomingSnapshotPreservesEdgeConvertedToMutualDuringCollection) {
+    constexpr idType live = 0, deleted = 1, successor = 2;
+    HNSWParams params{.type = VecSimType_FLOAT32,
+                      .dim = 2,
+                      .metric = VecSimMetric_L2,
+                      .M = 2,
+                      .efConstruction = kEfConstruction};
+    VecSimParams index_params = CreateParams(params);
+    std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> index(VecSimIndex_New(&index_params),
+                                                                    VecSimIndex_Free);
+    auto *hnsw = dynamic_cast<HNSWIndex_Single<float, float> *>(index.get());
+    ASSERT_NE(nullptr, hnsw);
+    for (idType id = 0; id < 3; ++id) {
+        const auto vector = makeSmallVector(id);
+        ASSERT_EQ(1, hnsw->addVector(vector.data(), id));
+    }
+    ASSERT_EQ(1U, hnsw->markDelete(deleted).size());
+    ASSERT_EQ(1U, hnsw->markDelete(successor).size());
+    for (idType id = 0; id < 3; ++id) {
+        for (size_t level = 0; level <= hnsw->getGraphDataByInternalId(id)->toplevel; ++level) {
+            auto &links = hnsw->getElementLevelData(id, level);
+            links.setNumLinks(0);
+            links.incomingUnidirectionalEdges->clear();
+        }
+    }
+    // The deleted node's repair follows the other tombstone to the live node, converting
+    // live -> deleted from an incoming-only edge to a mutual edge during collection.
+    for (const auto &[source, target] :
+         {std::pair{live, deleted}, std::pair{deleted, successor}, std::pair{successor, live}}) {
+        hnsw->getElementLevelData(source, 0).appendLink(target);
+        hnsw->getElementLevelData(target, 0).newIncomingUnidirectionalEdge(source);
+    }
+    ASSERT_TRUE(hnsw->checkIntegrity().valid_state);
+
+    auto repair = &RepairAccess<float, float>::repairNodeConnections;
+    size_t repairs_during_collection = 0;
+    hnsw->setAfterIncomingNeighborsSnapshotHook([&](idType id, size_t level) {
+        if (id == deleted && level == 0) {
+            ++repairs_during_collection;
+            (hnsw->*repair)(deleted, 0);
+        }
+    });
+    const auto incoming = hnsw->safeCollectAllNodeIncomingNeighbors(deleted);
+    hnsw->setAfterIncomingNeighborsSnapshotHook({});
+
+    ASSERT_EQ(1U, repairs_during_collection);
+    const auto &deleted_links = hnsw->getElementLevelData(deleted, 0);
+    ASSERT_EQ(1U, deleted_links.getNumLinks());
+    ASSERT_EQ(live, deleted_links.getLinkAtPos(0));
+    ASSERT_TRUE(deleted_links.getIncomingEdges().empty());
+    ASSERT_TRUE(hnsw->checkIntegrity().valid_state);
+    ASSERT_EQ(1U, incoming.size());
+    EXPECT_EQ(live, incoming.front().first);
+    EXPECT_EQ(0U, incoming.front().second);
+
+    for (const auto &[id, level] : incoming) {
+        (hnsw->*repair)(id, level);
+    }
+    auto isolate = &RepairAccess<float, float>::isolateDeletedElement;
+    (hnsw->*isolate)(deleted);
+    EXPECT_EQ(0U, deleted_links.getNumLinks());
+    EXPECT_TRUE(deleted_links.getIncomingEdges().empty());
+    EXPECT_TRUE(hnsw->checkIntegrity().valid_state);
+}
+
 TEST(HNSWRepairChains, PendingDeletedNodeRepairCannotReconnectAfterIsolation) {
     HNSWParams params{.type = VecSimType_FLOAT32,
                       .dim = 2,
