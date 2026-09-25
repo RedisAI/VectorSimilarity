@@ -64,10 +64,14 @@ struct TieredCleanup {
 template <typename DataType, typename DistType>
 struct RepairAccess : HNSWIndex<DataType, DistType> {
     using HNSWIndex<DataType, DistType>::isolateDeletedElement;
-    using HNSWIndex<DataType, DistType>::markAs;
     using HNSWIndex<DataType, DistType>::mutuallyConnectNewElement;
     using HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode;
     using HNSWIndex<DataType, DistType>::repairNodeConnections;
+
+    static void markInProcess(HNSWIndex<DataType, DistType> *index, idType id) {
+        auto mark = &RepairAccess::template markAs<IN_PROCESS>;
+        (index->*mark)(id);
+    }
 };
 
 struct TieredBackendAccess : VecSimTieredIndex<float, float> {
@@ -553,8 +557,7 @@ TEST(HNSWRepairChains, InsertionPreservesSuccessorOfPendingDeletedNeighbor) {
 
     // Exercise insertion's full-neighbor update before the queued repair of A. Merely removing
     // the tombstone during pruning would erase the only route that repair needs to find B.
-    auto mark_in_process = &RepairAccess<float, float>::markAs<IN_PROCESS>;
-    (hnsw->*mark_in_process)(added);
+    RepairAccess<float, float>::markInProcess(hnsw, added);
     candidatesMaxHeap<float> candidates(hnsw->getAllocator());
     candidates.emplace(hnsw->calcDistance(vectors[a].data(), vectors[added].data()), a);
     auto connect = &RepairAccess<float, float>::mutuallyConnectNewElement;
