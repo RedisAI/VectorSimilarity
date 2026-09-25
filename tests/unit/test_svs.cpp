@@ -3868,23 +3868,28 @@ size_t RunTwoStageConstructionTrials(size_t first_batch, size_t num_trials) {
 }
 
 // first_batch=1024/1162 were observed in real runs that passed overall; 1342 in one that
-// failed. num_trials=10: each trial attaches a fresh index to the shared
-// VecSimSVSThreadPoolImpl singleton under real 8-way parallel construction, and ~17s/trial was
-// measured for this in CI's coverage (debug, unoptimized + gcov) build -- the slowest config --
-// so 10 trials (~170s) stays comfortably under the 300s global per-test timeout mentioned above.
-// A much larger trial count (50, tried initially, in a single test covering all batch sizes)
-// was also enough repeated attach/detach churn to hit a rare pre-existing race in that
-// singleton under AddressSanitizer (a heap-use-after-free in
-// VecSimSVSThreadPoolImpl::instance(), not reproducible locally, not caused by this test's
-// logic -- out of scope to fix here).
+// failed. Each asserts zero degraded-recall trials -- including Batch1342, which is expected
+// to FAIL right now: that failure *is* the reproduction of MOD-18890's underlying SVS-VAMANA
+// construction defect, not a bug in this test. It should keep failing until that defect is
+// fixed upstream in SVS-VAMANA; at that point this assertion (and ideally this whole repro
+// file) should be revisited.
+//
+// num_trials=10: each trial attaches a fresh index to the shared VecSimSVSThreadPoolImpl
+// singleton under real 8-way parallel construction, and ~17s/trial was measured for this in
+// CI's coverage (debug, unoptimized + gcov) build -- the slowest config -- so 10 trials
+// (~170s) stays comfortably under the 300s global per-test timeout mentioned above. A much
+// larger trial count (50, tried initially, in a single test covering all batch sizes) was
+// also enough repeated attach/detach churn to hit a rare pre-existing race in that singleton
+// under AddressSanitizer (a heap-use-after-free in VecSimSVSThreadPoolImpl::instance(), not
+// reproducible locally, not caused by this test's logic -- out of scope to fix here).
 TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecall_Batch1024) {
-    RunTwoStageConstructionTrials(1024, 10);
+    EXPECT_EQ(RunTwoStageConstructionTrials(1024, 10), 0u);
 }
 TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecall_Batch1162) {
-    RunTwoStageConstructionTrials(1162, 10);
+    EXPECT_EQ(RunTwoStageConstructionTrials(1162, 10), 0u);
 }
 TEST(SVSConcurrencyRecallRepro, TwoStageConstructionRecall_Batch1342) {
-    RunTwoStageConstructionTrials(1342, 10);
+    EXPECT_EQ(RunTwoStageConstructionTrials(1342, 10), 0u);
 }
 
 #else // HAVE_SVS
