@@ -183,7 +183,7 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
 // Add up to capacity.
 TYPED_TEST(HNSWTest, resizeIndex) {
     size_t dim = 4;
-    size_t n = 10;
+    size_t n = 13;
     size_t bs = 3;
 
     HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = bs};
@@ -201,6 +201,31 @@ TYPED_TEST(HNSWTest, resizeIndex) {
     ASSERT_EQ(index->indexCapacity(), VecSimIndex_IndexSize(index) + extra_cap);
     // The capacity shouldn't be changed.
     ASSERT_EQ(index->indexCapacity(), n + extra_cap);
+    ASSERT_EQ(index->indexMetaDataCapacity(), 8 * bs);
+
+    for (size_t label = 0; label < 7; ++label) {
+        ASSERT_EQ(VecSimIndex_DeleteVector(index, label), 1);
+    }
+    ASSERT_EQ(index->indexCapacity(), 2 * bs);
+    ASSERT_EQ(index->indexMetaDataCapacity(), 4 * bs);
+
+    for (size_t label = 0; label < 7; ++label) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, label, label);
+    }
+    ASSERT_EQ(index->indexCapacity(), n + extra_cap);
+    ASSERT_EQ(index->indexMetaDataCapacity(), 8 * bs);
+    ASSERT_TRUE(this->CastToHNSW(index)->checkIntegrity().valid_state);
+
+    index->fitMemory();
+    ASSERT_EQ(index->indexMetaDataCapacity(), index->indexCapacity());
+
+    for (size_t label = 0; label < n; ++label) {
+        ASSERT_EQ(VecSimIndex_DeleteVector(index, label), 1);
+    }
+    ASSERT_EQ(index->indexMetaDataCapacity(), 0);
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+    ASSERT_EQ(index->indexCapacity(), bs);
+    ASSERT_EQ(index->indexMetaDataCapacity(), bs);
 
     VecSimIndex_Free(index);
 }
@@ -1922,6 +1947,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
     HNSWParams params{.type = TypeParam::get_index_type(),
                       .dim = dim,
                       .metric = VecSimMetric_L2,
+                      .blockSize = 3,
                       .M = M,
                       .efConstruction = ef,
                       .efRuntime = ef,
@@ -1981,7 +2007,7 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
         ASSERT_EQ(info2.commonInfo.basicInfo.algo, VecSimAlgo_HNSWLIB);
         ASSERT_EQ(info2.hnswInfo.M, M);
         ASSERT_EQ(info2.commonInfo.basicInfo.isMulti, is_multi[i]);
-        ASSERT_EQ(info2.commonInfo.basicInfo.blockSize, DEFAULT_BLOCK_SIZE);
+        ASSERT_EQ(info2.commonInfo.basicInfo.blockSize, params.blockSize);
         ASSERT_EQ(info2.hnswInfo.efConstruction, ef);
         ASSERT_EQ(info2.hnswInfo.efRuntime, ef);
         ASSERT_EQ(info2.commonInfo.indexSize, n);
@@ -1993,14 +2019,18 @@ TYPED_TEST(HNSWTest, HNSWSerializationCurrentVersion) {
 
         // Check the functionality of the loaded index.
 
-        // Add and delete vector
-        GenerateAndAddVector<TEST_DATA_T>(serialized_index, dim, n);
+        // Loading compacts capacity; cross that boundary to exercise growth after restoration.
+        const size_t loaded_capacity = serialized_index->indexCapacity();
+        for (size_t label = n; label <= loaded_capacity; ++label) {
+            GenerateAndAddVector<TEST_DATA_T>(serialized_index, dim, label);
+        }
+        ASSERT_GE(serialized_index->indexMetaDataCapacity(), 2 * loaded_capacity);
 
         VecSimIndex_DeleteVector(serialized_index, 1);
 
         size_t n_per_label = n / n_labels[i];
         ASSERT_TRUE(serialized_hnsw_index->checkIntegrity().valid_state);
-        ASSERT_EQ(VecSimIndex_IndexSize(serialized_index), n + 1 - n_per_label);
+        ASSERT_EQ(VecSimIndex_IndexSize(serialized_index), loaded_capacity + 1 - n_per_label);
 
         // Clean up.
         remove(file_name.c_str());
