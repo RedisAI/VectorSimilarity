@@ -234,10 +234,12 @@ size_t EstimateElementSize(const SVSParams *params) {
     // Assuming that the graph_max_degree can be unset in params.
     const auto graph_max_degree = svs_details::makeVamanaBuildParameters(*params).graph_max_degree;
     const auto graph_node_size = SVSGraphBuilder<graph_idx_type>::element_size(graph_max_degree);
+    const auto reverse_edges_node_size =
+        SVSGraphBuilder<graph_idx_type>::reverse_edges_element_size();
     const auto vector_size =
         QuantizedVectorSize(params->type, params->quantBits, params->dim, 0, params->leanvec_dim);
 
-    return vector_size + graph_node_size;
+    return vector_size + graph_node_size + reverse_edges_node_size;
 }
 
 size_t EstimateInitialSize(const SVSParams *params, bool is_normalized) {
