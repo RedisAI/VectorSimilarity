@@ -5,6 +5,7 @@
 # (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
 # GNU Affero General Public License v3 (AGPLv3).
 import time
+import pytest
 from common import *
 
 
@@ -767,3 +768,122 @@ def test_get_vector_multi(test_logger):
 
     assert index.get_vector(num_labels + 1).shape == (0, dim)
     test_logger.info("tiered multi get_vector read every vector under the label")
+
+
+# `update_vectors` sets a label's contents: whatever it holds is removed and the given vectors take
+# its place. Compared here against the add API, which is the only other way to reach that state -
+# and for a single-value label the equivalent one, since adding an existing label overwrites it.
+# The point of the comparison is that an index brought to a state by updating must be as good as
+# one that was given that state to begin with.
+def test_update_vectors(test_logger):
+    indices_ctx = IndexCtx(data_size=2000, ef_r=30)
+    num_labels = indices_ctx.num_labels
+    dim = indices_ctx.dim
+    final = indices_ctx.rng.random((num_labels, dim)).astype(indices_ctx.data.dtype)
+
+    index = indices_ctx.tiered_index
+    for i, vector in enumerate(indices_ctx.data):
+        index.add_vector(vector, i)
+
+    # Updated while the ingestion of the first vectors is still under way, so some labels are
+    # replaced in the flat buffer and some in the graph.
+    buffered = index.get_curr_bf_size()
+    test_logger.info(f"updating {num_labels} labels, {buffered} of them still buffered")
+    for i, vector in enumerate(final):
+        assert index.update_vectors(i, vector) == VecSimUpdate_OK
+    index.wait_for_index()
+
+    # The same final state, reached by giving a fresh index the final vectors.
+    direct = HNSWIndex(indices_ctx.hnsw_params)
+    for i, vector in enumerate(final):
+        direct.add_vector(vector, i)
+
+    # No label was gained or lost on the way.
+    assert index.hnsw_label_count() == num_labels
+    assert direct.index_size() == num_labels
+
+    # Every label holds what the update put there - the same stored form the add API produced for
+    # it - and is found at that vector rather than at the one it used to hold.
+    for i in range(0, num_labels, 50):
+        assert np.allclose(index.get_vector(i), direct.get_vector(i))
+        labels, distances = index.knn_query(np.array([final[i]]), 1)
+        assert labels[0][0] == i
+        assert distances[0][0] == pytest.approx(0, abs=1e-6)
+
+    # On random queries the updated index is as good as the one built directly. Recall is measured
+    # against the exact answer rather than compared between the two graphs, so the approximation
+    # difference that parallel ingestion leaves behind cannot fail this - while a vector lost or
+    # left stale by an update can.
+    queries = indices_ctx.generate_queries(num_queries=10)
+    k = 10
+    vectors = list(enumerate(final))
+    correct_updated = correct_direct = 0
+    for query in queries:
+        _, keys = get_ground_truth_results(spatial.distance.cosine, query, vectors, k)
+        updated_labels, _ = index.knn_query(query, k)
+        direct_labels, _ = direct.knn_query(query, k)
+        correct_updated += len(set(updated_labels[0]) & set(keys))
+        correct_direct += len(set(direct_labels[0]) & set(keys))
+    recall_updated = correct_updated / (k * len(queries))
+    recall_direct = correct_direct / (k * len(queries))
+    test_logger.info(f"recall after updating = {recall_updated}, built with add_vector = {recall_direct}")
+    assert recall_updated >= 0.9
+    assert recall_updated >= recall_direct - 0.05
+
+    # Two vectors under one label is not a state a single-value index can hold, so it refuses
+    # rather than storing one of them and leaving the caller to believe both are there.
+    assert index.update_vectors(0, np.array([final[0], final[1]])) == VecSimUpdate_MultiNotSupported
+    assert index.hnsw_label_count() == num_labels
+
+
+# For a multi-value label the update is the only way to replace the contents: `add_vector` appends,
+# so a caller would have to delete the label first - and know how many vectors were there.
+def test_update_vectors_multi(test_logger):
+    num_per_label = 3
+    indices_ctx = IndexCtx(data_size=1200, num_per_label=num_per_label, is_multi=True, ef_r=30)
+    num_labels = indices_ctx.num_labels
+    dim = indices_ctx.dim
+    index = indices_ctx.tiered_index
+
+    indices_ctx.populate_index(index)
+    index.wait_for_index()
+    assert index.hnsw_label_count() == num_labels
+    assert index.index_size() == num_labels * num_per_label
+
+    # Three vectors replaced by two: how many the label holds afterwards is decided by the update.
+    new_per_label = 2
+    final = indices_ctx.rng.random((num_labels, new_per_label, dim)).astype(indices_ctx.data.dtype)
+    for i, vectors in enumerate(final):
+        assert index.update_vectors(i, vectors) == VecSimUpdate_OK
+    index.wait_for_index()
+
+    assert index.hnsw_label_count() == num_labels
+    for i in range(0, num_labels, 50):
+        assert index.get_vector(i).shape == (new_per_label, dim)
+        # Every one of the label's new vectors finds it, and none of the replaced ones does.
+        for vector in final[i]:
+            labels, distances = index.knn_query(np.array([vector]), 1)
+            assert labels[0][0] == i
+            assert distances[0][0] == pytest.approx(0, abs=1e-6)
+        for vector in indices_ctx.data[i]:
+            labels, distances = index.knn_query(np.array([vector]), 1)
+            assert not (labels[0][0] == i and distances[0][0] == pytest.approx(0, abs=1e-6))
+
+    # A caller's array need not be packed the way the index wants it: a Fortran-ordered one holds
+    # the same two vectors, and the label has to end up with them rather than with the values that
+    # sit at the offsets a packed buffer would have had.
+    fortran = np.asfortranarray(final[1])
+    assert not fortran.flags["C_CONTIGUOUS"]
+    assert index.update_vectors(1, fortran) == VecSimUpdate_OK
+    index.wait_for_index()
+    assert index.get_vector(1).shape == (new_per_label, dim)
+    for vector in final[1]:
+        labels, distances = index.knn_query(np.array([vector]), 1)
+        assert labels[0][0] == 1
+        assert distances[0][0] == pytest.approx(0, abs=1e-6)
+
+    # An empty update leaves the label holding nothing, which is a delete.
+    assert index.update_vectors(0, np.empty((0, dim), dtype=indices_ctx.data.dtype)) == VecSimUpdate_OK
+    index.wait_for_index()
+    assert index.hnsw_label_count() == num_labels - 1
+    assert index.get_vector(0).shape == (0, dim)

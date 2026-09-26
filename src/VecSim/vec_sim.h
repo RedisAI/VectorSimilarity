@@ -96,6 +96,31 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
 VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
 
 /**
+ * @brief Set the vectors stored under `label` to the given ones: whatever the label holds now is
+ * removed, and these take its place.
+ *
+ * This is what overwriting with `VecSimIndex_AddVector` does, generalized to a label holding
+ * several vectors - where adding appends instead of replacing. The label may end up holding more or
+ * fewer vectors than it did; `n == 0` leaves it holding nothing, which is
+ * `VecSimIndex_DeleteVector`.
+ *
+ * An index that holds a single vector per label accepts only `n == 1` and reports
+ * `VecSimUpdate_MultiNotSupported` otherwise. Index types that do not implement this report
+ * `VecSimUpdate_Unsupported`, which a caller has to serve by deleting the label and inserting. An
+ * index that tried and could not store them reports `VecSimUpdate_Failed`, after which the label's
+ * contents are undefined - the removal precedes the insertion, so it may hold nothing.
+ *
+ * @param index the index to update.
+ * @param label the label whose vectors are replaced.
+ * @param new_blobs `n` vectors laid out one after another, each matching the index's data type and
+ * dimension.
+ * @param n how many vectors `new_blobs` holds.
+ * @return `VecSimUpdate_OK` if the label now holds exactly those vectors.
+ */
+VecSimUpdateCode VecSimIndex_UpdateVectors(VecSimIndex *index, size_t label, const void *new_blobs,
+                                           size_t n);
+
+/**
  * @brief Calculate the distance of a vector from an index to a vector. This function assumes that
  * the vector fits the index - its type and dimension are the same as the index's, and if the
  * index's distance metric is cosine, the vector is already normalized.

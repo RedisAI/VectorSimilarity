@@ -1672,3 +1672,80 @@ TYPED_TEST(HNSWMultiTest, relabelVectorMulti) {
 
     VecSimIndex_Free(index);
 }
+
+TYPED_TEST(HNSWMultiTest, updateVectorsMulti) {
+    size_t dim = 4;
+    size_t per_label = 3;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw_index = this->CastToHNSW(index);
+
+    // Label 0 holds the values 0, 1, 2 and label 1 holds 10, 11, 12.
+    for (size_t i = 0; i < per_label; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, i);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 1, i + 10);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label * 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+
+    // Replace label 0's three vectors with two different ones. How many the label ends up holding
+    // is decided by the update, not by what was there - which is the case `addVector` cannot
+    // express at all, since in a multi-value index it appends.
+    TEST_DATA_T two[2 * dim];
+    GenerateVector<TEST_DATA_T>(two, dim, 100);
+    GenerateVector<TEST_DATA_T>(two + dim, dim, 101);
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, two, 2), VecSimUpdate_OK);
+
+    ASSERT_EQ(hnsw_index->getElementIds(0).size(), 2);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label + 2);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The label holds the two new vectors and none of the three it held.
+    // (`getDistanceFrom_Unsafe` reports the closest vector of the label, so a zero distance means
+    // the label holds that exact vector.)
+    for (size_t value : {100, 101}) {
+        TEST_DATA_T stored[dim];
+        GenerateVector<TEST_DATA_T>(stored, dim, value);
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(0, stored), 0) << "missing " << value;
+    }
+    for (size_t value : {0, 1, 2}) {
+        TEST_DATA_T gone[dim];
+        GenerateVector<TEST_DATA_T>(gone, dim, value);
+        ASSERT_NE(hnsw_index->getDistanceFrom_Unsafe(0, gone), 0) << "kept " << value;
+    }
+
+    // The other label is untouched throughout.
+    ASSERT_EQ(hnsw_index->getElementIds(1).size(), per_label);
+    for (size_t value : {10, 11, 12}) {
+        TEST_DATA_T other[dim];
+        GenerateVector<TEST_DATA_T>(other, dim, value);
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(1, other), 0) << "lost " << value;
+    }
+
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 0);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(index, two, 1, verify_res);
+
+    // Growing the label works the same way.
+    TEST_DATA_T four[4 * dim];
+    for (size_t i = 0; i < 4; i++) {
+        GenerateVector<TEST_DATA_T>(four + i * dim, dim, 200 + i);
+    }
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, four, 4), VecSimUpdate_OK);
+    ASSERT_EQ(hnsw_index->getElementIds(0).size(), 4);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label + 4);
+    ASSERT_EQ(index->indexLabelCount(), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // And an empty update removes the label altogether.
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, nullptr, 0), VecSimUpdate_OK);
+    ASSERT_FALSE(hnsw_index->isLabelExists(0));
+    ASSERT_EQ(VecSimIndex_IndexSize(index), per_label);
+    ASSERT_EQ(index->indexLabelCount(), 1);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    VecSimIndex_Free(index);
+}
