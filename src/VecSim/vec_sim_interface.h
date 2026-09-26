@@ -82,6 +82,36 @@ public:
     }
 
     /**
+     * @brief Set the vectors stored under `label` to the given ones: whatever it holds now is
+     * removed, and these take its place.
+     *
+     * This is what overwriting through `addVector` does, generalized to a label that holds several
+     * vectors - where `addVector` cannot express it, since in a multi-value index it appends rather
+     * than replaces. A caller doing it by hand has to delete the label and then insert, which also
+     * means knowing that a delete is needed at all. How many vectors the label ends up with is not
+     * constrained by how many it had: `n` may be larger or smaller.
+     *
+     * `n == 0` leaves the label holding nothing, which is `deleteVector`.
+     *
+     * An index that holds a single vector per label accepts only `n == 1`, and reports
+     * `VecSimUpdate_MultiNotSupported` otherwise rather than silently storing one of the vectors
+     * and dropping the rest. The default implementation reports `VecSimUpdate_Unsupported`, leaving
+     * such a caller to delete and insert. An index that tried and could not store them reports
+     * `VecSimUpdate_Failed`, which unlike the other two says nothing about what the label holds
+     * now: the removal precedes the insertion, so it may hold nothing.
+     *
+     * @param label the label whose vectors are replaced.
+     * @param new_blobs `n` vectors laid out one after another, each matching the index's data type
+     * and dimension. Copied and processed as `addVector` does.
+     * @param n how many vectors `new_blobs` holds.
+     * @return `VecSimUpdate_OK` if the label now holds exactly those vectors, otherwise the reason
+     * it does not.
+     */
+    virtual VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) {
+        return VecSimUpdate_Unsupported;
+    }
+
+    /**
      * @brief Calculate the distance of a vector from an index to a vector.
      * @param index the index from which the first vector is located, and that defines the distance
      * metric.

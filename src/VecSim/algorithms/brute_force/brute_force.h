@@ -74,6 +74,35 @@ public:
     // Unsafe (assume index data guard is held in MT mode).
     virtual vecsim_stl::vector<idType> getElementIds(size_t label) const = 0;
 
+    /**
+     * Set the vectors stored under `label` to the given ones. Expressed through this index's own
+     * delete and add, which is also where the two label kinds differ: for a single-value label
+     * `addVector` is already a replacement - and an in-place one, so nothing moves - while for a
+     * multi-value label it appends, and the label's previous vectors have to be removed first.
+     *
+     * Nothing here depends on the vector values, unlike the graph indexes: a flat index derives no
+     * structure from them, so the cost is that of the removals and the insertions themselves.
+     */
+    VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override {
+        if (!this->isMultiValue() && n > 1) {
+            return VecSimUpdate_MultiNotSupported;
+        }
+        // A single vector replacing a single-value label is the case that matters most, and there
+        // the delete below would only cost a removal and an append for an end state `addVector`
+        // reaches by writing over the stored data.
+        if (n == 1 && !this->isMultiValue()) {
+            this->addVector(new_blobs, label);
+            return VecSimUpdate_OK;
+        }
+
+        this->deleteVector(label);
+        const char *blob = static_cast<const char *>(new_blobs);
+        for (size_t i = 0; i < n; i++) {
+            this->addVector(blob + i * this->getInputBlobSize(), label);
+        }
+        return VecSimUpdate_OK;
+    }
+
     virtual ~BruteForceIndex() = default;
 #ifdef BUILD_TESTS
     void fitMemory() override {

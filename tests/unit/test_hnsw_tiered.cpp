@@ -3030,6 +3030,279 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorAsync) {
     }
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsAsync) {
+    // The same shape as `overwriteVectorAsync`, for the update path: workers ingest, repair and
+    // swap while the main thread keeps replacing labels, so every update races the ingestion of the
+    // vectors it is replacing. Runs for a single-value and a multi-value index, and for a swap job
+    // threshold that keeps tombstones around and one that disposes of them as they come.
+    size_t dim = 4;
+    size_t n = 500;
+    size_t num_updates = 1000;
+    for (bool is_multi : {false, true}) {
+        for (size_t maxSwapJobs : {n + 1, (size_t)1}) {
+            SCOPED_TRACE(is_multi ? "multi" : "single");
+            SCOPED_TRACE(maxSwapJobs);
+            HNSWParams params = {.type = TypeParam::get_index_type(),
+                                 .dim = dim,
+                                 .metric = VecSimMetric_L2,
+                                 .multi = is_multi};
+            VecSimParams hnsw_params = CreateParams(params);
+            auto mock_thread_pool = tieredIndexMock();
+            auto *tiered_index =
+                this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, maxSwapJobs);
+
+            for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+                mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                          std::ref(mock_thread_pool));
+            }
+
+            // Each label starts with a vector per label, or two for a multi-value index.
+            std::srand(10); // create pseudo random generator with any arbitrary seed.
+            const size_t initial_per_label = is_multi ? 2 : 1;
+            std::vector<size_t> per_label(n, initial_per_label);
+            auto random_vectors = [&](TEST_DATA_T *into, size_t count) {
+                for (size_t j = 0; j < count * dim; j++) {
+                    into[j] = std::rand() / (TEST_DATA_T)RAND_MAX;
+                }
+            };
+            for (size_t i = 0; i < n; i++) {
+                TEST_DATA_T vectors[initial_per_label * dim];
+                random_vectors(vectors, initial_per_label);
+                for (size_t j = 0; j < initial_per_label; j++) {
+                    tiered_index->addVector(vectors + j * dim, i);
+                }
+            }
+            EXPECT_EQ(tiered_index->indexLabelCount(), n);
+
+            // Replace labels while the workers are still catching up with the inserts above.
+            for (size_t i = 0; i < num_updates; i++) {
+                const labelType label = std::rand() % n;
+                const size_t count = is_multi ? 1 + std::rand() % 3 : 1;
+                TEST_DATA_T vectors[3 * dim];
+                random_vectors(vectors, count);
+                EXPECT_EQ(tiered_index->updateVectors(label, vectors, count), VecSimUpdate_OK);
+                per_label[label] = count;
+            }
+
+            mock_thread_pool.thread_pool_join();
+
+            // Every label is still there, holding exactly the vectors of the update that last
+            // touched it - nothing was lost to a race with an ingestion, and nothing was left over
+            // from a previous value.
+            const size_t expected_live =
+                std::accumulate(per_label.begin(), per_label.end(), (size_t)0);
+            EXPECT_EQ(tiered_index->indexLabelCount(), n);
+            EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+            EXPECT_EQ(tiered_index->indexSize() -
+                          tiered_index->statisticInfo().numberOfMarkedDeleted,
+                      expected_live);
+            auto *hnsw_index = this->CastToHNSW(tiered_index);
+            for (size_t i = 0; i < n; i++) {
+                EXPECT_EQ(hnsw_index->getElementIds(i).size(), per_label[i]) << "label " << i;
+            }
+            auto report = hnsw_index->checkIntegrity();
+            EXPECT_EQ(report.connections_to_repair, 0);
+            EXPECT_EQ(report.valid_state, true);
+        }
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, addRelabelAndUpdateTogetherUnderLoad) {
+    // The three writes a partial update puts through an index - inserting a new document, moving a
+    // label onto a new doc id, and replacing a label's vectors - against one index while the
+    // workers ingest, repair and swap. Each has its own test; what this covers is their
+    // interaction: a label updated while its insert job is pending and then moved before that job
+    // runs, a label moved and only then updated, and fresh inserts throughout so the workers never
+    // run dry.
+    size_t dim = 4;
+    size_t n = 200;
+    for (bool is_multi : {false, true}) {
+        SCOPED_TRACE(is_multi ? "multi" : "single");
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        // Kept apart so no write can land on a label another one owns.
+        const labelType moved_offset = 10 * n;
+        const labelType fresh_base = 5 * n;
+        // Each role writes into its own value range, so the checks at the end can tell which
+        // write a vector came from.
+        const size_t per_label = is_multi ? 2 : 1;
+
+        for (size_t i = 0; i < mock_thread_pool.thread_pool_size; i++) {
+            mock_thread_pool.thread_pool.emplace_back(tieredIndexMock::thread_main_loop, i,
+                                                      std::ref(mock_thread_pool));
+        }
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+
+        for (size_t i = 0; i < n; i++) {
+            TEST_DATA_T replacements[2 * dim];
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateVector<TEST_DATA_T>(replacements + j * dim, dim,
+                                            1000.0f + 3000.0f * j + 10.0f * i);
+            }
+            const labelType moved = i + moved_offset;
+
+            // Both orders, because they are different races: updating a label whose insert job is
+            // still pending and then moving it, against moving it first and updating what the move
+            // left behind.
+            if (i % 2 == 0) {
+                EXPECT_EQ(tiered_index->updateVectors(i, replacements, per_label), VecSimUpdate_OK)
+                    << "label " << i;
+                EXPECT_EQ(tiered_index->relabelVector(i, moved), VecSimRelabel_OK) << "label " << i;
+            } else {
+                EXPECT_EQ(tiered_index->relabelVector(i, moved), VecSimRelabel_OK) << "label " << i;
+                EXPECT_EQ(tiered_index->updateVectors(moved, replacements, per_label),
+                          VecSimUpdate_OK)
+                    << "label " << moved;
+            }
+
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
+            EXPECT_EQ(tiered_index->addVector(fresh, fresh_base + i), 1);
+        }
+        mock_thread_pool.thread_pool_join();
+
+        // The join drains the queue, so everything has been ingested and the flat buffer is empty.
+        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexLabelCount(), 2 * n);
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->statisticInfo().numberOfMarkedDeleted,
+                  n * per_label + n);
+
+        // Every label holds what the writes left it, under the name they left it under.
+        for (size_t i = 0; i < n; i++) {
+            EXPECT_EQ(hnsw_index->getElementIds(i + moved_offset).size(), per_label)
+                << "label " << i + moved_offset;
+            EXPECT_TRUE(hnsw_index->getElementIds(i).empty()) << "stale label " << i;
+            EXPECT_EQ(hnsw_index->getElementIds(fresh_base + i).size(), 1)
+                << "label " << fresh_base + i;
+        }
+
+        // And holds the values they wrote, asked of each label directly. Not through a query: a
+        // k-nearest search over a graph this churned is approximate and does miss the vector
+        // itself, which says nothing about whether the write landed.
+        for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
+            for (size_t j = 0; j < per_label; j++) {
+                TEST_DATA_T stored[dim];
+                GenerateVector<TEST_DATA_T>(stored, dim, 1000.0f + 3000.0f * j + 10.0f * i);
+                EXPECT_EQ(tiered_index->getDistanceFrom_Unsafe(i + moved_offset, stored), 0)
+                    << "label " << i + moved_offset << " does not hold what the update gave it";
+            }
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
+            EXPECT_EQ(tiered_index->getDistanceFrom_Unsafe(fresh_base + i, fresh), 0)
+                << "label " << fresh_base + i << " does not hold what it was added with";
+        }
+
+        // Disposing of the tombstones the updates left behind must leave a whole graph.
+        tiered_index->runGC();
+        EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+        auto report = hnsw_index->checkIntegrity();
+        EXPECT_EQ(report.connections_to_repair, 0);
+        EXPECT_EQ(report.valid_state, true);
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, queryWhileUpdating) {
+    // Searches in flight while labels are being replaced. `parallelInsertSearch` covers reading
+    // against insertion; this covers reading against an update, which is where a reader is most
+    // exposed: the element it may be walking is marked deleted and a replacement inserted under
+    // the same label, and for a multi-value label the removal lands before the insertion.
+    //
+    // Deliberately not asserting *what* a search returns. A query that overlaps an update may see
+    // the label's old vectors, its new ones, or - for a multi-value label, between the two halves
+    // - neither, and a nearest-neighbour search over a graph being churned is approximate anyway.
+    // What it does assert is that no reply invents anything: every label returned is one this test
+    // wrote, which is what a use-after-free on a swapped id or a torn label lookup would break,
+    // and that the searches actually ran.
+    size_t dim = 4;
+    size_t n = 500;
+    size_t k = 10;
+    for (bool is_multi : {false, true}) {
+        SCOPED_TRACE(is_multi ? "multi" : "single");
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto allocator = tiered_index->getAllocator();
+        const size_t per_label = is_multi ? 2 : 1;
+        const labelType fresh_base = 10 * n;
+
+        std::atomic_int successful_searches(0);
+        std::atomic_int invalid_labels(0);
+        auto search_while_writing = [](AsyncJob *job) {
+            auto *search_job = reinterpret_cast<tieredIndexMock::SearchJobMock *>(job);
+            auto *invalid = reinterpret_cast<std::atomic_int *>(search_job->all_results);
+            const size_t universe = search_job->n;
+            auto verify_res = [&](size_t id, double score, size_t res_index) {
+                // Every label this index ever held is below `universe`; anything else came from
+                // reading memory that had been reused or freed.
+                if (id >= universe) {
+                    (*invalid)++;
+                }
+            };
+            runTopKSearchTest(job->index, search_job->query, search_job->k, verify_res);
+            (*search_job->successful_searches)++;
+            delete job;
+        };
+
+        for (size_t i = 0; i < n; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+        mock_thread_pool.init_threads();
+
+        for (size_t i = 0; i < n; i++) {
+            // A search over the range the writes are touching, queued so a worker picks it up
+            // while the writes below are still going.
+            auto query = (TEST_DATA_T *)allocator->allocate(dim * sizeof(TEST_DATA_T));
+            GenerateVector<TEST_DATA_T>(query, dim, 1000.0f + 10.0f * (i % n));
+            auto *search_job = new (allocator)
+                tieredIndexMock::SearchJobMock(allocator, search_while_writing, tiered_index, k,
+                                               query, fresh_base + n, dim, &successful_searches);
+            // `all_results` is unused by this callback's contract, so it carries the counter the
+            // verifier reports through.
+            search_job->all_results = reinterpret_cast<VecSimQueryReply **>(&invalid_labels);
+            tiered_index->submitSingleJob(search_job);
+
+            TEST_DATA_T replacements[2 * dim];
+            for (size_t j = 0; j < per_label; j++) {
+                GenerateVector<TEST_DATA_T>(replacements + j * dim, dim, 1000.0f + 10.0f * i + j);
+            }
+            EXPECT_EQ(tiered_index->updateVectors(i, replacements, per_label), VecSimUpdate_OK)
+                << "label " << i;
+
+            // An insert alongside, so the readers also overlap a growing index.
+            TEST_DATA_T fresh[dim];
+            GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
+            EXPECT_EQ(tiered_index->addVector(fresh, fresh_base + i), 1);
+        }
+        mock_thread_pool.thread_pool_join();
+
+        EXPECT_EQ(successful_searches, n) << "searches did not all run, so they raced nothing";
+        EXPECT_EQ(invalid_labels, 0) << "a search returned a label this index never held";
+
+        // The writes still landed correctly through all of it.
+        EXPECT_EQ(tiered_index->indexLabelCount(), 2 * n);
+        EXPECT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+        EXPECT_EQ(tiered_index->indexSize() - tiered_index->statisticInfo().numberOfMarkedDeleted,
+                  n * per_label + n);
+        tiered_index->runGC();
+        auto report = this->CastToHNSW(tiered_index)->checkIntegrity();
+        EXPECT_EQ(report.connections_to_repair, 0);
+        EXPECT_EQ(report.valid_state, true);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTest, testInfo) {
     // Create TieredHNSW index instance with a mock queue.
     size_t dim = 4;
@@ -5149,6 +5422,427 @@ TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorDuringIngestion) {
             << "label " << i + relabel_offset << " does not hold its original vector";
     }
 }
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsBuffered) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // The vector is still in the flat buffer, with a pending insert job.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    // A second buffered label, to catch the update disturbing anything but its own: removing a
+    // vector from the flat buffer swaps the last one into the hole and rewrites the pending job
+    // that names it, so a delete-then-insert would move this label's id as collateral.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 8, 8);
+    ASSERT_EQ(frontend_index->indexSize(), 2);
+    ASSERT_EQ(hnsw_index->indexSize(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    const idType flat_id = tiered_index->labelToInsertJobs.at(7)[0]->id;
+    const idType other_flat_id = tiered_index->labelToInsertJobs.at(8)[0]->id;
+
+    TEST_DATA_T buffered[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(buffered, dim, 7);
+    GenerateVector<TEST_DATA_T>(replacement, dim, 70);
+
+    ASSERT_EQ(tiered_index->updateVectors(7, replacement, 1), VecSimUpdate_OK);
+
+    // One vector under a single-value label is an overwrite, and it is served as one: the buffered
+    // copy is written over where it sits, keeping its id, and no other label's pending job is
+    // touched. A delete followed by an insert would reach the same end state for label 7 while
+    // moving label 8's vector to a different id on the way, and would leave label 7 without a
+    // vector in between.
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7)[0]->id, flat_id) << "the buffered copy moved";
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(8)[0]->id, other_flat_id)
+        << "another label's buffered vector was moved as collateral";
+
+    // Nothing had reached the graph, so nothing was marked deleted: the label's vector was dropped
+    // from the buffer - taking its pending job out of circulation - and the new one buffered with a
+    // job of its own.
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(frontend_index->indexSize(), 2);
+    ASSERT_EQ(hnsw_index->indexSize(), 0);
+    ASSERT_EQ(VecSimIndex_IndexSize(tiered_index), 2);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(7, replacement), 0);
+    ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(7, buffered), 0);
+
+    // Draining ingests the new value once; the invalidated job does nothing.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), 2);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(7, replacement), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 7);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(tiered_index, replacement, 1, verify_res);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsIndexed) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Ingest a few vectors, so the updated element has neighbours whose connections to it have to
+    // be repaired once it is marked deleted.
+    for (size_t i = 0; i < 5; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(hnsw_index->indexSize(), 5);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+
+    TEST_DATA_T indexed[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(indexed, dim, 3);
+    GenerateVector<TEST_DATA_T>(replacement, dim, 50);
+
+    ASSERT_EQ(tiered_index->updateVectors(3, replacement, 1), VecSimUpdate_OK);
+
+    // An indexed element cannot be written over, so it becomes a tombstone and the new value is
+    // buffered. The label is searchable at its new value straight away, and is counted once even
+    // though both tiers now mention it.
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 5);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(3, replacement), 0);
+    ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(3, indexed), 0);
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 3);
+        ASSERT_EQ(score, 0);
+    };
+    runTopKSearchTest(tiered_index, replacement, 1, verify_res);
+
+    // Draining the jobs ingests the new value and repairs the tombstone's neighbours; the GC then
+    // disposes of it, leaving as many elements as before the update.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->runGC();
+    ASSERT_EQ(hnsw_index->indexSize(), 5);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 5);
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_TRUE(report.valid_state);
+    ASSERT_EQ(report.connections_to_repair, 0);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(3, replacement), 0);
+
+    // The other labels kept their vectors throughout.
+    for (size_t i : {0, 1, 2, 4}) {
+        TEST_DATA_T untouched[dim];
+        GenerateVector<TEST_DATA_T>(untouched, dim, i);
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(i, untouched), 0) << "label " << i;
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiChangesCount) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // One label with two vectors, one in each tier: the first is ingested, the second stays
+    // buffered. So the update has to reach both tiers to replace the label's contents.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration();
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 2);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+
+    TEST_DATA_T three[3 * dim];
+    for (size_t i = 0; i < 3; i++) {
+        GenerateVector<TEST_DATA_T>(three + i * dim, dim, 10 + i);
+    }
+    ASSERT_EQ(tiered_index->updateVectors(1, three, 3), VecSimUpdate_OK);
+
+    // The buffered vector left no trace; the ingested one left a tombstone. The label now holds
+    // the three new vectors, all buffered.
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 3);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    for (size_t i = 0; i < 3; i++) {
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, three + i * dim), 0) << "missing " << i;
+    }
+    for (size_t value : {1, 2}) {
+        TEST_DATA_T gone[dim];
+        GenerateVector<TEST_DATA_T>(gone, dim, value);
+        ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(1, gone), 0) << "kept " << value;
+    }
+
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->runGC();
+    ASSERT_EQ(hnsw_index->indexSize(), 3);
+    ASSERT_EQ(hnsw_index->getElementIds(1).size(), 3);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // Shrinking the label back to a single vector goes the same way, and now every element it
+    // removes is an indexed one.
+    TEST_DATA_T one[dim];
+    GenerateVector<TEST_DATA_T>(one, dim, 20);
+    ASSERT_EQ(tiered_index->updateVectors(1, one, 1), VecSimUpdate_OK);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 3);
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->runGC();
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->getElementIds(1).size(), 1);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(1, one), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsInTheIngestWindow) {
+    size_t dim = 4;
+    TEST_DATA_T ingesting[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(ingesting, dim, 1);
+    GenerateVector<TEST_DATA_T>(replacement, dim, 10);
+
+    // `executeInsertJob` inserts into HNSW *before* dropping the flat copy, so a label can be in
+    // both tiers at once. An update landing in that window has to remove both copies - leaving
+    // either one would keep the old value searchable under the label.
+    for (bool is_multi : {false, true}) {
+        SCOPED_TRACE(is_multi ? "multi" : "single");
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = dim,
+                             .metric = VecSimMetric_L2,
+                             .multi = is_multi};
+        VecSimParams hnsw_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+        auto *frontend_index = this->GetFlatIndex(tiered_index);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+        // Build the window directly rather than racing a worker into it.
+        VecSimIndex_AddVector(tiered_index, ingesting, 0);
+        hnsw_index->addVector(ingesting, 0);
+        ASSERT_EQ(frontend_index->indexSize(), 1);
+        ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+        ASSERT_EQ(tiered_index->updateVectors(0, replacement, 1), VecSimUpdate_OK);
+
+        // The buffered copy was dropped and the indexed one marked deleted, so only the new value
+        // is left under the label.
+        ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+        ASSERT_EQ(frontend_index->indexSize(), 1);
+        ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, replacement), 0);
+        ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(0, ingesting), 0);
+
+        while (!mock_thread_pool.jobQ.empty()) {
+            mock_thread_pool.thread_iteration();
+        }
+        tiered_index->runGC();
+        ASSERT_EQ(hnsw_index->indexSize(), 1);
+        ASSERT_EQ(hnsw_index->getElementIds(0).size(), 1);
+        ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+        ASSERT_EQ(frontend_index->indexSize(), 0);
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(0, replacement), 0);
+        ASSERT_NE(hnsw_index->getDistanceFrom_Unsafe(0, ingesting), 0);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    }
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsWithFullFlatBuffer) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // A flat buffer limit of 0 leaves every insert to go straight into HNSW, which is the phase an
+    // index under write pressure spends its time in - the update's insert half has to work there
+    // too, with no job to carry it.
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 0, 0);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    TEST_DATA_T indexed[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(indexed, dim, 1);
+    GenerateVector<TEST_DATA_T>(replacement, dim, 10);
+
+    ASSERT_EQ(tiered_index->updateVectors(1, replacement, 1), VecSimUpdate_OK);
+
+    // Nothing is buffered on either side: the old element is a tombstone and the new one went
+    // directly into the graph.
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), 2); // the live element and the tombstone
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, replacement), 0);
+    ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(1, indexed), 0);
+
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->runGC();
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(1, replacement), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsTwiceBeforeIngestion) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Start from an indexed vector, so the first update leaves a tombstone whose repair jobs are
+    // still pending when the second update runs.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+
+    TEST_DATA_T first[dim], second[dim], third[dim];
+    GenerateVector<TEST_DATA_T>(first, dim, 1);
+    GenerateVector<TEST_DATA_T>(second, dim, 10);
+    GenerateVector<TEST_DATA_T>(third, dim, 20);
+
+    ASSERT_EQ(tiered_index->updateVectors(1, second, 1), VecSimUpdate_OK);
+    ASSERT_EQ(tiered_index->updateVectors(1, third, 1), VecSimUpdate_OK);
+
+    // The second update replaced a vector that was still buffered, so it cost no second tombstone -
+    // it dropped the buffered copy and the job that was going to ingest it.
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, third), 0);
+    ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(1, second), 0);
+    ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(1, first), 0);
+
+    // Draining runs the invalidated jobs as well; only the last value is ingested.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    tiered_index->runGC();
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->getElementIds(1).size(), 1);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(1, third), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsRejectsSeveralVectorsInSingle) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    TEST_DATA_T two_vectors[2 * dim];
+    GenerateVector<TEST_DATA_T>(two_vectors, dim, 10);
+    GenerateVector<TEST_DATA_T>(two_vectors + dim, dim, 11);
+
+    // Refused before anything is removed - a single-value index cannot end up holding both, and
+    // serving it by storing one of them would leave the caller believing both are there.
+    ASSERT_EQ(tiered_index->updateVectors(1, two_vectors, 2), VecSimUpdate_MultiNotSupported);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    TEST_DATA_T original[dim];
+    GenerateVector<TEST_DATA_T>(original, dim, 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(1, original), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsInPlace) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    for (size_t i = 0; i < 5; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(hnsw_index->indexSize(), 5);
+
+    tiered_index->setWriteMode(VecSim_WriteInPlace);
+
+    TEST_DATA_T indexed[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(indexed, dim, 3);
+    GenerateVector<TEST_DATA_T>(replacement, dim, 50);
+
+    ASSERT_EQ(tiered_index->updateVectors(3, replacement, 1), VecSimUpdate_OK);
+
+    // Both halves happen synchronously in this mode: the old element is taken out of the graph
+    // rather than marked deleted, and the new one goes straight into HNSW - no tombstone, no job,
+    // and nothing left buffered.
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), 5);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 5);
+    ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(3, replacement), 0);
+    ASSERT_NE(hnsw_index->getDistanceFrom_Unsafe(3, indexed), 0);
+    auto report = hnsw_index->checkIntegrity();
+    ASSERT_TRUE(report.valid_state);
+    ASSERT_EQ(report.connections_to_repair, 0);
+
+    for (size_t i : {0, 1, 2, 4}) {
+        TEST_DATA_T untouched[dim];
+        GenerateVector<TEST_DATA_T>(untouched, dim, i);
+        ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(i, untouched), 0) << "label " << i;
+    }
+
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+}
+
 using float16 = vecsim_types::float16;
 
 // -------------------------------------------------------------------
@@ -6526,6 +7220,77 @@ TYPED_TEST(HNSWTieredIndexTestSQ8, FullFlowAsyncInsertAndSearch) {
     ASSERT_NE(results, nullptr);
     ASSERT_EQ(VecSimQueryReply_Len(results), 10);
     VecSimQueryReply_Free(results);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, updateVectorsAfterAccumulation) {
+    // The phase after the quantizer is trained: vectors live in the SQ8 backend, and an update has
+    // to work against the quantized elements - which it never compares against, so there is nothing
+    // here that a lossy stored form could confuse.
+    size_t dim = 4;
+    size_t normSetSize = 5;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    // Trigger the transition, then let the vectors reach the backend.
+    for (size_t i = 0; i < normSetSize; i++) {
+        TEST_DATA_T vec[dim];
+        this->GenerateVectorData(vec, dim, static_cast<float>(i + 1));
+        VecSimIndex_AddVector(tiered_index, vec, i);
+    }
+    ASSERT_FALSE(this->getIsInAccumulationPhase(tiered_index));
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+
+    TEST_DATA_T replacement[dim];
+    this->GenerateVectorData(replacement, dim, 50.0f);
+    ASSERT_EQ(tiered_index->updateVectors(0, replacement, 1), VecSimUpdate_OK);
+
+    // The backend element became a tombstone and the new value is buffered, as for any other
+    // backend vector.
+    ASSERT_EQ(this->CastToHNSW(tiered_index)->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), normSetSize);
+
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    this->callExecuteReadySwapJobs(tiered_index);
+    ASSERT_EQ(tiered_index->indexSize(), normSetSize);
+    ASSERT_EQ(this->CastToHNSW(tiered_index)->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), normSetSize);
+    ASSERT_TRUE(this->CastToHNSW(tiered_index)->isLabelExists(0));
+    ASSERT_TRUE(this->CastToHNSW(tiered_index)->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestSQ8, updateVectorsDuringAccumulation) {
+    // Nothing here is compared against the stored vectors, so a quantized index needs no special
+    // case - but the update still has to leave the accumulation bookkeeping right, since the
+    // running sum that trains the quantizer is maintained per insert and per delete.
+    size_t dim = 4;
+    size_t normSetSize = 100;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateSQ8TieredIndex(mock_thread_pool, dim, VecSimMetric_IP, normSetSize);
+
+    TEST_DATA_T vec1[dim], vec2[dim];
+    this->GenerateVectorData(vec1, dim, 1.0f);
+    this->GenerateVectorData(vec2, dim, 5.0f);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, vec1, 0), 1);
+
+    ASSERT_EQ(tiered_index->updateVectors(0, vec2, 1), VecSimUpdate_OK);
+
+    ASSERT_TRUE(this->getIsInAccumulationPhase(tiered_index));
+    ASSERT_EQ(this->getFrontendIndex(tiered_index)->indexSize(), 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    // The sum holds the new vector alone: the replaced one was subtracted as it left.
+    for (size_t d = 0; d < dim; d++) {
+        ASSERT_NEAR(this->getRunningSumVec(tiered_index)[d], this->ToFloat(vec2[d]), 1e-3f);
+    }
 }
 
 TYPED_TEST(HNSWTieredIndexTestSQ8, DeleteThenReinsertDuringAccumulation) {
