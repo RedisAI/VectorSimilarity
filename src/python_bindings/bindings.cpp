@@ -20,7 +20,10 @@
 #include "pybind11/pybind11.h"
 #include "pybind11/numpy.h"
 #include "pybind11/stl.h"
+#include <cmath>
 #include <cstring>
+#include <optional>
+#include <stdexcept>
 #include <thread>
 #include <VecSim/algorithms/hnsw/hnsw_single.h>
 #include <VecSim/algorithms/brute_force/brute_force_single.h>
@@ -30,6 +33,35 @@ namespace py = pybind11;
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
+
+using QuantizationMean = py::array_t<float, py::array::c_style | py::array::forcecast>;
+
+std::optional<QuantizationMean> validateQuantizationMean(const py::object &quantization_mean,
+                                                         const HNSWParams &params) {
+    if (quantization_mean.is_none()) {
+        return std::nullopt;
+    }
+    if (params.quantType != VecSimQuant_SQ8) {
+        throw py::value_error("quantization_mean requires quantType VecSimQuant_SQ8");
+    }
+
+    QuantizationMean mean(quantization_mean);
+    if (mean.ndim() != 1) {
+        throw py::value_error("quantization_mean must be a one-dimensional array");
+    }
+    if (static_cast<size_t>(mean.shape(0)) != params.dim) {
+        throw py::value_error("quantization_mean length must match the index dimension");
+    }
+
+    const auto values = mean.unchecked<1>();
+    for (py::ssize_t i = 0; i < values.shape(0); ++i) {
+        if (!std::isfinite(values(i))) {
+            throw py::value_error(
+                "quantization_mean values must be finite after conversion to float32");
+        }
+    }
+    return mean;
+}
 
 // Helper function that iterates query results and wrap them in python numpy object -
 // a tuple of two 2D arrays: (labels, distances)
@@ -149,6 +181,29 @@ private:
 protected:
     std::shared_ptr<VecSimIndex> index;
 
+    static std::shared_ptr<VecSimIndex> ownIndex(VecSimIndex *native_index) {
+        return std::shared_ptr<VecSimIndex>(native_index, VecSimIndex_Free);
+    }
+
+    // A null factory result must never reach a shared_ptr: it faults on first use, and for a
+    // tiered index it also leaves the mock thread pool's context without the strong reference
+    // that its destructor dereferences.
+    static std::shared_ptr<VecSimIndex> createIndex(const VecSimParams &params) {
+        auto *native_index = VecSimIndex_New(&params);
+        if (!native_index) {
+            throw std::invalid_argument("Unsupported vector index parameters");
+        }
+        return ownIndex(native_index);
+    }
+
+    // Deserialization fails on unreadable or malformed input rather than on bad parameters.
+    static std::shared_ptr<VecSimIndex> loadIndexOrThrow(VecSimIndex *native_index) {
+        if (!native_index) {
+            throw std::runtime_error("Index creation failed");
+        }
+        return ownIndex(native_index);
+    }
+
     inline VecSimQueryReply *searchKnnInternal(const char *query, size_t k,
                                                VecSimQueryParams *query_params) {
         return VecSimIndex_TopKQuery(index.get(), query, k, query_params, BY_SCORE);
@@ -166,9 +221,7 @@ protected:
 public:
     PyVecSimIndex() = default;
 
-    explicit PyVecSimIndex(const VecSimParams &params) {
-        index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
-    }
+    explicit PyVecSimIndex(const VecSimParams &params) : index(createIndex(params)) {}
 
     void addVector(const py::object &input, size_t id) {
         py::array vector_data(input);
@@ -317,14 +370,13 @@ public:
     explicit PyHNSWLibIndex(const HNSWParams &hnsw_params) {
         VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
                                .algoParams = {.hnswParams = HNSWParams{hnsw_params}}};
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
+        this->index = createIndex(params);
         this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
     // @params is required only in V1.
     explicit PyHNSWLibIndex(const std::string &location) {
-        this->index =
-            std::shared_ptr<VecSimIndex>(HNSWFactory::NewIndex(location), VecSimIndex_Free);
+        this->index = loadIndexOrThrow(HNSWFactory::NewIndex(location));
         this->indexGuard = std::make_shared<std::shared_mutex>();
     }
 
@@ -517,6 +569,18 @@ public:
 class PyTieredIndex : public PyVecSimIndex {
 protected:
     tieredIndexMock mock_thread_pool;
+    bool manual_jobs;
+
+    void initializeIndex(const VecSimParams &params) {
+        try {
+            this->index = createIndex(params);
+        } catch (...) {
+            // The mock destructor requires a valid index whenever its context is present.
+            mock_thread_pool.reset_ctx();
+            throw;
+        }
+        mock_thread_pool.ctx->index_strong_ref = this->index;
+    }
 
     VecSimIndexAbstract<float, float> *getFlatBuffer() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
@@ -534,15 +598,47 @@ protected:
     }
 
 public:
-    explicit PyTieredIndex() { mock_thread_pool.init_threads(); }
+    explicit PyTieredIndex(bool manual_jobs = false) : manual_jobs(manual_jobs) {
+        if (!manual_jobs) {
+            mock_thread_pool.init_threads();
+        }
+    }
+
+    // Testing-only control for observing a tiered index while migration is partially complete.
+    // Keep the GIL held while executing jobs so Python callers cannot consume the queue
+    // concurrently. Any live batch iterator must be destroyed first because it retains the
+    // tiered index guard for its full lifetime.
+    size_t runPendingJobs(size_t max_jobs = 1) {
+        if (!manual_jobs) {
+            throw std::runtime_error("Pending jobs can only be run in manual_jobs mode");
+        }
+
+        size_t jobs_run = 0;
+        while (jobs_run < max_jobs) {
+            {
+                std::lock_guard<std::mutex> lock(mock_thread_pool.queue_guard);
+                if (mock_thread_pool.jobQ.empty()) {
+                    break;
+                }
+            }
+            mock_thread_pool.thread_iteration();
+            jobs_run++;
+        }
+        return jobs_run;
+    }
 
     void WaitForIndex(size_t waiting_duration = 10) {
-        mock_thread_pool.thread_pool_wait(waiting_duration);
+        if (manual_jobs) {
+            while (runPendingJobs() != 0) {
+            }
+        } else {
+            mock_thread_pool.thread_pool_wait(waiting_duration);
+        }
     }
 
     size_t getFlatIndexSize() { return getFlatBuffer()->indexLabelCount(); }
 
-    size_t getThreadsNum() { return mock_thread_pool.thread_pool_size; }
+    size_t getThreadsNum() { return manual_jobs ? 0 : mock_thread_pool.thread_pool_size; }
 
     size_t getBufferLimit() {
         return reinterpret_cast<VecSimTieredIndex<float, float> *>(this->index.get())
@@ -553,7 +649,9 @@ public:
 class PyTiered_HNSWIndex : public PyTieredIndex {
 public:
     explicit PyTiered_HNSWIndex(const HNSWParams &hnsw_params,
-                                const TieredHNSWParams &tiered_hnsw_params, size_t buffer_limit) {
+                                const TieredHNSWParams &tiered_hnsw_params, size_t buffer_limit,
+                                bool manual_jobs = false)
+        : PyTieredIndex(manual_jobs) {
 
         // Create primaryIndexParams and specific params for hnsw tiered index.
         VecSimParams primary_index_params = {.algo = VecSimAlgo_HNSWLIB,
@@ -567,10 +665,7 @@ public:
         VecSimParams params = {.algo = VecSimAlgo_TIERED,
                                .algoParams = {.tieredParams = TieredIndexParams{tiered_params}}};
 
-        this->index = std::shared_ptr<VecSimIndex>(VecSimIndex_New(&params), VecSimIndex_Free);
-
-        // Set the created tiered index in the index external context.
-        this->mock_thread_pool.ctx->index_strong_ref = this->index;
+        initializeIndex(params);
     }
 
     size_t HNSWLabelCount() {
@@ -712,6 +807,11 @@ PYBIND11_MODULE(VecSim, m) {
         .value("VecSimMetric_Cosine", VecSimMetric_Cosine)
         .export_values();
 
+    py::enum_<VecSimQuantType>(m, "VecSimQuantType")
+        .value("VecSimQuant_NONE", VecSimQuant_NONE)
+        .value("VecSimQuant_SQ8", VecSimQuant_SQ8)
+        .export_values();
+
     py::enum_<VecSimOptionMode>(m, "VecSimOptionMode")
         .value("VecSimOption_AUTO", VecSimOption_AUTO)
         .value("VecSimOption_ENABLE", VecSimOption_ENABLE)
@@ -733,7 +833,8 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("M", &HNSWParams::M)
         .def_readwrite("efConstruction", &HNSWParams::efConstruction)
         .def_readwrite("efRuntime", &HNSWParams::efRuntime)
-        .def_readwrite("epsilon", &HNSWParams::epsilon);
+        .def_readwrite("epsilon", &HNSWParams::epsilon)
+        .def_readwrite("quantType", &HNSWParams::quantType);
 
     py::class_<BFParams>(m, "BFParams")
         .def(py::init())
@@ -792,7 +893,8 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<TieredHNSWParams>(m, "TieredHNSWParams")
         .def(py::init())
-        .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold);
+        .def_readwrite("swapJobThreshold", &TieredHNSWParams::swapJobThreshold)
+        .def_readwrite("QuantNormalizationSetSize", &TieredHNSWParams::QuantNormalizationSetSize);
 
     py::class_<TieredSVSParams>(m, "TieredSVSParams")
         .def(py::init())
@@ -831,8 +933,21 @@ PYBIND11_MODULE(VecSim, m) {
         .def_readwrite("epsilon", &SVSRuntimeParams::epsilon);
 
     py::class_<PyVecSimIndex>(m, "VecSimIndex")
-        .def(py::init([](const VecSimParams &params) { return new PyVecSimIndex(params); }),
-             py::arg("params"))
+        .def(py::init([](const VecSimParams &params, const py::object &quantization_mean) {
+                 VecSimParams native_params = params;
+                 std::optional<QuantizationMean> mean;
+                 if (!quantization_mean.is_none()) {
+                     if (params.algo != VecSimAlgo_HNSWLIB) {
+                         throw py::value_error(
+                             "quantization_mean is only supported for HNSW VecSimIndex parameters");
+                     }
+                     mean = validateQuantizationMean(quantization_mean,
+                                                     native_params.algoParams.hnswParams);
+                     native_params.algoParams.hnswParams.quantParams = mean->data();
+                 }
+                 return new PyVecSimIndex(native_params);
+             }),
+             py::arg("params"), py::kw_only(), py::arg("quantization_mean") = py::none())
         .def("add_vector", &PyVecSimIndex::addVector)
         .def("delete_vector", &PyVecSimIndex::deleteVector)
         .def("knn_query", &PyVecSimIndex::knn, py::arg("vector"), py::arg("k"),
@@ -851,8 +966,15 @@ PYBIND11_MODULE(VecSim, m) {
         .def("run_gc", &PyVecSimIndex::runGC);
 
     py::class_<PyHNSWLibIndex, PyVecSimIndex>(m, "HNSWIndex")
-        .def(py::init([](const HNSWParams &params) { return new PyHNSWLibIndex(params); }),
-             py::arg("params"))
+        .def(py::init([](const HNSWParams &params, const py::object &quantization_mean) {
+                 HNSWParams native_params = params;
+                 auto mean = validateQuantizationMean(quantization_mean, native_params);
+                 if (mean) {
+                     native_params.quantParams = mean->data();
+                 }
+                 return new PyHNSWLibIndex(native_params);
+             }),
+             py::arg("params"), py::kw_only(), py::arg("quantization_mean") = py::none())
         .def(py::init([](const std::string &location) { return new PyHNSWLibIndex(location); }),
              py::arg("location"))
         .def("set_ef", &PyHNSWLibIndex::setDefaultEf)
@@ -875,11 +997,26 @@ PYBIND11_MODULE(VecSim, m) {
 
     py::class_<PyTiered_HNSWIndex, PyTieredIndex>(m, "Tiered_HNSWIndex")
         .def(py::init([](const HNSWParams &hnsw_params, const TieredHNSWParams &tiered_hnsw_params,
-                         size_t flat_buffer_size = DEFAULT_BLOCK_SIZE) {
-                 return new PyTiered_HNSWIndex(hnsw_params, tiered_hnsw_params, flat_buffer_size);
+                         size_t flat_buffer_size, bool manual_jobs,
+                         const py::object &quantization_mean) {
+                 HNSWParams native_hnsw_params = hnsw_params;
+                 auto mean = validateQuantizationMean(quantization_mean, native_hnsw_params);
+                 if (mean) {
+                     native_hnsw_params.quantParams = mean->data();
+                 }
+                 return new PyTiered_HNSWIndex(native_hnsw_params, tiered_hnsw_params,
+                                               flat_buffer_size, manual_jobs);
              }),
-             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"), py::arg("flat_buffer_size"))
-        .def("hnsw_label_count", &PyTiered_HNSWIndex::HNSWLabelCount);
+             py::arg("hnsw_params"), py::arg("tiered_hnsw_params"), py::arg("flat_buffer_size"),
+             py::kw_only(), py::arg("manual_jobs") = false,
+             py::arg("quantization_mean") = py::none(),
+             R"doc(Create a tiered HNSW index.
+
+If QuantNormalizationSetSize is positive, native tiered training takes precedence over a supplied
+quantization_mean. The supplied mean is still validated before index creation.
+)doc")
+        .def("hnsw_label_count", &PyTiered_HNSWIndex::HNSWLabelCount)
+        .def("_run_pending_jobs", &PyTiered_HNSWIndex::runPendingJobs, py::arg("max_jobs") = 1);
 
     py::class_<PyBFIndex, PyVecSimIndex>(m, "BFIndex")
         .def(py::init([](const BFParams &params) { return new PyBFIndex(params); }),
