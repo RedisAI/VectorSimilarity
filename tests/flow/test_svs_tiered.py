@@ -602,6 +602,53 @@ def test_batch_iterator(test_logger):
     test_logger.info(f"Overall results returned: {len(accumulated_labels)} in {iterations} iterations")
 
 
+def test_svs_vamana_near_vs_far_query_recall(test_logger):
+    # Diagnostic for MOD-18890, isolated to plain VecSim -- no RediSearch involved.
+    #
+    # 3000 vectors in a tiered SVS-VAMANA index (dim=2, label i -> vector [i, i], L2 metric),
+    # inserted sequentially, one at a time, from a single thread (no concurrency, no relabel, no
+    # writes beyond the initial insert). A plain top-k KNN query near the LOW END of the corpus
+    # (label ~1) returns the exact, correct nearest neighbors. The identical kind of query,
+    # against the exact same index/insertion, but centered near the MIDDLE of the corpus
+    # (label ~1500), returns a wrong, scattered result: not an off-by-one approximate-search
+    # near-tie miss (which would be expected/normal for an ANN index), but several of the
+    # genuinely-nearest labels never appearing in the result at all.
+    dim = 2
+    num_elements = 3000
+    data_type = VecSimType_FLOAT32
+    metric = VecSimMetric_L2
+    k = 12
+
+    svs_params = create_svs_params(dim=dim, num_elements=num_elements, data_type=data_type, metric=metric)
+    tiered_svs_params = create_tiered_svs_params()
+    index = Tiered_SVSIndex(svs_params, tiered_svs_params, num_elements)
+
+    for label in range(1, num_elements + 1):
+        vector = np.array([label] * dim, dtype=np.float32)
+        index.add_vector(vector, label)
+
+    index.wait_for_index()
+    assert index.svs_label_count() == num_elements
+
+    # NEAR query: label ~1, at the low end of the corpus. Expect labels 1..12.
+    # (Offset by 0.3 to avoid a symmetric-distance tie at the corpus boundary.)
+    near_query = np.array([1.3] * dim, dtype=np.float32)
+    near_labels, _ = index.knn_query(near_query, k)
+    near_sorted = sorted(int(l) for l in near_labels[0])
+    near_expected = list(range(1, k + 1))
+    test_logger.info(f"NEAR query (label ~1) top-{k}: {near_sorted}, expected {near_expected}")
+    assert near_sorted == near_expected, f"NEAR query: got {near_sorted}, expected {near_expected}"
+
+    # FAR query: label ~1500, at the middle of the same corpus/index/insertion as the NEAR query.
+    mid = num_elements // 2
+    far_query = np.array([mid + 0.3] * dim, dtype=np.float32)
+    far_labels, _ = index.knn_query(far_query, k)
+    far_sorted = sorted(int(l) for l in far_labels[0])
+    far_expected = list(range(mid - 5, mid + 7))
+    test_logger.info(f"FAR query (label ~{mid}) top-{k}: {far_sorted}, expected {far_expected}")
+    assert far_sorted == far_expected, f"FAR query: got {far_sorted}, expected {far_expected}"
+
+
 def test_range_query(test_logger):
     num_elements = 50000
     dim = 100
