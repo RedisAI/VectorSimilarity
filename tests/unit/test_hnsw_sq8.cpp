@@ -609,6 +609,25 @@ TYPED_TEST(HNSWSQ8Test, SetQuantizationMeanMatchesConstructedMean) {
                     << "label " << label;
             }
         }
+
+        struct TemporaryFile {
+            std::string path;
+            ~TemporaryFile() { std::remove(path.c_str()); }
+        } file{::testing::TempDir() + "hnsw_sq8_set_mean_" +
+               std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+               (TypeParam::with_quant_params ? "_mean" : "_no_mean") +
+               (metric == VecSimMetric_L2 ? "_l2.hnsw" : "_ip.hnsw")};
+        deferred_hnsw->saveIndex(file.path);
+        index_ptr restored(HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+        ASSERT_NE(restored, nullptr);
+        auto *restored_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(restored.get());
+        ASSERT_NE(restored_hnsw, nullptr);
+        EXPECT_EQ(restored_hnsw->serializedMeanVector, mean);
+        for (size_t label = 0; label < count; label++) {
+            EXPECT_FLOAT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(restored.get(), label, query.data()),
+                            VecSimIndex_GetDistanceFrom_Unsafe(deferred.get(), label, query.data()))
+                << "serialized label " << label;
+        }
     }
 }
 

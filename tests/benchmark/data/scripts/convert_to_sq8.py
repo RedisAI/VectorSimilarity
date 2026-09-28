@@ -16,13 +16,12 @@ DATA_DIR = os.path.join(REPO_ROOT, 'tests', 'benchmark', 'data')
 # Index parameters (must match the source index)
 
 '''
-# For dbpedia-cosine-dim768-M64-efc512.hnsw_v3
-INPUT_INDEX = os.path.join(DATA_DIR, 'dbpedia-cosine-dim768-M64-efc512.hnsw_v3')
-#INPUT_INDEX = os.path.join(DATA_DIR, 'dbpedia-cosine-dim768-M64-efc512-fp16.hnsw_v3')
+# For dbpedia-cosine-dim768-M64-efc512-fp16.hnsw_v3
+INPUT_INDEX = os.path.join(DATA_DIR, 'dbpedia-cosine-dim768-M64-efc512-fp16.hnsw_v3')
 DIM = 768
 M = 64
 EF_CONSTRUCTION = 512
-METRIC = VecSimMetric_Cosine
+SOURCE_METRIC = VecSimMetric_Cosine
 MULTI = False
 TYPE = VecSimType_FLOAT16
 #TYPE = VecSimType_FLOAT32
@@ -34,11 +33,20 @@ INPUT_INDEX = os.path.join(DATA_DIR, 'fashion_images_multi_value-cosine-dim512-M
 DIM = 512
 M = 64
 EF_CONSTRUCTION = 512
-METRIC = VecSimMetric_Cosine
+SOURCE_METRIC = VecSimMetric_Cosine
 MULTI = True
 TYPE = VecSimType_FLOAT16
 #TYPE = VecSimType_FLOAT32
 N_LABELS = 44441  # the number of unique labels
+
+# Standalone SQ8 HNSW does not accept Cosine. Normalize cosine vectors before computing the
+# quantization mean and inserting them, then use IP (cosine equals IP for normalized vectors).
+# Consumers must normalize query vectors with the same convention before querying this index.
+METRIC = VecSimMetric_IP if SOURCE_METRIC == VecSimMetric_Cosine else SOURCE_METRIC
+INSERT_DTYPE = {
+    VecSimType_FLOAT16: np.float16,
+    VecSimType_FLOAT32: np.float32,
+}[TYPE]
 
 OUTPUT_INDEX = INPUT_INDEX.replace('.hnsw_v3', '-sq8.hnsw_v5')
 
@@ -69,6 +77,8 @@ def convert():
         print(f'  Extracted {n_labels} labels, {total_extracted} vectors total')
 
         # Gather all vectors into a single array for computing the mean
+        for label, vecs in label_vectors.items():
+            label_vectors[label] = np.asarray(vecs, dtype=np.float32)
         all_vectors = np.vstack(list(label_vectors.values()))
     else:
         # Single-value index: one vector per label, labels are 0..n_vectors-1
@@ -81,6 +91,17 @@ def convert():
         print(f'  Extracted {n_vectors}/{n_vectors}')
 
     del source
+
+    if SOURCE_METRIC == VecSimMetric_Cosine:
+        print('Normalizing cosine vectors for the IP SQ8 index...')
+        norms = np.linalg.norm(all_vectors, axis=1, keepdims=True)
+        np.divide(all_vectors, norms, out=all_vectors, where=norms != 0)
+        if MULTI:
+            offset = 0
+            for label, vecs in label_vectors.items():
+                count = len(vecs)
+                label_vectors[label] = all_vectors[offset:offset + count]
+                offset += count
 
     # Compute mean vector for SQ8 quantization
     print('Computing mean vector...')
@@ -96,9 +117,7 @@ def convert():
     params.M = M
     params.efConstruction = EF_CONSTRUCTION
     params.quantType = VecSimQuant_SQ8
-    params.quantParams = mean
-
-    sq8_index = HNSWIndex(params)
+    sq8_index = HNSWIndex(params, quantization_mean=mean)
 
     # Add vectors
     print('Indexing vectors...')
@@ -106,16 +125,14 @@ def convert():
         added = 0
         for label, vecs in label_vectors.items():
             for vec in vecs:
-                sq8_index.add_vector(vec.astype(np.float16), label)
-                #sq8_index.add_vector(vec, label)
+                sq8_index.add_vector(vec.astype(INSERT_DTYPE, copy=False), label)
                 added += 1
             if label % 100000 == 0:
                 print(f'  label {label}/{n_labels} ({added} vectors added)')
         print(f'  Done: {added} vectors added across {len(label_vectors)} labels')
     else:
         for label in range(n_vectors):
-            sq8_index.add_vector(all_vectors[label].astype(np.float16), label)
-            #sq8_index.add_vector(all_vectors[label], label)
+            sq8_index.add_vector(all_vectors[label].astype(INSERT_DTYPE, copy=False), label)
             if label % 100000 == 0:
                 print(f'  {label}/{n_vectors}')
         print(f'  {n_vectors}/{n_vectors}')

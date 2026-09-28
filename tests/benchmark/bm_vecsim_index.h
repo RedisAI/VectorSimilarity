@@ -232,6 +232,11 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
     for (size_t i = 0; i < n_queries; i++) {
         std::vector<data_t> query(dim);
         input.read((char *)query.data(), dim * sizeof(data_t));
+        if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW_SQ8) {
+            // The SQ8 converter represents cosine as IP on normalized vectors. Normalize the
+            // shared query input too, so range radii and inserted vectors use the same scale.
+            VecSim_Normalize(query.data(), dim, index_type_t::get_index_type());
+        }
         queries.push_back(query);
     }
 }

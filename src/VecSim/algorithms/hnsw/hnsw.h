@@ -126,6 +126,10 @@ public:
                 assert(this->metric == VecSimMetric_IP || this->metric == VecSimMetric_Cosine);
                 setSQ8Mean<VecSimMetric_IP>(mean);
             }
+#ifdef BUILD_TESTS
+            assert(serializedMeanVector.size() == this->dim);
+            std::copy(mean.begin(), mean.end(), serializedMeanVector.begin());
+#endif
         } else {
             assert(false && "Unsupported SQ8 data type");
         }
