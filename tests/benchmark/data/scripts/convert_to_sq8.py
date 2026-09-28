@@ -134,10 +134,11 @@ def convert():
     # Verify
     print('Verifying saved index...')
     loaded = HNSWIndex(OUTPUT_INDEX)
-    assert loaded.check_integrity(), 'Converted SQ8 graph failed its integrity check'
+    if not loaded.check_integrity():
+        raise RuntimeError('Converted SQ8 graph failed its integrity check')
     expected_vectors = n_vectors
-    assert loaded.index_size() == expected_vectors, \
-        f'Expected {expected_vectors} vectors, got {loaded.index_size()}'
+    if loaded.index_size() != expected_vectors:
+        raise RuntimeError(f'Expected {expected_vectors} vectors, got {loaded.index_size()}')
     file_size = os.path.getsize(OUTPUT_INDEX)
     print(f'  File size: {file_size / (1024**3):.2f} GB')
     print(f'  Vectors: {loaded.index_size()}')
