@@ -19,7 +19,7 @@ $$
 # Run benchmarks
 ## Required files
 The serialized indices files that are used for micro-benchmarking and running ann-benchmark can be found in
-`tests/benchmark/data/hnsw_indices.txt`.
+`tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt`.
 To download all the required files, run from the repository root directory:
 ```sh
 wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt -P tests/benchmark/data
@@ -27,9 +27,10 @@ wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices
 ### SQ8 inputs for FP32/FP16 basics
 
 The single-value (DBpedia) and multi-value (fashion) FP32/FP16 basics binaries also load SQ8
-indexes. These generated V5 files are required even when a benchmark filter selects only an
-unquantized case, because fixture initialization happens before filtering. After downloading the
-original V3 indexes and installing the current Python bindings, generate the matching SQ8 files:
+indexes. The V5 SQ8 snapshots are included in the download list above and in the corresponding
+`hnsw_indices_basic_fp32.txt` and `hnsw_indices_basic_fp16.txt` lists. They are required even when
+a benchmark filter selects only an unquantized case, because fixture initialization happens before
+filtering. To regenerate them from the original V3 indexes, install the current Python bindings and run:
 
 ```sh
 poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp32
