@@ -233,6 +233,77 @@ TYPED_TEST(HNSWSQ8Test, SerializationRoundTripV5) {
     runTopKSearchTest(loaded.get(), query.data(), 1, verify);
 }
 
+TYPED_TEST(HNSWSQ8Test, NormalizedCosineSerializationRoundTripV5) {
+    using data_t = typename TestFixture::data_t;
+    using index_ptr = std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)>;
+    constexpr size_t dim = 4;
+    constexpr size_t count = 3;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .M = 8,
+                         .efConstruction = 40,
+                         .quantType = VecSimQuant_SQ8};
+
+    std::vector<float> mean;
+    if constexpr (TypeParam::with_quant_params) {
+        mean.assign(dim, TestFixture::quantization_mean_value);
+        params.quantParams = mean.data();
+    }
+
+    // The SQ8 Cosine backend assumes these vectors are already normalized and uses IP internally.
+    const std::vector<std::vector<float>> normalized_vectors = {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f, 0.0f},
+        {-1.0f, 0.0f, 0.0f, 0.0f},
+    };
+    VecSimParams vecsim_params = CreateParams(params);
+    index_ptr original(HNSWFactory::NewIndex(&vecsim_params, true), VecSimIndex_Free);
+    ASSERT_NE(original, nullptr);
+    for (size_t label = 0; label < count; ++label) {
+        std::vector<data_t> vector(dim);
+        for (size_t d = 0; d < dim; ++d) {
+            vector[d] = TestFixture::ToDataType(normalized_vectors[label][d]);
+        }
+        ASSERT_EQ(VecSimIndex_AddVector(original.get(), vector.data(), label), 1);
+    }
+
+    struct TemporaryFile {
+        std::string path;
+        ~TemporaryFile() { std::remove(path.c_str()); }
+    } file{::testing::TempDir() + "hnsw_sq8_normalized_cosine_" +
+           std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+           (TypeParam::with_quant_params ? "_mean" : "_no_mean") + ".hnsw"};
+
+    auto *original_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(original.get());
+    ASSERT_NE(original_hnsw, nullptr);
+    original_hnsw->saveIndex(file.path);
+
+    // Default loading remains strict; only callers that guarantee normalized input opt in.
+    index_ptr default_loaded(HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+    EXPECT_EQ(default_loaded, nullptr);
+
+    index_ptr loaded(HNSWFactory::NewIndex(file.path, true), VecSimIndex_Free);
+    ASSERT_NE(loaded, nullptr);
+    auto *loaded_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(loaded.get());
+    ASSERT_NE(loaded_hnsw, nullptr);
+    EXPECT_TRUE(loaded_hnsw->checkIntegrity().valid_state);
+    EXPECT_EQ(loaded_hnsw->quantType, VecSimQuant_SQ8);
+    EXPECT_EQ(loaded_hnsw->serializedMeanVector, mean);
+    ASSERT_EQ(VecSimIndex_IndexSize(loaded.get()), count);
+
+    // Unit queries stay normalized. Cosine distances are 1 - dot(query, vector).
+    std::vector<data_t> query(dim, TestFixture::ToDataType(0.0f));
+    query[0] = TestFixture::ToDataType(1.0f);
+    for (size_t label = 0; label < count; ++label) {
+        const double expected_distance = static_cast<double>(label);
+        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(original.get(), label, query.data()),
+                    expected_distance, 0.05);
+        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(loaded.get(), label, query.data()),
+                    expected_distance, 0.05);
+    }
+}
+
 TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
                          .dim = 4,

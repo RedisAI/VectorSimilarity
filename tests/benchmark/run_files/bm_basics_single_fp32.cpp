@@ -1,5 +1,6 @@
 /*
- * SPDX-FileCopyrightText: Modifications Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * SPDX-FileCopyrightText: Modifications Copyright 2026 Arm Limited and/or its affiliates
+ * <open-source-office@arm.com>
  */
 #include "benchmark/bm_vecsim_basics.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"

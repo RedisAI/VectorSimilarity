@@ -87,9 +87,9 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     assert(hnsw_index->getInputBlobSize() == abstractInitParams.storedDataSize);
     [[maybe_unused]] const size_t expected_stored_size =
         hnsw_params.quantType == VecSimQuant_SQ8
-            ? HNSWFactory::GetSQ8StoredDataSize(
-                  hnsw_params.metric, hnsw_params.dim,
-                  backend_params.algoParams.hnswParams.quantParams != nullptr)
+            ? HNSWFactory::GetSQ8StoredDataSize(hnsw_params.metric, hnsw_params.dim,
+                                                backend_params.algoParams.hnswParams.quantParams !=
+                                                    nullptr)
             : abstractInitParams.storedDataSize;
     assert(hnsw_index->getStoredDataSize() == expected_stored_size);
     auto frontendIndex = static_cast<BruteForceIndex<DataType, DistType> *>(

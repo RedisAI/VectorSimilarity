@@ -24,6 +24,31 @@ To download all the required files, run from the repository root directory:
 ```sh
 wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt -P tests/benchmark/data
 ```
+### SQ8 inputs for FP32/FP16 basics
+
+The single-value (DBpedia) and multi-value (fashion) FP32/FP16 basics binaries also load SQ8
+indexes. These generated V5 files are required even when a benchmark filter selects only an
+unquantized case, because fixture initialization happens before filtering. After downloading the
+original V3 indexes and installing the current Python bindings, generate the matching SQ8 files:
+
+```sh
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp32
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp16
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset fashion --type fp32
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset fashion --type fp16
+```
+
+Each command rebuilds the graph and writes `*-sq8.hnsw_v5` next to its source index in
+`tests/benchmark/data`. Run only the conversions needed for the basics binaries you intend to use.
+The converter represents cosine as inner product on normalized vectors, and the SQ8-enabled
+fixtures normalize the shared queries before timing. External consumers of these SQ8 files must
+also normalize their queries. The SQ8 range recall counter measures overlap with exact results;
+it is omitted when the exact result set is empty.
+
+These are steady-state benchmarks over an already built backend; they do not measure training or
+the accumulation-to-backend transition. Tiered TopK reports amortized completion time for a batch
+of 50 queries; use `real_time`, which includes queueing and the mock pool's 10 ms completion polling.
+
 To run all test sets, call the following commands from the project root dir:
 ```sh
 make benchmark

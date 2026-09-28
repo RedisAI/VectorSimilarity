@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# This file is a template file for converting an existing HNSW index file
+# Convert an existing benchmark HNSW index file
 # (*.hnsw_v3) to SQ8 quantized HNSW index (*-sq8.hnsw_v5).
 # Usage: poetry run python tests/benchmark/data/scripts/convert_to_sq8.py
 
+import argparse
 import numpy as np
 from VecSim import *
 import os
@@ -13,42 +14,31 @@ import os
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 DATA_DIR = os.path.join(REPO_ROOT, 'tests', 'benchmark', 'data')
 
-# Index parameters (must match the source index)
-
-'''
-# For dbpedia-cosine-dim768-M64-efc512-fp16.hnsw_v3
-INPUT_INDEX = os.path.join(DATA_DIR, 'dbpedia-cosine-dim768-M64-efc512-fp16.hnsw_v3')
-DIM = 768
-M = 64
-EF_CONSTRUCTION = 512
-SOURCE_METRIC = VecSimMetric_Cosine
-MULTI = False
-TYPE = VecSimType_FLOAT16
-#TYPE = VecSimType_FLOAT32
-'''
-
-# For fashion_images_multi_value-cosine-dim512-M64-efc512.hnsw_v3
-#INPUT_INDEX = os.path.join(DATA_DIR, 'fashion_images_multi_value-cosine-dim512-M64-efc512.hnsw_v3')
-INPUT_INDEX = os.path.join(DATA_DIR, 'fashion_images_multi_value-cosine-dim512-M64-efc512-fp16.hnsw_v3')
-DIM = 512
-M = 64
-EF_CONSTRUCTION = 512
-SOURCE_METRIC = VecSimMetric_Cosine
-MULTI = True
-TYPE = VecSimType_FLOAT16
-#TYPE = VecSimType_FLOAT32
-N_LABELS = 44441  # the number of unique labels
-
 # Standalone SQ8 HNSW does not accept Cosine. Normalize cosine vectors before computing the
 # quantization mean and inserting them, then use IP (cosine equals IP for normalized vectors).
 # Consumers must normalize query vectors with the same convention before querying this index.
-METRIC = VecSimMetric_IP if SOURCE_METRIC == VecSimMetric_Cosine else SOURCE_METRIC
-INSERT_DTYPE = {
-    VecSimType_FLOAT16: np.float16,
-    VecSimType_FLOAT32: np.float32,
-}[TYPE]
+SOURCE_METRIC = VecSimMetric_Cosine
+METRIC = VecSimMetric_IP
+M = 64
+EF_CONSTRUCTION = 512
 
-OUTPUT_INDEX = INPUT_INDEX.replace('.hnsw_v3', '-sq8.hnsw_v5')
+
+def configure(dataset, data_type):
+    global DIM, MULTI, N_LABELS, TYPE, INSERT_DTYPE, INPUT_INDEX, OUTPUT_INDEX
+    prefix, DIM, MULTI, N_LABELS = {
+        'dbpedia': ('dbpedia', 768, False, None),
+        'fashion': ('fashion_images_multi_value', 512, True, 44441),
+    }[dataset]
+    TYPE, INSERT_DTYPE = {
+        'fp32': (VecSimType_FLOAT32, np.float32),
+        'fp16': (VecSimType_FLOAT16, np.float16),
+    }[data_type]
+    suffix = '-fp16' if data_type == 'fp16' else ''
+    INPUT_INDEX = os.path.join(DATA_DIR, f'{prefix}-cosine-dim{DIM}-M64-efc512{suffix}.hnsw_v3')
+    OUTPUT_INDEX = INPUT_INDEX.replace('.hnsw_v3', '-sq8.hnsw_v5')
+
+
+configure('fashion', 'fp16')
 
 def convert():
     print(f'Loading source index: {INPUT_INDEX}')
@@ -144,7 +134,7 @@ def convert():
     # Verify
     print('Verifying saved index...')
     loaded = HNSWIndex(OUTPUT_INDEX)
-    loaded.check_integrity()
+    assert loaded.check_integrity(), 'Converted SQ8 graph failed its integrity check'
     expected_vectors = n_vectors
     assert loaded.index_size() == expected_vectors, \
         f'Expected {expected_vectors} vectors, got {loaded.index_size()}'
@@ -154,4 +144,9 @@ def convert():
     print('Done!')
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Convert benchmark cosine HNSW data to SQ8.')
+    parser.add_argument('--dataset', choices=['dbpedia', 'fashion'], default='fashion')
+    parser.add_argument('--type', choices=['fp32', 'fp16'], default='fp16', dest='data_type')
+    args = parser.parse_args()
+    configure(args.dataset, args.data_type)
     convert()
