@@ -117,18 +117,18 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         indices[INDEX_HNSW] = IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
 
         auto *hnsw_index = CastToHNSW(indices[INDEX_HNSW]);
+        size_t ef_r = 10;
+        hnsw_index->setEf(ef_r);
         // Create tiered index from the loaded HNSW index.
         if (enabled_index_types & IndexTypeFlags::INDEX_MASK_TIERED_HNSW) {
             BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
             auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
-            VecSimParams params = {.algo = VecSimAlgo_HNSWLIB,
-                                   .algoParams = {.hnswParams = HNSWParams{}}};
             TieredIndexParams tiered_params = {
                 .jobQueue = &mock_thread_pool.jobQ,
                 .jobQueueCtx = mock_thread_pool.ctx,
                 .submitCb = tieredIndexMock::submit_callback,
                 .flatBufferLimit = block_size,
-                .primaryIndexParams = &params,
+                .primaryIndexParams = nullptr,
                 .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
 
             auto *tiered_index = TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(
@@ -184,15 +184,12 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                 BM_VecSimGeneral::mock_thread_pool->init_threads();
             }
             auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
-            VecSimParams params = {
-                .algo = VecSimAlgo_HNSWLIB,
-                .algoParams = {.hnswParams = HNSWParams{.quantType = hnsw_sq8_index->quantType}}};
             TieredIndexParams tiered_params = {
                 .jobQueue = &mock_thread_pool.jobQ,
                 .jobQueueCtx = mock_thread_pool.ctx,
                 .submitCb = tieredIndexMock::submit_callback,
                 .flatBufferLimit = block_size,
-                .primaryIndexParams = &params,
+                .primaryIndexParams = nullptr,
                 .specificParams = {
                     TieredHNSWParams{.swapJobThreshold = 0, .QuantNormalizationSetSize = 0}}};
 

@@ -40,7 +40,7 @@ protected:
     EncodingVersion m_version;
 
 private:
-    virtual EncodingVersion getWriteVersion() const { return EncodingVersion::V4; }
+    virtual EncodingVersion getWriteVersion() const = 0;
 
     void saveIndexFields(std::ofstream &output) const = 0;
 };

@@ -11,10 +11,9 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = true;
-uint32_t BM_VecSimGeneral::enabled_index_types =
-    IndexTypeFlags::INDEX_MASK_BF | IndexTypeFlags::INDEX_MASK_HNSW |
-    IndexTypeFlags::INDEX_MASK_TIERED_HNSW | IndexTypeFlags::INDEX_MASK_HNSW_SQ8 |
-    IndexTypeFlags::INDEX_MASK_TIERED_HNSW_SQ8;
+uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK |
+                                                 IndexTypeFlags::INDEX_MASK_HNSW_SQ8 |
+                                                 IndexTypeFlags::INDEX_MASK_TIERED_HNSW_SQ8;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1111025;

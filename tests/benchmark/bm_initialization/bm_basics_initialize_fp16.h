@@ -91,12 +91,12 @@ BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(Memory, Tiered_SQ8))->Iterati
 
 // TopK SQ8 Tiered
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8), fp16_index_t)
-(benchmark::State &st) { TopK_Tiered_SQ8(st); }
+(benchmark::State &st) { TopK_Tiered(st, 0, INDEX_TIERED_HNSW_SQ8); }
 REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8));
 
 // Range SQ8 Tiered
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, Tiered_SQ8), fp16_index_t)
-(benchmark::State &st) { Range_Tiered_SQ8(st); }
+(benchmark::State &st) { Range_HNSW(st, INDEX_TIERED_HNSW_SQ8); }
 REGISTER_Range_HNSW(BM_FUNC_NAME(Range, Tiered_SQ8), fp16_index_t);
 
 // SQ8 Tiered add/delete benchmarks

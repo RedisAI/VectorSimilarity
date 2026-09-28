@@ -38,8 +38,6 @@ def configure(dataset, data_type):
     OUTPUT_INDEX = INPUT_INDEX.replace('.hnsw_v3', '-sq8.hnsw_v5')
 
 
-configure('fashion', 'fp16')
-
 def convert():
     print(f'Loading source index: {INPUT_INDEX}')
     source = HNSWIndex(INPUT_INDEX)

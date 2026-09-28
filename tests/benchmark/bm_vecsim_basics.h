@@ -50,8 +50,7 @@ public:
     static void RelabelLabel(benchmark::State &st);
 
     static void Range_BF(benchmark::State &st);
-    static void Range_HNSW(benchmark::State &st);
-    static void Range_Tiered_SQ8(benchmark::State &st);
+    static void Range_HNSW(benchmark::State &st, IndexTypeIndex index_type = INDEX_HNSW);
 
     // Reproduces allocation/deallocation oscillation issue at block size boundaries.
     // Sets up index at blockSize+1 capacity, then repeatedly deletes and re-adds the same vector,
@@ -339,37 +338,7 @@ void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
 }
 
 template <typename index_type_t>
-void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
-    double radius = (1.0 / 100.0) * (double)st.range(0);
-    double epsilon = (1.0 / 1000.0) * (double)st.range(1);
-    size_t iter = 0;
-    size_t total_res = 0;
-    size_t total_res_bf = 0;
-    HNSWRuntimeParams hnswRuntimeParams = {.epsilon = epsilon};
-    auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
-
-    for (auto _ : st) {
-        auto hnsw_results = VecSimIndex_RangeQuery(
-            GET_INDEX(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
-        st.PauseTiming();
-        total_res += VecSimQueryReply_Len(hnsw_results);
-
-        // Measure recall:
-        auto bf_results = VecSimIndex_RangeQuery(
-            GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
-        total_res_bf += VecSimQueryReply_Len(bf_results);
-
-        VecSimQueryReply_Free(bf_results);
-        VecSimQueryReply_Free(hnsw_results);
-        iter++;
-        st.ResumeTiming();
-    }
-    st.counters["Avg. results number"] = (double)total_res / iter;
-    st.counters["Recall"] = (float)total_res / total_res_bf;
-}
-
-template <typename index_type_t>
-void BM_VecSimBasics<index_type_t>::Range_Tiered_SQ8(benchmark::State &st) {
+void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st, IndexTypeIndex index_type) {
     double radius = (1.0 / 100.0) * (double)st.range(0);
     double epsilon = (1.0 / 1000.0) * (double)st.range(1);
     size_t iter = 0;
@@ -380,9 +349,8 @@ void BM_VecSimBasics<index_type_t>::Range_Tiered_SQ8(benchmark::State &st) {
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
 
     for (auto _ : st) {
-        auto hnsw_results =
-            VecSimIndex_RangeQuery(GET_INDEX(INDEX_TIERED_HNSW_SQ8),
-                                   QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
+        auto hnsw_results = VecSimIndex_RangeQuery(
+            GET_INDEX(index_type), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(hnsw_results);
 

@@ -43,14 +43,6 @@ template <VecSimMetric Metric>
                      : sq8::storage_bytes_count<Metric, false>(dim);
 }
 
-size_t GetSQ8StoredDataSize(VecSimMetric metric, size_t dim, bool with_mean) {
-    if (metric == VecSimMetric_L2) {
-        return GetSQ8StoredDataSize<VecSimMetric_L2>(dim, with_mean);
-    }
-    assert(metric == VecSimMetric_IP || metric == VecSimMetric_Cosine);
-    return GetSQ8StoredDataSize<VecSimMetric_IP>(dim, with_mean);
-}
-
 // Cosine over pre-normalized vectors is computed as inner product.
 [[nodiscard]] constexpr VecSimMetric ResolveSQ8Metric(VecSimMetric metric, bool is_normalized) {
     return (is_normalized && metric == VecSimMetric_Cosine) ? VecSimMetric_IP : metric;
@@ -299,13 +291,11 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
 
     index->restoreGraph(input, version);
 
-#ifdef BUILD_TESTS
     // Store quantization metadata for re-serialization.
     index->quantType = params->quantType;
     if (mean_ptr != nullptr) {
         index->serializedMeanVector.assign(mean_ptr, mean_ptr + abstractInitParams.dim);
     }
-#endif
 
     return index;
 }
@@ -390,7 +380,6 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
         }
 
         if (params.type == VecSimType_FLOAT32) {
-            abstractInitParams.inputBlobSize = dim * sizeof(float);
             if (metric == VecSimMetric_L2) {
                 auto components = CreateSQ8IndexComponents<float, VecSimMetric_L2>(
                     abstractInitParams.allocator, dim, mean_ptr);
@@ -403,7 +392,6 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
                                                            components, version, mean_ptr);
             }
         } else if (params.type == VecSimType_FLOAT16) {
-            abstractInitParams.inputBlobSize = dim * sizeof(float16);
             if (metric == VecSimMetric_L2) {
                 auto components = CreateSQ8IndexComponents<float16, VecSimMetric_L2>(
                     abstractInitParams.allocator, dim, mean_ptr);
