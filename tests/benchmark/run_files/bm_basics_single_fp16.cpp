@@ -36,5 +36,8 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp16_index_t, HNSWIndex_Sin
                     vecsim_types::float16, float, INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp16_index_t, TieredHNSWIndex,
                     vecsim_types::float16, float, INDEX_TIERED_HNSW)
+DEFINE_DELETE_LABEL_WITH_DATA_SOURCE(BM_FUNC_NAME(DeleteLabel, Tiered_SQ8), fp16_index_t,
+                                     TieredHNSWIndex, BruteForceIndex_Single, vecsim_types::float16,
+                                     float, INDEX_TIERED_HNSW_SQ8, INDEX_BF)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp16.h"
 BENCHMARK_MAIN();

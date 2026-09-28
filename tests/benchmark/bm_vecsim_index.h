@@ -200,6 +200,10 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
                 &tiered_params, hnsw_sq8_index);
 
             indices[INDEX_TIERED_HNSW_SQ8] = IndexPtr(sq8_tiered_index);
+            if (!mock_thread_pool.ctx->index_strong_ref) {
+                mock_thread_pool.ctx->index_strong_ref =
+                    indices[INDEX_TIERED_HNSW_SQ8].get_shared();
+            }
             // Release HNSW_SQ8 ownership since tiered will free it
             indices[INDEX_HNSW_SQ8].release_ownership();
         }

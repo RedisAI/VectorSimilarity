@@ -104,3 +104,7 @@ REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8));
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, Tiered_SQ8), fp32_index_t)
 (benchmark::State &st) { Range_Tiered_SQ8(st); }
 REGISTER_Range_HNSW(BM_FUNC_NAME(Range, Tiered_SQ8), fp32_index_t);
+
+// SQ8 Tiered add/delete benchmarks
+REGISTER_AddLabel(BM_ADD_LABEL, INDEX_TIERED_HNSW_SQ8);
+REGISTER_DeleteLabel(BM_FUNC_NAME(DeleteLabel, Tiered_SQ8));

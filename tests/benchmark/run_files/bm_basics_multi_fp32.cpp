@@ -39,6 +39,9 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Mul
                     INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
                     INDEX_TIERED_HNSW)
+DEFINE_DELETE_LABEL_WITH_DATA_SOURCE(BM_FUNC_NAME(DeleteLabel, Tiered_SQ8), fp32_index_t,
+                                     TieredHNSWIndex, BruteForceIndex_Multi, float, float,
+                                     INDEX_TIERED_HNSW_SQ8, INDEX_BF)
 #include "benchmark/bm_initialization/bm_basics_initialize_fp32.h"
 
 // Test oscillations at block size boundaries.

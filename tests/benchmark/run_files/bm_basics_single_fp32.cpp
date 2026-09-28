@@ -36,6 +36,9 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Sin
                     INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
                     INDEX_TIERED_HNSW)
+DEFINE_DELETE_LABEL_WITH_DATA_SOURCE(BM_FUNC_NAME(DeleteLabel, Tiered_SQ8), fp32_index_t,
+                                     TieredHNSWIndex, BruteForceIndex_Single, float, float,
+                                     INDEX_TIERED_HNSW_SQ8, INDEX_BF)
 
 // Test Oscilations
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single),
