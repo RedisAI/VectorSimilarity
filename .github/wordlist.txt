@@ -78,3 +78,7 @@ CPUs
 DOTPROD
 SVE
 UINT
+DBpedia
+unquantized
+backend
+queueing
