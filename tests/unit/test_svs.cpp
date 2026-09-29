@@ -2881,7 +2881,8 @@ TEST(SVSTest, quant_modes) {
 
     const size_t dim = 4;
     const size_t n = 100;
-    const size_t k = 10;
+    // Include both boundary labels, 45 and 55, which tie for query 50.
+    const size_t k = 11;
 
     for (auto quant_bits : {VecSimSvsQuant_NONE, VecSimSvsQuant_Scalar, VecSimSvsQuant_8,
                             VecSimSvsQuant_4, VecSimSvsQuant_4x4, VecSimSvsQuant_4x8,
@@ -2962,7 +2963,8 @@ TEST(SVSTest, save_load) {
 
     const size_t dim = 4;
     const size_t n = 100;
-    const size_t k = 10;
+    // Include both boundary labels, 45 and 55, in the single-value case.
+    const size_t k = 11;
 
     // Helper function to convert quant_bits to string for error messages
     auto quant_bits_to_string = [](VecSimSvsQuantBits quant_bits) -> std::string {
@@ -3055,7 +3057,7 @@ TEST(SVSTest, save_load) {
             float query[] = {50, 50, 50, 50};
             auto verify_res = [&](size_t id, double score, size_t idx) {
                 EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, id, query), score);
-                // Both single and multi should return labels starting from 45
+                // Single-value labels are 45..55; multi-value labels are 20..30.
                 if (is_multi) {
                     // For multi, that label of {50,50,50,50} is 25
                     size_t expected_label = (20 + idx);
