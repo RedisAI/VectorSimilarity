@@ -3699,14 +3699,11 @@ TYPED_TEST(SVSTest, relabelVector) {
     ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, 100, query), before);
     ASSERT_TRUE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 1, query)));
 
-    // SVS Scalar quantization is not enough precise
-    if (!this->isFallbackToSQ()) {
-        auto verify_res = [&](size_t id, double score, size_t rank) {
-            ASSERT_EQ(id, 100);
-            ASSERT_EQ(score, before);
-        };
-        runTopKSearchTest(index, query, 1, verify_res);
-    }
+    auto verify_res = [&](size_t id, double score, size_t rank) {
+        ASSERT_EQ(id, 100);
+        ASSERT_EQ(score, before);
+    };
+    runTopKSearchTest(index, query, 1, verify_res);
 
     VecSimIndex_Free(index);
 }
