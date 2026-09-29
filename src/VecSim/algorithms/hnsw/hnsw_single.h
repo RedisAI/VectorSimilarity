@@ -27,6 +27,9 @@ private:
     inline void resizeLabelLookup(size_t new_max_elements) override;
     inline vecsim_stl::set<labelType> getLabelsSet() const override;
     inline vecsim_stl::vector<idType> getElementIds(size_t label) override;
+    inline size_t getLabelSize(labelType label) const override {
+        return labelLookup.find(label) != labelLookup.end() ? 1 : 0;
+    }
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:

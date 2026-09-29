@@ -1271,7 +1271,7 @@ void TieredHNSWIndex<DataType, DistType>::updateMultiValueInPlace(labelType labe
     // re-fetching the current set every time, since removing one may relocate another of this same
     // label's own remaining ids via the swap-to-last compaction (exactly as
     // `deleteLabelFromHNSWInplace` already accounts for when it removes several of a label's ids).
-    size_t old_count = hnsw_index->getElementIds(label).size();
+    size_t old_count = hnsw_index->getLabelSize(label);
     size_t n_to_remove = old_count > n ? old_count - n : 0;
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(n_to_remove);

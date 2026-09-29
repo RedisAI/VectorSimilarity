@@ -39,6 +39,10 @@ private:
         }
         return it->second;
     }
+    inline size_t getLabelSize(labelType label) const override {
+        auto it = labelLookup.find(label);
+        return it == labelLookup.end() ? 0 : it->second.size();
+    }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
     // Return all the labels in the index - this should be used for computing the number of distinct

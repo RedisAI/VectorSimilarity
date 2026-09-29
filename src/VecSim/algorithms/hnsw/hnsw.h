@@ -392,6 +392,10 @@ public:
     // Unsafe (assume index data guard is held in MT mode).
     virtual vecsim_stl::vector<idType> getElementIds(size_t label) = 0;
 
+    // How many ids `label` currently maps to, without copying the id list out the way
+    // `getElementIds(label).size()` would.
+    virtual size_t getLabelSize(labelType label) const = 0;
+
     // Remove label from the index.
     virtual int removeLabel(labelType label) = 0;
 
@@ -1968,12 +1972,14 @@ void HNSWIndex<DataType, DistType>::swapDeletedElement(idType internalId) {
 }
 
 template <typename DataType, typename DistType>
-ElementGraphData* HNSWIndex<DataType, DistType>::repairConnectionsInPlace(const idType element_internal_id) {
+ElementGraphData *
+HNSWIndex<DataType, DistType>::repairConnectionsInPlace(const idType element_internal_id) {
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
     ElementGraphData *element_data = getGraphDataByInternalId(element_internal_id);
     for (size_t level = 0; level <= element_data->toplevel; level++) {
         ElementLevelData &cur_level = getElementLevelData(element_data, level);
-        // Reset the neighbours' bitmap for the current level.
+        // Reset the neighbours' bitmap for the current level - `curElementCount` must be
+        // serialized by the caller taking `indexDataGuard` before calling this.
         neighbours_bitmap.assign(curElementCount, false);
         // Store the deleted element's neighbours set in a bitmap for fast access.
         for (size_t j = 0; j < cur_level.getNumLinks(); j++) {
