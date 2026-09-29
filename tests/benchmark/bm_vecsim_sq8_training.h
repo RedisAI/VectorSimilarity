@@ -9,13 +9,9 @@
 #pragma once
 
 #include "bm_vecsim_general.h"
+#include "bm_training_utils.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/tiered_factory.h"
-
-#include <fstream>
-#include <stdexcept>
-#include <utility>
-#include <vector>
 
 template <typename index_type_t>
 class BM_VecSimSQ8Training : public BM_VecSimGeneral {
@@ -53,28 +49,6 @@ class BM_VecSimSQ8Training : public BM_VecSimGeneral {
         return index;
     }
 
-    static bool CheckSizes(benchmark::State &st, VecSimIndex *index, size_t total, size_t frontend,
-                           size_t backend) {
-        const auto info = VecSimIndex_DebugInfo(index);
-        if (info.commonInfo.indexSize != total ||
-            info.tieredInfo.frontendCommonInfo.indexSize != frontend ||
-            info.tieredInfo.backendCommonInfo.indexSize != backend) {
-            st.SkipWithError("Unexpected SQ8 tiered index sizes");
-            return false;
-        }
-        return true;
-    }
-
-    static bool AddRange(benchmark::State &st, VecSimIndex *index, size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) {
-            if (VecSimIndex_AddVector(index, test_vectors[i].data(), i) != 1) {
-                st.SkipWithError("SQ8 vector insertion failed");
-                return false;
-            }
-        }
-        return true;
-    }
-
     template <bool async>
     void RunTrain(benchmark::State &st) {
         const size_t threshold = st.range(0);
@@ -99,24 +73,8 @@ class BM_VecSimSQ8Training : public BM_VecSimGeneral {
                     st.SkipWithError("Failed to create SQ8 tiered index");
                     return;
                 }
-                if (!AddRange(st, index, 0, threshold - 1) ||
-                    !CheckSizes(st, index, threshold - 1, threshold - 1, 0)) {
-                    return;
-                }
-                if constexpr (async) {
-                    pool.init_threads();
-                }
-                st.ResumeTiming();
-                const int added =
-                    VecSimIndex_AddVector(index, test_vectors[threshold - 1].data(), threshold - 1);
-                if constexpr (async) {
-                    pool.thread_pool_wait();
-                }
-                st.PauseTiming();
-                if (added != 1 || !CheckSizes(st, index, threshold, 0, threshold)) {
-                    if (added != 1) {
-                        st.SkipWithError("SQ8 threshold insertion failed");
-                    }
+                if (!benchmark_utils::RunTrainingIteration<async>(st, index, pool, test_vectors,
+                                                                  threshold)) {
                     return;
                 }
             }
@@ -129,18 +87,8 @@ public:
         if (!test_vectors.empty()) {
             return;
         }
-        std::ifstream input(AttachRootPath(test_queries_file), std::ios::binary);
-        if (!input) {
-            throw std::runtime_error("SQ8 training vector file was not found");
-        }
-        test_vectors.reserve(n_queries);
-        for (size_t i = 0; i < n_queries; ++i) {
-            std::vector<data_t> vector(dim);
-            if (!input.read(reinterpret_cast<char *>(vector.data()), dim * sizeof(data_t))) {
-                throw std::runtime_error("SQ8 training vector file is too short");
-            }
-            test_vectors.push_back(std::move(vector));
-        }
+        test_vectors = benchmark_utils::LoadTrainingVectors<data_t>(
+            AttachRootPath(test_queries_file), n_queries, dim);
     }
 
     void SetUp(const benchmark::State &st) override {
@@ -178,18 +126,26 @@ public:
                     st.SkipWithError("Failed to create SQ8 tiered index");
                     return;
                 }
-                if (!AddRange(st, index, 0, threshold) ||
-                    !CheckSizes(st, index, threshold, threshold, 0)) {
+                if (!benchmark_utils::AddTrainingVectors(index, test_vectors, 0, threshold)) {
+                    st.SkipWithError("SQ8 vector insertion failed");
+                    return;
+                }
+                if (!benchmark_utils::CheckTieredSizes(st, index, threshold, threshold, 0)) {
                     return;
                 }
                 pool.init_threads();
                 // Workers start on initial insertion jobs; their progress races with timed writes.
                 st.ResumeTiming();
-                const bool added = AddRange(st, index, threshold, threshold + batch_size);
+                const bool added = benchmark_utils::AddTrainingVectors(
+                    index, test_vectors, threshold, threshold + batch_size);
                 st.PauseTiming();
                 pool.thread_pool_wait();
-                if (!added ||
-                    !CheckSizes(st, index, threshold + batch_size, 0, threshold + batch_size)) {
+                if (!added) {
+                    st.SkipWithError("SQ8 vector insertion failed");
+                    return;
+                }
+                if (!benchmark_utils::CheckTieredSizes(st, index, threshold + batch_size, 0,
+                                                       threshold + batch_size)) {
                     return;
                 }
             }

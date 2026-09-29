@@ -68,6 +68,8 @@ For initial training and ingestion, select `bm-sq8-train-fp32`,
 `bm-sq8-train-fp16`, `bm-svs-train-fp32` or `bm-svs-train-fp16` using
 the benchmark workflow or `make benchmark BM_FILTER=<selection>`.
 
+SVS and SQ8 training share the threshold insertion and completion measurement.
+Both exclude index and worker-pool teardown from timing.
 SQ8 training cases create a fresh index and accumulate vectors before timing.
 `BM_Train` times the threshold insertion through synchronous backend ingestion.
 `BM_TrainAsync` includes waiting for all initial insertion jobs. These measure the
