@@ -44,11 +44,11 @@ Each command rebuilds the graph and writes `*-sq8.hnsw_v5` next to its source in
 The converter represents cosine as inner product on normalized vectors, and the SQ8-enabled
 fixtures normalize the shared queries before timing. External consumers of these SQ8 files must
 also normalize their queries. The SQ8 range recall counter measures overlap with exact results;
-it is omitted when the exact result set is empty.
+it is omitted when there are no exact results across the measured queries.
 
 These are steady-state benchmarks over an already built backend; they do not measure training or
-the accumulation-to-backend transition. Tiered TopK reports amortized completion time for a batch
-of 50 queries; use `real_time`, which includes queueing and the mock pool's 10 ms completion polling.
+the accumulation-to-backend transition. Tiered TopK reports batch completion time divided by 50 queries.
+Use `real_time`, which includes queueing and the mock pool's 10 ms completion polling.
 
 To run all test sets, call the following commands from the project root dir:
 ```sh
