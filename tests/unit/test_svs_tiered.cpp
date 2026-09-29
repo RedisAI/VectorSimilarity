@@ -448,7 +448,7 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
         TEST_DATA_T replacements[2 * dim];
         for (size_t j = 0; j < new_per_label; j++) {
             GenerateJitteredVector<TEST_DATA_T>(replacements + j * dim, dim, i,
-                                                 replacement_base * (j + 1) + i);
+                                                replacement_base * (j + 1) + i);
         }
         // Whichever tier holds the label by now, and whether or not a job is mid-flight, the
         // update must be accepted.
