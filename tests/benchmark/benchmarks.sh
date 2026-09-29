@@ -12,6 +12,8 @@ if [ -z "$BM_TYPE"  ] || [ "$BM_TYPE" = "benchmarks-all" ]; then
     echo index_internals_incoming_edges_fp32
     echo svs_training_fp32
     echo svs_training_fp16
+    echo sq8_training_fp32
+    echo sq8_training_fp16
     echo basics_svs_single_fp32
     echo basics_svs_single_fp32_LVQ8
     echo spaces_fp32
@@ -97,6 +99,12 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
 # hnsw internals benchmarks
 elif [ "$BM_TYPE" = "bm-hnsw-internals-incoming-edges" ] ; then
     echo index_internals_incoming_edges_fp32
+
+# SQ8 training benchmarks
+elif [ "$BM_TYPE" = "bm-sq8-train-fp32" ] ; then
+    echo sq8_training_fp32
+elif [ "$BM_TYPE" = "bm-sq8-train-fp16" ] ; then
+    echo sq8_training_fp16
 
 # SVS benchmarks
 elif [ "$BM_TYPE" = "bm-svs-train-fp32" ] ; then

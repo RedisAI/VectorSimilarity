@@ -57,9 +57,14 @@ public:
     // TopK search benchmark. The search window size and k are provided by the benchmark
     // registration.
     void TopK_SVS(benchmark::State &st);
+    void Memory(benchmark::State &st);
 
 private:
     static const char *svs_index_tar_file;
+    static const char *search_queries_file;
+    inline static IndexPtr reference_index;
+    inline static std::vector<std::vector<data_t>> search_queries;
+    static void InitializeSearchReference();
     static std::string base_path;
 
     // Quant bits can be controlled by the benchmark framework, or by changed by a running benchmark
@@ -183,6 +188,9 @@ private:
 #endif
     }
 };
+
+template <typename index_type_t>
+const char *BM_VecSimSVS<index_type_t>::search_queries_file = nullptr;
 
 template <typename index_type_t>
 bool BM_VecSimSVS<index_type_t>::is_initialized = false;
@@ -468,28 +476,81 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
 }
 
 template <typename index_type_t>
+void BM_VecSimSVS<index_type_t>::InitializeSearchReference() {
+    if (!search_queries.empty()) {
+        return;
+    }
+    // Reuse the HNSW benchmark's exact vectors and labels, independently of SVS compression.
+    IndexPtr source(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
+    auto *hnsw = dynamic_cast<HNSWIndex<data_t, dist_t> *>(static_cast<VecSimIndex *>(source));
+    if (!hnsw || hnsw->indexSize() != N_VECTORS) {
+        throw std::runtime_error("Search reference does not match the benchmark dataset");
+    }
+    BFParams params = {.type = index_type_t::get_index_type(),
+                       .dim = dim,
+                       .metric = VecSimMetric_Cosine,
+                       .multi = is_multi,
+                       .blockSize = block_size};
+    reference_index = IndexPtr(CreateNewIndex(params));
+    for (size_t i = 0; i < N_VECTORS; ++i) {
+        VecSimIndex_AddVector(reference_index, hnsw->getDataByInternalId(i),
+                              hnsw->getExternalLabel(i));
+    }
+    std::ifstream input(AttachRootPath(search_queries_file), std::ios::binary);
+    if (!input) {
+        throw std::runtime_error("Search queries file was not found");
+    }
+    std::vector<data_t> query(dim);
+    while (input.read(reinterpret_cast<char *>(query.data()), dim * sizeof(data_t))) {
+        // Match the shared normalized query inputs used by the SQ8 basics fixture.
+        VecSim_Normalize(query.data(), dim, index_type_t::get_index_type());
+        search_queries.push_back(query);
+    }
+    if (search_queries.empty() || input.gcount() != 0 || !input.eof()) {
+        throw std::runtime_error("Invalid search queries file");
+    }
+}
+
+template <typename index_type_t>
+void BM_VecSimSVS<index_type_t>::Memory(benchmark::State &st) {
+    IndexPtr index(CreateSVSIndexFromFile(1));
+    for (auto _ : st) {
+    }
+    st.counters["memory"] =
+        benchmark::Counter(static_cast<double>(VecSimIndex_StatsInfo(index).memory),
+                           benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
+}
+
+template <typename index_type_t>
 void BM_VecSimSVS<index_type_t>::TopK_SVS(benchmark::State &st) {
-    // Search window size (Vamana graph accuracy/latency tuning) and number of results, as
-    // defined by the benchmark registration.
     size_t window_size = st.range(0);
     size_t k = st.range(1);
-
-    // Load the SVS index from file (update_threshold is irrelevant for a search-only benchmark).
-    auto *index = CreateSVSIndexFromFile(1);
-
-    SVSRuntimeParams svs_params = {.windowSize = window_size};
-
-    VecSimQueryParams query_params = {.svsRuntimeParams = svs_params};
-
-    size_t iter = 0;
-    for (auto _ : st) {
-        auto results = VecSimIndex_TopKQuery(index, test_vectors[iter % N_QUERIES].data(), k,
-                                             &query_params, BY_SCORE);
-        VecSimQueryReply_Free(results);
-        iter++;
+    InitializeSearchReference();
+    IndexPtr index(CreateSVSIndexFromFile(1));
+    if (VecSimIndex_IndexSize(index) != N_VECTORS) {
+        st.SkipWithError("SVS snapshot size does not match the search reference");
+        return;
     }
-
-    VecSimIndex_Free(index);
+    SVSRuntimeParams svs_params = {.windowSize = window_size};
+    VecSimQueryParams query_params = {.svsRuntimeParams = svs_params};
+    size_t iter = 0;
+    size_t total_exact_results = 0;
+    std::atomic_int correct = 0;
+    for (auto _ : st) {
+        const auto &query = search_queries[iter % search_queries.size()];
+        auto results = VecSimIndex_TopKQuery(index, query.data(), k, &query_params, BY_SCORE);
+        st.PauseTiming();
+        auto exact = VecSimIndex_TopKQuery(reference_index, query.data(), k, nullptr, BY_SCORE);
+        total_exact_results += VecSimQueryReply_Len(exact);
+        MeasureRecall(results, exact, correct);
+        VecSimQueryReply_Free(exact);
+        VecSimQueryReply_Free(results);
+        ++iter;
+        st.ResumeTiming();
+    }
+    if (total_exact_results) {
+        st.counters["Recall"] = static_cast<double>(correct) / total_exact_results;
+    }
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)
