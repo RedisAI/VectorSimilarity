@@ -126,6 +126,10 @@ public:
                 assert(this->metric == VecSimMetric_IP || this->metric == VecSimMetric_Cosine);
                 setSQ8Mean<VecSimMetric_IP>(mean);
             }
+#ifdef BUILD_TESTS
+            assert(serializedMeanVector.size() == this->dim);
+            std::copy(mean.begin(), mean.end(), serializedMeanVector.begin());
+#endif
         } else {
             assert(false && "Unsupported SQ8 data type");
         }
@@ -170,6 +174,12 @@ protected:
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
 #include "hnsw_serializer_declarations.h"
+
+public:
+    // Serialization-only fields for V5 format (SQ8 support)
+    VecSimQuantType quantType = VecSimQuant_NONE;
+    std::vector<float> serializedMeanVector; // Mean vector for SQ8 indices (empty if not SQ8)
+
 #endif
 
 protected:

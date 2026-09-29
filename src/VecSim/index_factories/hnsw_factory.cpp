@@ -71,8 +71,16 @@ VecSimIndex *NewIndex_SQ8(const HNSWParams *hnswParams, AbstractIndexInitParams 
 
     IndexComponents<DataType, float> components = CreateSQ8IndexComponents<DataType, Metric>(
         abstractInitParams.allocator, abstractInitParams.dim, mean_ptr);
-    return NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams,
-                                                         components);
+    auto index =
+        NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams, components);
+#ifdef BUILD_TESTS
+    // Store quantization metadata for re-serialization.
+    index->quantType = hnswParams->quantType;
+    if (mean_ptr != nullptr) {
+        index->serializedMeanVector.assign(mean_ptr, mean_ptr + abstractInitParams.dim);
+    }
+#endif
+    return index;
 }
 
 VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
@@ -270,7 +278,8 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
                                                  IndexComponents<DataType, DistType> &components,
-                                                 HNSWSerializer::EncodingVersion version) {
+                                                 HNSWSerializer::EncodingVersion version,
+                                                 const float *mean_ptr = nullptr) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
@@ -282,17 +291,39 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
 
     index->restoreGraph(input, version);
 
+    // Store quantization metadata for re-serialization.
+    index->quantType = params->quantType;
+    if (mean_ptr != nullptr) {
+        index->serializedMeanVector.assign(mean_ptr, mean_ptr + abstractInitParams.dim);
+    }
+
     return index;
 }
 
-// Initialize @params from file for V3
-static void InitializeParams(std::ifstream &source_params, HNSWParams &params) {
+// Initialize @params from file for V3+. For V5+ also reads quantType and mean vector.
+static void InitializeParams(std::ifstream &source_params, HNSWParams &params,
+                             HNSWSerializer::EncodingVersion version,
+                             std::vector<float> &meanVector) {
     Serializer::readBinaryPOD(source_params, params.dim);
     Serializer::readBinaryPOD(source_params, params.type);
     Serializer::readBinaryPOD(source_params, params.metric);
     Serializer::readBinaryPOD(source_params, params.blockSize);
     Serializer::readBinaryPOD(source_params, params.multi);
     Serializer::readBinaryPOD(source_params, params.initialCapacity);
+
+    // V5: read quantization fields
+    if (version >= HNSWSerializer::EncodingVersion::V5) {
+        Serializer::readBinaryPOD(source_params, params.quantType);
+        if (params.quantType == VecSimQuant_SQ8) {
+            bool hasMean = false;
+            Serializer::readBinaryPOD(source_params, hasMean);
+            if (hasMean) {
+                meanVector.resize(params.dim);
+                source_params.read(reinterpret_cast<char *>(meanVector.data()),
+                                   params.dim * sizeof(float));
+            }
+        }
+    }
 }
 
 VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
@@ -317,14 +348,64 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
             bad_name);
     }
 
-    HNSWParams params;
-    InitializeParams(input, params);
-
-    VecSimParams vecsimParams = {.algo = VecSimAlgo_HNSWLIB,
-                                 .algoParams = {.hnswParams = HNSWParams{params}}};
+    HNSWParams params = {};
+    std::vector<float> meanVector;
+    InitializeParams(input, params, version, meanVector);
 
     AbstractIndexInitParams abstractInitParams =
-        VecSimFactory::NewAbstractInitParams(&params, vecsimParams.logCtx, is_normalized);
+        VecSimFactory::NewAbstractInitParams(&params, nullptr, is_normalized);
+
+    if (params.quantType != VecSimQuant_NONE) {
+        // Reject unknown quantizers instead of silently loading an unquantized index.
+        if (params.quantType != VecSimQuant_SQ8) {
+            return NULL;
+        }
+
+        const float *mean_ptr = meanVector.empty() ? nullptr : meanVector.data();
+        const VecSimMetric metric = ResolveSQ8Metric(params.metric, is_normalized);
+
+        if (!SQ8ParamsSupported(params.type, metric)) {
+            return NULL;
+        }
+
+        // Override blob sizes for SQ8 storage layout.
+        size_t dim = params.dim;
+        abstractInitParams.isQuantized = true;
+        if (metric == VecSimMetric_L2) {
+            abstractInitParams.storedDataSize =
+                GetSQ8StoredDataSize<VecSimMetric_L2>(dim, mean_ptr != nullptr);
+        } else {
+            abstractInitParams.storedDataSize =
+                GetSQ8StoredDataSize<VecSimMetric_IP>(dim, mean_ptr != nullptr);
+        }
+
+        if (params.type == VecSimType_FLOAT32) {
+            if (metric == VecSimMetric_L2) {
+                auto components = CreateSQ8IndexComponents<float, VecSimMetric_L2>(
+                    abstractInitParams.allocator, dim, mean_ptr);
+                return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
+                                                           components, version, mean_ptr);
+            } else {
+                auto components = CreateSQ8IndexComponents<float, VecSimMetric_IP>(
+                    abstractInitParams.allocator, dim, mean_ptr);
+                return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
+                                                           components, version, mean_ptr);
+            }
+        } else if (params.type == VecSimType_FLOAT16) {
+            if (metric == VecSimMetric_L2) {
+                auto components = CreateSQ8IndexComponents<float16, VecSimMetric_L2>(
+                    abstractInitParams.allocator, dim, mean_ptr);
+                return NewIndex_ChooseMultiOrSingle<float16, float>(
+                    input, &params, abstractInitParams, components, version, mean_ptr);
+            } else {
+                auto components = CreateSQ8IndexComponents<float16, VecSimMetric_IP>(
+                    abstractInitParams.allocator, dim, mean_ptr);
+                return NewIndex_ChooseMultiOrSingle<float16, float>(
+                    input, &params, abstractInitParams, components, version, mean_ptr);
+            }
+        }
+    }
+
     if (params.type == VecSimType_FLOAT32) {
         IndexComponents<float, float> indexComponents = CreateIndexComponents<float, float>(
             abstractInitParams.allocator, params.metric, abstractInitParams.dim, is_normalized);
