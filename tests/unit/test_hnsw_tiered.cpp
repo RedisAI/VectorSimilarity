@@ -5668,22 +5668,33 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
     }
 
     // Shrinking to a single vector reuses one of the current ids and removes the other two for
-    // real - the index actually shrinks.
+    // real - the index actually shrinks. Checking size/indexSize/distance alone would pass just
+    // as well under a delete-and-append implementation (a fresh id has the same size and
+    // distance), so the surviving id itself is checked against the original set to actually
+    // tell reuse apart from that.
     TEST_DATA_T one[dim];
     GenerateVector<TEST_DATA_T>(one, dim, 2000);
     ASSERT_EQ(tiered_index->updateVectors(label, one, 1), VecSimUpdate_OK);
-    ASSERT_EQ(hnsw_index->getElementIds(label).size(), 1);
+    auto shrunk_ids = hnsw_index->getElementIds(label);
+    ASSERT_EQ(shrunk_ids.size(), 1);
+    idType surviving_id = shrunk_ids[0];
+    ASSERT_NE(std::find(old_ids.begin(), old_ids.end(), surviving_id), old_ids.end())
+        << "surviving id " << surviving_id << " is not one of the label's original ids";
     ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label - (per_label - 1));
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
     ASSERT_EQ(hnsw_index->getDistanceFrom_Unsafe(label, one), 0);
 
-    // Growing back to the original count reuses the one remaining id and freshly appends the rest.
+    // Growing back to the original count reuses the one remaining id and freshly appends the
+    // rest. Same reasoning as above: `surviving_id` must still be present, not just the count.
     TEST_DATA_T grown[3 * dim];
     for (size_t j = 0; j < per_label; j++) {
         GenerateVector<TEST_DATA_T>(grown + j * dim, dim, 3000 + j);
     }
     ASSERT_EQ(tiered_index->updateVectors(label, grown, per_label), VecSimUpdate_OK);
-    ASSERT_EQ(hnsw_index->getElementIds(label).size(), per_label);
+    auto grown_ids = hnsw_index->getElementIds(label);
+    ASSERT_EQ(grown_ids.size(), per_label);
+    ASSERT_NE(std::find(grown_ids.begin(), grown_ids.end(), surviving_id), grown_ids.end())
+        << "id " << surviving_id << " that survived the shrink is gone after growing back";
     ASSERT_EQ(hnsw_index->indexSize(), n_labels * per_label);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
     for (size_t j = 0; j < per_label; j++) {
@@ -5707,7 +5718,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
 
 // Shrinking a multi-value label all the way to zero vectors is the one shrink outcome the reuse
 // loop above never leaves an id behind for: every other shrink keeps at least one id to reuse, so
-// this is the only case that exercises `removeIdFromLabel` actually dropping the label once its
+// this is the only case that exercises `popLastIdFromLabel` actually dropping the label once its
 // last id is gone, instead of just shortening its id list.
 TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceShrinkToZeroRemovesLabel) {
     size_t dim = 4;
@@ -5746,6 +5757,66 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceShrinkToZeroRemove
     GenerateVector<TEST_DATA_T>(v2, dim, 20);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, v0), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(2, v2), 0);
+}
+
+// A repair job filed against a multi-value label's id (because some other, unrelated element was
+// deleted and needs that id's edge fixed) can still be sitting in the queue when the label itself
+// is overwritten in place. `updateMultiValueInPlace` must invalidate that stale job before reusing
+// the id, or the job would later run against a slot holding a completely different vector.
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceInvalidatesPendingRepairJob) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Insert all three vectors directly into HNSW (in-place), so they become mutual neighbors
+    // there. `anchor` is the id that will end up last once `victim` is gone, so its later removal
+    // never swaps `target`'s id out from under this test - only `anchor`'s repair job for
+    // `victim`'s deletion is left unresolved, which keeps `victim`'s swap job pending forever here.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    labelType victim = 0;
+    labelType target = 1;
+    labelType anchor = 2;
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, victim, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, target, 1);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, anchor, 2);
+    idType target_id = hnsw_index->getElementIds(target).at(0);
+
+    // Delete the victim asynchronously (without draining the job queue), so it leaves behind a
+    // pending repair job against its mutual neighbors' ids instead of repairing synchronously the
+    // way an in-place delete would.
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    ASSERT_EQ(tiered_index->deleteVector(victim), 1);
+    ASSERT_TRUE(tiered_index->idToRepairJobs.contains(target_id))
+        << "deleting " << victim << " should have filed a repair job against " << target << "'s id";
+    ASSERT_GT(mock_thread_pool.jobQ.size(), 0);
+
+    // Switch back to in-place mode and overwrite the target label, reusing target_id. This must
+    // invalidate the pending repair job before writing over the id, not after.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    TEST_DATA_T replacement[dim];
+    GenerateVector<TEST_DATA_T>(replacement, dim, 100);
+    ASSERT_EQ(tiered_index->updateVectors(target, replacement, 1), VecSimUpdate_OK);
+    ASSERT_FALSE(tiered_index->idToRepairJobs.contains(target_id))
+        << "the pending repair job against the reused id should have been invalidated";
+    ASSERT_EQ(tiered_index->invalidJobs.size(), 1);
+
+    // Drain the queue: the stale repair job runs as a no-op (checks `isValid`, does nothing) and
+    // is disposed of, rather than repairing a slot that now holds a different vector.
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->invalidJobs.size(), 0);
+
+    tiered_index->runGC();
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    ASSERT_EQ(hnsw_index->getElementIds(target).size(), 1);
+    ASSERT_EQ(hnsw_index->getElementIds(target).at(0), target_id)
+        << "the overwrite should have reused the same id, not appended a fresh one";
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(target, replacement), 0);
 }
 
 // updateMultiValueInPlace must preprocess each new blob the same way any other direct-to-backend

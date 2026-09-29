@@ -389,11 +389,10 @@ public:
     // Remove label from the index.
     virtual int removeLabel(labelType label) = 0;
 
-    // Remove one specific id from the set a label maps to, without necessarily removing the
-    // label entirely - for a multi-value label, others may remain; for single-value this is the
-    // same as `removeLabel`. Used when only some of a label's ids are being disposed of (see
-    // `overwriteVectorsInPlace`), unlike a full delete which always removes the whole label.
-    virtual void removeIdFromLabel(labelType label, idType id) = 0;
+    // Remove and return whichever id `getElementIds(label).back()` would have returned, without
+    // copying the label's whole id list out first (as a `getElementIds` call would) or searching
+    // it again to find that same id for removal. `label` must currently map to at least one id.
+    virtual idType popLastIdFromLabel(labelType label) = 0;
 
     // Check whether a label currently maps to at least one element. Note that a label whose
     // element was marked deleted is *not* considered to exist, matching `getElementIds`.

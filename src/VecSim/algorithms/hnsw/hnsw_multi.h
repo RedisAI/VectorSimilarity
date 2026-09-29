@@ -145,16 +145,19 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
-    void removeIdFromLabel(labelType label, idType id) override {
+    idType popLastIdFromLabel(labelType label) override {
         auto it = labelLookup.find(label);
-        if (it == labelLookup.end()) {
-            return;
-        }
+        assert(it != labelLookup.end());
+
         auto &ids = it->second;
-        ids.erase(std::find(ids.begin(), ids.end(), id));
+        assert(!ids.empty());
+
+        const idType id = ids.back();
+        ids.pop_back();
         if (ids.empty()) {
             labelLookup.erase(it);
         }
+        return id;
     }
     bool isLabelExists(labelType label) override {
         return labelLookup.find(label) != labelLookup.end();

@@ -1277,8 +1277,7 @@ void TieredHNSWIndex<DataType, DistType>::updateMultiValueInPlace(labelType labe
     idsToRemove.reserve(n_to_remove);
     readySwapJobs += n_to_remove; // account for the ids that are going to be removed.
     for (size_t k = 0; k < n_to_remove; k++) {
-        idType id = hnsw_index->getElementIds(label).back();
-        hnsw_index->removeIdFromLabel(label, id);
+        idType id = hnsw_index->popLastIdFromLabel(label);
         hnsw_index->removeVectorInPlace(id);
         this->invalidateRepairJobs(id);
         this->fixJobsAfterSwap(id, idsToRemove);
@@ -1306,7 +1305,11 @@ void TieredHNSWIndex<DataType, DistType>::updateMultiValueInPlace(labelType labe
             blob + i * this->frontendIndex->getInputBlobSize());
         hnsw_index->addVector(storage_blob.get(), label);
     }
-    ++this->directHNSWInsertions;
+    // One per vector actually written directly to HNSW (reused + appended, together always
+    // exactly n), matching how `addVector`'s own direct-insertion paths count -- not once per
+    // call, which would undercount a multi-vector update and, for n == 0 (shrinking a label to
+    // nothing), count an insertion that never happened.
+    this->directHNSWInsertions += n;
 }
 
 /**
