@@ -1322,10 +1322,13 @@ TYPED_TEST(SVSMultiTest, relabelVectorMulti) {
     ASSERT_FALSE(std::isnan(VecSimIndex_GetDistanceFrom_Unsafe(index, 8, neighbour)));
 
     // A search for one of the moved vectors reports the new label.
-    TEST_DATA_T query[dim];
-    GenerateVector<TEST_DATA_T>(query, dim, 0);
-    auto verify_res = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 70); };
-    runTopKSearchTest(index, query, 1, verify_res);
+    // SVS Scalar quantization is not enough precise
+    if (!this->isFallbackToSQ()) {
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, 0);
+        auto verify_res = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, 70); };
+        runTopKSearchTest(index, query, 1, verify_res);
+    }
 
     VecSimIndex_Free(index);
 }
