@@ -325,7 +325,7 @@ public:
     //   vector and graph data are *appended* to their containers (growing the index by a block
     //   first if it is full).
     // - otherwise: the given id must already be a valid slot with no owned graph data left in it -
-    //   the caller must have detached it (see `repairConnectionsInPlace` + `repairEntryPoint` +
+    //   the caller must have detached it (see `repairConnectionsAndEntryPoint` +
     //   `disposeElementData`) first, otherwise its link lists are leaked by the overwrite here.
     //   `curElementCount` is left untouched, since the slot isn't being handed back to the index,
     //   just overwritten in place.
@@ -333,19 +333,15 @@ public:
                                        idType elementId = INVALID_ID);
     void swapDeletedElement(idType internalId);
     // Repairs every neighbor affected by removing `element_internal_id` (both directions, every
-    // level) exactly as a real removal would, and returns the element's own graph data so the
-    // caller can pass it to `repairEntryPoint` next. Leaves `curElementCount` and the element's own
-    // graph data untouched - `repairEntryPoint` and `disposeElementData` finish the detach.
-    ElementGraphData *repairConnectionsInPlace(idType element_internal_id);
-    // Replaces the entry point if `element_internal_id` held it. Must run after
-    // `repairConnectionsInPlace` has already repaired the graph around it, since replacing the
-    // entry point relies on the graph being consistent.
-    void repairEntryPoint(idType element_internal_id, ElementGraphData *element);
+    // level) exactly as a real removal would, then replaces the entry point if the element held
+    // it. Leaves `curElementCount` and the element's own graph data untouched -
+    // `disposeElementData` finishes the detach.
+    void repairConnectionsAndEntryPoint(idType element_internal_id);
     // Take back what an element still owns - its incoming-edge bookkeeping on remaining neighbors,
     // and its own graph data - without touching `curElementCount`. Shared by `removeFromGraph`
     // (which also gives the slot back to the index) and the callers that detach an element without
     // removing it - `removeVectorInPlace` and `overwriteVectorInPlace` - which call this directly
-    // after `repairConnectionsInPlace` + `repairEntryPoint` instead of touching the slot itself.
+    // after `repairConnectionsAndEntryPoint` instead of touching the slot itself.
     void disposeElementData(idType internalId);
     void removeFromGraph(idType internalId);
     // Whether `level_data` holds a link to `id`.
@@ -376,11 +372,11 @@ public:
                               size_t global_max_level, const void *vector_data);
     void removeVectorInPlace(idType id);
     // Overwrite the vector at `old_id` in place, keeping its internal id: detaches it from the
-    // graph (`repairConnectionsInPlace` + `repairEntryPoint` + `disposeElementData` - the same
-    // detach `removeVectorInPlace` does, without the trailing compaction) and immediately writes
+    // graph (`repairConnectionsAndEntryPoint` + `disposeElementData` - the same detach
+    // `removeVectorInPlace` does, without the trailing compaction) and immediately writes
     // `vector_data` into that same slot instead of appending a fresh one, so a label being
-    // replaced never touches
-    // `curElementCount` or the swap-to-last compaction a real removal would use. `old_id` must not
+    // replaced never touches `curElementCount` or the swap-to-last compaction a real removal
+    // would use. `old_id` must not
     // be the id of any other, still-live element - callers overwrite a label they hold the id of.
     void overwriteVectorInPlace(idType old_id, const void *vector_data, labelType label);
 
@@ -1972,8 +1968,8 @@ void HNSWIndex<DataType, DistType>::swapDeletedElement(idType internalId) {
 }
 
 template <typename DataType, typename DistType>
-ElementGraphData *
-HNSWIndex<DataType, DistType>::repairConnectionsInPlace(const idType element_internal_id) {
+void HNSWIndex<DataType, DistType>::repairConnectionsAndEntryPoint(
+    const idType element_internal_id) {
     vecsim_stl::vector<bool> neighbours_bitmap(this->allocator);
     ElementGraphData *element_data = getGraphDataByInternalId(element_internal_id);
     for (size_t level = 0; level <= element_data->toplevel; level++) {
@@ -2021,22 +2017,16 @@ HNSWIndex<DataType, DistType>::repairConnectionsInPlace(const idType element_int
                                          neighbours_bitmap);
         }
     }
-    return element_data;
-}
-template <typename DataType, typename DistType>
-void HNSWIndex<DataType, DistType>::repairEntryPoint(const idType element_internal_id,
-                                                     ElementGraphData *element) {
+    // Replacing the entry point relies on the graph around it already being repaired above.
     if (entrypointNode == element_internal_id) {
-        // Replace entry point if needed.
-        assert(element->toplevel == maxLevel);
+        assert(element_data->toplevel == maxLevel);
         replaceEntryPoint();
     }
 }
 
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::removeVectorInPlace(const idType element_internal_id) {
-    ElementGraphData *element = repairConnectionsInPlace(element_internal_id);
-    repairEntryPoint(element_internal_id, element);
+    repairConnectionsAndEntryPoint(element_internal_id);
     // The element is fully detached now - every neighbor has been repaired, and nothing refers to
     // it. Free what it owns, but leave the slot itself (and `curElementCount`).
     disposeElementData(element_internal_id);
@@ -2052,8 +2042,7 @@ void HNSWIndex<DataType, DistType>::overwriteVectorInPlace(idType old_id, const 
     ProcessedBlobs processedBlobs = this->preprocess(vector_data);
     this->lockIndexDataGuard();
     //    -- Delete Old --- //
-    ElementGraphData *element = repairConnectionsInPlace(old_id);
-    repairEntryPoint(old_id, element);
+    repairConnectionsAndEntryPoint(old_id);
     // The element is fully detached now - every neighbor has been repaired, and nothing refers to
     // it. Free what it owns, but leave the slot itself (and `curElementCount`)
     disposeElementData(old_id);
@@ -2116,8 +2105,8 @@ HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElement(labelType labe
     // Insert the new element to the data block. The containers only support *appending* at
     // `curElementCount`, so when reusing an existing slot we have to overwrite it in place
     // instead. The previous occupant's graph data must have already been destroyed by the caller
-    // (see `repairConnectionsInPlace` + `repairEntryPoint` + `disposeElementData`), otherwise its
-    // link lists are leaked by the overwrite.
+    // (see `repairConnectionsAndEntryPoint` + `disposeElementData`), otherwise its link lists are
+    // leaked by the overwrite.
     if (reuseSlot) {
         this->vectors->updateElement(state.newElementId, vector_data);
         this->graphDataBlocks[state.newElementId / this->blockSize].updateElement(
