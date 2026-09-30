@@ -27,6 +27,9 @@ private:
     inline void resizeLabelLookup(size_t new_max_elements) override;
     inline vecsim_stl::set<labelType> getLabelsSet() const override;
     inline vecsim_stl::vector<idType> getElementIds(size_t label) override;
+    inline size_t getLabelSize(labelType label) const override {
+        return labelLookup.find(label) != labelLookup.end() ? 1 : 0;
+    }
     inline double getDistanceFromInternal(labelType label, const void *vector_data) const;
 
 public:
@@ -116,6 +119,14 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    // Single-value has at most one id per label, so the "last" id is its only one.
+    idType popLastIdFromLabel(labelType label) override {
+        auto it = labelLookup.find(label);
+        assert(it != labelLookup.end());
+        const idType id = it->second;
+        labelLookup.erase(it);
+        return id;
+    }
     bool isLabelExists(labelType label) override {
         return labelLookup.find(label) != labelLookup.end();
     }
@@ -191,14 +202,16 @@ template <typename DataType, typename DistType>
 int HNSWIndex_Single<DataType, DistType>::addVector(const void *vector_data,
                                                     const labelType label) {
     // Checking if an element with the given label already exists.
-    bool label_exists = labelLookup.find(label) != labelLookup.end();
-    if (label_exists) {
-        // Remove the vector in place if override allowed (in non-async scenario).
-        deleteVector(label);
+    auto it = labelLookup.find(label);
+    if (it != labelLookup.end()) {
+        // Overwrite in place, keeping the same internal id - no need to detach and re-append to a
+        // fresh one, and `labelLookup` already points at the right id either way.
+        this->overwriteVectorInPlace(it->second, vector_data, label);
+        return 0;
     }
 
     this->appendVector(vector_data, label);
-    return label_exists ? 0 : 1;
+    return 1;
 }
 
 template <typename DataType, typename DistType>
