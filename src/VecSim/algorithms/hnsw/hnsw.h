@@ -341,6 +341,13 @@ public:
     //   just overwritten in place.
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
                                        idType elementId = INVALID_ID);
+    // Store a new element for `label` in the slot of `deletedId`, a marked-deleted element whose
+    // repairs are all done, instead of appending one - the counterpart of `swapDeletedElement`
+    // that keeps the slot. Unlike an in-place overwrite, the label no longer maps to this id (it
+    // was dropped when marked deleted), so it's mapped again here. Index data guard must be held
+    // exclusively, and no graph scan may be in flight.
+    HNSWAddVectorState storeNewElementInDeletedSlot(labelType label, const void *vector_data,
+                                                    idType deletedId);
     void swapDeletedElement(idType internalId);
     // Repairs every neighbor affected by removing `element_internal_id` (both directions, every
     // level) exactly as a real removal would, then replaces the entry point if the element held
@@ -2032,6 +2039,24 @@ void HNSWIndex<DataType, DistType>::repairConnectionsAndEntryPoint(
         assert(element_data->toplevel == maxLevel);
         replaceEntryPoint();
     }
+}
+
+template <typename DataType, typename DistType>
+HNSWAddVectorState
+HNSWIndex<DataType, DistType>::storeNewElementInDeletedSlot(labelType label,
+                                                            const void *vector_data,
+                                                            idType deletedId) {
+    assert(isMarkedDeleted(deletedId) && "Only a marked-deleted element's slot may be reclaimed");
+    // Normally a no-op, since the last repair of a deleted element isolates it. Not when its
+    // repairs were invalidated instead of run (their node was disposed), which leaves its edges
+    // for whoever disposes of it - us, here.
+    isolateDeletedElement(deletedId);
+    disposeElementData(deletedId);
+    // The slot is no longer a deleted element, so it's no longer counted as one.
+    --numMarkedDeleted;
+    HNSWAddVectorState state = storeNewElement(label, vector_data, deletedId);
+    setVectorId(label, deletedId);
+    return state;
 }
 
 template <typename DataType, typename DistType>
