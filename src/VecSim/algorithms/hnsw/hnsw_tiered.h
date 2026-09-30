@@ -54,8 +54,8 @@ struct HNSWSwapJob : public VecsimBaseObject {
     // (`executeReadySwapJobs`) never race with a write.
     bool reservedForReuse = false;
     // The insert job `deleted_id` is held for. It isn't submitted with the other insert jobs: it's
-    // run once `deleted_id`'s last repair is done (see `deferredReuseInsertJobs`), so it always
-    // finds the id ready.
+    // submitted once `deleted_id`'s last repair is done (see `deferredReuseInsertJobs`), so it
+    // always finds the id ready.
     HNSWInsertJob *reuseInsertJob = nullptr;
     HNSWSwapJob(std::shared_ptr<VecSimAllocator> allocator, idType deletedId)
         : VecsimBaseObject(allocator), deleted_id(deletedId), pending_repair_jobs_counter(0) {}
@@ -118,9 +118,13 @@ private:
     // associated swap jobs.
     std::mutex idToRepairJobsGuard;
 
-    // Insert jobs whose reserved id's repairs are all done, waiting to be run. Their id becomes
-    // ready wherever its last repair is accounted for, usually with index locks held, so they
-    // are queued here and run by `runDeferredReuseInsertJobs` once those locks are released.
+    // Insert jobs whose reserved id's repairs are all done, waiting to be submitted. Their id
+    // becomes ready wherever its last repair is accounted for, usually with index locks held, so
+    // they are collected here and submitted by `submitDeferredReuseInsertJobs` once those locks
+    // are released. They're submitted rather than run on the spot so they're ingested in queue
+    // order, like any other insert job: running one as soon as its id is ready lets a label
+    // re-enter the graph ahead of neighbors still being overwritten, and link across them in a way
+    // that later leaves elements unreachable (seen on collinear data in `TieredTest.Override`).
     // Protected by `idToRepairJobsGuard`. Non-owning: each job is still held by
     // `labelToInsertJobs`, or by `invalidJobs` if it was invalidated.
     vecsim_stl::vector<HNSWInsertJob *> deferredReuseInsertJobs;
@@ -156,7 +160,6 @@ private:
     std::function<void()> beforeQuantizationFinalization;
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
-    std::function<void()> beforeDeferredReuseInsert;
 #endif
 
     void addToSum(std::span<const DataType> vector) {
@@ -227,9 +230,10 @@ private:
     // Account for a swap job whose last repair is done. Called with `idToRepairJobsGuard` held.
     void onSwapJobRepaired(HNSWSwapJob *swap_job);
 
-    // Run the insert jobs queued in `deferredReuseInsertJobs`, one at a time. Must be called with
-    // no index lock held (it runs each job the way a worker would).
-    void runDeferredReuseInsertJobs();
+    // Submit the insert jobs collected in `deferredReuseInsertJobs`. Called from worker threads as
+    // well as the main thread, so the submit callback must be safe to call from either. Called
+    // with no index lock held, so a callback that runs a job synchronously can't deadlock on one.
+    void submitDeferredReuseInsertJobs();
 
     // Give up an insert job's claim on its reserved id - the id then goes through the ordinary
     // swap-job compaction. Takes the main index guard shared and `idToRepairJobsGuard` itself.
@@ -356,11 +360,6 @@ public:
     void setAfterBackendInsertBeforeFlatRemovalHook(std::function<void()> hook) {
         afterBackendInsertBeforeFlatRemoval = std::move(hook);
     }
-
-    // Runs with no index lock held, right before each deferred reuse insert job.
-    void setBeforeDeferredReuseInsertHook(std::function<void()> hook) {
-        beforeDeferredReuseInsert = std::move(hook);
-    }
 #endif
 
     int addVector(const void *blob, labelType label) override;
@@ -395,7 +394,7 @@ public:
                    "running asynchronous GC for tiered HNSW index");
         this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
         // Disposing of deleted elements can complete a reserved id's repairs.
-        this->runDeferredReuseInsertJobs();
+        this->submitDeferredReuseInsertJobs();
     }
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
@@ -737,19 +736,15 @@ void TieredHNSWIndex<DataType, DistType>::onSwapJobRepaired(HNSWSwapJob *swap_jo
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::runDeferredReuseInsertJobs() {
-    vecsim_stl::vector<HNSWInsertJob *> jobs(this->allocator);
+void TieredHNSWIndex<DataType, DistType>::submitDeferredReuseInsertJobs() {
+    vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
     {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        jobs.swap(deferredReuseInsertJobs);
+        jobs.assign(deferredReuseInsertJobs.begin(), deferredReuseInsertJobs.end());
+        deferredReuseInsertJobs.clear();
     }
-    for (auto *job : jobs) {
-#ifdef BUILD_TESTS
-        if (beforeDeferredReuseInsert) {
-            beforeDeferredReuseInsert();
-        }
-#endif
-        executeInsertJobWrapper(job);
+    if (!jobs.empty()) {
+        this->submitJobs(jobs);
     }
 }
 
@@ -913,7 +908,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     this->flatIndexGuard.unlock();
 
     // Reusing an id disposes of its element, which can complete another reserved id's repairs.
-    this->runDeferredReuseInsertJobs();
+    this->submitDeferredReuseInsertJobs();
 }
 
 template <typename DataType, typename DistType>
@@ -986,7 +981,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
 
     this->mainIndexGuard.unlock_shared();
 
-    this->runDeferredReuseInsertJobs();
+    this->submitDeferredReuseInsertJobs();
 }
 
 /******************** Index API ****************************************/
@@ -1226,7 +1221,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         // Track direct insertion to HNSW (bypassing flat buffer)
         ++this->directHNSWInsertions;
         // Removing the old id in place can complete a reserved id's repairs.
-        this->runDeferredReuseInsertJobs();
+        this->submitDeferredReuseInsertJobs();
         return ret;
     }
     if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
@@ -1307,7 +1302,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         this->submitSingleJob(new_insert_job);
     }
     // Isolating a deleted element, or running swap jobs, can complete a reserved id's repairs.
-    this->runDeferredReuseInsertJobs();
+    this->submitDeferredReuseInsertJobs();
     return ret;
 }
 
@@ -1372,7 +1367,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     }
     // Isolating or removing a deleted element, or running swap jobs, can complete a reserved id's
     // repairs.
-    this->runDeferredReuseInsertJobs();
+    this->submitDeferredReuseInsertJobs();
 
     return num_deleted_vectors;
 }
@@ -1425,7 +1420,7 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
         !sqAccumulationState) {
         this->updateMultiValueInPlace(label, new_blobs, n);
         // Removing ids in place can complete a reserved id's repairs.
-        this->runDeferredReuseInsertJobs();
+        this->submitDeferredReuseInsertJobs();
         return VecSimUpdate_OK;
     }
 
