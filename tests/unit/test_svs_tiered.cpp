@@ -427,7 +427,9 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
     // Thresholds of 1, so the backend is initialized at the first vector and every batch that
     // follows triggers another update job. On the fixture's defaults (a training threshold of
     // 1024) 200 vectors never leave the flat buffer, and the window this test is named for would
-    // not exist.
+    // not exist. These are trigger thresholds, not batch sizes: only one update job is pending at
+    // a time, it waits `updateJobWaitTime` before running, and it then drains the whole flat
+    // buffer - so with the loops below far outpacing it, a single drain moves many vectors.
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
 
@@ -480,12 +482,13 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
         // Every replacement finds its own label. Asserted only for an uncompressed index: a
         // compressed one trains its stored form on the vectors it was given, so values this far
         // outside the original range are clipped.
-        // MOD-18994: a label updated late in the loop can land in the first sub-batch of a large
-        // incremental backend drain, before any of its true neighbors exist in the graph yet
-        // (VamanaBuilder::construct's fixed entry point + sequential sub-batches), leaving it
-        // under-connected relative to labels drained later in the same call. The label is still
-        // reachable, just via few edges - a wider runtime search window than the 200 used at
-        // construction reliably finds it without touching the graph's actual connectivity.
+        // MOD-18994: a replacement vector written late in the update loop can land in the first
+        // sub-batch of a large incremental backend drain, before any of its true neighbors (the
+        // other replacements) exist in the graph yet (VamanaBuilder::construct's fixed entry
+        // point + sequential sub-batches), leaving it under-connected relative to vectors drained
+        // later in the same call. It is still reachable, just via few edges - a wider runtime
+        // search window than the 200 used at construction reliably finds it without touching the
+        // graph's actual connectivity.
         SVSRuntimeParams wideWindow = {.windowSize = 250};
         VecSimQueryParams wideWindowParams = CreateQueryParams(wideWindow);
         for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
