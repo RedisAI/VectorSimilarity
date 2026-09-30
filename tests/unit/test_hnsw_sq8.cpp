@@ -9,6 +9,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/vec_sim.h"
@@ -17,6 +18,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <condition_variable>
 #include <cstring>
 #include <fstream>
@@ -107,6 +109,12 @@ protected:
 
 TYPED_TEST_SUITE(HNSWSQ8Test, HNSWSQ8DataTypeSet);
 
+// Removes a saved snapshot when a test scope ends.
+struct TemporaryFile {
+    std::string path;
+    ~TemporaryFile() { std::remove(path.c_str()); }
+};
+
 // Index creation
 
 template <typename index_type_t>
@@ -181,6 +189,319 @@ TYPED_TEST(HNSWSQ8Test, getDataByLabelReportsNothingForQuantizedStorageLargeDim)
 }
 
 TYPED_TEST(HNSWSQ8Test, CreateIndex) { this->create_index_test(); }
+
+TYPED_TEST(HNSWSQ8Test, SerializationRoundTripV5) {
+    using data_t = typename TestFixture::data_t;
+    constexpr size_t dim = 8;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 8, .efConstruction = 40};
+    this->SetUp(params);
+
+    for (size_t i = 0; i < 3; ++i) {
+        ASSERT_EQ(this->GenerateAndAddVector(10 + i, 0.5f + static_cast<float>(i), 0.1f), 1);
+    }
+    auto *original = this->CastToHNSW();
+    ASSERT_NE(original, nullptr);
+
+    TemporaryFile file{::testing::TempDir() + "hnsw_sq8_" +
+                       std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+                       (TypeParam::with_quant_params ? "_mean" : "_no_mean") + ".hnsw"};
+
+    original->saveIndex(file.path);
+    std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> loaded(
+        HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+    ASSERT_NE(loaded, nullptr);
+    auto *restored = dynamic_cast<HNSWIndex<data_t, float> *>(loaded.get());
+    ASSERT_NE(restored, nullptr);
+    EXPECT_EQ(restored->getVersion(), HNSWSerializer::EncodingVersion::V5);
+    EXPECT_TRUE(restored->checkIntegrity().valid_state);
+    EXPECT_EQ(restored->quantType, VecSimQuant_SQ8);
+    EXPECT_TRUE(restored->usesQuantizedStorage());
+    EXPECT_EQ(restored->serializedMeanVector, this->quantization_mean);
+    EXPECT_EQ(restored->getStoredDataSize(), original->getStoredDataSize());
+    ASSERT_EQ(VecSimIndex_IndexSize(loaded.get()), VecSimIndex_IndexSize(this->index));
+
+    std::vector<data_t> query(dim);
+    this->GenerateVector(query.data(), 1.5f, 0.1f);
+    for (size_t i = 0; i < 3; ++i) {
+        EXPECT_EQ(std::memcmp(original->getDataByInternalId(i), restored->getDataByInternalId(i),
+                              original->getStoredDataSize()),
+                  0);
+        EXPECT_FLOAT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(loaded.get(), 10 + i, query.data()),
+                        VecSimIndex_GetDistanceFrom_Unsafe(this->index, 10 + i, query.data()));
+    }
+    auto verify = [&](size_t id, double score, size_t) {
+        EXPECT_EQ(id, 11u);
+        EXPECT_FLOAT_EQ(score, VecSimIndex_GetDistanceFrom_Unsafe(this->index, id, query.data()));
+    };
+    runTopKSearchTest(loaded.get(), query.data(), 1, verify);
+}
+
+// Covers single and multi-value SQ8 snapshots that span several blocks, then keeps using and
+// re-saving the loaded index to check that restored state is complete.
+TYPED_TEST(HNSWSQ8Test, SerializationRoundTripV5MultiBlockAndReload) {
+    using data_t = typename TestFixture::data_t;
+    using index_ptr = std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)>;
+    constexpr size_t dim = 8;
+    constexpr size_t n = 50;
+    constexpr size_t block_size = 16;
+    constexpr size_t M = 8;
+    constexpr size_t ef_construction = 40;
+    constexpr size_t ef_runtime = 20;
+    constexpr double epsilon = 0.02;
+
+    std::mt19937 rng(47);
+    std::uniform_real_distribution<float> distrib(-1.0f, 1.0f);
+    auto random_vector = [&]() {
+        std::vector<data_t> vector(dim);
+        for (auto &value : vector) {
+            value = TestFixture::ToDataType(distrib(rng));
+        }
+        return vector;
+    };
+
+    for (VecSimMetric metric : {VecSimMetric_L2, VecSimMetric_IP}) {
+        for (bool multi : {false, true}) {
+            SCOPED_TRACE(std::string(VecSimMetric_ToString(metric)) +
+                         (multi ? " multi" : " single"));
+            const size_t n_labels = multi ? n / 2 : n;
+            if (this->index) {
+                VecSimIndex_Free(this->index);
+                this->index = nullptr;
+            }
+            HNSWParams params = {.dim = dim,
+                                 .metric = metric,
+                                 .multi = multi,
+                                 .blockSize = block_size,
+                                 .M = M,
+                                 .efConstruction = ef_construction,
+                                 .efRuntime = ef_runtime,
+                                 .epsilon = epsilon};
+            this->SetUp(params);
+            for (size_t i = 0; i < n; ++i) {
+                ASSERT_EQ(VecSimIndex_AddVector(this->index, random_vector().data(), i % n_labels),
+                          1);
+            }
+            const std::vector<data_t> query = random_vector();
+
+            // Compares everything a snapshot must preserve, including graph storage layout.
+            auto expect_same_index = [&](VecSimIndex *expected, VecSimIndex *actual) {
+                auto *expected_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(expected);
+                auto *actual_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(actual);
+                ASSERT_NE(expected_hnsw, nullptr);
+                ASSERT_NE(actual_hnsw, nullptr);
+                EXPECT_EQ(actual_hnsw->getVersion(), HNSWSerializer::EncodingVersion::V5);
+                EXPECT_TRUE(actual_hnsw->checkIntegrity().valid_state);
+                EXPECT_EQ(actual_hnsw->quantType, VecSimQuant_SQ8);
+                EXPECT_TRUE(actual_hnsw->usesQuantizedStorage());
+                EXPECT_EQ(actual_hnsw->serializedMeanVector, this->quantization_mean);
+
+                VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(actual);
+                EXPECT_EQ(info.commonInfo.basicInfo.type, TypeParam::get_index_type());
+                EXPECT_EQ(info.commonInfo.basicInfo.dim, dim);
+                EXPECT_EQ(info.commonInfo.basicInfo.metric, metric);
+                EXPECT_EQ(info.commonInfo.basicInfo.isMulti, multi);
+                EXPECT_EQ(info.commonInfo.basicInfo.blockSize, block_size);
+                EXPECT_EQ(info.hnswInfo.M, M);
+                EXPECT_EQ(info.hnswInfo.efConstruction, ef_construction);
+                EXPECT_EQ(info.hnswInfo.efRuntime, ef_runtime);
+                EXPECT_EQ(info.hnswInfo.epsilon, epsilon);
+                EXPECT_EQ(info.commonInfo.indexSize, VecSimIndex_IndexSize(expected));
+                EXPECT_EQ(info.commonInfo.indexLabelCount,
+                          VecSimIndex_DebugInfo(expected).commonInfo.indexLabelCount);
+
+                const size_t size = VecSimIndex_IndexSize(expected);
+                ASSERT_EQ(VecSimIndex_IndexSize(actual), size);
+                for (idType id = 0; id < size; ++id) {
+                    EXPECT_EQ(actual_hnsw->getExternalLabel(id),
+                              expected_hnsw->getExternalLabel(id));
+                    EXPECT_EQ(std::memcmp(actual_hnsw->getDataByInternalId(id),
+                                          expected_hnsw->getDataByInternalId(id),
+                                          expected_hnsw->getStoredDataSize()),
+                              0);
+                }
+
+                constexpr size_t k = 10;
+                VecSimQueryReply *expected_res =
+                    VecSimIndex_TopKQuery(expected, query.data(), k, nullptr, BY_SCORE);
+                VecSimQueryReply *actual_res =
+                    VecSimIndex_TopKQuery(actual, query.data(), k, nullptr, BY_SCORE);
+                ASSERT_EQ(VecSimQueryReply_Len(actual_res), VecSimQueryReply_Len(expected_res));
+                auto *expected_it = VecSimQueryReply_GetIterator(expected_res);
+                auto *actual_it = VecSimQueryReply_GetIterator(actual_res);
+                while (VecSimQueryReply_IteratorHasNext(expected_it)) {
+                    auto *e = VecSimQueryReply_IteratorNext(expected_it);
+                    auto *a = VecSimQueryReply_IteratorNext(actual_it);
+                    EXPECT_EQ(VecSimQueryResult_GetId(a), VecSimQueryResult_GetId(e));
+                    EXPECT_EQ(VecSimQueryResult_GetScore(a), VecSimQueryResult_GetScore(e));
+                }
+                VecSimQueryReply_IteratorFree(expected_it);
+                VecSimQueryReply_IteratorFree(actual_it);
+                VecSimQueryReply_Free(expected_res);
+                VecSimQueryReply_Free(actual_res);
+            };
+
+            TemporaryFile file{::testing::TempDir() + "hnsw_sq8_reload_" +
+                               std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+                               (TypeParam::with_quant_params ? "_mean_" : "_no_mean_") +
+                               VecSimMetric_ToString(metric) + (multi ? "_multi" : "_single") +
+                               ".hnsw"};
+            ASSERT_GT(n, 2 * block_size); // The graph must span several storage blocks.
+            this->CastToHNSW()->saveIndex(file.path);
+            index_ptr loaded(HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+            ASSERT_NE(loaded, nullptr);
+            expect_same_index(this->index, loaded.get());
+
+            // Keep using the loaded index: add a new label, add another vector under an existing
+            // label (repeated label for multi, overwrite for single), and delete a label.
+            ASSERT_EQ(VecSimIndex_AddVector(loaded.get(), random_vector().data(), n_labels), 1);
+            ASSERT_EQ(VecSimIndex_AddVector(loaded.get(), random_vector().data(), 0),
+                      multi ? 1 : 0);
+            const size_t vectors_per_label = multi ? n / n_labels : 1;
+            ASSERT_EQ(VecSimIndex_DeleteVector(loaded.get(), 1), vectors_per_label);
+            auto *loaded_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(loaded.get());
+            ASSERT_NE(loaded_hnsw, nullptr);
+            EXPECT_TRUE(loaded_hnsw->checkIntegrity().valid_state);
+            EXPECT_EQ(VecSimIndex_IndexSize(loaded.get()),
+                      n + 1 + (multi ? 1 : 0) - vectors_per_label);
+
+            // A second save/load cycle of the modified index must preserve it exactly.
+            loaded_hnsw->saveIndex(file.path);
+            index_ptr reloaded(HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+            ASSERT_NE(reloaded, nullptr);
+            expect_same_index(loaded.get(), reloaded.get());
+        }
+    }
+}
+
+// Saved SQ8 snapshots with an unknown quantizer or an element type SQ8 does not support must be
+// rejected instead of being interpreted with the wrong vector layout.
+TYPED_TEST(HNSWSQ8Test, LoadRejectsUnsupportedQuantizedSnapshot) {
+    HNSWParams params = {.dim = 4, .metric = VecSimMetric_L2, .M = 8, .efConstruction = 40};
+    this->SetUp(params);
+    ASSERT_EQ(this->GenerateAndAddVector(0, 0.25f, 0.1f), 1);
+    ASSERT_EQ(this->GenerateAndAddVector(1, 0.75f, 0.1f), 1);
+
+    TemporaryFile file{::testing::TempDir() + "hnsw_sq8_reject_" +
+                       std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+                       (TypeParam::with_quant_params ? "_mean" : "_no_mean") + ".hnsw"};
+
+    // Field offsets follow HNSWSerializer::saveIndex and HNSWIndex::saveIndexFields.
+    constexpr std::streamoff type_offset =
+        sizeof(HNSWSerializer::EncodingVersion) + sizeof(VecSimAlgo) + sizeof(size_t);
+    constexpr std::streamoff quant_type_offset = type_offset + sizeof(VecSimType) +
+                                                 sizeof(VecSimMetric) + sizeof(size_t) +
+                                                 sizeof(bool) + sizeof(size_t);
+
+    using raw_quant_type_t = std::underlying_type_t<VecSimQuantType>;
+    auto save_and_patch = [&](std::streamoff offset, auto value) {
+        this->CastToHNSW()->saveIndex(file.path);
+        std::fstream stream(file.path, std::ios::in | std::ios::out | std::ios::binary);
+        ASSERT_TRUE(stream.is_open());
+        // Check the offset points at the expected field before overwriting it.
+        decltype(value) original{};
+        stream.seekg(offset);
+        Serializer::readBinaryPOD(stream, original);
+        if constexpr (std::is_same_v<decltype(value), raw_quant_type_t>) {
+            ASSERT_EQ(original, static_cast<raw_quant_type_t>(VecSimQuant_SQ8));
+        } else {
+            ASSERT_EQ(original, TypeParam::get_index_type());
+        }
+        stream.seekp(offset);
+        Serializer::writeBinaryPOD(stream, value);
+    };
+    auto expect_rejected = [&]() {
+        std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> loaded(
+            HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+        EXPECT_EQ(loaded, nullptr);
+    };
+
+    // The unmodified snapshot loads.
+    this->CastToHNSW()->saveIndex(file.path);
+    {
+        std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> loaded(
+            HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+        ASSERT_NE(loaded, nullptr);
+    }
+
+    // Written as raw bytes: an out-of-range value is not a valid VecSimQuantType.
+    save_and_patch(quant_type_offset, static_cast<raw_quant_type_t>(VecSimQuant_SQ8 + 1));
+    expect_rejected();
+
+    for (VecSimType unsupported_type :
+         {VecSimType_FLOAT64, VecSimType_BFLOAT16, VecSimType_INT8, VecSimType_UINT8}) {
+        SCOPED_TRACE(VecSimType_ToString(unsupported_type));
+        save_and_patch(type_offset, unsupported_type);
+        expect_rejected();
+    }
+}
+
+TYPED_TEST(HNSWSQ8Test, NormalizedCosineSerializationRoundTripV5) {
+    using data_t = typename TestFixture::data_t;
+    using index_ptr = std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)>;
+    constexpr size_t dim = 4;
+    constexpr size_t count = 3;
+    HNSWParams params = {.type = TypeParam::get_index_type(),
+                         .dim = dim,
+                         .metric = VecSimMetric_Cosine,
+                         .M = 8,
+                         .efConstruction = 40,
+                         .quantType = VecSimQuant_SQ8};
+
+    std::vector<float> mean;
+    if constexpr (TypeParam::with_quant_params) {
+        mean.assign(dim, TestFixture::quantization_mean_value);
+        params.quantParams = mean.data();
+    }
+
+    // The SQ8 Cosine backend assumes these vectors are already normalized and uses IP internally.
+    const std::vector<std::vector<float>> normalized_vectors = {
+        {1.0f, 0.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f, 0.0f},
+        {-1.0f, 0.0f, 0.0f, 0.0f},
+    };
+    VecSimParams vecsim_params = CreateParams(params);
+    index_ptr original(HNSWFactory::NewIndex(&vecsim_params, true), VecSimIndex_Free);
+    ASSERT_NE(original, nullptr);
+    for (size_t label = 0; label < count; ++label) {
+        std::vector<data_t> vector(dim);
+        for (size_t d = 0; d < dim; ++d) {
+            vector[d] = TestFixture::ToDataType(normalized_vectors[label][d]);
+        }
+        ASSERT_EQ(VecSimIndex_AddVector(original.get(), vector.data(), label), 1);
+    }
+
+    TemporaryFile file{::testing::TempDir() + "hnsw_sq8_normalized_cosine_" +
+                       std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+                       (TypeParam::with_quant_params ? "_mean" : "_no_mean") + ".hnsw"};
+
+    auto *original_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(original.get());
+    ASSERT_NE(original_hnsw, nullptr);
+    original_hnsw->saveIndex(file.path);
+
+    // Default loading remains strict; only callers that guarantee normalized input opt in.
+    index_ptr default_loaded(HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+    EXPECT_EQ(default_loaded, nullptr);
+
+    index_ptr loaded(HNSWFactory::NewIndex(file.path, true), VecSimIndex_Free);
+    ASSERT_NE(loaded, nullptr);
+    auto *loaded_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(loaded.get());
+    ASSERT_NE(loaded_hnsw, nullptr);
+    EXPECT_TRUE(loaded_hnsw->checkIntegrity().valid_state);
+    EXPECT_EQ(loaded_hnsw->quantType, VecSimQuant_SQ8);
+    EXPECT_EQ(loaded_hnsw->serializedMeanVector, mean);
+    ASSERT_EQ(VecSimIndex_IndexSize(loaded.get()), count);
+
+    // Unit queries stay normalized. Cosine distances are 1 - dot(query, vector).
+    std::vector<data_t> query(dim, TestFixture::ToDataType(0.0f));
+    query[0] = TestFixture::ToDataType(1.0f);
+    for (size_t label = 0; label < count; ++label) {
+        const double expected_distance = static_cast<double>(label);
+        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(original.get(), label, query.data()),
+                    expected_distance, 0.05);
+        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(loaded.get(), label, query.data()),
+                    expected_distance, 0.05);
+    }
+}
 
 TYPED_TEST(HNSWSQ8Test, RejectStandaloneCosine) {
     HNSWParams params = {.type = TypeParam::get_index_type(),
@@ -558,6 +879,22 @@ TYPED_TEST(HNSWSQ8Test, SetQuantizationMeanMatchesConstructedMean) {
                     << "label " << label;
             }
         }
+
+        TemporaryFile file{::testing::TempDir() + "hnsw_sq8_set_mean_" +
+                           std::string(VecSimType_ToString(TypeParam::get_index_type())) +
+                           (TypeParam::with_quant_params ? "_mean" : "_no_mean") +
+                           (metric == VecSimMetric_L2 ? "_l2.hnsw" : "_ip.hnsw")};
+        deferred_hnsw->saveIndex(file.path);
+        index_ptr restored(HNSWFactory::NewIndex(file.path), VecSimIndex_Free);
+        ASSERT_NE(restored, nullptr);
+        auto *restored_hnsw = dynamic_cast<HNSWIndex<data_t, float> *>(restored.get());
+        ASSERT_NE(restored_hnsw, nullptr);
+        EXPECT_EQ(restored_hnsw->serializedMeanVector, mean);
+        for (size_t label = 0; label < count; label++) {
+            EXPECT_FLOAT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(restored.get(), label, query.data()),
+                            VecSimIndex_GetDistanceFrom_Unsafe(deferred.get(), label, query.data()))
+                << "serialized label " << label;
+        }
     }
 }
 
@@ -636,28 +973,6 @@ TEST(HNSWSQ8ParamsTest, MeanCenteredFP16L2BoundedValues) {
             }
         }
     }
-}
-
-// V4 cannot encode the quantization settings needed to reload an SQ8 index.
-TYPED_TEST(HNSWSQ8Test, RejectsSerialization) {
-    HNSWParams params = {.dim = 4, .initialCapacity = 1};
-    this->SetUp(params);
-    ASSERT_EQ(this->GenerateAndAddVector(0, 0.25f, 0.25f), 1);
-
-    const auto file_name = std::string(getenv("ROOT")) + "/tests/unit/sq8_should_not_be_written";
-    const std::string existing_contents = "existing snapshot";
-    {
-        std::ofstream output(file_name, std::ios::binary);
-        output.write(existing_contents.data(), existing_contents.size());
-    }
-
-    EXPECT_THROW(this->CastToHNSW()->saveIndex(file_name), std::runtime_error);
-
-    std::ifstream input(file_name, std::ios::binary);
-    const std::string saved_contents{std::istreambuf_iterator<char>(input),
-                                     std::istreambuf_iterator<char>()};
-    EXPECT_EQ(saved_contents, existing_contents);
-    std::remove(file_name.c_str());
 }
 
 // Exercise graph construction's stored-to-stored IP kernel with non-degenerate quantization ranges.

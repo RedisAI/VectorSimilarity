@@ -4,6 +4,7 @@
 # Licensed under your choice of the Redis Source Available License 2.0
 # (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
 # GNU Affero General Public License v3 (AGPLv3).
+import os
 import time
 import pytest
 from numpy.testing import assert_array_equal
@@ -238,6 +239,48 @@ def test_sq8_supplied_mean_ip(create_index, data_type):
         expected[query_label] = 0
         assert np.isfinite(scores).all()
         assert_allclose(scores[0][np.argsort(labels[0])], expected, rtol=0, atol=0.01)
+
+
+@pytest.mark.parametrize("data_type", SQ8_TYPES)
+@pytest.mark.parametrize("metric", [VecSimMetric_L2, VecSimMetric_IP], ids=["l2", "ip"])
+@pytest.mark.parametrize("is_multi", [False, True], ids=["single", "multi"])
+@pytest.mark.parametrize("with_mean", [False, True], ids=["no_mean", "mean"])
+def test_sq8_save_load_round_trip(tmp_path, data_type, metric, is_multi, with_mean):
+    """SQ8 snapshots saved from Python reload with identical results, also after mutation."""
+    num_vectors = 200
+    num_labels = num_vectors // 2 if is_multi else num_vectors
+    params = create_hnsw_params(dim=SQ8_MIN_DIM, num_elements=num_vectors, metric=metric,
+                                data_type=data_type, m=8, ef_construction=40, is_multi=is_multi)
+    params.quantType = VecSimQuant_SQ8
+    rng = np.random.default_rng(14960)
+    mean = rng.random(SQ8_MIN_DIM, dtype=np.float32) if with_mean else None
+    index = HNSWIndex(params, quantization_mean=mean)
+    vectors = to_index_dtype(rng.random((num_vectors + 1, SQ8_MIN_DIM), dtype=np.float32), data_type)
+    for i in range(num_vectors):
+        index.add_vector(vectors[i], i % num_labels)
+    queries = to_index_dtype(rng.random((10, SQ8_MIN_DIM), dtype=np.float32), data_type)
+
+    def save_and_load(source):
+        file_name = str(tmp_path / "sq8.hnsw")
+        source.save_index(file_name)
+        loaded = HNSWIndex(file_name)
+        os.remove(file_name)
+        assert loaded.check_integrity()
+        assert loaded.index_size() == source.index_size()
+        for query in queries:
+            expected_labels, expected_distances = source.knn_query(query, 10)
+            labels, distances = loaded.knn_query(query, 10)
+            assert_array_equal(labels, expected_labels)
+            assert_array_equal(distances, expected_distances)
+        return loaded
+
+    loaded = save_and_load(index)
+    # The loaded index stays usable, and saving it again preserves the changes.
+    loaded.add_vector(vectors[num_vectors], num_labels)
+    loaded.delete_vector(1)
+    assert loaded.index_size() == num_vectors + 1 - num_vectors // num_labels
+    assert loaded.check_integrity()
+    save_and_load(loaded)
 
 
 @pytest.mark.parametrize("data_type", SQ8_TYPES)
