@@ -3823,10 +3823,10 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
         }
     }
     mock_thread_pool.thread_pool_join();
-    // Multi-value appends on the second run. Single-value overwrites: each overwrite either reused
-    // its old id (if that id's repairs were done by the time the new vector was ingested) or
-    // appended a fresh one, leaving the old id marked deleted - which of the two depends on thread
-    // timing. Either way, exactly n elements are live.
+    // Multi-value appends on the second run. Single-value overwrites: an overwrite that goes
+    // through the flat buffer reuses its old id, while one inserted straight into HNSW (the buffer
+    // being full) appends a fresh one and leaves the old id marked deleted - which of the two
+    // depends on thread timing. Either way, exactly n elements are live.
     size_t backend_size = tiered_index->backendIndex->indexSize();
     size_t live = TypeParam::isMulti() ? 2 * n : n;
     EXPECT_GE(backend_size, live);
@@ -5860,22 +5860,13 @@ static void RunAllJobs(tieredIndexMock &mock_thread_pool) {
     }
 }
 
-// Reorders the queued jobs so that the insert jobs run before (or after) all the others, keeping
-// each group's own order - for driving which side of an async id reuse gets there first.
-static void ReorderQueuedInsertJobs(tieredIndexMock &mock_thread_pool, bool inserts_first) {
-    auto &queue = mock_thread_pool.jobQ;
-    std::vector<std::decay_t<decltype(queue.front())>> inserts, others;
-    while (!queue.empty()) {
-        auto &group = queue.front().job->jobType == HNSW_INSERT_VECTOR_JOB ? inserts : others;
-        group.push_back(queue.front());
-        queue.pop();
+static size_t CountQueuedInsertJobs(tieredIndexMock &mock_thread_pool) {
+    auto queue = mock_thread_pool.jobQ;
+    size_t count = 0;
+    for (; !queue.empty(); queue.pop()) {
+        count += queue.front().job->jobType == HNSW_INSERT_VECTOR_JOB;
     }
-    auto order = inserts_first ? std::array{&inserts, &others} : std::array{&others, &inserts};
-    for (auto *group : order) {
-        for (auto &job : *group) {
-            queue.push(job);
-        }
-    }
+    return count;
 }
 
 // Each of labels 0..n-1's (single) id.
@@ -5888,8 +5879,9 @@ static std::vector<idType> LabelIds(HNSWIndex<data_t, dist_t> *hnsw_index, size_
     return ids;
 }
 
-// An async overwrite of a single-value label hands the old id over to the new vector once the
-// old element's repairs are done, instead of appending a fresh id and compacting the old one.
+// An async overwrite of a single-value label hands the old id over to the new vector, instead of
+// appending a fresh id and compacting the old one. The new vector's insert job isn't queued: it's
+// run by the old element's last repair, so it always finds the id ready.
 TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdOnceRepaired) {
     size_t dim = 4;
     size_t n = 10;
@@ -5903,57 +5895,30 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdOnceRepaired) {
     GenerateVector<TEST_DATA_T>(new_vec, dim, 100);
     ASSERT_EQ(tiered_index->addVector(new_vec, label), 0);
     // The old id has neighbors to repair first, and meanwhile it's held for the new vector rather
-    // than counted towards compaction.
+    // than counted towards compaction - and the new vector's insert job is held with it.
     ASSERT_FALSE(tiered_index->idToRepairJobs.empty());
     ASSERT_TRUE(tiered_index->idToSwapJob.at(ids_before[label])->reservedForReuse);
     ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    ASSERT_EQ(CountQueuedInsertJobs(mock_thread_pool), 0);
 
-    // Repairs were queued ahead of the insert job, so by the time it runs the id is ready.
-    RunAllJobs(mock_thread_pool);
+    // Every repair but the last leaves the new vector waiting in the flat buffer.
+    while (mock_thread_pool.jobQ.size() > 1) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_TRUE(hnsw_index->getElementIds(label).empty());
+    ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 1);
+
+    // The last one ingests it, into the old id.
+    mock_thread_pool.thread_iteration();
     ASSERT_EQ(hnsw_index->indexSize(), n);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
     ASSERT_EQ(tiered_index->readySwapJobs, 0);
     ASSERT_EQ(tiered_index->frontendIndex->indexSize(), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.size(), 0);
     for (size_t i = 0; i < n; i++) {
         ASSERT_EQ(hnsw_index->getElementIds(i).at(0), ids_before[i]) << "label " << i;
     }
-    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, new_vec), 0);
-    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
-}
-
-// If the insert job gets there before the old id's repairs are done, it doesn't wait: it appends
-// a fresh id, and the old one is compacted as any other deleted id once its repairs finish.
-TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteAppendsWhenInsertRunsFirst) {
-    size_t dim = 4;
-    size_t n = 10;
-    auto mock_thread_pool = tieredIndexMock();
-    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
-    auto *hnsw_index = this->CastToHNSW(tiered_index);
-    auto ids_before = LabelIds(hnsw_index, n);
-
-    labelType label = n / 2;
-    TEST_DATA_T new_vec[dim];
-    GenerateVector<TEST_DATA_T>(new_vec, dim, 100);
-    ASSERT_EQ(tiered_index->addVector(new_vec, label), 0);
-    ASSERT_FALSE(tiered_index->idToRepairJobs.empty());
-
-    ReorderQueuedInsertJobs(mock_thread_pool, /*inserts_first=*/true);
-    mock_thread_pool.thread_iteration();
-    ASSERT_EQ(hnsw_index->indexSize(), n + 1);
-    ASSERT_EQ(hnsw_index->getElementIds(label).at(0), n);
-    ASSERT_FALSE(tiered_index->idToSwapJob.at(ids_before[label])->reservedForReuse);
-
-    RunAllJobs(mock_thread_pool);
-    ASSERT_EQ(tiered_index->readySwapJobs, 1);
-    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
-
-    tiered_index->runGC();
-    ASSERT_EQ(hnsw_index->indexSize(), n);
-    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
-    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
-    ASSERT_EQ(tiered_index->readySwapJobs, 0);
-    ASSERT_EQ(tiered_index->indexLabelCount(), n);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, new_vec), 0);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
@@ -5975,11 +5940,12 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReleasesIdWhenOverwrittenAgai
     GenerateVector<TEST_DATA_T>(second_vec, dim, 200);
     ASSERT_EQ(tiered_index->addVector(first_vec, label), 0);
     ASSERT_EQ(tiered_index->addVector(second_vec, label), 0);
-    // Still held, by the now-invalid first insert job.
+    // Still held, by the now-invalid first insert job. Only the second one is queued: the label
+    // wasn't in HNSW anymore when it was overwritten, so there's no id for it to reuse.
     ASSERT_TRUE(tiered_index->idToSwapJob.at(ids_before[label])->reservedForReuse);
+    ASSERT_EQ(CountQueuedInsertJobs(mock_thread_pool), 1);
 
-    // Repairs, then the invalid first insert job (which releases the id), then the second one,
-    // which has no id to reuse - the label wasn't in HNSW anymore when it was overwritten.
+    // The last repair runs the invalid first insert job, which releases the id.
     RunAllJobs(mock_thread_pool);
     ASSERT_FALSE(tiered_index->idToSwapJob.at(ids_before[label])->reservedForReuse);
     ASSERT_EQ(tiered_index->readySwapJobs, 1);
@@ -5990,6 +5956,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReleasesIdWhenOverwrittenAgai
     ASSERT_EQ(hnsw_index->indexSize(), n);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->invalidJobs.size(), 0);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, second_vec), 0);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
@@ -6004,28 +5971,35 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdRelocatedBySwap) {
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
 
-    // Overwrite the label holding the last id, and delete the one holding id 0.
-    labelType overwritten = n - 1;
+    // Delete the label holding id 0 and let its repairs finish, so its swap job is ready.
     labelType deleted = 0;
-    ASSERT_EQ(ids_before[overwritten], n - 1);
     ASSERT_EQ(ids_before[deleted], 0);
+    ASSERT_EQ(tiered_index->deleteVector(deleted), 1);
+    RunAllJobs(mock_thread_pool);
+    ASSERT_EQ(tiered_index->readySwapJobs, 1);
+
+    // Then overwrite the label holding the last id. Right before its insert job runs, compact the
+    // deleted id - which moves the held (last) id into id 0's slot.
+    labelType overwritten = n - 1;
+    ASSERT_EQ(ids_before[overwritten], n - 1);
     TEST_DATA_T new_vec[dim];
     GenerateVector<TEST_DATA_T>(new_vec, dim, 100);
     ASSERT_EQ(tiered_index->addVector(new_vec, overwritten), 0);
-    ASSERT_EQ(tiered_index->deleteVector(deleted), 1);
-
-    // Finish every repair, and compact the deleted id - which moves the held id into its slot.
-    ReorderQueuedInsertJobs(mock_thread_pool, /*inserts_first=*/false);
-    while (mock_thread_pool.jobQ.front().job->jobType != HNSW_INSERT_VECTOR_JOB) {
-        mock_thread_pool.thread_iteration();
-    }
-    tiered_index->runGC();
-    ASSERT_EQ(hnsw_index->indexSize(), n - 1);
-    ASSERT_EQ(tiered_index->idToSwapJob.size(), 1);
-    ASSERT_TRUE(tiered_index->idToSwapJob.at(0)->reservedForReuse);
-    ASSERT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
+    bool relocated = false;
+    tiered_index->setBeforeDeferredReuseInsertHook([&]() {
+        if (relocated) {
+            return;
+        }
+        relocated = true;
+        tiered_index->runGC();
+        ASSERT_EQ(hnsw_index->indexSize(), n - 1);
+        ASSERT_EQ(tiered_index->idToSwapJob.size(), 1);
+        ASSERT_TRUE(tiered_index->idToSwapJob.at(0)->reservedForReuse);
+        ASSERT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
+    });
 
     RunAllJobs(mock_thread_pool);
+    ASSERT_TRUE(relocated);
     ASSERT_EQ(hnsw_index->getElementIds(overwritten).at(0), 0);
     ASSERT_EQ(hnsw_index->indexSize(), n - 1);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
