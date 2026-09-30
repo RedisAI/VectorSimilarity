@@ -392,6 +392,7 @@ TYPED_TEST(HNSWSQ8Test, LoadRejectsUnsupportedQuantizedSnapshot) {
                                                  sizeof(VecSimMetric) + sizeof(size_t) +
                                                  sizeof(bool) + sizeof(size_t);
 
+    using raw_quant_type_t = std::underlying_type_t<VecSimQuantType>;
     auto save_and_patch = [&](std::streamoff offset, auto value) {
         this->CastToHNSW()->saveIndex(file.path);
         std::fstream stream(file.path, std::ios::in | std::ios::out | std::ios::binary);
@@ -400,8 +401,8 @@ TYPED_TEST(HNSWSQ8Test, LoadRejectsUnsupportedQuantizedSnapshot) {
         decltype(value) original{};
         stream.seekg(offset);
         Serializer::readBinaryPOD(stream, original);
-        if constexpr (std::is_same_v<decltype(value), VecSimQuantType>) {
-            ASSERT_EQ(original, VecSimQuant_SQ8);
+        if constexpr (std::is_same_v<decltype(value), raw_quant_type_t>) {
+            ASSERT_EQ(original, static_cast<raw_quant_type_t>(VecSimQuant_SQ8));
         } else {
             ASSERT_EQ(original, TypeParam::get_index_type());
         }
@@ -422,7 +423,8 @@ TYPED_TEST(HNSWSQ8Test, LoadRejectsUnsupportedQuantizedSnapshot) {
         ASSERT_NE(loaded, nullptr);
     }
 
-    save_and_patch(quant_type_offset, static_cast<VecSimQuantType>(VecSimQuant_SQ8 + 1));
+    // Written as raw bytes: an out-of-range value is not a valid VecSimQuantType.
+    save_and_patch(quant_type_offset, static_cast<raw_quant_type_t>(VecSimQuant_SQ8 + 1));
     expect_rejected();
 
     for (VecSimType unsupported_type :

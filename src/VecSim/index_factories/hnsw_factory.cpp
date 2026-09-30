@@ -15,6 +15,8 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 
+#include <type_traits>
+
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
@@ -301,7 +303,8 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
 }
 
 // Initialize @params from file for V3+. For V5+ also reads quantType and mean vector.
-static void InitializeParams(std::ifstream &source_params, HNSWParams &params,
+// Returns false if the file holds a quantizer value this version does not know.
+static bool InitializeParams(std::ifstream &source_params, HNSWParams &params,
                              HNSWSerializer::EncodingVersion version,
                              std::vector<float> &meanVector) {
     Serializer::readBinaryPOD(source_params, params.dim);
@@ -313,7 +316,14 @@ static void InitializeParams(std::ifstream &source_params, HNSWParams &params,
 
     // V5: read quantization fields
     if (version >= HNSWSerializer::EncodingVersion::V5) {
-        Serializer::readBinaryPOD(source_params, params.quantType);
+        // Validate the raw value before converting it: an out-of-range value is not a valid
+        // VecSimQuantType, so it must never be loaded into the enum.
+        std::underlying_type_t<VecSimQuantType> raw_quant_type;
+        Serializer::readBinaryPOD(source_params, raw_quant_type);
+        if (raw_quant_type != VecSimQuant_NONE && raw_quant_type != VecSimQuant_SQ8) {
+            return false;
+        }
+        params.quantType = static_cast<VecSimQuantType>(raw_quant_type);
         if (params.quantType == VecSimQuant_SQ8) {
             bool hasMean = false;
             Serializer::readBinaryPOD(source_params, hasMean);
@@ -324,6 +334,7 @@ static void InitializeParams(std::ifstream &source_params, HNSWParams &params,
             }
         }
     }
+    return true;
 }
 
 VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
@@ -350,17 +361,14 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
 
     HNSWParams params = {};
     std::vector<float> meanVector;
-    InitializeParams(input, params, version, meanVector);
+    if (!InitializeParams(input, params, version, meanVector)) {
+        return NULL;
+    }
 
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&params, nullptr, is_normalized);
 
     if (params.quantType != VecSimQuant_NONE) {
-        // Reject unknown quantizers instead of silently loading an unquantized index.
-        if (params.quantType != VecSimQuant_SQ8) {
-            return NULL;
-        }
-
         const float *mean_ptr = meanVector.empty() ? nullptr : meanVector.data();
         const VecSimMetric metric = ResolveSQ8Metric(params.metric, is_normalized);
 
