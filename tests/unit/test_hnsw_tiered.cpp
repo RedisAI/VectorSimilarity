@@ -6007,6 +6007,57 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdRelocatedBySwap) {
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
+// The reuse insert only holds the main guard exclusively to clear the reused slot, and stores
+// into it with the guard held shared. In between, a swap may move the cleared slot - here, GC
+// compacting another deleted id relocates it from the last id into that id's slot - and the new
+// vector must land wherever it went.
+TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesSlotRelocatedAfterClearing) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+    auto ids_before = LabelIds(hnsw_index, n);
+
+    // Delete the label holding id 0 and let its repairs finish, so its swap job is ready.
+    labelType deleted = 0;
+    ASSERT_EQ(ids_before[deleted], 0);
+    ASSERT_EQ(tiered_index->deleteVector(deleted), 1);
+    RunAllJobs(mock_thread_pool);
+    ASSERT_EQ(tiered_index->readySwapJobs, 1);
+
+    // Overwrite the label holding the last id, and let its repairs finish too.
+    labelType overwritten = n - 1;
+    ASSERT_EQ(ids_before[overwritten], n - 1);
+    TEST_DATA_T new_vec[dim];
+    GenerateVector<TEST_DATA_T>(new_vec, dim, 100);
+    ASSERT_EQ(tiered_index->addVector(new_vec, overwritten), 0);
+    while (mock_thread_pool.jobQ.front().job->jobType != HNSW_INSERT_VECTOR_JOB) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    // Run GC right after the insert job clears the reused slot - which compacts id 0 by moving
+    // the cleared slot (the last id) into it.
+    bool relocated = false;
+    tiered_index->setAfterReusedSlotClearedHook([&]() {
+        relocated = true;
+        tiered_index->runGC();
+        ASSERT_EQ(hnsw_index->indexSize(), n - 1);
+        ASSERT_EQ(tiered_index->idToSwapJob.size(), 1);
+        ASSERT_EQ(tiered_index->idToSwapJob.at(0)->deleted_id, 0);
+    });
+    mock_thread_pool.thread_iteration();
+    ASSERT_TRUE(relocated);
+
+    ASSERT_EQ(hnsw_index->getElementIds(overwritten).at(0), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 1);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n - 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(overwritten, new_vec), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
 // With reuse disabled, an async overwrite reserves nothing: the new vector gets a fresh id even
 // though the old id's repairs are done by then, and the old id is compacted as before.
 TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteWithReuseDisabledAppends) {

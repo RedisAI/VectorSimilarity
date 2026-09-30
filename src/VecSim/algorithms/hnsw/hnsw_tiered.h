@@ -160,6 +160,7 @@ private:
     std::function<void()> beforeQuantizationFinalization;
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
+    std::function<void()> afterReusedSlotCleared;
 #endif
 
     void addToSum(std::span<const DataType> vector) {
@@ -241,8 +242,9 @@ private:
 
     // Store `blob` in the id reserved by `swap_job` (already isolated) rather than a fresh one.
     // Called with the flat index guard held shared, which it releases once the vector is stored.
-    // Takes the main index guard exclusively: the id's old graph data is freed here, and a
-    // concurrent graph scan may still hold a stale link to it.
+    // Takes the main index guard exclusively only to free the id's old graph data (a concurrent
+    // graph scan may still hold a stale link to it), then stores and links the vector with it held
+    // shared, like a fresh insert.
     void insertVectorToHNSWReusingId(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
                                      const void *blob, HNSWSwapJob *swap_job);
 
@@ -359,6 +361,12 @@ public:
 
     void setAfterBackendInsertBeforeFlatRemovalHook(std::function<void()> hook) {
         afterBackendInsertBeforeFlatRemoval = std::move(hook);
+    }
+
+    // Runs in a reuse insert between clearing the reused slot and storing into it, with no main
+    // index guard held.
+    void setAfterReusedSlotClearedHook(std::function<void()> hook) {
+        afterReusedSlotCleared = std::move(hook);
     }
 #endif
 
@@ -632,9 +640,13 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label,
 
         this->submitJobs(repair_jobs);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
-        // node id is changed due to swap job).
-        assert(idToSwapJob.find(id) == idToSwapJob.end());
-        idToSwapJob[id] = swap_job;
+        // node id is changed due to swap job). Under the repair jobs guard, since a reuse insert
+        // (`insertVectorToHNSWReusingId`) also writes this lookup with the main guard held shared.
+        {
+            std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
+            assert(idToSwapJob.find(id) == idToSwapJob.end());
+            idToSwapJob[id] = swap_job;
+        }
     }
     this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
@@ -765,21 +777,44 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSWReusingId(
     HNSWSwapJob *swap_job) {
     ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
 
-    // Exclusive for the whole insertion, as in the resize branch of `insertVectorToHNSW`: freeing
-    // the old graph data needs every graph scan out, and no swap job may relocate the id while
-    // it's being filled.
-    this->lockMainIndexGuard();
-    // Read only now: another swap may have relocated the reserved element since it was reserved,
-    // and `fixJobsAfterSwap` keeps `deleted_id` pointing at wherever it went.
-    const idType reused_id = swap_job->deleted_id;
-    assert(idToSwapJob.at(reused_id) == swap_job);
-    idToSwapJob.erase(reused_id);
+    // 1. Exclusively, just long enough to free the old element's graph data: a graph scan that
+    // picked the id up as a candidate before it was isolated may still read it, and taking the
+    // main guard exclusively waits every such scan out.
+    {
+        const auto main_index_lock = this->acquireMainIndexGuard();
+        // Another swap may have relocated the reserved element since it was reserved - read its id
+        // only now, as `fixJobsAfterSwap` keeps `deleted_id` pointing at wherever it went.
+        const idType deleted_id = swap_job->deleted_id;
+        // As `executeSwapJob` does for an id it disposes of.
+        this->invalidateRepairJobs(deleted_id);
+        hnsw_index->clearDeletedSlot(deleted_id);
+    }
+
+    // 2. Unlocked: the slot is now an empty, unreachable, still reserved deleted element. A swap
+    // (by GC, or an in-place removal) may move it here like any other element, and the reserved
+    // swap job keeps tracking where to.
+#ifdef BUILD_TESTS
+    if (afterReusedSlotCleared) {
+        afterReusedSlotCleared();
+    }
+#endif
+
+    // 3. Shared from here on, exactly as a fresh insert (see `insertVectorToHNSW`) - the shared
+    // lock keeps any swap from moving the element while it's stored and linked, and the entry
+    // point, max level and data guard are all taken the standard way.
+    this->mainIndexGuard.lock_shared();
+    idType reused_id;
+    {
+        // `deleteLabelFromHNSW` also writes `idToSwapJob` with the main guard held shared.
+        std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
+        reused_id = swap_job->deleted_id;
+        assert(idToSwapJob.at(reused_id) == swap_job);
+        idToSwapJob.erase(reused_id);
+    }
     delete swap_job;
-    // As `executeSwapJob` does for an id it disposes of.
-    this->invalidateRepairJobs(reused_id);
 
     hnsw_index->lockIndexDataGuard();
-    auto state = hnsw_index->storeNewElementInDeletedSlot(label, processed_blobs.getStorageBlob(),
+    auto state = hnsw_index->storeNewElementInClearedSlot(label, processed_blobs.getStorageBlob(),
                                                           reused_id);
     this->flatIndexGuard.unlock_shared();
 
@@ -790,7 +825,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSWReusingId(
     if (state.elementMaxLevel > state.currMaxLevel) {
         hnsw_index->unlockIndexDataGuard();
     }
-    this->unlockMainIndexGuard();
+    this->mainIndexGuard.unlock_shared();
 }
 
 template <typename DataType, typename DistType>
