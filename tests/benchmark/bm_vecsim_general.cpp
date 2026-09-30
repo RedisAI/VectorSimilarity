@@ -10,20 +10,24 @@
 
 #include "bm_vecsim_general.h"
 
+#include <unordered_set>
+
 void BM_VecSimGeneral::MeasureRecall(VecSimQueryReply *hnsw_results, VecSimQueryReply *bf_results,
                                      std::atomic_int &correct) {
+    std::unordered_set<labelType> bf_ids;
+    bf_ids.reserve(VecSimQueryReply_Len(bf_results));
+    auto bf_it = VecSimQueryReply_GetIterator(bf_results);
+    while (VecSimQueryReply_IteratorHasNext(bf_it)) {
+        bf_ids.insert(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(bf_it)));
+    }
+    VecSimQueryReply_IteratorFree(bf_it);
+
     auto hnsw_it = VecSimQueryReply_GetIterator(hnsw_results);
     while (VecSimQueryReply_IteratorHasNext(hnsw_it)) {
         auto hnsw_res_item = VecSimQueryReply_IteratorNext(hnsw_it);
-        auto bf_it = VecSimQueryReply_GetIterator(bf_results);
-        while (VecSimQueryReply_IteratorHasNext(bf_it)) {
-            auto bf_res_item = VecSimQueryReply_IteratorNext(bf_it);
-            if (VecSimQueryResult_GetId(hnsw_res_item) == VecSimQueryResult_GetId(bf_res_item)) {
-                correct++;
-                break;
-            }
+        if (bf_ids.contains(VecSimQueryResult_GetId(hnsw_res_item))) {
+            correct++;
         }
-        VecSimQueryReply_IteratorFree(bf_it);
     }
     VecSimQueryReply_IteratorFree(hnsw_it);
 }

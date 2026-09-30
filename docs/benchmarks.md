@@ -19,11 +19,37 @@ $$
 # Run benchmarks
 ## Required files
 The serialized indices files that are used for micro-benchmarking and running ann-benchmark can be found in
-`tests/benchmark/data/hnsw_indices.txt`.
+`tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt`.
 To download all the required files, run from the repository root directory:
 ```sh
 wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt -P tests/benchmark/data
 ```
+### SQ8 inputs for FP32/FP16 basics
+
+The single-value (DBpedia) and multi-value (fashion) FP32/FP16 basics binaries also load SQ8
+indexes. The V5 SQ8 snapshots are included in the download list above and in the corresponding
+`hnsw_indices_basic_fp32.txt` and `hnsw_indices_basic_fp16.txt` lists. They are required even when
+a benchmark filter selects only an unquantized case, because fixture initialization happens before
+filtering. To regenerate them from the original V3 indexes, install the current Python bindings and run:
+
+```sh
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp32
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp16
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset fashion --type fp32
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset fashion --type fp16
+```
+
+Each command rebuilds the graph and writes `*-sq8.hnsw_v5` next to its source index in
+`tests/benchmark/data`. Run only the conversions needed for the basics binaries you intend to use.
+The converter represents cosine as inner product on normalized vectors, and the SQ8-enabled
+fixtures normalize the shared queries before timing. External consumers of these SQ8 files must
+also normalize their queries. The SQ8 range recall counter measures overlap with exact results;
+it is omitted when there are no exact results across the measured queries.
+
+These are steady-state benchmarks over an already built backend; they do not measure training or
+the accumulation-to-backend transition. Tiered TopK reports batch completion time divided by 50 queries.
+Use `real_time`, which includes queueing and the mock pool's 10 ms completion polling.
+
 To run all test sets, call the following commands from the project root dir:
 ```sh
 make benchmark

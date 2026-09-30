@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+ * <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -37,7 +39,8 @@ public:
     // We delete one label in each iteration. For multi index deletes multiple vectors per
     // iteration, for single index deletes one vector per iteration.
     template <typename algo_t>
-    static void DeleteLabel(algo_t *index, benchmark::State &st);
+    static void DeleteLabel(algo_t *index, benchmark::State &st,
+                            const VecSimIndexAbstract<data_t, dist_t> *data_source = nullptr);
 
     // Move one label to a fresh label in each iteration. This only rewrites label bookkeeping -
     // no vector data is copied and, for HNSW, the graph is untouched - so it is expected to be
@@ -47,7 +50,7 @@ public:
     static void RelabelLabel(benchmark::State &st);
 
     static void Range_BF(benchmark::State &st);
-    static void Range_HNSW(benchmark::State &st);
+    static void Range_HNSW(benchmark::State &st, IndexTypeIndex index_type = INDEX_HNSW);
 
     // Reproduces allocation/deallocation oscillation issue at block size boundaries.
     // Sets up index at blockSize+1 capacity, then repeatedly deletes and re-adds the same vector,
@@ -102,10 +105,14 @@ void BM_VecSimBasics<index_type_t>::AddLabel(benchmark::State &st) {
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
     size_t new_label_count = index->indexLabelCount();
+    auto cleanup_index = static_cast<IndexTypeIndex>(st.range(0));
+    if (cleanup_index == INDEX_TIERED_HNSW) {
+        cleanup_index = INDEX_HNSW;
+    } else if (cleanup_index == INDEX_TIERED_HNSW_SQ8) {
+        cleanup_index = INDEX_HNSW_SQ8;
+    }
     for (size_t label = initial_label_count; label < new_label_count; label++) {
-        // If index is tiered HNSW, remove directly from the underline HNSW.
-        VecSimIndex_DeleteVector(
-            GET_INDEX(st.range(0) == INDEX_TIERED_HNSW ? INDEX_HNSW : st.range(0)), label);
+        VecSimIndex_DeleteVector(GET_INDEX(cleanup_index), label);
     }
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
 }
@@ -163,7 +170,8 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
 
 template <typename index_type_t>
 template <typename algo_t>
-void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State &st) {
+void BM_VecSimBasics<index_type_t>::DeleteLabel(
+    algo_t *index, benchmark::State &st, const VecSimIndexAbstract<data_t, dist_t> *data_source) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
     index->fitMemory();
@@ -175,7 +183,11 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
         st.PauseTiming();
         LabelData data(0);
         // Get label id(s) data.
-        index->getDataByLabel(label_to_remove, data);
+        if (data_source) {
+            data_source->getDataByLabel(label_to_remove, data);
+        } else {
+            index->getDataByLabel(label_to_remove, data);
+        }
 
         removed_labels_data.push_back(data);
 
@@ -192,6 +204,7 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(algo_t *index, benchmark::State 
     if (VecSimIndex_BasicInfo(index).algo == VecSimAlgo_TIERED) {
         dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(index)->executeReadySwapJobs();
     }
+    assert(removed_vectors_count > 0);
     st.counters["memory_per_vector"] =
         benchmark::Counter((double)memory_delta / (double)removed_vectors_count,
                            benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
@@ -325,18 +338,19 @@ void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
 }
 
 template <typename index_type_t>
-void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
+void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st, IndexTypeIndex index_type) {
     double radius = (1.0 / 100.0) * (double)st.range(0);
     double epsilon = (1.0 / 1000.0) * (double)st.range(1);
     size_t iter = 0;
     size_t total_res = 0;
     size_t total_res_bf = 0;
+    std::atomic_int correct = 0;
     HNSWRuntimeParams hnswRuntimeParams = {.epsilon = epsilon};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
 
     for (auto _ : st) {
         auto hnsw_results = VecSimIndex_RangeQuery(
-            GET_INDEX(INDEX_HNSW), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
+            GET_INDEX(index_type), QUERIES[iter % N_QUERIES].data(), radius, &query_params, BY_ID);
         st.PauseTiming();
         total_res += VecSimQueryReply_Len(hnsw_results);
 
@@ -344,6 +358,7 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         auto bf_results = VecSimIndex_RangeQuery(
             GET_INDEX(INDEX_BF), QUERIES[iter % N_QUERIES].data(), radius, nullptr, BY_ID);
         total_res_bf += VecSimQueryReply_Len(bf_results);
+        BM_VecSimGeneral::MeasureRecall(hnsw_results, bf_results, correct);
 
         VecSimQueryReply_Free(bf_results);
         VecSimQueryReply_Free(hnsw_results);
@@ -351,7 +366,10 @@ void BM_VecSimBasics<index_type_t>::Range_HNSW(benchmark::State &st) {
         st.ResumeTiming();
     }
     st.counters["Avg. results number"] = (double)total_res / iter;
-    st.counters["Recall"] = (float)total_res / total_res_bf;
+    // When the exact result set is empty, recall is undefined; retain the result count.
+    if (total_res_bf != 0) {
+        st.counters["Recall"] = (double)correct / total_res_bf;
+    }
 }
 
 template <typename index_type_t>
@@ -473,6 +491,16 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
             BM_VecSimIndex<INDEX_TYPE>::get_typed_index<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(         \
                 VecSimAlgo),                                                                       \
             st);                                                                                   \
+    }
+#define DEFINE_DELETE_LABEL_WITH_DATA_SOURCE(BM_FUNC, INDEX_TYPE, INDEX_NAME, DATA_SOURCE_NAME,    \
+                                             DATA_TYPE, DIST_TYPE, VecSimAlgo, DataSourceAlgo)     \
+    BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC, INDEX_TYPE)(benchmark::State & st) {     \
+        DeleteLabel<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(                                             \
+            BM_VecSimIndex<INDEX_TYPE>::get_typed_index<INDEX_NAME<DATA_TYPE, DIST_TYPE>>(         \
+                VecSimAlgo),                                                                       \
+            st,                                                                                    \
+            BM_VecSimIndex<INDEX_TYPE>::get_typed_index<DATA_SOURCE_NAME<DATA_TYPE, DIST_TYPE>>(   \
+                DataSourceAlgo));                                                                  \
     }
 #define REGISTER_DeleteLabel(BM_FUNC)                                                              \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)->UNIT_AND_ITERATIONS
