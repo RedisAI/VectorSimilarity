@@ -157,8 +157,8 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     ASSERT_HNSW_BLOB_EQ(1, b);
     ASSERT_EQ(hnsw_index->getExternalLabel(1), 46);
 
-    // After inserting c with label 46, we first delete id 1 from the index.
-    // we expect id 0 to not change
+    // After inserting c with label 46, the label is overwritten in place at its own internal id
+    // (1) - id 0 (label 42, holding a) is untouched.
     VecSimIndex_AddVector(index, c, 46);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
     ASSERT_HNSW_BLOB_EQ(0, a);
@@ -166,14 +166,57 @@ TYPED_TEST(HNSWTest, hnsw_blob_sanity_test) {
     ASSERT_EQ(hnsw_index->getExternalLabel(0), 42);
     ASSERT_EQ(hnsw_index->getExternalLabel(1), 46);
 
-    // After inserting d with label 42, we first delete id 0 and move the last id (1) to be 0.
-    // Then we add the new vector d under the internal id 1.
+    // After inserting d with label 42, the label is overwritten in place at its own internal id
+    // (0) - no relocation, so id 1 (label 46, holding c) is untouched.
     VecSimIndex_AddVector(index, d, 42);
     ASSERT_EQ(VecSimIndex_IndexSize(index), 2);
-    ASSERT_HNSW_BLOB_EQ(0, c);
-    ASSERT_HNSW_BLOB_EQ(1, d);
-    ASSERT_EQ(hnsw_index->getExternalLabel(0), 46);
-    ASSERT_EQ(hnsw_index->getExternalLabel(1), 42);
+    ASSERT_HNSW_BLOB_EQ(0, d);
+    ASSERT_HNSW_BLOB_EQ(1, c);
+    ASSERT_EQ(hnsw_index->getExternalLabel(0), 42);
+    ASSERT_EQ(hnsw_index->getExternalLabel(1), 46);
+
+    VecSimIndex_Free(index);
+}
+
+// Overwriting a label (single-value) reuses its own internal id in place, rather than deleting
+// and re-appending it - which would shuffle a different, unrelated label's id via the swap-to-last
+// compaction a real removal uses. Exercised over a real, connected graph so the neighbor repair
+// `overwriteVectorInPlace` runs isn't a trivial one- or two-element case.
+TYPED_TEST(HNSWTest, overwriteReusesInternalId) {
+    size_t dim = 4;
+    size_t n = 20;
+    HNSWParams params = {.dim = dim, .metric = VecSimMetric_L2, .M = 4};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    HNSWIndex<TEST_DATA_T, TEST_DIST_T> *hnsw_index = this->CastToHNSW(index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+
+    labelType label = n / 2;
+    idType id_before = hnsw_index->getElementIds(label).at(0);
+
+    TEST_DATA_T new_val = 1000;
+    GenerateAndAddVector<TEST_DATA_T>(index, dim, label, new_val);
+
+    ASSERT_EQ(VecSimIndex_IndexSize(index), n);
+    ASSERT_EQ(hnsw_index->getElementIds(label).at(0), id_before);
+
+    // No other label's id moved - only the overwritten label's own slot was touched.
+    for (size_t i = 0; i < n; i++) {
+        if (i == label) {
+            continue;
+        }
+        ASSERT_EQ(hnsw_index->getElementIds(i).at(0), i);
+    }
+
+    // The graph is still fully, correctly connected after the in-place overwrite, and the new
+    // value is actually there and searchable under the same label.
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, new_val);
+    ASSERT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, label, query), 0);
 
     VecSimIndex_Free(index);
 }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-FileCopyrightText: Modifications Copyright 2026 Arm Limited and/or its affiliates
+ * <open-source-office@arm.com>
+ */
 #include "benchmark/bm_vecsim_basics.h"
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
@@ -7,7 +11,8 @@
 ***************************************/
 
 bool BM_VecSimGeneral::is_multi = false;
-uint32_t BM_VecSimGeneral::enabled_index_types = DEFAULT_BM_INDEXES_MASK;
+uint32_t BM_VecSimGeneral::enabled_index_types =
+    DEFAULT_BM_INDEXES_MASK | INDEX_MASK_HNSW_SQ8 | INDEX_MASK_TIERED_HNSW_SQ8;
 
 size_t BM_VecSimGeneral::n_queries = 10000;
 size_t BM_VecSimGeneral::n_vectors = 1000000;
@@ -32,6 +37,9 @@ DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, HNSW), fp32_index_t, HNSWIndex_Sin
                     INDEX_HNSW)
 DEFINE_DELETE_LABEL(BM_FUNC_NAME(DeleteLabel, Tiered), fp32_index_t, TieredHNSWIndex, float, float,
                     INDEX_TIERED_HNSW)
+DEFINE_DELETE_LABEL_WITH_DATA_SOURCE(BM_FUNC_NAME(DeleteLabel, Tiered_SQ8), fp32_index_t,
+                                     TieredHNSWIndex, BruteForceIndex_Single, float, float,
+                                     INDEX_TIERED_HNSW_SQ8, INDEX_BF)
 
 // Test Oscilations
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Single),

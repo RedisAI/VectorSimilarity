@@ -39,6 +39,10 @@ private:
         }
         return it->second;
     }
+    inline size_t getLabelSize(labelType label) const override {
+        auto it = labelLookup.find(label);
+        return it == labelLookup.end() ? 0 : it->second.size();
+    }
     inline void resizeLabelLookup(size_t new_max_elements) override;
 
     // Return all the labels in the index - this should be used for computing the number of distinct
@@ -145,6 +149,20 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    idType popLastIdFromLabel(labelType label) override {
+        auto it = labelLookup.find(label);
+        assert(it != labelLookup.end());
+
+        auto &ids = it->second;
+        assert(!ids.empty());
+
+        const idType id = ids.back();
+        ids.pop_back();
+        if (ids.empty()) {
+            labelLookup.erase(it);
+        }
+        return id;
+    }
     bool isLabelExists(labelType label) override {
         return labelLookup.find(label) != labelLookup.end();
     }

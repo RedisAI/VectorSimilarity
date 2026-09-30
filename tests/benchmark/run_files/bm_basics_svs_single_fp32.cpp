@@ -22,6 +22,12 @@ const char *BM_VecSimSVS<DATA_TYPE_INDEX_T>::svs_index_tar_file =
 const char *BM_VecSimGeneral::test_queries_file =
     "tests/benchmark/data/dbpedia-cosine-dim768-1M-vectors.raw";
 
+const char *BM_VecSimGeneral::hnsw_index_file =
+    "tests/benchmark/data/dbpedia-cosine-dim768-M64-efc512.hnsw_v3";
+template <>
+const char *BM_VecSimSVS<DATA_TYPE_INDEX_T>::search_queries_file =
+    "tests/benchmark/data/dbpedia-cosine-dim768-test_vectors.raw";
+
 #define BM_FUNC_NAME(bm_func) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, SVS, NONE)
 
 #include "benchmark/bm_initialization/bm_basics_svs_initialize_fp32.h"
