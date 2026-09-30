@@ -70,6 +70,8 @@ the benchmark workflow or `make benchmark BM_FILTER=<selection>`.
 
 SVS and SQ8 training share the threshold insertion and completion measurement.
 Both exclude index and worker-pool destruction from timing.
+Asynchronous training cases of both report wall time as `real_time`; the SVS cases also
+report summed worker CPU as `cpu_time`, which is not comparable across algorithms.
 SQ8 training cases create a fresh index and accumulate vectors before timing.
 `BM_Train` times the threshold insertion through synchronous backend ingestion.
 `BM_TrainAsync` includes waiting for all initial insertion jobs. These measure the
