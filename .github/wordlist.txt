@@ -82,3 +82,6 @@ DBpedia
 unquantized
 backend
 queueing
+SVS
+LVQ
+allocator

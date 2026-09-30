@@ -28,7 +28,8 @@ BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TrainAsyncNoCompression)
                    {static_cast<long int>(BM_VecSimGeneral::block_size)},
                    {4, 8, 16}})
     ->ArgNames({"quant_bits", "training_threshold", "thread_count"})
-    ->MeasureProcessCPUTime();
+    ->MeasureProcessCPUTime()
+    ->UseRealTime();
 
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_TrainCompressed, DATA_TYPE_INDEX_T)
 (benchmark::State &st) { Train(st); }
@@ -42,4 +43,5 @@ BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_TrainCompressedAsync)
     ->UNIT_AND_ITERATIONS
     ->ArgsProduct({QUANT_BITS_ARGS, COMPRESSED_ASYNC_TRAINING_THRESHOLD_ARGS, {4, 8, 16}})
     ->ArgNames({"quant_bits", "training_threshold", "thread_count"})
-    ->MeasureProcessCPUTime();
+    ->MeasureProcessCPUTime()
+    ->UseRealTime();

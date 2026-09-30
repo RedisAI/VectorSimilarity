@@ -32,7 +32,8 @@ public:
 
     static void AddLabel_AsyncIngest(benchmark::State &st);
 
-    static void DeleteLabel_AsyncRepair(benchmark::State &st);
+    static void DeleteLabel_AsyncRepair(benchmark::State &st,
+                                        IndexTypeIndex index_type = INDEX_TIERED_HNSW);
 
     // We pass a specific index pointer instead of VecSimIndex * so we can use GetDataByLabel
     // which is not known to VecSimIndex class.
@@ -160,9 +161,10 @@ void BM_VecSimBasics<index_type_t>::AddLabel_AsyncIngest(benchmark::State &st) {
     // Note we loop over the new labels and not the internal ids. This way in multi indices BM all
     // the new vectors added under the same label will be removed in one call.
     size_t new_label_count = index->indexLabelCount();
-    // Remove directly inplace from the underline HNSW index.
+    // Remove directly from the tiered index's HNSW backend.
+    auto backend_type = st.range(0) == INDEX_TIERED_HNSW_SQ8 ? INDEX_HNSW_SQ8 : INDEX_HNSW;
     for (size_t label_ = initial_label_count; label_ < new_label_count; label_++) {
-        VecSimIndex_DeleteVector(GET_INDEX(INDEX_HNSW), label_);
+        VecSimIndex_DeleteVector(GET_INDEX(backend_type), label_);
     }
 
     assert(VecSimIndex_IndexSize(index) == N_VECTORS);
@@ -224,11 +226,15 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel(
 }
 
 template <typename index_type_t>
-void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st) {
+void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st,
+                                                            IndexTypeIndex index_type) {
     // Remove a different vector in every execution.
     size_t label_to_remove = 0;
-    auto *tiered_index =
-        dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(INDEX_TIERED_HNSW));
+    auto *tiered_index = dynamic_cast<TieredHNSWIndex<data_t, dist_t> *>(GET_INDEX(index_type));
+    auto *data_source =
+        index_type == INDEX_TIERED_HNSW_SQ8
+            ? dynamic_cast<VecSimIndexAbstract<data_t, dist_t> *>(GET_INDEX(INDEX_BF))
+            : nullptr;
 
     tiered_index->fitMemory();
     double memory_before = tiered_index->getAllocationSize();
@@ -240,7 +246,11 @@ void BM_VecSimBasics<index_type_t>::DeleteLabel_AsyncRepair(benchmark::State &st
         st.PauseTiming();
         LabelData data(0);
         // Get label id(s) data.
-        tiered_index->getDataByLabel(label_to_remove, data);
+        if (data_source) {
+            data_source->getDataByLabel(label_to_remove, data);
+        } else {
+            tiered_index->getDataByLabel(label_to_remove, data);
+        }
 
         removed_labels_data.push_back(data);
 

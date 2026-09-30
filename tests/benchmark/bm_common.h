@@ -28,14 +28,16 @@ public:
     // index_offset: Offset added to base index types to access variants (0=original, 1=updated)
 
     static void RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter, size_t k,
-                             std::atomic_int &correct, unsigned short index_offset = 0);
+                             std::atomic_int &correct, unsigned short index_offset = 0,
+                             IndexTypeIndex index_type = INDEX_HNSW);
 
     // Search for the K closest vectors to the query in the index. K is defined in the
     // test registration (initialization file).
     static void TopK_BF(benchmark::State &st, unsigned short index_offset = 0);
     // Run TopK using both HNSW and flat index and calculate the recall of the HNSW algorithm
     // with respect to the results returned by the flat index.
-    static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0);
+    static void TopK_HNSW(benchmark::State &st, unsigned short index_offset = 0,
+                          IndexTypeIndex index_type = INDEX_HNSW);
     static void TopK_Tiered(benchmark::State &st, unsigned short index_offset = 0,
                             IndexTypeIndex index_type = INDEX_TIERED_HNSW);
 
@@ -46,11 +48,12 @@ public:
 template <typename index_type_t>
 void BM_VecSimCommon<index_type_t>::RunTopK_HNSW(benchmark::State &st, size_t ef, size_t iter,
                                                  size_t k, std::atomic_int &correct,
-                                                 unsigned short index_offset) {
+                                                 unsigned short index_offset,
+                                                 IndexTypeIndex index_type) {
     HNSWRuntimeParams hnswRuntimeParams = {.efRuntime = ef};
     auto query_params = BM_VecSimGeneral::CreateQueryParams(hnswRuntimeParams);
     auto hnsw_results =
-        VecSimIndex_TopKQuery(GET_INDEX(INDEX_HNSW + index_offset),
+        VecSimIndex_TopKQuery(GET_INDEX(index_type + index_offset),
                               QUERIES[iter % N_QUERIES].data(), k, &query_params, BY_SCORE);
     st.PauseTiming();
 
@@ -92,13 +95,14 @@ void BM_VecSimCommon<index_type_t>::TopK_BF(benchmark::State &st, unsigned short
 }
 
 template <typename index_type_t>
-void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned short index_offset) {
+void BM_VecSimCommon<index_type_t>::TopK_HNSW(benchmark::State &st, unsigned short index_offset,
+                                              IndexTypeIndex index_type) {
     size_t ef = st.range(0);
     size_t k = st.range(1);
     std::atomic_int correct = 0;
     size_t iter = 0;
     for (auto _ : st) {
-        RunTopK_HNSW(st, ef, iter, k, correct, index_offset);
+        RunTopK_HNSW(st, ef, iter, k, correct, index_offset, index_type);
         iter++;
     }
     st.counters["Recall"] = (float)correct / (float)(k * iter);
