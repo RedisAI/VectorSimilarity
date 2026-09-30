@@ -68,3 +68,8 @@ BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_TopK))
     ->Args({200, 100})
     ->Args({500, 500})
     ->ArgNames({"window_size", "k"});
+
+// Allocator memory of the loaded backend, without the exact-reference index.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimSVS, BM_FUNC_NAME(BM_Memory), DATA_TYPE_INDEX_T)
+(benchmark::State &st) { Memory(st); }
+BENCHMARK_REGISTER_F(BM_VecSimSVS, BM_FUNC_NAME(BM_Memory))->Iterations(1);

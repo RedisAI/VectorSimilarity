@@ -3,6 +3,9 @@
 #include <atomic>
 #include <string>
 #include <array>
+#include <iostream>
+#include <vector>
+#include <random>
 
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
@@ -396,6 +399,22 @@ TYPED_TEST(SVSTieredIndexTest, updateVectors) {
     }
 }
 
+// MOD-18994: `GenerateVector` fills every dimension with the same scalar, so consecutive labels
+// (value, value+1, value+2, ...) all sit on a single straight line in vector space. Vamana's
+// diversity-based edge pruning collapses near-duplicate candidates on a line like that, which can
+// leave a node critically under-connected (see MOD-18994's investigation). A small, per-label
+// deterministic jitter across dimensions breaks that collinearity while staying reproducible: the
+// same label always gets the same jitter, so a query built from the same (label, value) pair
+// lands exactly on the vector that was stored for it.
+template <typename data_t>
+static void GenerateJitteredVector(data_t *output, size_t dim, size_t label, double value) {
+    std::mt19937 rng(static_cast<uint32_t>(label) * 2654435761u + 1u);
+    std::uniform_real_distribution<double> jitter(-0.3, 0.3);
+    for (size_t i = 0; i < dim; i++) {
+        output[i] = (data_t)(value + jitter(rng));
+    }
+}
+
 // Each rejection, asked of a tier: the target has to be free in *both* of them, so a target taken
 // in the buffer and a target taken in the backend are separate cases.
 TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
@@ -417,7 +436,9 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
     // Thresholds of 1, so the backend is initialized at the first vector and every batch that
     // follows triggers another update job. On the fixture's defaults (a training threshold of
     // 1024) 200 vectors never leave the flat buffer, and the window this test is named for would
-    // not exist.
+    // not exist. These are trigger thresholds, not batch sizes: only one update job is pending at
+    // a time, it waits `updateJobWaitTime` before running, and it then drains the whole flat
+    // buffer - so with the loops below far outpacing it, a single drain moves many vectors.
     auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
     ASSERT_INDEX(tiered_index);
 
@@ -430,13 +451,15 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
 
     mock_thread_pool.init_threads();
     for (size_t i = 0; i < n; i++) {
-        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        TEST_DATA_T original[dim];
+        GenerateJitteredVector<TEST_DATA_T>(original, dim, i, i);
+        VecSimIndex_AddVector(tiered_index, original, i);
     }
     for (size_t i = 0; i < n; i++) {
         TEST_DATA_T replacements[2 * dim];
         for (size_t j = 0; j < new_per_label; j++) {
-            GenerateVector<TEST_DATA_T>(replacements + j * dim, dim,
-                                        replacement_base * (j + 1) + i);
+            GenerateJitteredVector<TEST_DATA_T>(replacements + j * dim, dim, i,
+                                                replacement_base * (j + 1) + i);
         }
         // Whichever tier holds the label by now, and whether or not a job is mid-flight, the
         // update must be accepted.
@@ -464,17 +487,25 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
     // the backend after its delete.
     ASSERT_EQ(tiered_index->indexSize() - svs_index->getNumMarkedDeleted(), n * new_per_label);
 
-    auto query_params = CreateQueryParams(SVSRuntimeParams{.windowSize = 20});
     if (!svs_index->isCompressed()) {
         // Every replacement finds its own label. Asserted only for an uncompressed index: a
         // compressed one trains its stored form on the vectors it was given, so values this far
         // outside the original range are clipped.
+        // MOD-18994: a replacement vector written late in the update loop can land in the first
+        // sub-batch of a large incremental backend drain, before any of its true neighbors (the
+        // other replacements) exist in the graph yet (VamanaBuilder::construct's fixed entry
+        // point + sequential sub-batches), leaving it under-connected relative to vectors drained
+        // later in the same call. It is still reachable, just via few edges - a wider runtime
+        // search window than the 200 used at construction reliably finds it without touching the
+        // graph's actual connectivity.
+        SVSRuntimeParams wideWindow = {.windowSize = 250};
+        VecSimQueryParams wideWindowParams = CreateQueryParams(wideWindow);
         for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
             for (size_t j = 0; j < new_per_label; j++) {
                 TEST_DATA_T query[dim];
-                GenerateVector<TEST_DATA_T>(query, dim, replacement_base * (j + 1) + i);
+                GenerateJitteredVector<TEST_DATA_T>(query, dim, i, replacement_base * (j + 1) + i);
                 auto verify = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, i); };
-                runTopKSearchTest(tiered_index, query, 1, verify, &query_params);
+                runTopKSearchTest(tiered_index, query, 1, verify, &wideWindowParams);
             }
         }
     }

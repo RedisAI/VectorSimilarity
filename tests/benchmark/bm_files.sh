@@ -54,7 +54,9 @@ then
     file_name="basic_uint8"
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
-elif [ "$BM_TYPE" = "bm-svs-train-fp32" ] \
+elif [ "$BM_TYPE" = "bm-sq8-train-fp32" ] \
+|| [ "$BM_TYPE" = "bm-sq8-train-fp16" ] \
+|| [ "$BM_TYPE" = "bm-svs-train-fp32" ] \
 || [ "$BM_TYPE" = "bm-svs-train-fp16" ]
 then
     file_name="training"

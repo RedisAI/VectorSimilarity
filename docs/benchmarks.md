@@ -19,11 +19,83 @@ $$
 # Run benchmarks
 ## Required files
 The serialized indices files that are used for micro-benchmarking and running ann-benchmark can be found in
-`tests/benchmark/data/hnsw_indices.txt`.
+`tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt`.
 To download all the required files, run from the repository root directory:
 ```sh
 wget --no-check-certificate -q -i tests/benchmark/data/hnsw_indices/hnsw_indices_all.txt -P tests/benchmark/data
 ```
+### SQ8 inputs for FP32/FP16 basics
+
+The single-value (DBpedia) and multi-value (fashion) FP32/FP16 basics binaries also load SQ8
+indexes. The V5 SQ8 snapshots are included in the download list above and in the corresponding
+`hnsw_indices_basic_fp32.txt` and `hnsw_indices_basic_fp16.txt` lists. They are required even when
+a benchmark filter selects only an unquantized case, because fixture initialization happens before
+filtering. To regenerate them from the original V3 indexes, install the current Python bindings and run:
+
+```sh
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp32
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset dbpedia --type fp16
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset fashion --type fp32
+poetry run python tests/benchmark/data/scripts/convert_to_sq8.py --dataset fashion --type fp16
+```
+
+Each command rebuilds the graph and writes `*-sq8.hnsw_v5` next to its source index in
+`tests/benchmark/data`. Run only the conversions needed for the basics binaries you intend to use.
+The converter represents cosine as inner product on normalized vectors, and the SQ8-enabled
+fixtures normalize the shared queries before timing. External consumers of these SQ8 files must
+also normalize their queries. The SQ8 range recall counter measures overlap with exact results;
+it is omitted when there are no exact results across the measured queries.
+
+These are steady-state benchmarks over an already built backend; they do not measure training or
+the accumulation-to-backend transition. Tiered TopK reports batch completion time divided by 50 queries.
+Use `real_time`, which includes queueing and the mock pool's 10 ms completion polling.
+
+### Comparing HNSW SQ8 and SVS
+
+The FP32/FP16 basics suites include direct HNSW SQ8 memory, add and TopK cases,
+and tiered SQ8 asynchronous ingestion and deletion repair. Direct TopK avoids the
+thread-pool polling included in tiered TopK. Asynchronous ingestion includes waiting for
+workers; asynchronous deletion repair reports final swap cleanup separately as
+`cleanup_time`, following the existing HNSW benchmark.
+
+SVS TopK uses the same normalized, held-out DBpedia query file and exact reference
+vectors/labels as HNSW TopK. Its `Recall` counter measures label overlap with brute
+force outside timing. The SVS download lists include the unquantized HNSW snapshot
+needed to build this reference. `BM_Memory` reports allocator memory for the loaded
+SVS backend, excluding the reference index; compare it with HNSW SQ8 backend memory.
+
+For initial training and ingestion, select `bm-sq8-train-fp32`,
+`bm-sq8-train-fp16`, `bm-svs-train-fp32` or `bm-svs-train-fp16` using
+the benchmark workflow or `make benchmark BM_FILTER=<selection>`.
+
+SVS and SQ8 training share the threshold insertion and completion measurement.
+Both exclude index and worker-pool destruction from timing.
+Asynchronous training cases of both report wall time as `real_time`; the SVS cases also
+report summed worker CPU as `cpu_time`, which is not comparable across algorithms.
+SQ8 training cases create a fresh index and accumulate vectors before timing.
+`BM_Train` times the threshold insertion through synchronous backend ingestion.
+`BM_TrainAsync` includes waiting for all initial insertion jobs. These measure the
+transition to a populated backend, not just calculating quantization parameters.
+`BM_AddVectorsDuringInitialIngest` times a batch of 1000 writes after starting the
+initial insertion workers; it drains remaining jobs outside timing. Worker progress
+can vary, so not every write is guaranteed to overlap initial ingestion. The mock
+pool polls completion every 10 ms; small asynchronous timing differences can reflect polling.
+
+Compare each algorithm on the same host, input type, dataset, query set and worker
+count, and repeat measurements. Report latency against recall and allocator memory
+rather than choosing a winner from one search setting: HNSW `ef_runtime` and SVS
+`window_size` are different controls. The existing DBpedia snapshots use HNSW M=64
+and SVS graph degree 128, both with construction window/`efConstruction` 512. SQ8
+training uses M=64; existing SVS training uses degree 128. These are configuration
+comparisons, not isolated comparisons of quantization kernels.
+
+SVS compression also depends on the build: the loaded LVQ8 benchmark runs only with
+`HAVE_SVS_LVQ`; other builds register a dummy case. That dummy is not a measurement.
+The SVS training suite can use scalar compression on those builds, but comparing
+compressed query performance there requires a corresponding SVS snapshot. Record
+the actual compression, compiler, SVS version and CPU with results. Cross-host results
+compare complete machines; they do not isolate instruction-set performance.
+
 To run all test sets, call the following commands from the project root dir:
 ```sh
 make benchmark

@@ -9,6 +9,7 @@
 
 #pragma once
 #include "bm_vecsim_general.h"
+#include "bm_training_utils.h"
 #include "bm_macros.h"
 #include "VecSim/algorithms/svs/svs_tiered.h"
 #include "VecSim/index_factories/tiered_factory.h"
@@ -25,7 +26,8 @@ public:
     BM_VecSimSVS() : data_type(index_type_t::get_index_type()) {
         if (!is_initialized) {
             VecSim_SetLogCallbackFunction(nullptr);
-            loadTestVectors(AttachRootPath(test_queries_file));
+            test_vectors = benchmark_utils::LoadTrainingVectors<data_t>(
+                AttachRootPath(test_queries_file), N_QUERIES, dim);
             if (svs_index_tar_file) {
                 base_path = AttachRootPath("tests/benchmark/data");
                 extractTarGz(BM_VecSimGeneral::AttachRootPath(svs_index_tar_file), base_path);
@@ -57,9 +59,14 @@ public:
     // TopK search benchmark. The search window size and k are provided by the benchmark
     // registration.
     void TopK_SVS(benchmark::State &st);
+    void Memory(benchmark::State &st);
 
 private:
     static const char *svs_index_tar_file;
+    static const char *search_queries_file;
+    inline static IndexPtr reference_index;
+    inline static std::vector<std::vector<data_t>> search_queries;
+    static void InitializeSearchReference();
     static std::string base_path;
 
     // Quant bits can be controlled by the benchmark framework, or by changed by a running benchmark
@@ -71,8 +78,6 @@ private:
     static bool is_initialized;
     static std::vector<std::vector<data_t>> test_vectors;
 
-    static void InsertToQueries(std::ifstream &input);
-    static void loadTestVectors(const std::string &test_file);
     static void extractTarGz(const std::string &filename, const std::string &destination) {
 
         // Extract tar.gz
@@ -84,7 +89,7 @@ private:
     }
 
     template <bool is_async>
-    void runTrainBMIteration(benchmark::State &st, tieredIndexMock &mock_thread_pool,
+    bool runTrainBMIteration(benchmark::State &st, tieredIndexMock &mock_thread_pool,
                              size_t training_threshold);
 
     TieredSVSIndex<data_t> *
@@ -185,6 +190,9 @@ private:
 };
 
 template <typename index_type_t>
+const char *BM_VecSimSVS<index_type_t>::search_queries_file = nullptr;
+
+template <typename index_type_t>
 bool BM_VecSimSVS<index_type_t>::is_initialized = false;
 template <typename index_type_t>
 VecSimSvsQuantBits BM_VecSimSVS<index_type_t>::quantBits = VecSimSvsQuant_NONE;
@@ -198,96 +206,28 @@ template <>
 std::vector<std::vector<vecsim_types::float16>> BM_VecSimSVS<fp16_index_t>::test_vectors{};
 
 template <typename index_type_t>
-void BM_VecSimSVS<index_type_t>::loadTestVectors(const std::string &test_file) {
-
-    std::ifstream input(test_file, std::ios::binary);
-    std::cout << "loading test vectors from " << test_file << std::endl;
-
-    if (!input.is_open()) {
-        throw std::runtime_error("Test vectors file was not found in path. Exiting...");
-    }
-    input.seekg(0, std::ifstream::beg);
-
-    InsertToQueries(input);
-}
-
-template <typename index_type_t>
-void BM_VecSimSVS<index_type_t>::InsertToQueries(std::ifstream &input) {
-
-    std::vector<data_t> query(dim);
-    for (size_t i = 0; i < N_QUERIES; ++i) {
-        ASSERT_TRUE(input.read((char *)query.data(), dim * sizeof(data_t)));
-        test_vectors.push_back(query);
-    }
-    std::cout << "loaded " << test_vectors.size() << " test vectors" << std::endl;
-}
-
-template <typename index_type_t>
 template <bool is_async>
-void BM_VecSimSVS<index_type_t>::runTrainBMIteration(benchmark::State &st,
+bool BM_VecSimSVS<index_type_t>::runTrainBMIteration(benchmark::State &st,
                                                      tieredIndexMock &mock_thread_pool,
                                                      size_t training_threshold) {
     this->quantBits = static_cast<VecSimSvsQuantBits>(st.range(0));
     auto *tiered_index = CreateTieredSVSIndex(mock_thread_pool, training_threshold);
 
-    // Verify write mode
-    if (mock_thread_pool.thread_pool_size) {
-        ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteAsync);
-    } else {
-        ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteInPlace);
+    const auto expected_mode = is_async ? VecSim_WriteAsync : VecSim_WriteInPlace;
+    if (VecSimIndexInterface::asyncWriteMode != expected_mode) {
+        st.SkipWithError("Unexpected SVS training write mode");
+        return false;
     }
-
-    auto verify_index_size = [&](size_t expected_tiered_index_size, size_t expected_frontend_size,
-                                 size_t expected_backend_size, std::string msg = "") {
-        VecSimIndexDebugInfo info = VecSimIndex_DebugInfo(tiered_index);
-        auto backend_info = info.tieredInfo.backendCommonInfo;
-        auto frontend_info = info.tieredInfo.frontendCommonInfo;
-        ASSERT_EQ(info.commonInfo.indexSize, expected_tiered_index_size) << msg;
-        ASSERT_EQ(backend_info.indexSize, expected_backend_size) << msg;
-        ASSERT_EQ(frontend_info.indexSize, expected_frontend_size) << msg;
-    };
-
-    // Phase 1: Accumulate vectors in the flat buffer (frontend index) without triggering training.
-    // Add (training_threshold - 1) vectors to stay below the training threshold.
-    for (size_t i = 0; i < training_threshold - 1; ++i) {
-        VecSimIndex_AddVector(tiered_index, test_vectors[i].data(), i);
+    if (!benchmark_utils::RunTrainingIteration<is_async>(st, tiered_index, mock_thread_pool,
+                                                         test_vectors, training_threshold)) {
+        return false;
     }
-    // Expect frontend index size is (training_threshold - 1) and backend index size is 0
-    verify_index_size(training_threshold - 1, training_threshold - 1, 0,
-                      (std::ostringstream() << "added training_threshold - 1 ("
-                                            << (training_threshold - 1) << ") vectors")
-                          .str());
-
-    // start threads
-    if constexpr (is_async)
-        mock_thread_pool.init_threads();
-
-    // Start timer
-    st.ResumeTiming();
-
-    // Phase 2: Trigger training and backend index initialization.
-    // Adding this final vector reaches the training threshold, which triggers:
-    // 1. Training of the SVS backend index using all accumulated vectors
-    // 2. Transfer of all vectors from flat buffer to the to build the index.
-    VecSimIndex_AddVector(tiered_index, test_vectors[training_threshold - 1].data(),
-                          training_threshold - 1);
-    if constexpr (is_async)
-        mock_thread_pool.thread_pool_wait();
-
-    // Stop timer
-    st.PauseTiming();
-    // expect backend index size is training_threshold and frontend index size is 0
-    verify_index_size(training_threshold, 0, training_threshold,
-                      (std::ostringstream()
-                       << "added the training_threshold'th (" << training_threshold << ") vector")
-                          .str());
     if constexpr (is_async)
         test_utils::verifyNumThreads(tiered_index, mock_thread_pool.thread_pool_size,
                                      mock_thread_pool.thread_pool_size,
                                      std::string("runTrainBMIteration"));
 
-    // Resume for next iteration
-    st.ResumeTiming();
+    return true;
 }
 
 template <typename index_type_t>
@@ -300,8 +240,13 @@ void BM_VecSimSVS<index_type_t>::Train(benchmark::State &st) {
         st.PauseTiming();
         // In each iteration create a new index with 0 threads (in-place mode).
         // VecSim_UpdateThreadPoolSize(0) sets write mode to VecSim_WriteInPlace.
-        auto mock_thread_pool = tieredIndexMock(0);
-        runTrainBMIteration<false>(st, mock_thread_pool, training_threshold);
+        {
+            auto mock_thread_pool = tieredIndexMock(0);
+            if (!runTrainBMIteration<false>(st, mock_thread_pool, training_threshold)) {
+                return;
+            }
+        }
+        st.ResumeTiming();
     }
     ASSERT_EQ(VecSimIndexInterface::asyncWriteMode, VecSim_WriteInPlace);
 }
@@ -321,9 +266,14 @@ void BM_VecSimSVS<index_type_t>::TrainAsync(benchmark::State &st) {
     for (auto _ : st) {
         st.PauseTiming();
         // In each iteration create a new index
-        auto mock_thread_pool = tieredIndexMock(num_threads);
-        ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
-        runTrainBMIteration<true>(st, mock_thread_pool, training_threshold);
+        {
+            auto mock_thread_pool = tieredIndexMock(num_threads);
+            ASSERT_EQ(mock_thread_pool.thread_pool_size, num_threads);
+            if (!runTrainBMIteration<true>(st, mock_thread_pool, training_threshold)) {
+                return;
+            }
+        }
+        st.ResumeTiming();
     }
 }
 
@@ -468,28 +418,81 @@ void BM_VecSimSVS<index_type_t>::RunGC(benchmark::State &st) {
 }
 
 template <typename index_type_t>
+void BM_VecSimSVS<index_type_t>::InitializeSearchReference() {
+    if (!search_queries.empty()) {
+        return;
+    }
+    // Reuse the HNSW benchmark's exact vectors and labels, independently of SVS compression.
+    IndexPtr source(HNSWFactory::NewIndex(AttachRootPath(hnsw_index_file)));
+    auto *hnsw = dynamic_cast<HNSWIndex<data_t, dist_t> *>(static_cast<VecSimIndex *>(source));
+    if (!hnsw || hnsw->indexSize() != N_VECTORS) {
+        throw std::runtime_error("Search reference does not match the benchmark dataset");
+    }
+    BFParams params = {.type = index_type_t::get_index_type(),
+                       .dim = dim,
+                       .metric = VecSimMetric_Cosine,
+                       .multi = is_multi,
+                       .blockSize = block_size};
+    reference_index = IndexPtr(CreateNewIndex(params));
+    for (size_t i = 0; i < N_VECTORS; ++i) {
+        VecSimIndex_AddVector(reference_index, hnsw->getDataByInternalId(i),
+                              hnsw->getExternalLabel(i));
+    }
+    std::ifstream input(AttachRootPath(search_queries_file), std::ios::binary);
+    if (!input) {
+        throw std::runtime_error("Search queries file was not found");
+    }
+    std::vector<data_t> query(dim);
+    while (input.read(reinterpret_cast<char *>(query.data()), dim * sizeof(data_t))) {
+        // Match the shared normalized query inputs used by the SQ8 basics fixture.
+        VecSim_Normalize(query.data(), dim, index_type_t::get_index_type());
+        search_queries.push_back(query);
+    }
+    if (search_queries.empty() || input.gcount() != 0 || !input.eof()) {
+        throw std::runtime_error("Invalid search queries file");
+    }
+}
+
+template <typename index_type_t>
+void BM_VecSimSVS<index_type_t>::Memory(benchmark::State &st) {
+    IndexPtr index(CreateSVSIndexFromFile(1));
+    for (auto _ : st) {
+    }
+    st.counters["memory"] =
+        benchmark::Counter(static_cast<double>(VecSimIndex_StatsInfo(index).memory),
+                           benchmark::Counter::kDefaults, benchmark::Counter::OneK::kIs1024);
+}
+
+template <typename index_type_t>
 void BM_VecSimSVS<index_type_t>::TopK_SVS(benchmark::State &st) {
-    // Search window size (Vamana graph accuracy/latency tuning) and number of results, as
-    // defined by the benchmark registration.
     size_t window_size = st.range(0);
     size_t k = st.range(1);
-
-    // Load the SVS index from file (update_threshold is irrelevant for a search-only benchmark).
-    auto *index = CreateSVSIndexFromFile(1);
-
-    SVSRuntimeParams svs_params = {.windowSize = window_size};
-
-    VecSimQueryParams query_params = {.svsRuntimeParams = svs_params};
-
-    size_t iter = 0;
-    for (auto _ : st) {
-        auto results = VecSimIndex_TopKQuery(index, test_vectors[iter % N_QUERIES].data(), k,
-                                             &query_params, BY_SCORE);
-        VecSimQueryReply_Free(results);
-        iter++;
+    InitializeSearchReference();
+    IndexPtr index(CreateSVSIndexFromFile(1));
+    if (VecSimIndex_IndexSize(index) != N_VECTORS) {
+        st.SkipWithError("SVS snapshot size does not match the search reference");
+        return;
     }
-
-    VecSimIndex_Free(index);
+    SVSRuntimeParams svs_params = {.windowSize = window_size};
+    VecSimQueryParams query_params = {.svsRuntimeParams = svs_params};
+    size_t iter = 0;
+    size_t total_exact_results = 0;
+    std::atomic_int correct = 0;
+    for (auto _ : st) {
+        const auto &query = search_queries[iter % search_queries.size()];
+        auto results = VecSimIndex_TopKQuery(index, query.data(), k, &query_params, BY_SCORE);
+        st.PauseTiming();
+        auto exact = VecSimIndex_TopKQuery(reference_index, query.data(), k, nullptr, BY_SCORE);
+        total_exact_results += VecSimQueryReply_Len(exact);
+        MeasureRecall(results, exact, correct);
+        VecSimQueryReply_Free(exact);
+        VecSimQueryReply_Free(results);
+        ++iter;
+        st.ResumeTiming();
+    }
+    if (total_exact_results) {
+        st.counters["Recall"] = static_cast<double>(correct) / total_exact_results;
+    }
 }
 
 #define UNIT_AND_ITERATIONS Unit(benchmark::kMillisecond)->Iterations(2)

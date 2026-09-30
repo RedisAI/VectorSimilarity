@@ -1,6 +1,8 @@
 /*
  * Copyright (c) 2006-Present, Redis Ltd.
  * All rights reserved.
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+ * <open-source-office@arm.com>
  *
  * Licensed under your choice of the Redis Source Available License 2.0
  * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
@@ -164,6 +166,46 @@ void BM_VecSimIndex<index_type_t>::Initialize() {
         }
     }
 
+    if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW_SQ8) {
+        // Initialize and load SQ8-quantized HNSW index.
+        std::string hnsw_sq8_index_file = hnsw_index_file;
+        hnsw_sq8_index_file.replace(hnsw_sq8_index_file.find(".hnsw_v3"),
+                                    std::string(".hnsw_v3").length(), "-sq8.hnsw_v5");
+        indices[INDEX_HNSW_SQ8] =
+            IndexPtr(HNSWFactory::NewIndex(AttachRootPath(hnsw_sq8_index_file), true));
+
+        auto *hnsw_sq8_index = CastToHNSW(indices[INDEX_HNSW_SQ8]);
+
+        // Create tiered index from the loaded SQ8 HNSW index.
+        if (enabled_index_types & IndexTypeFlags::INDEX_MASK_TIERED_HNSW_SQ8) {
+            // Reuse existing mock_thread_pool if already created, otherwise create one.
+            if (!BM_VecSimGeneral::mock_thread_pool) {
+                BM_VecSimGeneral::mock_thread_pool = new tieredIndexMock();
+                BM_VecSimGeneral::mock_thread_pool->init_threads();
+            }
+            auto &mock_thread_pool = *BM_VecSimGeneral::mock_thread_pool;
+            TieredIndexParams tiered_params = {
+                .jobQueue = &mock_thread_pool.jobQ,
+                .jobQueueCtx = mock_thread_pool.ctx,
+                .submitCb = tieredIndexMock::submit_callback,
+                .flatBufferLimit = block_size,
+                .primaryIndexParams = nullptr,
+                .specificParams = {
+                    TieredHNSWParams{.swapJobThreshold = 0, .QuantNormalizationSetSize = 0}}};
+
+            auto *sq8_tiered_index = TieredFactory::TieredHNSWFactory::NewIndex<data_t, dist_t>(
+                &tiered_params, hnsw_sq8_index);
+
+            indices[INDEX_TIERED_HNSW_SQ8] = IndexPtr(sq8_tiered_index);
+            if (!mock_thread_pool.ctx->index_strong_ref) {
+                mock_thread_pool.ctx->index_strong_ref =
+                    indices[INDEX_TIERED_HNSW_SQ8].get_shared();
+            }
+            // Release HNSW_SQ8 ownership since tiered will free it
+            indices[INDEX_HNSW_SQ8].release_ownership();
+        }
+    }
+
     // Load the test query vectors from file. Index file path is relative to repository root dir.
     loadTestVectors(AttachRootPath(test_queries_file), type);
     VecSim_SetLogCallbackFunction(nullptr);
@@ -187,6 +229,11 @@ void BM_VecSimIndex<index_type_t>::InsertToQueries(std::ifstream &input) {
     for (size_t i = 0; i < n_queries; i++) {
         std::vector<data_t> query(dim);
         input.read((char *)query.data(), dim * sizeof(data_t));
+        if (enabled_index_types & IndexTypeFlags::INDEX_MASK_HNSW_SQ8) {
+            // The SQ8 converter represents cosine as IP on normalized vectors. Normalize the
+            // shared query input too, so range radii and inserted vectors use the same scale.
+            VecSim_Normalize(query.data(), dim, index_type_t::get_index_type());
+        }
         queries.push_back(query);
     }
 }

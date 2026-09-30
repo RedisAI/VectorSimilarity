@@ -30,10 +30,13 @@ size_t EstimateElementSize(const HNSWParams *params);
 size_t EstimateElementSize(const HNSWParams *params, bool with_mean);
 
 #ifdef BUILD_TESTS
-// Factory function to be used before loading a serialized index.
-// @params is only used for backward compatibility with V1. It won't be used if V2 and up is loaded.
-// Required fields: type, dim, metric and multi
-// Permission fields that *** must be initalized to zero ***: blockSize, epsilon *
+/** Load a serialized HNSW index.
+ *
+ * For SQ8 indexes with Cosine metric, pass is_normalized=true when the stored vectors were
+ * pre-normalized before insertion. This loads the SQ8 backend using inner product, which is
+ * equivalent to cosine for those vectors. Queries supplied to the loaded index must also be
+ * normalized. The default false value intentionally rejects standalone SQ8 Cosine indexes.
+ */
 VecSimIndex *NewIndex(const std::string &location, bool is_normalized = false);
 
 #endif

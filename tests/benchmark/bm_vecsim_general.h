@@ -37,6 +37,8 @@ class BM_VecSimGeneral : public benchmark::Fixture {
 public:
     // block_size is public because it is used to define the number of iterations on some test cases
     static size_t block_size;
+    // Shared by tiered TopK result buffers and their benchmark registration.
+    static constexpr size_t tiered_topk_iterations = 50;
 
 protected:
     static size_t dim;
