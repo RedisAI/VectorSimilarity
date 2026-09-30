@@ -2042,10 +2042,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsAndEntryPoint(
 }
 
 template <typename DataType, typename DistType>
-HNSWAddVectorState
-HNSWIndex<DataType, DistType>::storeNewElementInDeletedSlot(labelType label,
-                                                            const void *vector_data,
-                                                            idType deletedId) {
+HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElementInDeletedSlot(
+    labelType label, const void *vector_data, idType deletedId) {
     assert(isMarkedDeleted(deletedId) && "Only a marked-deleted element's slot may be reclaimed");
     // Normally a no-op, since the last repair of a deleted element isolates it. Not when its
     // repairs were invalidated instead of run (their node was disposed), which leaves its edges

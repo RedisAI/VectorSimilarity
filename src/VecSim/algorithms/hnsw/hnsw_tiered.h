@@ -743,8 +743,8 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSWReusingId(
     this->invalidateRepairJobs(reused_id);
 
     hnsw_index->lockIndexDataGuard();
-    auto state = hnsw_index->storeNewElementInDeletedSlot(
-        label, processed_blobs.getStorageBlob(), reused_id);
+    auto state = hnsw_index->storeNewElementInDeletedSlot(label, processed_blobs.getStorageBlob(),
+                                                          reused_id);
     this->flatIndexGuard.unlock_shared();
 
     if (state.elementMaxLevel <= state.currMaxLevel) {
