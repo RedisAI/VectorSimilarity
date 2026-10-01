@@ -370,9 +370,11 @@ void BM_VecSimBasics<index_type_t>::UpdateLabel(benchmark::State &st) {
     size_t updated = 0;
     std::vector<data_t> blobs;
     std::vector<std::vector<data_t>> first_vectors;
+    // Reused across iterations so the previous label's copy is freed while timing is paused.
+    LabelData data(0);
     for (auto _ : st) {
         st.PauseTiming();
-        LabelData data(0);
+        data.clear();
         source->getDataByLabel(label, data);
         if (data.empty()) {
             st.SkipWithError("UpdateLabel ran past the loaded labels");
