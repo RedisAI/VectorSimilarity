@@ -2745,8 +2745,6 @@ TEST(SQ8FactoryTest, FP16QueriesShareStorageEncodingAndMatchReconstruction) {
     for (size_t dim : {size_t{7}, size_t{64}, size_t{65}}) {
         for (bool constant : {false, true}) {
             SCOPED_TRACE(::testing::Message() << "dim=" << dim << " constant=" << constant);
-            verifyFP16SQ8FactoryQuery<VecSimMetric_L2, false>(dim, constant);
-            verifyFP16SQ8FactoryQuery<VecSimMetric_L2, true>(dim, constant);
             verifyFP16SQ8FactoryQuery<VecSimMetric_IP, false>(dim, constant);
             verifyFP16SQ8FactoryQuery<VecSimMetric_IP, true>(dim, constant);
         }
@@ -2815,4 +2813,38 @@ TEST(SQ8FactoryTest, FP16CachedDispatchUsesUpdatedMean) {
     delete deferred.indexCalculator;
     delete direct.preprocessors;
     delete direct.indexCalculator;
+}
+
+TEST(SQ8FactoryTest, FP16L2KeepsAsymmetricQueriesNearLargeCenteredValues) {
+    using data_t = vecsim_types::float16;
+    constexpr size_t dim = 4;
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const std::vector<float> mean(dim, 0.4499877989292145f);
+    const std::vector<data_t> x(dim, vecsim_types::FP32_to_FP16(24.796875f));
+    const std::vector<data_t> y(dim, vecsim_types::FP32_to_FP16(25.0f));
+    for (bool with_mean : {false, true}) {
+        auto components = CreateSQ8IndexComponents<data_t, VecSimMetric_L2>(
+            allocator, dim, with_mean ? mean.data() : nullptr);
+        {
+            auto candidate =
+                components.preprocessors->preprocessForStorage(x.data(), dim * sizeof(data_t));
+            auto query = components.preprocessors->preprocessQuery(y.data(), dim * sizeof(data_t));
+            auto paired = components.preprocessors->preprocess(y.data(), dim * sizeof(data_t));
+            EXPECT_NE(paired.getStorageBlob(), paired.getQueryBlob());
+            if (with_mean) {
+                const auto *values = static_cast<const float *>(query.get());
+                for (size_t d = 0; d < dim; ++d)
+                    EXPECT_FLOAT_EQ(values[d], 25.0f - mean[d]);
+            } else {
+                EXPECT_EQ(std::memcmp(query.get(), y.data(), dim * sizeof(data_t)), 0);
+            }
+            constexpr float expected = dim * (25.0f - 24.796875f) * (25.0f - 24.796875f);
+            const auto dispatch =
+                components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+            EXPECT_NEAR(dispatch(candidate.get(), query.get(), dim), expected,
+                        1e-4f + expected * 0.002f);
+        }
+        delete components.preprocessors;
+        delete components.indexCalculator;
+    }
 }
