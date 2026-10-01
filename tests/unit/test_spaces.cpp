@@ -8,6 +8,8 @@
  */
 
 #include <array>
+#include <cassert>
+#include <cfenv>
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -33,6 +35,7 @@
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX512FP16_VL.h"
+#include "VecSim/spaces/functions/AVX512FP16_BW_VL.h"
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/AVX2_F16C.h"
@@ -3752,6 +3755,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_FP16_InnerProduct(v2_compressed.data(), v1_query.data(), dim);
 
+#ifdef OPT_AVX512_FP16_BW_VL
+    if (dim >= 32 && optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512_fp16) {
+        unsigned char alignment = 0;
+        arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim));
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim),
+                    1e-4f * std::max(1.0f, std::abs(baseline)))
+            << "AVX512FP16 with dim " << dim;
+        optimization.avx512_fp16 = 0;
+    }
+#endif
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -3878,6 +3893,18 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
     dist_func_t<float> arch_opt_func;
     float baseline = SQ8_FP16_Cosine(v2_compressed.data(), v1_query.data(), dim);
 
+#ifdef OPT_AVX512_FP16_BW_VL
+    if (dim >= 32 && optimization.avx512f && optimization.avx512bw && optimization.avx512vl &&
+        optimization.avx512_fp16) {
+        unsigned char alignment = 0;
+        arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+        ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim));
+        ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim),
+                    1e-4f * std::max(1.0f, std::abs(baseline)))
+            << "AVX512FP16 with dim " << dim;
+        optimization.avx512_fp16 = 0;
+    }
+#endif
 #ifdef OPT_AVX512F
     if (optimization.avx512f) {
         unsigned char alignment = 0;
@@ -5408,3 +5435,270 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_self_distance_is_near_zero) {
             << "dispatched kernel, dim " << dim;
     }
 }
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_BW_VL)
+namespace {
+
+struct SQ8FP16IPCase {
+    std::vector<uint8_t> storage;
+    std::vector<float16> query;
+    double decoded_distance;
+};
+
+SQ8FP16IPCase MakeSQ8FP16IPCase(size_t dim, float query_value = 0.0f, bool maximum_codes = false) {
+    SQ8FP16IPCase test_case{
+        std::vector<uint8_t>(dim + sq8::storage_metadata_count<VecSimMetric_IP>() * sizeof(float)),
+        std::vector<float16>(dim + sizeof(float) / sizeof(float16)), 0.0};
+    const float min_val = maximum_codes ? 0.0f : -0.125f;
+    const float delta = maximum_codes ? 1.0f / 255.0f : 1.0f / 256.0f;
+    float query_sum = 0.0f;
+    double decoded_dot = 0.0;
+    for (size_t i = 0; i < dim; ++i) {
+        const uint8_t code = maximum_codes ? 255 : static_cast<uint8_t>((i * 17 + 29) % 256);
+        const float value =
+            query_value == 0.0f ? static_cast<float>(i % 7 + 1) / 16.0f : query_value;
+        test_case.storage[i] = code;
+        test_case.query[i] = vecsim_types::FP32_to_FP16(value);
+        const float widened = vecsim_types::FP16_to_FP32(test_case.query[i]);
+        query_sum += widened;
+        decoded_dot += (static_cast<double>(min_val) + static_cast<double>(delta) * code) * widened;
+    }
+    std::memcpy(test_case.storage.data() + dim + sq8::MIN_VAL * sizeof(float), &min_val,
+                sizeof(min_val));
+    std::memcpy(test_case.storage.data() + dim + sq8::DELTA * sizeof(float), &delta, sizeof(delta));
+    std::memcpy(reinterpret_cast<uint8_t *>(test_case.query.data() + dim), &query_sum,
+                sizeof(query_sum));
+    test_case.decoded_distance = 1.0 - decoded_dot;
+    return test_case;
+}
+
+SQ8FP16IPCase MakeSQ8FP16CustomCase(const std::vector<uint8_t> &codes,
+                                     const std::vector<float16> &values, float min_val,
+                                     float delta) {
+    const size_t dim = codes.size();
+    assert(values.size() == dim);
+    SQ8FP16IPCase test_case{
+        std::vector<uint8_t>(dim + sq8::storage_metadata_count<VecSimMetric_IP>() * sizeof(float)),
+        std::vector<float16>(dim + sizeof(float) / sizeof(float16)), 0.0};
+    float query_sum = 0.0f;
+    double decoded_dot = 0.0;
+    for (size_t i = 0; i < dim; ++i) {
+        test_case.storage[i] = codes[i];
+        test_case.query[i] = values[i];
+        const float widened = vecsim_types::FP16_to_FP32(values[i]);
+        query_sum += widened;
+        decoded_dot += (static_cast<double>(min_val) + static_cast<double>(delta) * codes[i]) *
+                       widened;
+    }
+    std::memcpy(test_case.storage.data() + dim + sq8::MIN_VAL * sizeof(float), &min_val,
+                sizeof(min_val));
+    std::memcpy(test_case.storage.data() + dim + sq8::DELTA * sizeof(float), &delta, sizeof(delta));
+    std::memcpy(reinterpret_cast<uint8_t *>(test_case.query.data() + dim), &query_sum,
+                sizeof(query_sum));
+    test_case.decoded_distance = 1.0 - decoded_dot;
+    return test_case;
+}
+
+bool HasSQ8FP16NativeISA() {
+    const auto features = getCpuOptimizationFeatures();
+    return features.avx512f && features.avx512bw && features.avx512vl && features.avx512_fp16;
+}
+
+} // namespace
+
+TEST(SQ8FP16NativeIPTest, DispatchRequiresEveryFeatureAndDimension32) {
+    auto features = getCpuOptimizationFeatures();
+    features.avx512f = features.avx512bw = features.avx512vl = features.avx512_fp16 = 1;
+    constexpr size_t dim = 32;
+    const auto native_ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+    const auto native_cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+    EXPECT_EQ(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &features), native_ip);
+    EXPECT_EQ(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &features), native_cosine);
+    EXPECT_NE(IP_SQ8_FP16_GetDistFunc(dim - 1, nullptr, &features), native_ip);
+    EXPECT_NE(Cosine_SQ8_FP16_GetDistFunc(dim - 1, nullptr, &features), native_cosine);
+#ifdef OPT_AVX512F
+    EXPECT_EQ(L2_SQ8_FP16_GetDistFunc(dim, nullptr, &features),
+              Choose_SQ8_FP16_L2_implementation_AVX512F(dim));
+#endif
+    auto without = features;
+    without.avx512f = 0;
+    EXPECT_NE(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_ip);
+    EXPECT_NE(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_cosine);
+    without = features;
+    without.avx512bw = 0;
+    EXPECT_NE(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_ip);
+    EXPECT_NE(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_cosine);
+    without = features;
+    without.avx512vl = 0;
+    EXPECT_NE(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_ip);
+    EXPECT_NE(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_cosine);
+    without = features;
+    without.avx512_fp16 = 0;
+    EXPECT_NE(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_ip);
+    EXPECT_NE(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &without), native_cosine);
+}
+
+TEST(SQ8FP16NativeIPTest, DecodedReferenceAcrossResidualsAndBlocks) {
+    if (!HasSQ8FP16NativeISA())
+        GTEST_SKIP() << "AVX512F/BW/VL/FP16 is unavailable";
+    const auto verify = [](size_t dim) {
+        auto test_case = MakeSQ8FP16IPCase(dim);
+        const auto original_query = test_case.query;
+        const auto ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+        const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+        const double scale = std::max(1.0, std::abs(test_case.decoded_distance));
+        const double tolerance = 1e-4 * scale;
+        EXPECT_NEAR(ip(test_case.storage.data(), test_case.query.data(), dim),
+                    test_case.decoded_distance, tolerance)
+            << "IP dim=" << dim;
+        EXPECT_NEAR(cosine(test_case.storage.data(), test_case.query.data(), dim),
+                    test_case.decoded_distance, tolerance)
+            << "Cosine dim=" << dim;
+        EXPECT_EQ(std::memcmp(test_case.query.data(), original_query.data(),
+                              test_case.query.size() * sizeof(float16)),
+                  0)
+            << "query changed at dim=" << dim;
+    };
+    for (size_t residual = 0; residual < 32; ++residual)
+        verify(64 + residual);
+    for (size_t dim : {size_t{32}, size_t{511}, size_t{512}, size_t{513}, size_t{1024},
+                       size_t{1025}, size_t{4096}, size_t{4097}, size_t{8193}}) {
+        verify(dim);
+    }
+}
+
+TEST(SQ8FP16NativeIPTest, FiniteOverflowAndHorizontalReduction) {
+    if (!HasSQ8FP16NativeISA())
+        GTEST_SKIP() << "AVX512F/BW/VL/FP16 is unavailable";
+    for (const auto [dim, query_value] :
+         {std::pair<size_t, float>{64, 1000.0f}, {128, 32.0f}, {512, 100.0f}}) {
+        auto test_case = MakeSQ8FP16IPCase(dim, query_value, true);
+        const auto original_query = test_case.query;
+        const auto ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+        const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+        const double scale = std::max(1.0, std::abs(test_case.decoded_distance));
+        const float ip_distance = ip(test_case.storage.data(), test_case.query.data(), dim);
+        const float cosine_distance = cosine(test_case.storage.data(), test_case.query.data(), dim);
+        EXPECT_TRUE(std::isfinite(ip_distance));
+        EXPECT_TRUE(std::isfinite(cosine_distance));
+        if (query_value == 1000.0f) {
+            const float fallback = Choose_SQ8_FP16_IP_implementation_AVX512F(dim)(
+                test_case.storage.data(), test_case.query.data(), dim);
+            EXPECT_FLOAT_EQ(ip_distance, fallback) << "dim=" << dim;
+            EXPECT_FLOAT_EQ(cosine_distance, fallback) << "dim=" << dim;
+            EXPECT_NEAR(fallback, test_case.decoded_distance, 1e-5 * scale);
+        } else {
+            EXPECT_NEAR(ip_distance, test_case.decoded_distance, 1e-4 * scale);
+            EXPECT_NEAR(cosine_distance, test_case.decoded_distance, 1e-4 * scale);
+        }
+        EXPECT_EQ(std::memcmp(test_case.query.data(), original_query.data(),
+                              test_case.query.size() * sizeof(float16)),
+                  0);
+    }
+}
+
+TEST(SQ8FP16NativeIPTest, CompensatedProductPreservesCenteredCancellation) {
+    if (!HasSQ8FP16NativeISA())
+        GTEST_SKIP() << "AVX512F/BW/VL/FP16 is unavailable";
+    constexpr size_t dim = 64;
+    std::vector<uint8_t> codes(dim);
+    std::vector<float16> values(dim, vecsim_types::FP32_to_FP16(0.0f));
+    for (size_t i = 0; i < 32; ++i) {
+        codes[i] = 100;
+        values[i] = vecsim_types::FP32_to_FP16(1.0009765625f);
+    }
+    for (size_t i = 32; i < dim; ++i)
+        codes[i] = i % 2 == 0 ? 0 : 255;
+
+    auto test_case = MakeSQ8FP16CustomCase(codes, values, -100.0f, 1.0f);
+    ASSERT_DOUBLE_EQ(test_case.decoded_distance, 1.0);
+    const auto original_query = test_case.query;
+    const auto ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+    const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+    EXPECT_NEAR(ip(test_case.storage.data(), test_case.query.data(), dim), 1.0, 1e-4);
+    EXPECT_NEAR(cosine(test_case.storage.data(), test_case.query.data(), dim), 1.0, 1e-4);
+    EXPECT_EQ(std::memcmp(test_case.query.data(), original_query.data(),
+                          test_case.query.size() * sizeof(float16)),
+              0);
+}
+
+TEST(SQ8FP16NativeIPTest, MixedSignCancellationAndFP16Extremes) {
+    if (!HasSQ8FP16NativeISA())
+        GTEST_SKIP() << "AVX512F/BW/VL/FP16 is unavailable";
+    constexpr size_t dim = 64;
+    std::vector<uint8_t> codes(dim);
+    std::vector<float16> values(dim);
+    for (size_t i = 0; i < dim; i += 2) {
+        codes[i] = 101;
+        codes[i + 1] = 102;
+        values[i] = vecsim_types::FP32_to_FP16(2.001953125f);
+        values[i + 1] = vecsim_types::FP32_to_FP16(-1.0009765625f);
+    }
+    auto mixed = MakeSQ8FP16CustomCase(codes, values, -100.0f, 1.0f);
+    ASSERT_DOUBLE_EQ(mixed.decoded_distance, 1.0);
+
+    const auto verify = [](SQ8FP16IPCase &test_case) {
+        const size_t dim = test_case.query.size() - sizeof(float) / sizeof(float16);
+        const auto original_query = test_case.query;
+        const auto ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+        const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+        const double tolerance = 1e-5 * std::max(1.0, std::abs(test_case.decoded_distance));
+        EXPECT_NEAR(ip(test_case.storage.data(), test_case.query.data(), dim),
+                    test_case.decoded_distance, tolerance);
+        EXPECT_NEAR(cosine(test_case.storage.data(), test_case.query.data(), dim),
+                    test_case.decoded_distance, tolerance);
+        EXPECT_EQ(std::memcmp(test_case.query.data(), original_query.data(),
+                              test_case.query.size() * sizeof(float16)),
+                  0);
+    };
+    verify(mixed);
+
+    for (const auto [query_value, code] : {std::pair<float, uint8_t>{1.0f / 16777216.0f, 255},
+                                           {37.0f / 16777216.0f, 255},
+                                           {1.0f / 16384.0f, 255},
+                                           {65504.0f, 1}}) {
+        std::vector<uint8_t> edge_codes(32, 0);
+        std::vector<float16> edge_values(32, vecsim_types::FP32_to_FP16(0.0f));
+        edge_codes[0] = code;
+        edge_values[0] = vecsim_types::FP32_to_FP16(query_value);
+        ASSERT_FLOAT_EQ(vecsim_types::FP16_to_FP32(edge_values[0]), query_value);
+        auto edge = MakeSQ8FP16CustomCase(edge_codes, edge_values, 0.0f, 1.0f);
+        verify(edge);
+        const auto ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(32);
+        const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(32);
+        EXPECT_FLOAT_EQ(ip(edge.storage.data(), edge.query.data(), 32),
+                        static_cast<float>(edge.decoded_distance));
+        EXPECT_FLOAT_EQ(cosine(edge.storage.data(), edge.query.data(), 32),
+                        static_cast<float>(edge.decoded_distance));
+    }
+}
+
+TEST(SQ8FP16NativeIPTest, ProductOverflowFallsBackUnderEveryRoundingMode) {
+    if (!HasSQ8FP16NativeISA())
+        GTEST_SKIP() << "AVX512F/BW/VL/FP16 is unavailable";
+    constexpr size_t dim = 64;
+    auto test_case = MakeSQ8FP16CustomCase(
+        std::vector<uint8_t>(dim, 255),
+        std::vector<float16>(dim, vecsim_types::FP32_to_FP16(65504.0f)), 0.0f, 1.0f);
+    const int original_rounding = std::fegetround();
+    ASSERT_NE(original_rounding, -1);
+    struct RoundingRestore {
+        int mode;
+        ~RoundingRestore() { std::fesetround(mode); }
+    } restore{original_rounding};
+
+    const auto ip = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+    const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+    const auto fallback = Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
+    for (int mode : {FE_TONEAREST, FE_DOWNWARD, FE_UPWARD, FE_TOWARDZERO}) {
+        ASSERT_EQ(std::fesetround(mode), 0);
+        const float expected = fallback(test_case.storage.data(), test_case.query.data(), dim);
+        const float ip_distance = ip(test_case.storage.data(), test_case.query.data(), dim);
+        const float cosine_distance = cosine(test_case.storage.data(), test_case.query.data(), dim);
+        ASSERT_EQ(std::fesetround(original_rounding), 0);
+        EXPECT_TRUE(std::isfinite(expected));
+        EXPECT_FLOAT_EQ(ip_distance, expected) << "rounding mode=" << mode;
+        EXPECT_FLOAT_EQ(cosine_distance, expected) << "rounding mode=" << mode;
+    }
+}
+#endif

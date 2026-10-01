@@ -17,6 +17,7 @@
 #include "VecSim/spaces/functions/SSE.h"
 #include "VecSim/spaces/functions/AVX512BW_VBMI2.h"
 #include "VecSim/spaces/functions/AVX512FP16_VL.h"
+#include "VecSim/spaces/functions/AVX512FP16_BW_VL.h"
 #include "VecSim/spaces/functions/AVX512BF16_VL.h"
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 #include "VecSim/spaces/functions/AVX2.h"
@@ -193,7 +194,14 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
-    // AVX-512 tier only needs AVX-512F (cvtph_ps is part of AVX-512F, no VNNI/BW/VL required).
+#ifdef OPT_AVX512_FP16_BW_VL
+    if (dim >= 32 && features.avx512f && features.avx512_fp16 && features.avx512bw &&
+        features.avx512vl) {
+        if (dim % 32 == 0)
+            *alignment = 32 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
+    }
+#endif
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 16 == 0) // SQ8 chunk = 16 bytes
@@ -271,6 +279,14 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
     if (dim < 16) {
         return ret_dist_func;
     }
+#ifdef OPT_AVX512_FP16_BW_VL
+    if (dim >= 32 && features.avx512f && features.avx512_fp16 && features.avx512bw &&
+        features.avx512vl) {
+        if (dim % 32 == 0)
+            *alignment = 32 * sizeof(uint8_t);
+        return Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
+    }
+#endif
 #ifdef OPT_AVX512F
     if (features.avx512f) {
         if (dim % 16 == 0)
