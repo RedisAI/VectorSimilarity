@@ -1,0 +1,129 @@
+on:
+  workflow_call:
+    inputs:
+      setup:
+        required: true
+        type: string
+      architecture:
+        required: true
+        type: string
+      instance-type:
+        required: true
+        type: string
+      ami-id:
+        required: true
+        type: string
+
+
+jobs:
+  start-runner:
+    name: Start self-hosted EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      runner_label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2_instance_id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+      - name: Prepare EC2 owner tag
+        id: ec2-tags
+        # Keep the original workflow actor as owner, including on reruns.
+        env:
+          OWNER_HANDLE: ${{ github.actor }}
+        shell: python
+        run: |
+          import os
+          import re
+
+          # Allow only lowercase ASCII letters, digits, and underscores.
+          owner = os.environ["OWNER_HANDLE"].lower()
+          owner = re.sub(r"[^a-z0-9_]", "_", owner)
+          # Collapse repeated separators, cap at 63 characters, and trim edges.
+          owner = re.sub(r"_+", "_", owner)[:63].strip("_")
+          if not owner:
+              raise SystemExit("Cannot derive an EC2 owner tag from github.actor")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"owner={owner}\n")
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2.6.1
+        with:
+          mode: start
+          aws-resource-tags: >-
+            [
+              {"Key": "team", "Value": "ai_and_search"},
+              {"Key": "owner", "Value": "${{ steps.ec2-tags.outputs.owner }}"}
+            ]
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          ec2-image-id: ${{ inputs.ami-id }}
+          ec2-instance-type: ${{ inputs.instance-type }}
+          subnet-id: ${{ secrets.AWS_EC2_SUBNET_ID_BENCHMARK }}
+          security-group-id: ${{ secrets.AWS_EC2_SG_ID_BENCHMARK }}
+
+  benchmark:
+    name: Run benchmarks on runner
+    needs: start-runner
+    runs-on: ${{ needs.start-runner.outputs.runner_label }}
+    steps:
+      - name: Pre checkout deps
+        run:  sudo apt-get update && sudo apt-get -y install git
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Print runner info
+        run: |
+          printf "Runner lscpu:\n$(lscpu)\n"
+          printf "Runner lsmem:\n$(lsmem)\n"
+          printf "Runner nproc:\n$(nproc)\n"
+          printf "Runner uname:\n$(uname -a)\n"
+          printf "Runner arch:\n$(arch)\n"
+      - name: Install benchmark dependencies
+        run: |
+          sudo .install/install_script.sh
+          sudo apt install python3-pip -y
+          pip3 install --upgrade pip PyYAML setuptools redisbench-admin
+          pip3 install -r requirements.txt
+      - name: Download pre-generated indices
+        timeout-minutes: 20
+        run: ./tests/benchmark/bm_files.sh bm-basics-fp16-single
+      - name: Run Benchmark
+        env:
+          ARCH: ${{ inputs.architecture }}
+        timeout-minutes: 300
+        run: |
+          bash tests/benchmark/mod19169-query-validation.sh
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: query-recall-${{ inputs.architecture }}
+          path: recall-results/
+          if-no-files-found: warn
+
+  stop-runner:
+    name: Stop self-hosted EC2 runner
+    needs:
+      - start-runner # required to get output from the start-runner job
+      - benchmark # required to wait when the main job is done
+    runs-on: ubuntu-latest
+    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION_BENCHMARK }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2.6.1
+        with:
+          mode: stop
+          github-token: ${{ secrets.GH_PERSONAL_ACCESS_TOKEN }}
+          label: ${{ needs.start-runner.outputs.runner_label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2_instance_id }}

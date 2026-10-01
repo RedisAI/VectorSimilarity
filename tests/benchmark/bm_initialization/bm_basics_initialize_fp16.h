@@ -103,10 +103,25 @@ BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8), fp1
 (benchmark::State &st) { TopK_Tiered(st, 0, INDEX_TIERED_HNSW_SQ8); }
 REGISTER_TopK_Tiered(BM_VecSimCommon, BM_FUNC_NAME(TopK, Tiered_SQ8));
 
+#ifdef MOD19169_RECALL_VALIDATION
+// TopK SQ8 HNSW against cached exhaustive FP16 BF results.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW_SQ8), fp16_index_t)
+(benchmark::State &st) { TopK_HNSW_SQ8_Recall1000(st); }
+BENCHMARK_REGISTER_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW_SQ8))
+    ->Arg(100)
+    ->Arg(200)
+    ->Arg(400)
+    ->ArgName("ef_runtime")
+    ->Iterations(1000)
+    ->Unit(benchmark::kMillisecond);
+
+#else
 // TopK SQ8 HNSW
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW_SQ8), fp16_index_t)
 (benchmark::State &st) { TopK_HNSW(st, 0, INDEX_HNSW_SQ8); }
 REGISTER_TopK_HNSW(BM_VecSimCommon, BM_FUNC_NAME(TopK, HNSW_SQ8));
+
+#endif
 
 // Range SQ8 Tiered
 BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_FUNC_NAME(Range, Tiered_SQ8), fp16_index_t)
