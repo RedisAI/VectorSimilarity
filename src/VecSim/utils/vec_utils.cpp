@@ -223,6 +223,8 @@ const char *VecSimMetric_ToString(VecSimMetric vecsimMetric) {
     switch (vecsimMetric) {
     case VecSimMetric_Cosine:
         return "COSINE";
+    case VecSimMetric_CosineSimilarity:
+        return "COSINE_SIMILARITY";
     case VecSimMetric_IP:
         return "IP";
     case VecSimMetric_L2:
@@ -295,7 +297,8 @@ size_t VecSimType_sizeof(VecSimType type) {
 
 size_t VecSimParams_GetStoredDataSize(VecSimType type, size_t dim, VecSimMetric metric) {
     size_t storedDataSize = VecSimType_sizeof(type) * dim;
-    if (metric == VecSimMetric_Cosine && (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
+    if (VecSimMetric_IsCosineFamily(metric) &&
+        (type == VecSimType_INT8 || type == VecSimType_UINT8)) {
         storedDataSize += sizeof(float); // For the norm
     }
     return storedDataSize;
