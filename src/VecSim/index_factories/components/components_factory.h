@@ -44,7 +44,7 @@ template <typename DataType, VecSimMetric Metric, bool WithMean>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                          const float *mean_ptr) {
-    constexpr bool quantize_query = std::is_same_v<DataType, vecsim_types::float16>;
+    constexpr bool quantize_query = true;
     using Preprocessor =
         std::conditional_t<quantize_query, QuantizedQueryPreprocessor<DataType, Metric, WithMean>,
                            QuantPreprocessor<DataType, Metric, WithMean>>;
