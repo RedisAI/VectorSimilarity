@@ -43,6 +43,7 @@ on:
           - bm-updated-fp32-single
           - bm-sq8-compare-fp32
           - bm-sq8-compare-fp16
+          - bm-mod19169-native-fp16-validation
           - bm-sq8-train-fp32
           - bm-sq8-train-fp16
           - bm-svs-train-fp32
@@ -103,9 +104,24 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   run_benchmarks:
+    if: inputs.setup != 'bm-mod19169-native-fp16-validation'
     name: Run ${{ matrix.architecture }} benchmarks
     needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
+    secrets: inherit
+    strategy:
+      matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
+    with:
+      setup: ${{ inputs.setup }}
+      architecture: ${{ matrix.architecture }}
+      instance-type: ${{ matrix.instance-type }}
+      ami-id: ${{ matrix.ami-id }}
+
+  run_native_fp16_validation:
+    if: inputs.setup == 'bm-mod19169-native-fp16-validation'
+    name: Validate ${{ matrix.architecture }} native FP16 SQ8 queries
+    needs: prepare_runner_configurations
+    uses: ./.github/workflows/mod19169-native-fp16-validation-runner.yml
     secrets: inherit
     strategy:
       matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
