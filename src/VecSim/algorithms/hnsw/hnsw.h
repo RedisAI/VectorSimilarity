@@ -709,6 +709,12 @@ void HNSWIndex<DataType, DistType>::emplaceToHeap(
 
 // This function handles both label heaps and internal ids heaps. It uses the `emplaceToHeap`
 // overloading to emplace correctly for both cases.
+// Neighbor expansion runs in three passes:
+//   1. Snapshot the neighbor list under the node lock, then release the lock. The lock only
+//      guarantees a consistent view of the list; tags and flags are not protected by it.
+//   2. Filter out visited / in-process neighbors, mark the rest visited, resolve their data
+//      pointers and prefetch the first cache line of each vector.
+//   3. Compute distances and update the heaps, prefetching a few lines of upcoming vectors.
 template <typename DataType, typename DistType>
 template <typename Identifier>
 void HNSWIndex<DataType, DistType>::processCandidate(
@@ -716,64 +722,68 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     tag_t visited_tag, vecsim_stl::abstract_priority_queue<DistType, Identifier> &top_candidates,
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
 
-    ElementGraphData *cur_element = getGraphDataByInternalId(curNodeId);
+    // Per-thread scratch, sized to the largest neighbor list seen on this thread. Plain std::vector
+    // on purpose: this is transient scratch, not index memory, and it is allocated at most a
+    // handful of times per thread.
+    thread_local static std::vector<idType> links_scratch;
+    thread_local static std::vector<const char *> data_scratch;
+    if (links_scratch.size() < M0) {
+        links_scratch.resize(M0);
+        data_scratch.resize(M0);
+    }
+    idType *links = links_scratch.data();
+    const char **datas = data_scratch.data();
+
+    // Pass 1: snapshot the links under the node lock.
     lockNodeLinks(curNodeId);
-    ElementLevelData &node_level = getElementLevelData(cur_element, layer);
-    linkListSize num_links = node_level.getNumLinks();
-    if (num_links > 0) {
+    {
+        ElementLevelData &node_level =
+            getElementLevelData(getGraphDataByInternalId(curNodeId), layer);
+        linkListSize num_links = node_level.getNumLinks();
+        memcpy(links, node_level.links, num_links * sizeof(idType));
+        unlockNodeLinks(curNodeId);
 
-        const char *cur_data, *next_data;
-        // Pre-fetch first candidate tag address.
-        __builtin_prefetch(elements_tags + node_level.getLinkAtPos(0));
-        // Pre-fetch first candidate data block address.
-        next_data = getDataByInternalId(node_level.getLinkAtPos(0));
-        __builtin_prefetch(next_data);
+        if (num_links == 0)
+            return;
 
-        for (linkListSize j = 0; j < num_links - 1; j++) {
-            idType candidate_id = node_level.getLinkAtPos(j);
-            cur_data = next_data;
-
-            // Pre-fetch next candidate tag address.
-            __builtin_prefetch(elements_tags + node_level.getLinkAtPos(j + 1));
-            // Pre-fetch next candidate data block address.
-            next_data = getDataByInternalId(node_level.getLinkAtPos(j + 1));
-            __builtin_prefetch(next_data);
-
-            if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
-                continue;
-
-            elements_tags[candidate_id] = visited_tag;
-
-            DistType cur_dist = this->calcDistanceForQuery(cur_data, query_data);
-            if (lowerBound > cur_dist || top_candidates.size() < ef) {
-
-                candidate_set.emplace(-cur_dist, candidate_id);
-
-                // Insert the candidate to the top candidates heap only if it is not marked as
-                // deleted.
-                if (!isMarkedDeleted(candidate_id))
-                    emplaceToHeap(top_candidates, cur_dist, candidate_id);
-
-                if (top_candidates.size() > ef)
-                    top_candidates.pop();
-
-                // If we have marked deleted elements, we need to verify that `top_candidates` is
-                // not empty (since we might have not added any non-deleted element yet).
-                if (!top_candidates.empty())
-                    lowerBound = top_candidates.top().first;
-            }
+        // Warm the visited tags and the metadata flags of every neighbor before touching them.
+        for (linkListSize j = 0; j < num_links; j++) {
+            __builtin_prefetch(elements_tags + links[j]);
+            __builtin_prefetch(getMetaDataAddress(links[j]));
         }
 
-        // Running the last neighbor outside the loop to avoid prefetching invalid neighbor
-        idType candidate_id = node_level.getLinkAtPos(num_links - 1);
-        cur_data = next_data;
-
-        if (elements_tags[candidate_id] != visited_tag && !isInProcess(candidate_id)) {
-
+        // Pass 2: filter, mark visited, resolve data pointers, prefetch the first line of each.
+        linkListSize n = 0;
+        for (linkListSize j = 0; j < num_links; j++) {
+            idType candidate_id = links[j];
+            if (elements_tags[candidate_id] == visited_tag || isInProcess(candidate_id))
+                continue;
             elements_tags[candidate_id] = visited_tag;
+            const char *data = getDataByInternalId(candidate_id);
+            __builtin_prefetch(data);
+            links[n] = candidate_id;
+            datas[n] = data;
+            n++;
+        }
+        if (n == 0)
+            return;
 
-            DistType cur_dist = this->calcDistanceForQuery(cur_data, query_data);
+        // Pass 3: distances and heap updates, with a two-candidate prefetch lookahead over the
+        // first few lines of each vector (the hardware prefetcher streams the rest).
+        constexpr size_t PF_AHEAD = 2;
+        constexpr size_t CACHE_LINE = 64;
+        const size_t pf_lines =
+            std::min<size_t>(4, (this->getStoredDataSize() + CACHE_LINE - 1) / CACHE_LINE);
+        for (size_t i = 0; i < n; i++) {
+            if (i + PF_AHEAD < n) {
+                const char *next = datas[i + PF_AHEAD];
+                for (size_t l = 0; l < pf_lines; l++)
+                    __builtin_prefetch(next + l * CACHE_LINE);
+            }
+            idType candidate_id = links[i];
+            DistType cur_dist = this->calcDistanceForQuery(datas[i], query_data);
             if (lowerBound > cur_dist || top_candidates.size() < ef) {
+
                 candidate_set.emplace(-cur_dist, candidate_id);
 
                 // Insert the candidate to the top candidates heap only if it is not marked as
@@ -791,7 +801,6 @@ void HNSWIndex<DataType, DistType>::processCandidate(
             }
         }
     }
-    unlockNodeLinks(curNodeId);
 }
 
 template <typename DataType, typename DistType>
