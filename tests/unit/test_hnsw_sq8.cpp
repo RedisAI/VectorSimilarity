@@ -9,6 +9,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
@@ -16,7 +17,9 @@
 #include "mock_thread_pool.h"
 #include "unit_test_utils.h"
 
+#include <algorithm>
 #include <atomic>
+#include <limits>
 #include <cmath>
 #include <cstdio>
 #include <condition_variable>
@@ -101,6 +104,9 @@ protected:
     void test_range_query();
     void test_get_distance(VecSimMetric metric, bool multi);
     void test_batch_iterator_basic();
+    void test_multi_readback(VecSimMetric metric, size_t dimensions);
+    void test_functional_queries(VecSimMetric metric, bool multi);
+    void test_graph_routing(VecSimMetric metric, bool multi);
 
     VecSimIndex *index = nullptr;
     size_t dim = 0;
@@ -187,6 +193,208 @@ TYPED_TEST(HNSWSQ8Test, getDataByLabelReportsNothingForQuantizedStorageLargeDim)
     hnsw_index->getDataByLabel(0, stored);
     EXPECT_TRUE(stored.empty());
 }
+
+template <typename index_type_t>
+void HNSWSQ8Test<index_type_t>::test_multi_readback(VecSimMetric metric, size_t dimensions) {
+    HNSWParams params = {.dim = dimensions, .metric = metric, .multi = true};
+    SetUp(params);
+    ASSERT_EQ(GenerateAndAddVector(7, 0.5f, 1.0f), 1);
+    ASSERT_EQ(GenerateAndAddVector(7, -0.5f, 0.25f), 1);
+    ASSERT_EQ(VecSimIndex_IndexSize(index), 2u);
+
+    // Call the backend directly: the tiered wrapper has its own quantized-storage guard.
+    auto *hnsw = dynamic_cast<HNSWIndex_Multi<data_t, float> *>(index);
+    ASSERT_NE(hnsw, nullptr);
+    if (dimensions == 4) {
+        ASSERT_GE(hnsw->getStoredDataSize(), dim * sizeof(data_t));
+    } else {
+        ASSERT_LT(hnsw->getStoredDataSize(), dim * sizeof(data_t));
+    }
+    std::vector<std::vector<data_t>> stored;
+    hnsw->getDataByLabel(7, stored);
+    EXPECT_TRUE(stored.empty());
+}
+
+TYPED_TEST(HNSWSQ8Test, MultiReadbackL2SmallDim) { this->test_multi_readback(VecSimMetric_L2, 4); }
+TYPED_TEST(HNSWSQ8Test, MultiReadbackL2LargeDim) { this->test_multi_readback(VecSimMetric_L2, 40); }
+TYPED_TEST(HNSWSQ8Test, MultiReadbackIPSmallDim) { this->test_multi_readback(VecSimMetric_IP, 4); }
+TYPED_TEST(HNSWSQ8Test, MultiReadbackIPLargeDim) { this->test_multi_readback(VecSimMetric_IP, 40); }
+
+template <typename index_type_t>
+void HNSWSQ8Test<index_type_t>::test_functional_queries(VecSimMetric metric, bool multi) {
+    constexpr size_t labels = 12;
+    HNSWParams params = {.dim = 29,
+                         .metric = metric,
+                         .multi = multi,
+                         .M = 16,
+                         .efConstruction = 100,
+                         .efRuntime = 64};
+    SetUp(params);
+
+    // Binary coordinates survive SQ8 exactly, including mean subtraction. Binary fractions in
+    // the query are exact in FP16 too, so the oracle needs no quantization-error allowance.
+    auto one_hot = [&](size_t coordinate) {
+        std::vector<data_t> vector(dim, ToDataType(0.0f));
+        vector[coordinate] = ToDataType(1.0f);
+        return vector;
+    };
+    std::vector<data_t> query(dim);
+    for (size_t d = 0; d < dim; ++d) {
+        query[d] = ToDataType(static_cast<float>(d + 1) / 32.0f);
+    }
+    std::vector<std::vector<std::vector<data_t>>> vectors(labels);
+    for (size_t label = 0; label < labels; ++label) {
+        // Alternate which vector wins for a multi-value label.
+        if (label % 2) {
+            std::swap(query[2 * label], query[2 * label + 1]);
+        }
+        for (size_t v = 0; v < (multi ? 2u : 1u); ++v) {
+            vectors[label].push_back(one_hot(2 * label + v));
+            ASSERT_EQ(VecSimIndex_AddVector(index, vectors[label].back().data(), label), 1);
+        }
+    }
+
+    auto check_queries = [&]() {
+        std::vector<std::pair<double, size_t>> expected;
+        size_t vector_count = 0;
+        for (size_t label = 0; label < labels; ++label) {
+            double best = std::numeric_limits<double>::infinity();
+            for (const auto &vector : vectors[label]) {
+                ++vector_count;
+                double score = metric == VecSimMetric_L2 ? 0.0 : 1.0;
+                for (size_t d = 0; d < dim; ++d) {
+                    const double q = to_fp32(query[d]);
+                    const double x = to_fp32(vector[d]);
+                    score += metric == VecSimMetric_L2 ? (q - x) * (q - x) : -q * x;
+                }
+                best = std::min(best, score);
+            }
+            expected.emplace_back(best, label);
+        }
+        std::sort(expected.begin(), expected.end());
+        ASSERT_EQ(VecSimIndex_IndexSize(index), vector_count);
+        ASSERT_EQ(index->indexLabelCount(), labels);
+        for (size_t i = 1; i < labels; ++i) {
+            ASSERT_GT(expected[i].first - expected[i - 1].first, 0.01);
+        }
+        auto check_result = [&](size_t id, double score, size_t position) {
+            ASSERT_LT(position, expected.size());
+            EXPECT_EQ(id, expected[position].second);
+            EXPECT_NEAR(score, expected[position].first, 1e-4);
+        };
+
+        runTopKSearchTest(index, query.data(), 5, check_result);
+        const double radius = (expected[4].first + expected[5].first) / 2.0;
+        runRangeQueryTest(index, query.data(), radius, check_result, 5, BY_SCORE);
+
+        std::unique_ptr<VecSimBatchIterator, decltype(&VecSimBatchIterator_Free)> batch(
+            VecSimBatchIterator_New(index, query.data(), nullptr), VecSimBatchIterator_Free);
+        ASSERT_NE(batch, nullptr);
+        for (size_t offset = 0; offset < labels; offset += 5) {
+            ASSERT_TRUE(VecSimBatchIterator_HasNext(batch.get()));
+            runBatchIteratorSearchTest(
+                batch.get(), 5,
+                [&](size_t id, double score, size_t position) {
+                    check_result(id, score, offset + position);
+                },
+                BY_SCORE, std::min(size_t(5), labels - offset));
+        }
+        EXPECT_FALSE(VecSimBatchIterator_HasNext(batch.get()));
+        runBatchIteratorSearchTest(batch.get(), 5, check_result, BY_SCORE, 0);
+        VecSimBatchIterator_Reset(batch.get());
+        EXPECT_TRUE(VecSimBatchIterator_HasNext(batch.get()));
+        runBatchIteratorSearchTest(batch.get(), 5, check_result);
+    };
+
+    check_queries();
+    // Move the worst label to the best position, replacing all its previous vectors.
+    vectors[0] = {one_hot(24)};
+    ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, vectors[0][0].data(), 1), VecSimUpdate_OK);
+    check_queries();
+
+    auto replacement = one_hot(25);
+    ASSERT_EQ(VecSimIndex_AddVector(index, replacement.data(), 0), multi ? 1 : 0);
+    if (multi) {
+        vectors[0].push_back(replacement);
+    } else {
+        vectors[0] = {replacement};
+    }
+    check_queries();
+
+    if (multi) {
+        // Replacing two vectors by three exercises changing the label's cardinality in both
+        // directions, after the earlier two-to-one replacement.
+        vectors[0] = {one_hot(24), one_hot(26), one_hot(27)};
+        std::vector<data_t> flat;
+        for (const auto &vector : vectors[0]) {
+            flat.insert(flat.end(), vector.begin(), vector.end());
+        }
+        ASSERT_EQ(VecSimIndex_UpdateVectors(index, 0, flat.data(), vectors[0].size()),
+                  VecSimUpdate_OK);
+        check_queries();
+    }
+}
+
+TYPED_TEST(HNSWSQ8Test, FunctionalQueriesL2Single) {
+    this->test_functional_queries(VecSimMetric_L2, false);
+}
+TYPED_TEST(HNSWSQ8Test, FunctionalQueriesL2Multi) {
+    this->test_functional_queries(VecSimMetric_L2, true);
+}
+TYPED_TEST(HNSWSQ8Test, FunctionalQueriesIPSingle) {
+    this->test_functional_queries(VecSimMetric_IP, false);
+}
+TYPED_TEST(HNSWSQ8Test, FunctionalQueriesIPMulti) {
+    this->test_functional_queries(VecSimMetric_IP, true);
+}
+
+template <typename index_type_t>
+void HNSWSQ8Test<index_type_t>::test_graph_routing(VecSimMetric metric, bool multi) {
+    constexpr size_t labels = 256;
+    HNSWParams params = {
+        .dim = 19, .metric = metric, .multi = multi, .M = 8, .efConstruction = 80, .efRuntime = 8};
+    SetUp(params);
+
+    auto make_vector = [&](size_t label, size_t value) {
+        std::vector<data_t> vector(dim);
+        // Fixed extrema make SQ8 exact. Every label has a different binary payload and equal
+        // norm, making its own vector the unique nearest result for both L2 and IP.
+        vector[0] = ToDataType(-1.0f);
+        vector[1] = ToDataType(1.0f);
+        for (size_t bit = 0; bit < 8; ++bit) {
+            vector[2 + 2 * bit] = vector[3 + 2 * bit] =
+                ToDataType((label & (size_t(1) << bit)) ? 1.0f : -1.0f);
+        }
+        vector[18] = ToDataType(value ? 1.0f : -1.0f);
+        return vector;
+    };
+
+    // Interleave distant cube vertices rather than building in geometric order.
+    for (size_t i = 0; i < labels; ++i) {
+        const size_t label = (73 * i) % labels;
+        for (size_t value = 0; value < (multi ? 2u : 1u); ++value) {
+            const auto vector = make_vector(label, value);
+            ASSERT_EQ(VecSimIndex_AddVector(index, vector.data(), label), 1);
+        }
+    }
+    ASSERT_EQ(VecSimIndex_IndexSize(index), labels * (multi ? 2 : 1));
+    ASSERT_LT(params.efRuntime, labels / 16);
+    for (size_t label = 0; label < labels; ++label) {
+        SCOPED_TRACE(label);
+        const auto query = make_vector(label, label % (multi ? 2 : 1));
+        runTopKSearchTest(index, query.data(), 1, [&](size_t id, double score, size_t) {
+            EXPECT_EQ(id, label);
+            // All components have magnitude one. A different vector is at least 4 away in
+            // squared L2, or 2 away in IP distance, well above the rounding tolerance.
+            EXPECT_NEAR(score, metric == VecSimMetric_L2 ? 0.0 : 1.0 - double(dim), 1e-4);
+        });
+    }
+}
+
+TYPED_TEST(HNSWSQ8Test, GraphRoutingL2Single) { this->test_graph_routing(VecSimMetric_L2, false); }
+TYPED_TEST(HNSWSQ8Test, GraphRoutingL2Multi) { this->test_graph_routing(VecSimMetric_L2, true); }
+TYPED_TEST(HNSWSQ8Test, GraphRoutingIPSingle) { this->test_graph_routing(VecSimMetric_IP, false); }
+TYPED_TEST(HNSWSQ8Test, GraphRoutingIPMulti) { this->test_graph_routing(VecSimMetric_IP, true); }
 
 TYPED_TEST(HNSWSQ8Test, CreateIndex) { this->create_index_test(); }
 
