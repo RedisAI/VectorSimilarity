@@ -52,6 +52,15 @@ elif [ "$BM_TYPE" = "bm-basics-uint8-single" ] \
 || [ "$BM_TYPE" = "benchmarks-uint8" ]
 then
     file_name="basic_uint8"
+elif [ "$BM_TYPE" = "bm-sq8-compare-fp32" ]; then
+    download_indices tests/benchmark/data/hnsw_indices/hnsw_indices_basic_fp32.txt \
+        tests/benchmark/data/svs_indices/svs_indices_basic_fp32.txt \
+        tests/benchmark/data/svs_indices/svs_indices_training.txt
+    exit 0
+elif [ "$BM_TYPE" = "bm-sq8-compare-fp16" ]; then
+    download_indices tests/benchmark/data/hnsw_indices/hnsw_indices_basic_fp16.txt \
+        tests/benchmark/data/svs_indices/svs_indices_training.txt
+    exit 0
 elif [ "$BM_TYPE" = "bm-updated-fp32-single" ]; then
     file_name="updated"
 elif [ "$BM_TYPE" = "bm-sq8-train-fp32" ] \

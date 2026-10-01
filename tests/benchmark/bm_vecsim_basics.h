@@ -50,6 +50,12 @@ public:
     // reason, whereas the add/delete benchmarks above are reported in milliseconds.
     static void RelabelLabel(benchmark::State &st);
 
+    // Replace one label's vectors in each iteration with VecSimIndex_UpdateVectors, re-inserting
+    // the label's original vectors taken from the flat index. Re-insertion keeps the data but
+    // rebuilds the label's graph links. Recall on held-out queries is measured before and after,
+    // and every updated label is queried with its own vector to check it is still reachable.
+    static void UpdateLabel(benchmark::State &st);
+
     static void Range_BF(benchmark::State &st);
     static void Range_HNSW(benchmark::State &st, IndexTypeIndex index_type = INDEX_HNSW);
 
@@ -333,6 +339,81 @@ void BM_VecSimBasics<index_type_t>::RelabelLabel(benchmark::State &st) {
 }
 
 template <typename index_type_t>
+void BM_VecSimBasics<index_type_t>::UpdateLabel(benchmark::State &st) {
+    auto *index = GET_INDEX(st.range(0));
+    const auto *source = dynamic_cast<VecSimIndexAbstract<data_t, dist_t> *>(GET_INDEX(INDEX_BF));
+    assert(source);
+    constexpr size_t k = 10;
+    constexpr size_t n_recall_queries = 50;
+    HNSWRuntimeParams hnsw_runtime_params = {.efRuntime = 200};
+    auto query_params = BM_VecSimGeneral::CreateQueryParams(hnsw_runtime_params);
+
+    // Exact results do not change, since every label keeps the same vectors.
+    std::vector<VecSimQueryReply *> exact_results;
+    for (size_t q = 0; q < n_recall_queries; q++) {
+        exact_results.push_back(
+            VecSimIndex_TopKQuery(GET_INDEX(INDEX_BF), QUERIES[q].data(), k, nullptr, BY_SCORE));
+    }
+    auto measure_recall = [&]() {
+        std::atomic_int correct = 0;
+        for (size_t q = 0; q < n_recall_queries; q++) {
+            auto results =
+                VecSimIndex_TopKQuery(index, QUERIES[q].data(), k, &query_params, BY_SCORE);
+            BM_VecSimGeneral::MeasureRecall(results, exact_results[q], correct);
+            VecSimQueryReply_Free(results);
+        }
+        return (double)correct / (double)(k * n_recall_queries);
+    };
+    const double recall_before = measure_recall();
+
+    labelType label = 0;
+    size_t updated = 0;
+    std::vector<data_t> blobs;
+    std::vector<std::vector<data_t>> first_vectors;
+    for (auto _ : st) {
+        st.PauseTiming();
+        LabelData data(0);
+        source->getDataByLabel(label, data);
+        if (data.empty()) {
+            st.SkipWithError("UpdateLabel ran past the loaded labels");
+            break;
+        }
+        blobs.clear();
+        for (const auto &vector : data) {
+            blobs.insert(blobs.end(), vector.begin(), vector.end());
+        }
+        first_vectors.push_back(data.front());
+        st.ResumeTiming();
+
+        updated +=
+            VecSimIndex_UpdateVectors(index, label, blobs.data(), data.size()) == VecSimUpdate_OK;
+        label++;
+    }
+
+    st.counters["recall_before"] = recall_before;
+    st.counters["recall_after"] = measure_recall();
+    // Each updated label's own vector should still return that label first.
+    size_t found_self = 0;
+    for (labelType l = 0; l < label; l++) {
+        auto results =
+            VecSimIndex_TopKQuery(index, first_vectors[l].data(), 1, &query_params, BY_SCORE);
+        auto *it = VecSimQueryReply_GetIterator(results);
+        if (VecSimQueryReply_IteratorHasNext(it) &&
+            VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)) == l) {
+            found_self++;
+        }
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(results);
+    }
+    st.counters["self_recall_after"] = (double)found_self / (double)label;
+    // A ratio below 1 means some timed calls were rejected, so the time does not measure updates.
+    st.counters["updated_ratio"] = (double)updated / (double)label;
+    for (auto *results : exact_results) {
+        VecSimQueryReply_Free(results);
+    }
+}
+
+template <typename index_type_t>
 void BM_VecSimBasics<index_type_t>::Range_BF(benchmark::State &st) {
     double radius = (1.0 / 100.0) * (double)st.range(0);
     size_t iter = 0;
@@ -516,6 +597,13 @@ void BM_VecSimBasics<index_type_t>::UpdateAtBlockSize(benchmark::State &st) {
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)->UNIT_AND_ITERATIONS
 
 #define REGISTER_UpdateAtBlockSize(BM_FUNC, VecSimAlgo)                                            \
+    BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
+        ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo)                                                     \
+        ->ArgName(#VecSimAlgo)
+
+// UpdateLabel rebuilds graph links of the updated labels, so register it after the cases that
+// should see the loaded graph.
+#define REGISTER_UpdateLabel(BM_FUNC, VecSimAlgo)                                                  \
     BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC)                                                 \
         ->UNIT_AND_ITERATIONS->Arg(VecSimAlgo)                                                     \
         ->ArgName(#VecSimAlgo)

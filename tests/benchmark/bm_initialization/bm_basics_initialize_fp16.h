@@ -137,3 +137,8 @@ BENCHMARK_REGISTER_F(BM_VecSimBasics, BM_FUNC_NAME(DeleteLabel_Async, Tiered_SQ8
     ->Arg(BM_VecSimGeneral::block_size)
     ->ArgName("SwapJobsThreshold")
     ->UseRealTime();
+
+// UpdateLabel HNSW and SQ8 HNSW. Re-insertion rebuilds graph links, so the run files register it
+// after all other cases.
+BENCHMARK_TEMPLATE_DEFINE_F(BM_VecSimBasics, BM_UPDATE_LABEL, fp16_index_t)
+(benchmark::State &st) { UpdateLabel(st); }
