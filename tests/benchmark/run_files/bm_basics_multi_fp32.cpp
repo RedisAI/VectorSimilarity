@@ -28,6 +28,7 @@ const char *BM_VecSimGeneral::test_queries_file =
 
 #define BM_FUNC_NAME(bm_func, algo) CONCAT_WITH_UNDERSCORE_ARCH(bm_func, algo, Multi)
 #define BM_ADD_LABEL                CONCAT_WITH_UNDERSCORE_ARCH(AddLabel, Multi)
+#define BM_UPDATE_LABEL             CONCAT_WITH_UNDERSCORE_ARCH(UpdateLabel, Multi)
 #define BM_ADD_LABEL_ASYNC          CONCAT_WITH_UNDERSCORE_ARCH(AddLabel_Async, Multi)
 #define BM_DELETE_LABEL_ASYNC       CONCAT_WITH_UNDERSCORE_ARCH(DeleteLabel_Async, Multi)
 #define BM_RELABEL_LABEL            CONCAT_WITH_UNDERSCORE_ARCH(RelabelLabel, Multi)
@@ -51,4 +52,7 @@ REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi)
 REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi), INDEX_HNSW);
 REGISTER_UpdateAtBlockSize(CONCAT_WITH_UNDERSCORE_ARCH(UpdateAtBlockSize, Multi),
                            INDEX_TIERED_HNSW);
+// Registered last: UpdateLabel rebuilds graph links that the other cases measure.
+REGISTER_UpdateLabel(BM_UPDATE_LABEL, INDEX_HNSW);
+REGISTER_UpdateLabel(BM_UPDATE_LABEL, INDEX_HNSW_SQ8);
 BENCHMARK_MAIN();

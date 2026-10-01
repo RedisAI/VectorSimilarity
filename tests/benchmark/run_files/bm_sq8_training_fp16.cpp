@@ -1,7 +1,7 @@
 #include "benchmark/bm_vecsim_sq8_training.h"
 
 bool BM_VecSimGeneral::is_multi = false;
-size_t BM_VecSimGeneral::n_queries = 6000;
+size_t BM_VecSimGeneral::n_queries = 101000;
 size_t BM_VecSimGeneral::dim = 768;
 size_t BM_VecSimGeneral::M = 64;
 size_t BM_VecSimGeneral::EF_C = 512;
