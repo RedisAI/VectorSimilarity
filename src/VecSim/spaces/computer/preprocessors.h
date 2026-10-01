@@ -658,3 +658,28 @@ private:
     const size_t storage_bytes_count;
     const size_t query_bytes_count;
 };
+
+// Query and storage blobs share the SQ8 representation, including FP32 metadata.
+template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
+class QuantizedQueryPreprocessor : public QuantPreprocessor<DataType, Metric, WithNorm> {
+    using Base = QuantPreprocessor<DataType, Metric, WithNorm>;
+
+public:
+    using Base::Base;
+
+    void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
+                         unsigned char alignment) const override {
+        Base::preprocessForStorage(original_blob, blob, query_blob_size, alignment);
+    }
+
+    void preprocess(const void *original_blob, void *&storage_blob, void *&query_blob,
+                    size_t &storage_blob_size, size_t &query_blob_size,
+                    unsigned char storage_alignment, unsigned char query_alignment) const override {
+        assert(!storage_blob && !query_blob);
+        assert(&storage_blob_size != &query_blob_size);
+        Base::preprocessForStorage(original_blob, storage_blob, storage_blob_size,
+                                   spaces::combineAlignments(storage_alignment, query_alignment));
+        query_blob = storage_blob;
+        query_blob_size = storage_blob_size;
+    }
+};
