@@ -15,6 +15,7 @@
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "unit_test_utils.h"
@@ -2643,4 +2644,175 @@ TEST(DistanceCalculatorWithNormTest, OddDimension_MatchesBruteForce) {
         allocator->free_allocation(y_query);
         delete calc;
     }
+}
+
+namespace {
+
+float sq8FactoryMetadata(const void *blob, size_t dim, size_t slot) {
+    float value;
+    std::memcpy(&value, static_cast<const uint8_t *>(blob) + dim + slot * sizeof(float),
+                sizeof(value));
+    return value;
+}
+
+template <VecSimMetric Metric, bool WithMean>
+void verifyFP16SQ8FactoryQuery(size_t dim, bool constant) {
+    using data_t = vecsim_types::float16;
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    std::vector<float> mean(dim);
+    std::vector<data_t> x(dim), y(dim);
+    for (size_t d = 0; d < dim; ++d) {
+        mean[d] = (static_cast<int>(d % 5) - 2) * 0.125f;
+        const float x_value = constant ? 0.75f : (static_cast<int>(d % 7) - 3) * 0.25f;
+        const float y_value = constant ? -0.25f : (static_cast<int>((d * 3) % 11) - 5) * 0.125f;
+        x[d] = vecsim_types::FP32_to_FP16(x_value);
+        y[d] = vecsim_types::FP32_to_FP16(y_value);
+    }
+    const auto original_y = y;
+    auto components =
+        CreateSQ8IndexComponents<data_t, Metric>(allocator, dim, WithMean ? mean.data() : nullptr);
+    const size_t bytes = vecsim_types::sq8::storage_bytes_count<Metric, WithMean>(dim);
+    {
+        auto x_storage =
+            components.preprocessors->preprocessForStorage(x.data(), dim * sizeof(data_t));
+        auto y_storage =
+            components.preprocessors->preprocessForStorage(y.data(), dim * sizeof(data_t));
+        auto y_query = components.preprocessors->preprocessQuery(y.data(), dim * sizeof(data_t));
+        auto paired = components.preprocessors->preprocess(y.data(), dim * sizeof(data_t));
+        ASSERT_NE(x_storage.get(), nullptr);
+        ASSERT_NE(y_storage.get(), nullptr);
+        ASSERT_NE(y_query.get(), nullptr);
+        ASSERT_EQ(paired.getStorageBlob(), paired.getQueryBlob());
+        EXPECT_EQ(std::memcmp(y_storage.get(), y_query.get(), bytes), 0);
+        EXPECT_EQ(std::memcmp(y_storage.get(), paired.getQueryBlob(), bytes), 0);
+        EXPECT_EQ(std::memcmp(y.data(), original_y.data(), dim * sizeof(data_t)), 0);
+        if (const auto alignment = components.preprocessors->getQueryAlignment()) {
+            EXPECT_EQ(reinterpret_cast<uintptr_t>(y_query.get()) % alignment, 0u);
+        }
+        if (const auto alignment = components.preprocessors->getStorageAlignment()) {
+            EXPECT_EQ(reinterpret_cast<uintptr_t>(paired.getStorageBlob()) % alignment, 0u);
+        }
+
+        // Reconstruct both SQ8 operands independently of the distance kernel.
+        const double x_min = sq8FactoryMetadata(x_storage.get(), dim, vecsim_types::sq8::MIN_VAL);
+        const double x_delta = sq8FactoryMetadata(x_storage.get(), dim, vecsim_types::sq8::DELTA);
+        const double y_min = sq8FactoryMetadata(y_query.get(), dim, vecsim_types::sq8::MIN_VAL);
+        const double y_delta = sq8FactoryMetadata(y_query.get(), dim, vecsim_types::sq8::DELTA);
+        double reference = Metric == VecSimMetric_IP ? 1.0 : 0.0;
+        const auto *x_bytes = static_cast<const uint8_t *>(x_storage.get());
+        const auto *y_bytes = static_cast<const uint8_t *>(y_query.get());
+        for (size_t d = 0; d < dim; ++d) {
+            const double xr = x_min + x_delta * x_bytes[d];
+            const double yr = y_min + y_delta * y_bytes[d];
+            if constexpr (Metric == VecSimMetric_IP) {
+                reference -= xr * yr;
+            } else {
+                reference += (xr - yr) * (xr - yr);
+            }
+        }
+        if constexpr (Metric == VecSimMetric_IP && WithMean) {
+            double mean_square = 0.0;
+            for (float v : mean)
+                mean_square += double(v) * v;
+            reference -= sq8FactoryMetadata(x_storage.get(), dim,
+                                            vecsim_types::sq8::mean_ip_index<Metric>());
+            reference -=
+                sq8FactoryMetadata(y_query.get(), dim, vecsim_types::sq8::mean_ip_index<Metric>());
+            reference += mean_square;
+        }
+        const float got =
+            components.indexCalculator->calcDistanceForQuery(x_storage.get(), y_query.get(), dim);
+        const float stored =
+            components.indexCalculator->calcDistance(x_storage.get(), y_storage.get(), dim);
+        const auto query_dispatch =
+            components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+        const auto stored_dispatch =
+            components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToStored);
+        ASSERT_TRUE(query_dispatch.isValid());
+        ASSERT_TRUE(stored_dispatch.isValid());
+        EXPECT_NEAR(got, reference, 0.002f);
+        EXPECT_NEAR(stored, reference, 0.002f);
+        EXPECT_FLOAT_EQ(query_dispatch(x_storage.get(), y_query.get(), dim), got);
+        EXPECT_FLOAT_EQ(stored_dispatch(x_storage.get(), y_storage.get(), dim), stored);
+    }
+    delete components.preprocessors;
+    delete components.indexCalculator;
+}
+
+} // namespace
+
+TEST(SQ8FactoryTest, FP16QueriesShareStorageEncodingAndMatchReconstruction) {
+    for (size_t dim : {size_t{7}, size_t{64}, size_t{65}}) {
+        for (bool constant : {false, true}) {
+            SCOPED_TRACE(::testing::Message() << "dim=" << dim << " constant=" << constant);
+            verifyFP16SQ8FactoryQuery<VecSimMetric_L2, false>(dim, constant);
+            verifyFP16SQ8FactoryQuery<VecSimMetric_L2, true>(dim, constant);
+            verifyFP16SQ8FactoryQuery<VecSimMetric_IP, false>(dim, constant);
+            verifyFP16SQ8FactoryQuery<VecSimMetric_IP, true>(dim, constant);
+        }
+    }
+}
+
+TEST(SQ8FactoryTest, FP32QueriesRemainAsymmetric) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 7;
+    const float y[dim] = {0.25f, -0.5f, 0.75f, 0.0f, 1.0f, -0.25f, 0.5f};
+    auto components = CreateSQ8IndexComponents<float, VecSimMetric_L2>(allocator, dim, nullptr);
+    {
+        auto paired = components.preprocessors->preprocess(y, sizeof(y));
+        ASSERT_NE(paired.getStorageBlob(), nullptr);
+        ASSERT_NE(paired.getQueryBlob(), nullptr);
+        EXPECT_NE(paired.getStorageBlob(), paired.getQueryBlob());
+        EXPECT_EQ(std::memcmp(paired.getQueryBlob(), y, sizeof(y)), 0);
+        auto query = components.preprocessors->preprocessQuery(y, sizeof(y));
+        EXPECT_EQ(std::memcmp(query.get(), y, sizeof(y)), 0);
+    }
+    delete components.preprocessors;
+    delete components.indexCalculator;
+}
+
+TEST(SQ8FactoryTest, FP16CachedDispatchUsesUpdatedMean) {
+    using data_t = vecsim_types::float16;
+    constexpr size_t dim = 17;
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    std::vector<float> zero(dim, 0.0f), mean(dim);
+    std::vector<data_t> x(dim), y(dim);
+    for (size_t d = 0; d < dim; ++d) {
+        mean[d] = (static_cast<int>(d % 5) - 2) * 0.125f;
+        x[d] = vecsim_types::FP32_to_FP16((static_cast<int>(d % 7) - 3) * 0.25f);
+        y[d] = vecsim_types::FP32_to_FP16((static_cast<int>(d % 3) - 1) * 0.5f);
+    }
+    auto deferred = CreateSQ8IndexComponents<data_t, VecSimMetric_IP>(allocator, dim, zero.data());
+    auto direct = CreateSQ8IndexComponents<data_t, VecSimMetric_IP>(allocator, dim, mean.data());
+    auto cached = deferred.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+    auto *pp = dynamic_cast<QuantizedQueryPreprocessor<data_t, VecSimMetric_IP, true> *>(
+        static_cast<MultiPreprocessorsContainer<data_t, 1> *>(deferred.preprocessors)
+            ->getPreprocessors()[0]);
+    auto *calc =
+        dynamic_cast<QuantizedQueryDistanceCalculatorWithNorm<data_t, float, VecSimMetric_IP> *>(
+            deferred.indexCalculator);
+    ASSERT_NE(pp, nullptr);
+    ASSERT_NE(calc, nullptr);
+    pp->setMean(mean);
+    calc->setMeanSumSquares(mean);
+    {
+        auto x_deferred =
+            deferred.preprocessors->preprocessForStorage(x.data(), dim * sizeof(data_t));
+        auto y_deferred = deferred.preprocessors->preprocessQuery(y.data(), dim * sizeof(data_t));
+        auto x_direct = direct.preprocessors->preprocessForStorage(x.data(), dim * sizeof(data_t));
+        auto y_direct = direct.preprocessors->preprocessQuery(y.data(), dim * sizeof(data_t));
+        const size_t bytes = vecsim_types::sq8::storage_bytes_count<VecSimMetric_IP, true>(dim);
+        EXPECT_EQ(std::memcmp(x_deferred.get(), x_direct.get(), bytes), 0);
+        EXPECT_EQ(std::memcmp(y_deferred.get(), y_direct.get(), bytes), 0);
+        const float expected =
+            direct.indexCalculator->calcDistanceForQuery(x_direct.get(), y_direct.get(), dim);
+        EXPECT_FLOAT_EQ(cached(x_deferred.get(), y_deferred.get(), dim), expected);
+        EXPECT_FLOAT_EQ(
+            deferred.indexCalculator->calcDistanceForQuery(x_deferred.get(), y_deferred.get(), dim),
+            expected);
+    }
+    delete deferred.preprocessors;
+    delete deferred.indexCalculator;
+    delete direct.preprocessors;
+    delete direct.indexCalculator;
 }
