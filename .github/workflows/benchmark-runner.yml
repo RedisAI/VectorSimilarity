@@ -98,6 +98,13 @@ jobs:
         timeout-minutes: 300
         run: |
           make benchmark BM_FILTER=${{ inputs.setup }}
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-${{ inputs.setup }}-${{ inputs.architecture }}
+          path: '**/*_results.json'
+          if-no-files-found: warn
       - name: Collect results
         run: |
           ./tests/benchmark/benchmarks.sh ${{ inputs.setup }} | xargs -P 0 -I {} redisbench-admin export \
