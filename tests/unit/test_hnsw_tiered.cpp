@@ -5174,6 +5174,28 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
     ASSERT_EQ(tiered_index->indexMetaDataCapacity(),
               hnsw_index->indexMetaDataCapacity() +
                   tiered_index->frontendIndex->indexMetaDataCapacity());
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2 * blockSize);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), ++resize_operations);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 3 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 4 * blockSize);
+
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 2 * blockSize), 1);
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    tiered_index->executeReadySwapJobs();
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), ++resize_operations);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 2 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 4 * blockSize);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2 * blockSize);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), ++resize_operations);
+    ASSERT_EQ(hnsw_index->indexSize(), 2 * blockSize + 1);
+    ASSERT_EQ(hnsw_index->indexCapacity(), 3 * blockSize);
+    ASSERT_EQ(hnsw_index->indexMetaDataCapacity(), 4 * blockSize);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, relabelVectorFlatOnly) {
