@@ -341,6 +341,19 @@ public:
     //   just overwritten in place.
     HNSWAddVectorState storeNewElement(labelType label, const void *vector_data,
                                        idType elementId = INVALID_ID);
+    // Reusing the slot of `deletedId`, a marked-deleted element whose repairs are all done, for a
+    // new element instead of appending one - the counterpart of `swapDeletedElement` that keeps
+    // the slot - takes two steps:
+    // 1. `clearDeletedSlot` frees the element's graph data and leaves an empty one (level 0, no
+    //    links) in its place. No graph scan may be in flight, as one may still hold a stale link to
+    //    it. The slot stays marked deleted, and is safe to be moved by a swap like any other.
+    // 2. `storeNewElementInClearedSlot` then stores the new element there, like `storeNewElement`
+    //    appends one - with the index data guard held exclusively, and graph scans allowed. Unlike
+    //    an in-place overwrite, the label no longer maps to this id (it was dropped when marked
+    //    deleted), so it's mapped again here.
+    void clearDeletedSlot(idType deletedId);
+    HNSWAddVectorState storeNewElementInClearedSlot(labelType label, const void *vector_data,
+                                                    idType clearedId);
     void swapDeletedElement(idType internalId);
     // Repairs every neighbor affected by removing `element_internal_id` (both directions, every
     // level) exactly as a real removal would, then replaces the entry point if the element held
@@ -2032,6 +2045,36 @@ void HNSWIndex<DataType, DistType>::repairConnectionsAndEntryPoint(
         assert(element_data->toplevel == maxLevel);
         replaceEntryPoint();
     }
+}
+
+template <typename DataType, typename DistType>
+void HNSWIndex<DataType, DistType>::clearDeletedSlot(idType deletedId) {
+    assert(isMarkedDeleted(deletedId) && "Only a marked-deleted element's slot may be reclaimed");
+    // Normally a no-op, since the last repair of a deleted element isolates it. Not when its
+    // repairs were invalidated instead of run (their node was disposed), which leaves its edges
+    // for whoever disposes of it - us, here.
+    isolateDeletedElement(deletedId);
+    disposeElementData(deletedId);
+    // Leave a valid, empty element rather than freed memory: the slot may still be read (or moved
+    // by a swap) before the new element is stored in it.
+    auto tmpData = this->allocator->allocate_unique(this->elementGraphDataSize);
+    memset(tmpData.get(), 0, this->elementGraphDataSize);
+    new (tmpData.get()) ElementGraphData(0, levelDataSize, this->allocator);
+    this->graphDataBlocks[deletedId / this->blockSize].updateElement(deletedId % this->blockSize,
+                                                                     tmpData.get());
+}
+
+template <typename DataType, typename DistType>
+HNSWAddVectorState HNSWIndex<DataType, DistType>::storeNewElementInClearedSlot(
+    labelType label, const void *vector_data, idType clearedId) {
+    assert(isMarkedDeleted(clearedId) && "Only a cleared deleted element's slot may be reused");
+    // Free the empty element `clearDeletedSlot` left, since `storeNewElement` overwrites the slot.
+    getGraphDataByInternalId(clearedId)->destroy(this->levelDataSize, this->allocator);
+    // The slot is no longer a deleted element, so it's no longer counted as one.
+    --numMarkedDeleted;
+    HNSWAddVectorState state = storeNewElement(label, vector_data, clearedId);
+    setVectorId(label, clearedId);
+    return state;
 }
 
 template <typename DataType, typename DistType>
