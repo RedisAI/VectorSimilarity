@@ -223,10 +223,11 @@ private:
     // while *HNSW shared lock is held* (shared locked).
     // If `reuse_insert_job` is given (a single-value overwrite, not yet submitted), the deleted id
     // is reserved for it and that insert job stores its vector there instead of appending. If the
-    // id has repairs pending, the job is then run once they're done instead of being submitted,
-    // and `*insert_job_deferred` is set - the caller must neither submit nor touch it anymore.
-    int deleteLabelFromHNSW(labelType label, HNSWInsertJob *reuse_insert_job = nullptr,
-                            bool *insert_job_deferred = nullptr);
+    // id has repairs pending, the job is then run once they're done instead of being submitted.
+    // Returns the number of deleted vectors and whether submission of the insert job was delegated
+    // to the repair flow (in which case the caller must neither submit nor touch it anymore).
+    std::tuple<int, bool> deleteLabelFromHNSW(labelType label,
+                                              HNSWInsertJob *reuse_insert_job = nullptr);
 
     // Account for a swap job whose last repair is done. Called with `idToRepairJobsGuard` held.
     void onSwapJobRepaired(HNSWSwapJob *swap_job);
@@ -562,9 +563,9 @@ void TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsToR
 }
 
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label,
-                                                             HNSWInsertJob *reuse_insert_job,
-                                                             bool *insert_job_deferred) {
+std::tuple<int, bool>
+TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label,
+                                                         HNSWInsertJob *reuse_insert_job) {
     auto *hnsw_index = getHNSWIndex();
     this->mainIndexGuard.lock_shared();
 
@@ -573,6 +574,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label,
     auto internal_ids = hnsw_index->markDelete(label);
     assert((!reuse_insert_job || internal_ids.size() <= 1) &&
            "id reuse pairs a single deleted id with a single insert job");
+    bool submission_delegated = false;
 
     for (size_t i = 0; i < internal_ids.size(); i++) {
         idType id = internal_ids[i];
@@ -624,11 +626,9 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label,
             // No pending repair jobs, so swap jobs is ready from the beginning.
             readySwapJobs++;
         }
-        if (reuse_insert_job && insert_job_deferred) {
-            // With no repairs to wait for, the id is ready already and the caller submits the job
-            // as usual. Otherwise, whichever thread completes the last repair runs it.
-            *insert_job_deferred = !incomingEdges.empty();
-        }
+        // Capture this before publishing the repair jobs: a synchronous submit callback may run
+        // the last repair and then the reuse insert before `deleteLabelFromHNSW` returns.
+        submission_delegated = reuse_insert_job && !incomingEdges.empty();
         this->idToRepairJobsGuard.unlock();
 
         if (incomingEdges.size() == 0) {
@@ -649,7 +649,9 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label,
         }
     }
     this->mainIndexGuard.unlock_shared();
-    return internal_ids.size();
+    // With no repairs to wait for, the id is ready already and the caller submits the job as
+    // usual. Otherwise, whichever path accounts for the last repair submits it.
+    return {static_cast<int>(internal_ids.size()), submission_delegated};
 }
 
 template <typename DataType, typename DistType>
@@ -1314,13 +1316,15 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // Here, a worker might ingest the previous vector that was stored under "label"
     // (in case of override in non-MULTI index) - so if it's there, we remove it (and create the
     // required repair jobs), *before* we submit the insert job.
-    bool insert_job_deferred = false;
+    bool submission_delegated = false;
     if (!this->backendIndex->isMultiValue()) {
         // If we removed the previous vector from both HNSW and flat in the overwrite process,
         // we still return 0 (not -1). With reuse on, the new vector takes over the old one's id
         // instead of appending a fresh one.
         HNSWInsertJob *reuse_job = this->reuseIdOnUpdate ? new_insert_job : nullptr;
-        ret = std::max(ret - this->deleteLabelFromHNSW(label, reuse_job, &insert_job_deferred), 0);
+        auto [deleted_count, delegated] = this->deleteLabelFromHNSW(label, reuse_job);
+        ret = std::max(ret - deleted_count, 0);
+        submission_delegated = delegated;
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
@@ -1333,7 +1337,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
 
     // Insert job to the queue and signal the workers' updater - unless it's held until the id it
     // reuses is repaired, in which case it may even have run and been freed by now.
-    if (!insert_job_deferred) {
+    if (!submission_delegated) {
         this->submitSingleJob(new_insert_job);
     }
     // Isolating a deleted element, or running swap jobs, can complete a reserved id's repairs.
@@ -1389,7 +1393,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     // writeMode is not protected since it is assumed to be called only from the "main thread"
     // (that is the thread that is exclusively calling add/delete vector).
     if (this->getWriteMode() == VecSim_WriteAsync) {
-        num_deleted_vectors += this->deleteLabelFromHNSW(label);
+        num_deleted_vectors += std::get<0>(this->deleteLabelFromHNSW(label));
         // Apply ready swap jobs if number of deleted vectors reached the threshold
         // (under exclusive lock of the main index guard).
         if (readySwapJobs >= this->pendingSwapJobsThreshold) {
