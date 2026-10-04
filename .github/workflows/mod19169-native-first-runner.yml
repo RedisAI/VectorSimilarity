@@ -66,7 +66,7 @@ jobs:
           security-group-id: ${{ secrets.AWS_EC2_SG_ID_BENCHMARK }}
 
   benchmark:
-    name: Validate two-sum SQ8 native FP16 on runner
+    name: Validate four-sum SQ8 native FP16 on runner
     needs: start-runner
     runs-on: ${{ needs.start-runner.outputs.runner_label }}
     steps:
@@ -92,17 +92,22 @@ jobs:
       - name: Download pre-generated indices
         timeout-minutes: 30
         run: ./tests/benchmark/bm_files.sh bm-basics-fp16-single
-      - name: Build one-sum and two-sum native FP16
+      - name: Build native FP16 accumulator and reduction variants
         env:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 120
         run: bash tests/benchmark/mod19169-native-first.sh build
-      - name: Check two-sum native FP16 and fallback correctness
+      - name: Check four-sum native FP16 and fallback correctness
         env:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 30
         run: bash tests/benchmark/mod19169-native-first.sh check
-      - name: Compare one-sum and two-sum native FP16 on saved graphs
+      - name: Compare distance kernels across dimensions and cache regimes
+        env:
+          ARCH: ${{ inputs.architecture }}
+        timeout-minutes: 30
+        run: bash tests/benchmark/mod19169-native-first.sh kernel
+      - name: Compare native FP16 accumulator and reduction variants on saved graphs
         env:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 150

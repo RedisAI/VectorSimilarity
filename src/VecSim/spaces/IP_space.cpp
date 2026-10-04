@@ -40,6 +40,14 @@ using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
 namespace spaces {
+namespace {
+#if defined(MOD19169_FP16_VARIANT) && MOD19169_FP16_VARIANT != 0
+[[maybe_unused]] constexpr size_t sq8_fp16_native_min_dim = 128;
+#else
+[[maybe_unused]] constexpr size_t sq8_fp16_native_min_dim = 32;
+#endif
+} // namespace
+
 // SQ8-FP32: asymmetric distance between SQ8 storage and FP32 query
 dist_func_t<float> IP_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {
@@ -195,8 +203,8 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
 #if defined(OPT_AVX512_FP16_BW_VL) && (!defined(MOD19169_NATIVE_FP16) || MOD19169_NATIVE_FP16)
-    if (dim >= 32 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.avx512f &&
-        features.avx512_fp16 && features.avx512bw && features.avx512vl) {
+    if (dim >= sq8_fp16_native_min_dim && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM &&
+        features.avx512f && features.avx512_fp16 && features.avx512bw && features.avx512vl) {
         if (dim % 32 == 0)
             *alignment = 32 * sizeof(uint8_t);
         return Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
@@ -281,8 +289,8 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
         return ret_dist_func;
     }
 #if defined(OPT_AVX512_FP16_BW_VL) && (!defined(MOD19169_NATIVE_FP16) || MOD19169_NATIVE_FP16)
-    if (dim >= 32 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.avx512f &&
-        features.avx512_fp16 && features.avx512bw && features.avx512vl) {
+    if (dim >= sq8_fp16_native_min_dim && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM &&
+        features.avx512f && features.avx512_fp16 && features.avx512bw && features.avx512vl) {
         if (dim % 32 == 0)
             *alignment = 32 * sizeof(uint8_t);
         return Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);

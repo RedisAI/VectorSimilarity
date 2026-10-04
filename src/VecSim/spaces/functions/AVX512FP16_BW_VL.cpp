@@ -16,6 +16,19 @@ namespace spaces {
 
 dist_func_t<float> Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(size_t dim) {
     dist_func_t<float> ret_dist_func;
+#if defined(MOD19169_FP16_VARIANT) && MOD19169_FP16_VARIANT != 0
+    static_assert(MOD19169_FP16_VARIANT == 1 || MOD19169_FP16_VARIANT == 2);
+    if (dim >= 256) {
+#if MOD19169_FP16_VARIANT == 1
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32,
+                              SQ8_FP16_InnerProductSIMD32_FourSums_AVX512FP16_BW_VL);
+#else
+        CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32,
+                              SQ8_FP16_InnerProductSIMD32_FourSumsFloatReduce_AVX512FP16_BW_VL);
+#endif
+        return ret_dist_func;
+    }
+#endif
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL);
     return ret_dist_func;
 }

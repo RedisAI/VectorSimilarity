@@ -31,8 +31,8 @@
 #ifndef BUILD_TESTS
 #error "MOD19169 validation requires BUILD_TESTS and VectorSimilaritySerializer"
 #endif
-#ifndef MOD19169_TWO_SUMS
-#error "MOD19169 validation requires an explicit MOD19169_TWO_SUMS mode"
+#ifndef MOD19169_FP16_VARIANT
+#error "MOD19169 validation requires an explicit MOD19169_FP16_VARIANT mode"
 #endif
 
 #if !defined(MOD19169_NATIVE_FP16) || MOD19169_NATIVE_FP16 != 1
@@ -40,7 +40,7 @@
 #endif
 
 namespace {
-static_assert(MOD19169_TWO_SUMS == 0 || MOD19169_TWO_SUMS == 1);
+static_assert(MOD19169_FP16_VARIANT >= 0 && MOD19169_FP16_VARIANT <= 2);
 constexpr size_t query_count = 1000;
 constexpr size_t k = 100;
 constexpr size_t training_count = 10240;
@@ -399,8 +399,8 @@ GraphIdentity build_graph(const Options &o, const Inputs<T> &inputs, double &sec
             "Built graph differs from selected corpus");
     GraphIdentity identity;
     identity.inputs = inputs.identity;
-    identity.metadata = {graph_magic, inputs.mean_hash,  stored_checksum(graph),
-                         0,           MOD19169_TWO_SUMS, 100};
+    identity.metadata = {graph_magic, inputs.mean_hash,      stored_checksum(graph),
+                         0,           MOD19169_FP16_VARIANT, 100};
     graph->saveIndex(o.graph);
     size = std::filesystem::file_size(o.graph);
     identity.metadata[3] = file_hash(o.graph);
@@ -436,7 +436,7 @@ void report(const Options &o, const Inputs<T> &inputs, const Reference *referenc
            << ",\n  \"dtype\": " << json_string(o.dtype)
            << ",\n  \"dataset\": " << json_string(o.dataset)
            << ",\n  \"corpus\": " << json_string(o.corpus)
-           << ",\n  \"query_mode\": " << MOD19169_TWO_SUMS
+           << ",\n  \"query_mode\": " << MOD19169_FP16_VARIANT
            << ",\n  \"source\": " << json_string(o.source)
            << ",\n  \"queries\": " << json_string(o.queries)
            << ",\n  \"graph\": " << json_string(o.graph) << ",\n  \"dimension\": " << o.dim()
@@ -514,7 +514,7 @@ int run(const Options &o, int argc, char **argv) {
                     graph_identity.inputs == inputs.identity &&
                     graph_identity.metadata[0] == graph_magic &&
                     graph_identity.metadata[1] == inputs.mean_hash &&
-                    graph_identity.metadata[4] <= 1 && graph_identity.metadata[5] == 100 &&
+                    graph_identity.metadata[4] <= 2 && graph_identity.metadata[5] == 100 &&
                     graph_identity.metadata[3] == file_hash(o.graph),
                 "Graph identity is stale, corrupt, wrong, or absent");
     }
@@ -604,7 +604,7 @@ int run(const Options &o, int argc, char **argv) {
                 per_query_hits[ef] = std::move(hits);
                 state.counters["Recall_vs_FP32_BF"] = double(correct) / (k * q);
                 state.counters["FP32_BF_boundary_tied_queries"] = reference.ties;
-                state.counters["query_mode"] = MOD19169_TWO_SUMS;
+                state.counters["query_mode"] = MOD19169_FP16_VARIANT;
                 state.SetLabel(
                     "reference=FP32_BF_over_original_typed_values; query includes preprocessing");
             })
@@ -651,7 +651,7 @@ int numeric_domain_probe() {
         classification =
             std::isnan(scalar) && std::isnan(cached) ? "nan_distance" : "nonfinite_distance";
     std::cout << std::setprecision(std::numeric_limits<float>::max_digits10)
-              << "{\n  \"query_mode\": " << MOD19169_TWO_SUMS << ",\n  \"scalar_score\": ";
+              << "{\n  \"query_mode\": " << MOD19169_FP16_VARIANT << ",\n  \"scalar_score\": ";
     if (scalar_finite)
         std::cout << scalar;
     else
