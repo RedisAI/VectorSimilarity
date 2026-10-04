@@ -75,12 +75,14 @@ case "${1:-}" in
         git rev-parse HEAD > "$results_dir/source.txt"
         lscpu > "$results_dir/cpu.txt"
         python3 -c 'import os; print(min(os.sched_getaffinity(0)))' > "$results_dir/query-cpu.txt"
-        for dtype in fp16 fp32; do
-            for dataset in single multi; do
-                set_case "$dtype" "$dataset" full
-                sha256sum "$source_path" "$queries_path" "$saved_graph" >> "$results_dir/inputs.sha256"
+        if [[ "${PROBE_ONLY:-false}" != true ]]; then
+            for dtype in fp16 fp32; do
+                for dataset in single multi; do
+                    set_case "$dtype" "$dataset" full
+                    sha256sum "$source_path" "$queries_path" "$saved_graph" >> "$results_dir/inputs.sha256"
+                done
             done
-        done
+        fi
         for mode in baseline candidate; do
             value=0
             if [[ "$mode" == candidate ]]; then value=1; fi
@@ -110,6 +112,12 @@ case "${1:-}" in
         done
         sha256sum --check "$results_dir/inputs.sha256"
         ;;
+    numeric)
+        for mode in baseline candidate; do
+            binary="$RUNNER_TEMP/mod19169-rebuilt-$mode/benchmark/bm_mod19169_validation"
+            "$binary" --numeric-domain-probe > "$results_dir/numeric-$mode.json"
+        done
+        ;;
     saved)
         for dataset in single multi; do
             set_case fp32 "$dataset" full
@@ -119,7 +127,7 @@ case "${1:-}" in
         sha256sum --check "$results_dir/inputs.sha256"
         ;;
     *)
-        echo "usage: $0 {build|rebuilt|saved}" >&2
+        echo "usage: $0 {build|rebuilt|saved|numeric}" >&2
         exit 2
         ;;
 esac

@@ -6,6 +6,7 @@
 #include "benchmark/benchmark.h"
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/brute_force_factory.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/types/float16.h"
 
@@ -18,6 +19,7 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -616,10 +618,58 @@ int run(const Options &o, int argc, char **argv) {
            &per_query_hits);
     return failed ? 1 : 0;
 }
+
+int numeric_domain_probe() {
+    constexpr size_t dim = 2;
+    const std::array<float, dim> storage{1e-37f, 1e-37f};
+    const float max = std::numeric_limits<float>::max();
+    const std::array<float, dim> query{max, -max};
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto components = CreateSQ8IndexComponents<float, VecSimMetric_IP>(allocator, dim, nullptr);
+    std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
+    std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+    require(calculator && preprocessors, "Numeric-domain probe components are unavailable");
+    auto storage_blob = preprocessors->preprocessForStorage(storage.data(), sizeof(storage));
+    auto query_blob = preprocessors->preprocessQuery(query.data(), sizeof(query));
+    require(storage_blob && query_blob, "Numeric-domain probe preprocessing failed");
+    const auto dispatch = calculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+    require(dispatch.isValid(), "Numeric-domain probe query dispatch is unavailable");
+    const float scalar =
+        calculator->calcDistanceForQuery(storage_blob.get(), query_blob.get(), dim);
+    const float cached = dispatch(storage_blob.get(), query_blob.get(), dim);
+    const bool scalar_finite = std::isfinite(scalar);
+    const bool cached_finite = std::isfinite(cached);
+    const char *classification;
+    if (scalar_finite != cached_finite || (scalar_finite && scalar != cached))
+        classification = "dispatch_mismatch";
+    else if (scalar_finite)
+        classification = scalar == 1.0f ? "finite_expected_distance" : "finite_unexpected_distance";
+    else
+        classification =
+            std::isnan(scalar) && std::isnan(cached) ? "nan_distance" : "nonfinite_distance";
+    std::cout << std::setprecision(std::numeric_limits<float>::max_digits10)
+              << "{\n  \"query_mode\": " << MOD19169_SQ8_QUERY << ",\n  \"scalar_score\": ";
+    if (scalar_finite)
+        std::cout << scalar;
+    else
+        std::cout << "null";
+    std::cout << ",\n  \"scalar_finite\": " << (scalar_finite ? "true" : "false")
+              << ",\n  \"cached_score\": ";
+    if (cached_finite)
+        std::cout << cached;
+    else
+        std::cout << "null";
+    std::cout << ",\n  \"cached_finite\": " << (cached_finite ? "true" : "false")
+              << ",\n  \"classification\": \"" << classification << "\"\n}\n";
+    require(bool(std::cout.flush()), "Cannot write numeric-domain probe results");
+    return 0;
+}
 } // namespace
 
 int main(int argc, char **argv) {
     try {
+        if (argc == 2 && std::string(argv[1]) == "--numeric-domain-probe")
+            return numeric_domain_probe();
         auto options = parse(argc, argv);
         if (options.dtype == "fp16")
             return run<vecsim_types::float16>(options, argc, argv);

@@ -44,6 +44,7 @@ on:
           - bm-sq8-compare-fp32
           - bm-sq8-compare-fp16
           - bm-mod19169-rebuilt-validation
+          - bm-mod19169-domain-validation
           - bm-sq8-train-fp32
           - bm-sq8-train-fp16
           - bm-svs-train-fp32
@@ -104,7 +105,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   run_benchmarks:
-    if: inputs.setup != 'bm-mod19169-rebuilt-validation'
+    if: inputs.setup != 'bm-mod19169-rebuilt-validation' && inputs.setup != 'bm-mod19169-domain-validation'
     name: Run ${{ matrix.architecture }} benchmarks
     needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
@@ -118,7 +119,7 @@ jobs:
       ami-id: ${{ matrix.ami-id }}
 
   run_rebuilt_validation:
-    if: inputs.setup == 'bm-mod19169-rebuilt-validation'
+    if: inputs.setup == 'bm-mod19169-rebuilt-validation' || inputs.setup == 'bm-mod19169-domain-validation'
     name: Validate ${{ matrix.architecture }} rebuilt graphs and FP32 queries
     needs: prepare_runner_configurations
     uses: ./.github/workflows/mod19169-rebuilt-validation-runner.yml

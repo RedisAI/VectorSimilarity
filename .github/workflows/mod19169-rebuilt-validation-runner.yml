@@ -90,6 +90,7 @@ jobs:
           pip3 install --upgrade pip PyYAML setuptools redisbench-admin
           pip3 install -r requirements.txt
       - name: Download pre-generated indices
+        if: inputs.setup == 'bm-mod19169-rebuilt-validation'
         timeout-minutes: 30
         run: |
           ./tests/benchmark/bm_files.sh bm-basics-fp16-single
@@ -97,18 +98,26 @@ jobs:
       - name: Build validation binaries
         env:
           ARCH: ${{ inputs.architecture }}
+          PROBE_ONLY: ${{ inputs.setup == 'bm-mod19169-domain-validation' }}
         timeout-minutes: 120
         run: bash tests/benchmark/mod19169-rebuilt-validation.sh build
       - name: Validate newly built graphs
+        if: inputs.setup == 'bm-mod19169-rebuilt-validation'
         env:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 180
         run: bash tests/benchmark/mod19169-rebuilt-validation.sh rebuilt
       - name: Validate FP32 on saved graphs
+        if: inputs.setup == 'bm-mod19169-rebuilt-validation'
         env:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 150
         run: bash tests/benchmark/mod19169-rebuilt-validation.sh saved
+      - name: Check FP32 quantization numeric domain
+        if: inputs.setup == 'bm-mod19169-domain-validation'
+        env:
+          ARCH: ${{ inputs.architecture }}
+        run: bash tests/benchmark/mod19169-rebuilt-validation.sh numeric
       - name: Upload experimental validation results
         if: always()
         uses: actions/upload-artifact@v7
