@@ -3,6 +3,7 @@ set -euo pipefail
 : "${GITHUB_WORKSPACE:?}"
 : "${RUNNER_TEMP:?}"
 : "${ARCH:?}"
+[[ "$ARCH" == x86_64 ]] || { echo "Two-sum experiment requires the approved Intel runner" >&2; exit 2; }
 export ROOT="$GITHUB_WORKSPACE"
 cd "$ROOT"
 results_dir="$ROOT/native-first-results"
@@ -37,7 +38,7 @@ case "${1:-}" in
             case "$mode" in baseline) value=0 ;; candidate) value=1 ;; esac
             build_dir="$RUNNER_TEMP/mod19169-native-first-$mode"
             cmake -S . -B "$build_dir" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMOD19169_NATIVE_VALIDATION=ON \
-                -DCMAKE_CXX_FLAGS="-DMOD19169_NATIVE_FP16=$value"
+                -DCMAKE_CXX_FLAGS="-DMOD19169_NATIVE_FP16=1 -DMOD19169_TWO_SUMS=$value"
             cmake --build "$build_dir" --target bm_mod19169_native_first --parallel "$(nproc)"
             sha256sum "$build_dir/benchmark/bm_mod19169_native_first" >> "$results_dir/binaries.sha256"
             cp "$build_dir/CMakeCache.txt" "$results_dir/cmake-$mode.txt"
@@ -64,7 +65,7 @@ import sys
 import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
 cases = root.findall('.//testsuite[@name="SQ8FP16NativeIPTest"]/testcase')
-assert cases, "Native FP16 tests did not execute"
+assert len(cases) == 7, "All seven native FP16 tests must execute"
 assert all(case.get("status") == "run" and case.find("skipped") is None and case.find("failure") is None for case in cases)
 print("Native FP16 executed cases:", len(cases))
 CHECK_NATIVE

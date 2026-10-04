@@ -52,9 +52,20 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
         codes += residual;
         query += residual;
     }
+#if defined(MOD19169_TWO_SUMS) && MOD19169_TWO_SUMS
+    __m512h sum2 = _mm512_setzero_ph();
+    while (end - codes >= 64) {
+        SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
+        SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum2);
+    }
+    if (codes < end)
+        SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
+    sum = _mm512_add_ph(sum, sum2);
+#else
     do {
         SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
     } while (codes < end);
+#endif
     const _Float16 reduced = _mm512_reduce_add_ph(sum);
     const float dot = static_cast<float>(reduced);
     // Nearest rounding leaves intermediate and reduction overflow nonfinite.

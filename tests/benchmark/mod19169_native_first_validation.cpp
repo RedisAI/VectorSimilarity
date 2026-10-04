@@ -31,12 +31,16 @@
 #ifndef BUILD_TESTS
 #error "MOD19169 validation requires BUILD_TESTS and VectorSimilaritySerializer"
 #endif
-#ifndef MOD19169_NATIVE_FP16
-#error "MOD19169 validation requires an explicit MOD19169_NATIVE_FP16 mode"
+#ifndef MOD19169_TWO_SUMS
+#error "MOD19169 validation requires an explicit MOD19169_TWO_SUMS mode"
+#endif
+
+#if !defined(MOD19169_NATIVE_FP16) || MOD19169_NATIVE_FP16 != 1
+#error "Both accumulator variants require native FP16 dispatch"
 #endif
 
 namespace {
-static_assert(MOD19169_NATIVE_FP16 == 0 || MOD19169_NATIVE_FP16 == 1);
+static_assert(MOD19169_TWO_SUMS == 0 || MOD19169_TWO_SUMS == 1);
 constexpr size_t query_count = 1000;
 constexpr size_t k = 100;
 constexpr size_t training_count = 10240;
@@ -395,8 +399,8 @@ GraphIdentity build_graph(const Options &o, const Inputs<T> &inputs, double &sec
             "Built graph differs from selected corpus");
     GraphIdentity identity;
     identity.inputs = inputs.identity;
-    identity.metadata = {graph_magic, inputs.mean_hash,   stored_checksum(graph),
-                         0,           MOD19169_NATIVE_FP16, 100};
+    identity.metadata = {graph_magic, inputs.mean_hash,  stored_checksum(graph),
+                         0,           MOD19169_TWO_SUMS, 100};
     graph->saveIndex(o.graph);
     size = std::filesystem::file_size(o.graph);
     identity.metadata[3] = file_hash(o.graph);
@@ -432,7 +436,7 @@ void report(const Options &o, const Inputs<T> &inputs, const Reference *referenc
            << ",\n  \"dtype\": " << json_string(o.dtype)
            << ",\n  \"dataset\": " << json_string(o.dataset)
            << ",\n  \"corpus\": " << json_string(o.corpus)
-           << ",\n  \"query_mode\": " << MOD19169_NATIVE_FP16
+           << ",\n  \"query_mode\": " << MOD19169_TWO_SUMS
            << ",\n  \"source\": " << json_string(o.source)
            << ",\n  \"queries\": " << json_string(o.queries)
            << ",\n  \"graph\": " << json_string(o.graph) << ",\n  \"dimension\": " << o.dim()
@@ -600,7 +604,7 @@ int run(const Options &o, int argc, char **argv) {
                 per_query_hits[ef] = std::move(hits);
                 state.counters["Recall_vs_FP32_BF"] = double(correct) / (k * q);
                 state.counters["FP32_BF_boundary_tied_queries"] = reference.ties;
-                state.counters["query_mode"] = MOD19169_NATIVE_FP16;
+                state.counters["query_mode"] = MOD19169_TWO_SUMS;
                 state.SetLabel(
                     "reference=FP32_BF_over_original_typed_values; query includes preprocessing");
             })
@@ -647,7 +651,7 @@ int numeric_domain_probe() {
         classification =
             std::isnan(scalar) && std::isnan(cached) ? "nan_distance" : "nonfinite_distance";
     std::cout << std::setprecision(std::numeric_limits<float>::max_digits10)
-              << "{\n  \"query_mode\": " << MOD19169_NATIVE_FP16 << ",\n  \"scalar_score\": ";
+              << "{\n  \"query_mode\": " << MOD19169_TWO_SUMS << ",\n  \"scalar_score\": ";
     if (scalar_finite)
         std::cout << scalar;
     else

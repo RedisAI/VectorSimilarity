@@ -7,6 +7,7 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -3613,7 +3614,59 @@ bool HasSQ8FP16NativeISA() {
     return features.avx512f && features.avx512bw && features.avx512vl && features.avx512_fp16;
 }
 
+// Round exact half-input arithmetic directly to binary16, including ties-to-even.
+float SQ8FP16RoundHalf(double value) {
+    if (!std::isfinite(value) || value == 0.0)
+        return static_cast<float>(value);
+    const double magnitude = std::abs(value);
+    if (magnitude >= 65520.0)
+        return std::copysign(std::numeric_limits<float>::infinity(), value);
+    int exponent;
+    std::frexp(magnitude, &exponent);
+    const int step_exponent = std::max(exponent - 11, -24);
+    const double scaled = std::ldexp(magnitude, -step_exponent);
+    const double lower = std::floor(scaled);
+    const double fraction = scaled - lower;
+    const bool round_up = fraction > 0.5 || (fraction == 0.5 && (static_cast<uint64_t>(lower) & 1));
+    return std::copysign(static_cast<float>(std::ldexp(lower + round_up, step_exponent)), value);
+}
+
+float SQ8FP16NativeDotReference(const uint8_t *storage, const float16 *query, size_t dim,
+                                bool two_sums) {
+    std::array<float, 32> sums[2]{};
+    const size_t residual = dim % 32;
+    for (size_t lane = 0; lane < residual; ++lane)
+        sums[0][lane] =
+            SQ8FP16RoundHalf(double(storage[lane]) * vecsim_types::FP16_to_FP32(query[lane]));
+    for (size_t block = 0, offset = residual; offset < dim; ++block, offset += 32) {
+        auto &sum = sums[two_sums ? block % 2 : 0];
+        for (size_t lane = 0; lane < 32; ++lane)
+            sum[lane] = SQ8FP16RoundHalf(std::fma(
+                double(storage[offset + lane]),
+                double(vecsim_types::FP16_to_FP32(query[offset + lane])), double(sum[lane])));
+    }
+    if (two_sums)
+        for (size_t lane = 0; lane < 32; ++lane)
+            sums[0][lane] = SQ8FP16RoundHalf(double(sums[0][lane]) + sums[1][lane]);
+    // The compiler's reduce_add_ph combines opposite halves at each stage.
+    for (size_t stride = 16; stride; stride /= 2)
+        for (size_t lane = 0; lane < stride; ++lane)
+            sums[0][lane] = SQ8FP16RoundHalf(double(sums[0][lane]) + sums[0][lane + stride]);
+    return sums[0][0];
+}
+
+#if defined(MOD19169_TWO_SUMS) && MOD19169_TWO_SUMS
+constexpr bool sq8_fp16_two_sums = true;
+#else
+constexpr bool sq8_fp16_two_sums = false;
+#endif
+
 float SQ8FP16NativeReference(const uint8_t *storage, const float16 *query, size_t dim) {
+#if defined(MOD19169_TWO_SUMS) && MOD19169_TWO_SUMS
+    const float dot = SQ8FP16NativeDotReference(storage, query, dim, true);
+    if (!std::isfinite(dot))
+        return Choose_SQ8_FP16_IP_implementation_AVX512F(dim)(storage, query, dim);
+#else
     std::vector<float16> codes(dim);
     for (size_t i = 0; i < dim; ++i)
         codes[i] = vecsim_types::FP32_to_FP16(storage[i]);
@@ -3621,10 +3674,12 @@ float SQ8FP16NativeReference(const uint8_t *storage, const float16 *query, size_
         Choose_FP16_IP_implementation_AVX512FP16_VL(dim)(codes.data(), query, dim);
     if (!std::isfinite(dense_distance))
         return Choose_SQ8_FP16_IP_implementation_AVX512F(dim)(storage, query, dim);
+    const float dot = 1.0f - dense_distance;
+#endif
     const float min = load_unaligned<float>(storage + dim + sq8::MIN_VAL * sizeof(float));
     const float delta = load_unaligned<float>(storage + dim + sq8::DELTA * sizeof(float));
     const float sum = load_unaligned<float>(reinterpret_cast<const uint8_t *>(query + dim));
-    return 1.0f - (min * sum + delta * (1.0f - dense_distance));
+    return 1.0f - (min * sum + delta * dot);
 }
 
 struct SQ8FP16NativeCase {
@@ -5520,35 +5575,69 @@ TEST(SQ8FP16NativeIPTest, DispatchRequiresEveryFeatureAndDimension32) {
     }
 }
 
-TEST(SQ8FP16NativeIPTest, DenseFP16ArithmeticAcrossResidualsAndBlocks) {
+TEST(SQ8FP16NativeIPTest, HalfArithmeticAcrossResidualsAndBlocks) {
     if (!HasSQ8FP16NativeISA())
         GTEST_SKIP() << "AVX512F/BW/VL/FP16 is unavailable";
-    std::vector<size_t> dimensions{32, 511, 512, 513, 768, 1024, 4096};
-    for (size_t residual = 0; residual < 32; ++residual)
-        dimensions.push_back(64 + residual);
+    std::vector<size_t> dimensions{511, 512, 513, 768, 1024, 4096};
+    for (size_t dim = 32; dim < 128; ++dim)
+        dimensions.push_back(dim);
     for (size_t dim : dimensions) {
         SCOPED_TRACE(dim);
-        SQ8FP16NativeCase input(dim);
-        std::vector<float16> codes(dim);
-        for (size_t i = 0; i < dim; ++i) {
-            input.storage[i] = static_cast<uint8_t>((i * 17 + 29) % 256);
-            codes[i] = vecsim_types::FP32_to_FP16(input.storage[i]);
-            input.query[i] = vecsim_types::FP32_to_FP16(float(i % 7 + 1) / 1024.0f);
+        for (bool mixed_signs : {false, true}) {
+            SCOPED_TRACE(mixed_signs);
+            SQ8FP16NativeCase input(dim);
+            std::vector<float16> codes(dim);
+            for (size_t i = 0; i < dim; ++i) {
+                input.storage[i] = static_cast<uint8_t>((i * 17 + 29) % 256);
+                codes[i] = vecsim_types::FP32_to_FP16(input.storage[i]);
+                const float sign = mixed_signs && i % 3 ? -1.0f : 1.0f;
+                input.query[i] = vecsim_types::FP32_to_FP16(sign * float(i % 7 + 1) / 1024.0f);
+            }
+            input.setQuerySum(dim);
+            const auto original = input.query;
+            const float one_sum = 1.0f - SQ8FP16NativeDotReference(input.storage.data(),
+                                                                   input.query.data(), dim, false);
+            EXPECT_FLOAT_EQ(Choose_FP16_IP_implementation_AVX512FP16_VL(dim)(
+                                codes.data(), input.query.data(), dim),
+                            one_sum);
+            const float expected =
+                sq8_fp16_two_sums ? 1.0f - SQ8FP16NativeDotReference(input.storage.data(),
+                                                                     input.query.data(), dim, true)
+                                  : one_sum;
+            ASSERT_TRUE(std::isfinite(expected));
+            EXPECT_FLOAT_EQ(Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim)(
+                                input.storage.data(), input.query.data(), dim),
+                            expected);
+            EXPECT_FLOAT_EQ(Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim)(
+                                input.storage.data(), input.query.data(), dim),
+                            expected);
+            EXPECT_EQ(
+                std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)),
+                0);
         }
-        input.setQuerySum(dim);
-        const auto original = input.query;
-        const float expected =
-            Choose_FP16_IP_implementation_AVX512FP16_VL(dim)(codes.data(), input.query.data(), dim);
-        ASSERT_TRUE(std::isfinite(expected));
-        EXPECT_FLOAT_EQ(Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim)(
-                            input.storage.data(), input.query.data(), dim),
-                        expected);
-        EXPECT_FLOAT_EQ(Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim)(
-                            input.storage.data(), input.query.data(), dim),
-                        expected);
-        EXPECT_EQ(
-            std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)), 0);
     }
+    constexpr size_t dim = 96;
+    SQ8FP16NativeCase input(dim);
+    for (size_t offset : {0UL, 32UL, 64UL})
+        input.storage[offset] = 1;
+    input.query[0] = vecsim_types::FP32_to_FP16(2048.0f);
+    input.query[32] = vecsim_types::FP32_to_FP16(1.0f);
+    input.query[64] = vecsim_types::FP32_to_FP16(-2048.0f);
+    input.setQuerySum(dim);
+    ASSERT_FLOAT_EQ(SQ8FP16NativeDotReference(input.storage.data(), input.query.data(), dim, false),
+                    0.0f);
+    ASSERT_FLOAT_EQ(SQ8FP16NativeDotReference(input.storage.data(), input.query.data(), dim, true),
+                    1.0f);
+    const auto original = input.query;
+    const float expected = sq8_fp16_two_sums ? 0.0f : 1.0f;
+    EXPECT_FLOAT_EQ(Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim)(
+                        input.storage.data(), input.query.data(), dim),
+                    expected);
+    EXPECT_FLOAT_EQ(Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim)(
+                        input.storage.data(), input.query.data(), dim),
+                    expected);
+    EXPECT_EQ(std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)),
+              0);
 }
 
 TEST(SQ8FP16NativeIPTest, ScaleAndOffsetCorrectionRemainFP32) {
@@ -5626,6 +5715,7 @@ TEST(SQ8FP16NativeIPTest, ProductLaneAndReductionOverflowFallBack) {
     };
     for (const auto [dim, value, negative_from] : {OverflowCase{32, 1000.0f, 32},
                                                    {96, 200.0f, 64},
+                                                   {160, 200.0f, 128},
                                                    {32, 32.0f, 32},
                                                    {64, 1000.0f, 32},
                                                    {32, 1000.0f, 16}}) {
@@ -5638,6 +5728,11 @@ TEST(SQ8FP16NativeIPTest, ProductLaneAndReductionOverflowFallBack) {
             input.query[i] = vecsim_types::FP32_to_FP16(i < negative_from ? value : -value);
         }
         input.setQuerySum(dim);
+        const auto original = input.query;
+        EXPECT_FALSE(std::isfinite(SQ8FP16NativeDotReference(
+            input.storage.data(), input.query.data(), dim, sq8_fp16_two_sums)));
+        EXPECT_FALSE(std::isfinite(SQ8FP16NativeDotReference(
+            input.storage.data(), input.query.data(), dim, false)));
         EXPECT_FALSE(std::isfinite(Choose_FP16_IP_implementation_AVX512FP16_VL(dim)(
             codes.data(), input.query.data(), dim)));
         const float expected = Choose_SQ8_FP16_IP_implementation_AVX512F(dim)(
@@ -5649,7 +5744,33 @@ TEST(SQ8FP16NativeIPTest, ProductLaneAndReductionOverflowFallBack) {
         EXPECT_FLOAT_EQ(Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim)(
                             input.storage.data(), input.query.data(), dim),
                         expected);
+        EXPECT_EQ(
+            std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)), 0);
     }
+
+    // Each block stays finite; combining the two half accumulators overflows.
+    constexpr size_t dim = 64;
+    SQ8FP16NativeCase input(dim, -0.125f, 1.0f / 256.0f);
+    for (size_t offset : {0UL, 32UL}) {
+        input.storage[offset] = 255;
+        input.query[offset] = vecsim_types::FP32_to_FP16(200.0f);
+    }
+    input.setQuerySum(dim);
+    ASSERT_TRUE(std::isfinite(SQ8FP16RoundHalf(255.0 * 200.0)));
+    ASSERT_FALSE(std::isfinite(SQ8FP16NativeDotReference(input.storage.data(), input.query.data(),
+                                                         dim, sq8_fp16_two_sums)));
+    const auto original = input.query;
+    const float expected = Choose_SQ8_FP16_IP_implementation_AVX512F(dim)(input.storage.data(),
+                                                                          input.query.data(), dim);
+    ASSERT_TRUE(std::isfinite(expected));
+    EXPECT_FLOAT_EQ(Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim)(
+                        input.storage.data(), input.query.data(), dim),
+                    expected);
+    EXPECT_FLOAT_EQ(Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim)(
+                        input.storage.data(), input.query.data(), dim),
+                    expected);
+    EXPECT_EQ(std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)),
+              0);
 }
 
 TEST(SQ8FP16NativeIPTest, NonNearestMXCSRRoundModesFallBack) {
@@ -5669,6 +5790,7 @@ TEST(SQ8FP16NativeIPTest, NonNearestMXCSRRoundModesFallBack) {
     const auto native = Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim);
     const auto cosine = Choose_SQ8_FP16_Cosine_implementation_AVX512FP16_BW_VL(dim);
     const auto fallback = Choose_SQ8_FP16_IP_implementation_AVX512F(dim);
+    const auto original = input.query;
     for (unsigned int rounding : {_MM_ROUND_DOWN, _MM_ROUND_UP, _MM_ROUND_TOWARD_ZERO}) {
         _mm_setcsr((restore.value & ~_MM_ROUND_MASK) | rounding);
         const float expected = fallback(input.storage.data(), input.query.data(), dim);
@@ -5678,5 +5800,7 @@ TEST(SQ8FP16NativeIPTest, NonNearestMXCSRRoundModesFallBack) {
         EXPECT_FLOAT_EQ(actual, expected) << "rounding=" << rounding;
         EXPECT_FLOAT_EQ(actual_cosine, expected) << "rounding=" << rounding;
     }
+    EXPECT_EQ(std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)),
+              0);
 }
 #endif
