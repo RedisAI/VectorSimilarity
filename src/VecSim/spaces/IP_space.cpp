@@ -194,7 +194,7 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
     // Alignment hints below refer to the SQ8 (first) operand per the GetDistFunc contract.
-#ifdef OPT_AVX512_FP16_BW_VL
+#if defined(OPT_AVX512_FP16_BW_VL) && (!defined(MOD19169_NATIVE_FP16) || MOD19169_NATIVE_FP16)
     if (dim >= 32 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.avx512f &&
         features.avx512_fp16 && features.avx512bw && features.avx512vl) {
         if (dim % 32 == 0)
@@ -280,7 +280,7 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
     if (dim < 16) {
         return ret_dist_func;
     }
-#ifdef OPT_AVX512_FP16_BW_VL
+#if defined(OPT_AVX512_FP16_BW_VL) && (!defined(MOD19169_NATIVE_FP16) || MOD19169_NATIVE_FP16)
     if (dim >= 32 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM && features.avx512f &&
         features.avx512_fp16 && features.avx512bw && features.avx512vl) {
         if (dim % 32 == 0)

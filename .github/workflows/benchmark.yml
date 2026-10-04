@@ -42,6 +42,7 @@ on:
           - bm-batch-iter-uint8-multi
           - bm-updated-fp32-single
           - bm-sq8-compare-fp32
+          - bm-mod19169-native-first
           - bm-sq8-compare-fp16
           - bm-sq8-train-fp32
           - bm-sq8-train-fp16
@@ -103,11 +104,27 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   run_benchmarks:
+    if: inputs.setup != 'bm-mod19169-native-first'
     name: Run ${{ matrix.architecture }} benchmarks
     needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
     secrets: inherit
     strategy:
+      matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
+    with:
+      setup: ${{ inputs.setup }}
+      architecture: ${{ matrix.architecture }}
+      instance-type: ${{ matrix.instance-type }}
+      ami-id: ${{ matrix.ami-id }}
+
+  run_native_first:
+    if: inputs.setup == 'bm-mod19169-native-first'
+    name: Validate ${{ matrix.architecture }} native FP16
+    needs: prepare_runner_configurations
+    uses: ./.github/workflows/mod19169-native-first-runner.yml
+    secrets: inherit
+    strategy:
+      fail-fast: false
       matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
     with:
       setup: ${{ inputs.setup }}
