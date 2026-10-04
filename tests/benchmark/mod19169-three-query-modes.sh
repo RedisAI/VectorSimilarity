@@ -39,13 +39,13 @@ case "${1:-}" in
             cmake -S . -B "$build_dir" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMOD19169_VALIDATION=ON \
                 -DCMAKE_CXX_FLAGS="-DMOD19169_SQ8_QUERY=$value"
             cmake --build "$build_dir" --target bm_mod19169_validation test_sq8_query_modes --parallel "$(nproc)"
-            sha256sum "$build_dir/benchmark/bm_mod19169_validation" "$build_dir/unit/test_sq8_query_modes" >> "$results_dir/binaries.sha256"
+            sha256sum "$build_dir/benchmark/bm_mod19169_validation" "$build_dir/unit_tests/test_sq8_query_modes" >> "$results_dir/binaries.sha256"
             cp "$build_dir/CMakeCache.txt" "$results_dir/cmake-$mode.txt"
         done
         ;;
     check)
         for mode in baseline widen quantized; do
-            "$RUNNER_TEMP/mod19169-three-$mode/unit/test_sq8_query_modes" \
+            "$RUNNER_TEMP/mod19169-three-$mode/unit_tests/test_sq8_query_modes" \
                 --gtest_output="xml:$results_dir/unit-$mode.xml" \
                 > "$results_dir/unit-$mode.log" 2>&1
         done
