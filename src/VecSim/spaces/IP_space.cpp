@@ -242,6 +242,11 @@ dist_func_t<float> IP_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignment,
         return ret_dist_func;
     }
 #ifdef OPT_SVE2
+#if defined(MOD19169_NATIVE_FP16) && MOD19169_NATIVE_FP16
+    if (features.sve2 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM) {
+        return Choose_SQ8_FP16_IP_implementation_SVE2_NATIVE(dim);
+    }
+#endif
     if (features.sve2) {
         return Choose_SQ8_FP16_IP_implementation_SVE2(dim);
     }
@@ -324,6 +329,11 @@ dist_func_t<float> Cosine_SQ8_FP16_GetDistFunc(size_t dim, unsigned char *alignm
         return ret_dist_func;
     }
 #ifdef OPT_SVE2
+#if defined(MOD19169_NATIVE_FP16) && MOD19169_NATIVE_FP16
+    if (features.sve2 && dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM) {
+        return Choose_SQ8_FP16_Cosine_implementation_SVE2_NATIVE(dim);
+    }
+#endif
     if (features.sve2) {
         return Choose_SQ8_FP16_Cosine_implementation_SVE2(dim);
     }

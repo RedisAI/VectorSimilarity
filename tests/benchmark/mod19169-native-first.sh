@@ -3,6 +3,7 @@ set -euo pipefail
 : "${GITHUB_WORKSPACE:?}"
 : "${RUNNER_TEMP:?}"
 : "${ARCH:?}"
+[[ "$ARCH" == arm64 ]]
 export ROOT="$GITHUB_WORKSPACE"
 cd "$ROOT"
 results_dir="$ROOT/native-first-results"
@@ -46,29 +47,32 @@ case "${1:-}" in
     check)
         build_dir="$RUNNER_TEMP/mod19169-native-first-candidate"
         cmake --build "$build_dir" --target test_spaces test_components test_hnsw_sq8 --parallel "$(nproc)"
-        if [[ "$ARCH" == x86_64 ]]; then
-            python3 - <<'CHECK_CPU'
+        python3 - "$results_dir/sve-vector-bytes.txt" <<'CHECK_CPU'
+import ctypes
+import sys
 from pathlib import Path
-assert "avx512_fp16" in Path("/proc/cpuinfo").read_text(), "Native FP16 must execute on this Intel runner"
+assert "sve2" in Path("/proc/cpuinfo").read_text().split(), "SVE2 must execute on this Arm runner"
+value = ctypes.CDLL(None, use_errno=True).prctl(51, 0, 0, 0, 0)
+assert value >= 0, "PR_SVE_GET_VL failed"
+vector_bytes = value & 0xffff
+assert 16 <= vector_bytes <= 256 and vector_bytes % 16 == 0
+Path(sys.argv[1]).write_text(str(vector_bytes) + "\n")
 CHECK_CPU
-        fi
         for target in test_spaces test_components test_hnsw_sq8; do
             "$build_dir/unit_tests/$target" --gtest_output="xml:$results_dir/unit-$target.xml" \
                 > "$results_dir/unit-$target.log" 2>&1
         done
         ctest --test-dir "$build_dir" -R "^tier_linkage$" --output-on-failure --no-tests=error \
             > "$results_dir/tier-linkage.log" 2>&1
-        if [[ "$ARCH" == x86_64 ]]; then
-            python3 - "$results_dir/unit-test_spaces.xml" <<'CHECK_NATIVE'
+        python3 - "$results_dir/unit-test_spaces.xml" <<'CHECK_NATIVE'
 import sys
 import xml.etree.ElementTree as ET
 root = ET.parse(sys.argv[1]).getroot()
-cases = root.findall('.//testsuite[@name="SQ8FP16NativeIPTest"]/testcase')
-assert cases, "Native FP16 tests did not execute"
+cases = root.findall('.//testsuite[@name="SQ8FP16NativeArmTest"]/testcase')
+assert len(cases) == 7, "Expected all seven native Arm FP16 tests"
 assert all(case.get("status") == "run" and case.find("skipped") is None and case.find("failure") is None for case in cases)
-print("Native FP16 executed cases:", len(cases))
+print("Native Arm FP16 executed cases:", len(cases))
 CHECK_NATIVE
-        fi
         ;;
     query)
         query_cpu=$(cat "$results_dir/query-cpu.txt")

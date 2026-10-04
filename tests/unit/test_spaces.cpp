@@ -17,6 +17,10 @@
 #include <vector>
 #include <string>
 
+#if defined(__aarch64__) && defined(__linux__)
+#include <sys/prctl.h>
+#endif
+
 #include "gtest/gtest.h"
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP.h"
@@ -3605,9 +3609,12 @@ INSTANTIATE_TEST_SUITE_P(SQ8_FP16_NoOpt, SQ8_FP16_NoOptimizationSpacesTest,
 
 /* ======================== SQ8_FP16 SIMD optimisation tests ========================= */
 
-#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_BW_VL)
+#if (defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_BW_VL)) ||                       \
+    (defined(CPU_FEATURES_ARCH_AARCH64) && defined(OPT_SVE2) && defined(MOD19169_NATIVE_FP16) &&   \
+     MOD19169_NATIVE_FP16)
 namespace {
 
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_FP16_BW_VL)
 bool HasSQ8FP16NativeISA() {
     const auto features = getCpuOptimizationFeatures();
     return features.avx512f && features.avx512bw && features.avx512vl && features.avx512_fp16;
@@ -3626,6 +3633,23 @@ float SQ8FP16NativeReference(const uint8_t *storage, const float16 *query, size_
     const float sum = load_unaligned<float>(reinterpret_cast<const uint8_t *>(query + dim));
     return 1.0f - (min * sum + delta * (1.0f - dense_distance));
 }
+#endif
+
+#if defined(CPU_FEATURES_ARCH_AARCH64) && defined(OPT_SVE2) && defined(MOD19169_NATIVE_FP16) &&    \
+    MOD19169_NATIVE_FP16
+float SQ8FP16NativeArmReference(const uint8_t *storage, const float16 *query, size_t dim) {
+    std::vector<float16> codes(dim);
+    for (size_t i = 0; i < dim; ++i)
+        codes[i] = vecsim_types::FP32_to_FP16(storage[i]);
+    const float dense_distance = Choose_FP16_IP_implementation_SVE2(dim)(codes.data(), query, dim);
+    if (!std::isfinite(dense_distance))
+        return Choose_SQ8_FP16_IP_implementation_SVE2(dim)(storage, query, dim);
+    const float min = load_unaligned<float>(storage + dim + sq8::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(storage + dim + sq8::DELTA * sizeof(float));
+    const float sum = load_unaligned<float>(reinterpret_cast<const uint8_t *>(query + dim));
+    return 1.0f - (min * sum + delta * (1.0f - dense_distance));
+}
+#endif
 
 struct SQ8FP16NativeCase {
     std::vector<uint8_t> storage;
@@ -3858,6 +3882,14 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_InnerProductTest) {
     if (optimization.sve2) {
         unsigned char alignment = 0;
         arch_opt_func = IP_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+#if defined(MOD19169_NATIVE_FP16) && MOD19169_NATIVE_FP16
+        if (dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM) {
+            ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_SVE2_NATIVE(dim));
+            EXPECT_FLOAT_EQ(arch_opt_func(v2_compressed.data(), v1_query.data(), dim),
+                            SQ8FP16NativeArmReference(v2_compressed.data(), v1_query.data(), dim));
+            arch_opt_func = Choose_SQ8_FP16_IP_implementation_SVE2(dim);
+        }
+#endif
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_IP_implementation_SVE2(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
@@ -3993,6 +4025,14 @@ TEST_P(SQ8_FP16_SpacesOptimizationTest, SQ8_FP16_CosineTest) {
     if (optimization.sve2) {
         unsigned char alignment = 0;
         arch_opt_func = Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &optimization);
+#if defined(MOD19169_NATIVE_FP16) && MOD19169_NATIVE_FP16
+        if (dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM) {
+            ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_SVE2_NATIVE(dim));
+            EXPECT_FLOAT_EQ(arch_opt_func(v2_compressed.data(), v1_query.data(), dim),
+                            SQ8FP16NativeArmReference(v2_compressed.data(), v1_query.data(), dim));
+            arch_opt_func = Choose_SQ8_FP16_Cosine_implementation_SVE2(dim);
+        }
+#endif
         ASSERT_EQ(arch_opt_func, Choose_SQ8_FP16_Cosine_implementation_SVE2(dim))
             << "Unexpected distance function chosen for dim " << dim;
         ASSERT_NEAR(baseline, arch_opt_func(v2_compressed.data(), v1_query.data(), dim), 0.01)
@@ -5679,4 +5719,233 @@ TEST(SQ8FP16NativeIPTest, NonNearestMXCSRRoundModesFallBack) {
         EXPECT_FLOAT_EQ(actual_cosine, expected) << "rounding=" << rounding;
     }
 }
+#endif
+
+#if defined(CPU_FEATURES_ARCH_AARCH64) && defined(OPT_SVE2) && defined(MOD19169_NATIVE_FP16) &&    \
+    MOD19169_NATIVE_FP16
+namespace {
+
+constexpr uint64_t FPCR_ROUND_MASK = uint64_t{3} << 22;
+
+uint64_t ReadFPCR() {
+    uint64_t value;
+    asm volatile("mrs %0, fpcr" : "=r"(value));
+    return value;
+}
+
+void WriteFPCR(uint64_t value) { asm volatile("msr fpcr, %0\n\tisb" : : "r"(value) : "memory"); }
+
+struct RestoreFPCR {
+    uint64_t value = ReadFPCR();
+    ~RestoreFPCR() { WriteFPCR(value); }
+};
+
+class SQ8FP16NativeArmTest : public ::testing::Test {
+protected:
+    RestoreFPCR fpcr;
+    size_t lanes = 0;
+
+    void SetUp() override {
+        if (!getCpuOptimizationFeatures().sve2)
+            GTEST_SKIP() << "SVE2 is unavailable";
+#ifdef __linux__
+        const int vector_length = prctl(PR_SVE_GET_VL, 0, 0, 0, 0);
+        ASSERT_GE(vector_length, 0);
+        const int vector_bytes = vector_length & PR_SVE_VL_LEN_MASK;
+        ASSERT_GE(vector_bytes, 16);
+        ASSERT_EQ(vector_bytes % 16, 0);
+        lanes = static_cast<size_t>(vector_bytes) / sizeof(float16);
+        RecordProperty("sve_vector_length_bytes", vector_bytes);
+#else
+        GTEST_SKIP() << "SVE vector length requires Linux prctl";
+#endif
+        WriteFPCR(fpcr.value & ~FPCR_ROUND_MASK);
+    }
+
+    void check(const SQ8FP16NativeCase &input, size_t dim, float expected) {
+        const auto original = input.query;
+        EXPECT_FLOAT_EQ(Choose_SQ8_FP16_IP_implementation_SVE2_NATIVE(dim)(input.storage.data(),
+                                                                           input.query.data(), dim),
+                        expected);
+        EXPECT_FLOAT_EQ(Choose_SQ8_FP16_Cosine_implementation_SVE2_NATIVE(dim)(
+                            input.storage.data(), input.query.data(), dim),
+                        expected);
+        EXPECT_EQ(
+            std::memcmp(input.query.data(), original.data(), original.size() * sizeof(float16)), 0);
+    }
+};
+
+TEST_F(SQ8FP16NativeArmTest, DispatchRequiresSVE2AndDimensionBounds) {
+    auto features = getCpuOptimizationFeatures();
+    const size_t cap = spaces::FP16_MAX_UNIT_IP_SIMD_DIM;
+    for (size_t dim : {16UL, 17UL, 512UL, 768UL, cap}) {
+        SCOPED_TRACE(dim);
+        const auto native = Choose_SQ8_FP16_IP_implementation_SVE2_NATIVE(dim);
+        const auto native_cosine = Choose_SQ8_FP16_Cosine_implementation_SVE2_NATIVE(dim);
+        unsigned char alignment = 0;
+        EXPECT_EQ(IP_SQ8_FP16_GetDistFunc(dim, &alignment, &features), native);
+        EXPECT_EQ(alignment, 0);
+        alignment = 0;
+        EXPECT_EQ(Cosine_SQ8_FP16_GetDistFunc(dim, &alignment, &features), native_cosine);
+        EXPECT_EQ(alignment, 0);
+        EXPECT_EQ(L2_SQ8_FP16_GetDistFunc(dim, nullptr, &features),
+                  Choose_SQ8_FP16_L2_implementation_SVE2(dim));
+        auto without_sve2 = features;
+        without_sve2.sve2 = 0;
+        EXPECT_NE(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &without_sve2), native);
+        EXPECT_NE(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &without_sve2), native_cosine);
+    }
+    for (size_t dim = 1; dim < 16; ++dim) {
+        EXPECT_EQ(IP_SQ8_FP16_GetDistFunc(dim, nullptr, &features), SQ8_FP16_InnerProduct);
+        EXPECT_EQ(Cosine_SQ8_FP16_GetDistFunc(dim, nullptr, &features), SQ8_FP16_Cosine);
+    }
+    EXPECT_EQ(IP_SQ8_FP16_GetDistFunc(cap + 1, nullptr, &features),
+              Choose_SQ8_FP16_IP_implementation_SVE2(cap + 1));
+    EXPECT_EQ(Cosine_SQ8_FP16_GetDistFunc(cap + 1, nullptr, &features),
+              Choose_SQ8_FP16_Cosine_implementation_SVE2(cap + 1));
+}
+
+TEST_F(SQ8FP16NativeArmTest, DenseFP16ArithmeticAcrossVectorLengthTails) {
+    std::vector<size_t> dimensions{16, 17, 511, 512, 513, 767, 768, 769, 4096};
+    for (size_t residual = 0; residual < 4 * lanes; ++residual)
+        dimensions.push_back(4 * lanes + residual);
+    for (size_t dim : dimensions) {
+        SCOPED_TRACE(dim);
+        SQ8FP16NativeCase input(dim);
+        std::vector<float16> codes(dim);
+        for (size_t i = 0; i < dim; ++i) {
+            input.storage[i] = static_cast<uint8_t>((i * 17 + 29) % 256);
+            codes[i] = vecsim_types::FP32_to_FP16(input.storage[i]);
+            input.query[i] = vecsim_types::FP32_to_FP16(float(i % 7 + 1) / 1024.0f);
+        }
+        input.setQuerySum(dim);
+        const float expected =
+            Choose_FP16_IP_implementation_SVE2(dim)(codes.data(), input.query.data(), dim);
+        ASSERT_TRUE(std::isfinite(expected));
+        check(input, dim, expected);
+    }
+}
+
+TEST_F(SQ8FP16NativeArmTest, ScaleAndOffsetCorrectionRemainFP32) {
+    const size_t dim = 4 * lanes + 1;
+    SQ8FP16NativeCase input(dim, -0.12345678f, 0.0012345678f);
+    for (size_t i = 0; i < dim; ++i) {
+        input.storage[i] = static_cast<uint8_t>((i * 17 + 29) % 256);
+        input.query[i] = vecsim_types::FP32_to_FP16(float(i % 7 + 1) / 1024.0f);
+    }
+    input.setQuerySum(dim);
+    const float expected = SQ8FP16NativeArmReference(input.storage.data(), input.query.data(), dim);
+    ASSERT_NE(expected, vecsim_types::FP16_to_FP32(vecsim_types::FP32_to_FP16(expected)));
+    check(input, dim, expected);
+}
+
+TEST_F(SQ8FP16NativeArmTest, MinimumSmallAndLargestFiniteFP16Values) {
+    const size_t dim = 4 * lanes;
+    for (float value :
+         {0.0f, 0x1p-24f, -0x1p-24f, 37.0f * 0x1p-24f, 0x1p-14f, -0x1p-14f, 65504.0f, -65504.0f}) {
+        SCOPED_TRACE(value);
+        SQ8FP16NativeCase input(dim);
+        input.storage[0] = 1;
+        input.query[0] = vecsim_types::FP32_to_FP16(value);
+        input.setQuerySum(dim);
+        ASSERT_FLOAT_EQ(vecsim_types::FP16_to_FP32(input.query[0]), value);
+        // A distance-to-dot conversion can erase subnormal products near distance one.
+        check(input, dim, 1.0f - value);
+    }
+}
+
+TEST_F(SQ8FP16NativeArmTest, CenteredCancellationRetainsNativeCodeDotRounding) {
+    const size_t dim = 4 * lanes;
+    SQ8FP16NativeCase input(dim, -100.0f);
+    constexpr size_t active = 8;
+    for (size_t i = 0; i < active; ++i) {
+        input.storage[i] = 100;
+        input.query[i] = vecsim_types::FP32_to_FP16(1.0009765625f);
+    }
+    input.setQuerySum(dim);
+    // FP16 rounds 100 * 1.0009765625 to 100.125 before the FP32 offset cancels it.
+    const float expected = 1.0f - float(active) * (100.125f - 100.0f * 1.0009765625f);
+    ASSERT_NE(expected, 1.0f);
+    EXPECT_FLOAT_EQ(SQ8FP16NativeArmReference(input.storage.data(), input.query.data(), dim),
+                    expected);
+    check(input, dim, expected);
+}
+
+TEST_F(SQ8FP16NativeArmTest, ProductLaneAndReductionOverflowFallBack) {
+    enum class Overflow { Product, Lane, Reduction, MixedProduct, MixedLane };
+    for (auto scenario : {Overflow::Product, Overflow::Lane, Overflow::Reduction,
+                          Overflow::MixedProduct, Overflow::MixedLane}) {
+        SCOPED_TRACE(static_cast<int>(scenario));
+        const size_t dim = 8 * lanes + 1;
+        SQ8FP16NativeCase input(dim, -0.125f, 1.0f / 256.0f);
+        auto set = [&](size_t index, uint8_t code, float value) {
+            input.storage[index] = code;
+            input.query[index] = vecsim_types::FP32_to_FP16(value);
+        };
+        switch (scenario) {
+        case Overflow::Product:
+            set(0, 255, 1000.0f);
+            break;
+        case Overflow::Lane:
+        case Overflow::MixedLane:
+            set(0, 255, 200.0f);
+            set(4 * lanes, 255, 200.0f);
+            set(8 * lanes, 255, scenario == Overflow::Lane ? 200.0f : -200.0f);
+            break;
+        case Overflow::Reduction:
+            set(0, 128, 256.0f);
+            set(1, 128, 256.0f);
+            break;
+        case Overflow::MixedProduct:
+            set(0, 255, 1000.0f);
+            set(lanes, 255, -1000.0f);
+            break;
+        }
+        input.setQuerySum(dim);
+        std::vector<float16> codes(dim);
+        for (size_t i = 0; i < dim; ++i)
+            codes[i] = vecsim_types::FP32_to_FP16(input.storage[i]);
+        EXPECT_FALSE(std::isfinite(
+            Choose_FP16_IP_implementation_SVE2(dim)(codes.data(), input.query.data(), dim)));
+        const float expected = Choose_SQ8_FP16_IP_implementation_SVE2(dim)(input.storage.data(),
+                                                                           input.query.data(), dim);
+        ASSERT_TRUE(std::isfinite(expected));
+        check(input, dim, expected);
+    }
+}
+
+TEST_F(SQ8FP16NativeArmTest, DirectedFPCRRoundingModesFallBackAndRestore) {
+    const size_t dim = 4 * lanes + 1;
+    SQ8FP16NativeCase input(dim, -0.12345678f, 0.0012345678f);
+    for (size_t i = 0; i < dim; ++i) {
+        input.storage[i] = static_cast<uint8_t>((i * 17 + 29) % 256);
+        input.query[i] = vecsim_types::FP32_to_FP16(1.0009765625f);
+    }
+    input.setQuerySum(dim);
+    const auto original_query = input.query;
+    const uint64_t nearest = ReadFPCR();
+    for (uint64_t mode : {1UL, 2UL, 3UL}) {
+        SCOPED_TRACE(mode);
+        float expected, actual, cosine;
+        {
+            RestoreFPCR restore;
+            WriteFPCR((nearest & ~FPCR_ROUND_MASK) | (mode << 22));
+            ASSERT_EQ((ReadFPCR() & FPCR_ROUND_MASK) >> 22, mode);
+            expected = Choose_SQ8_FP16_IP_implementation_SVE2(dim)(input.storage.data(),
+                                                                   input.query.data(), dim);
+            actual = Choose_SQ8_FP16_IP_implementation_SVE2_NATIVE(dim)(input.storage.data(),
+                                                                        input.query.data(), dim);
+            cosine = Choose_SQ8_FP16_Cosine_implementation_SVE2_NATIVE(dim)(
+                input.storage.data(), input.query.data(), dim);
+        }
+        EXPECT_EQ(ReadFPCR(), nearest);
+        EXPECT_FLOAT_EQ(actual, expected);
+        EXPECT_FLOAT_EQ(cosine, expected);
+    }
+    EXPECT_EQ(std::memcmp(input.query.data(), original_query.data(),
+                          original_query.size() * sizeof(float16)),
+              0);
+}
+
+} // namespace
 #endif
