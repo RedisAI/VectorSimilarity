@@ -12,6 +12,7 @@
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/utils/alignment.h"
 
@@ -192,9 +193,10 @@ private:
         const auto *context = static_cast<const WithNormDistanceContext *>(opaque_context);
         DistType base = context->query_func(candidate, query, dim);
         if constexpr (Metric == VecSimMetric_IP) {
-            float y_mean_ip =
-                load_unaligned<float>(static_cast<const uint8_t *>(query) + dim * sizeof(DataType) +
-                                      sq8::template query_mean_ip_index<Metric>() * sizeof(float));
+            float y_mean_ip = load_unaligned<float>(
+                static_cast<const uint8_t *>(query) +
+                dim * sizeof(typename QuantPreprocessor<DataType, Metric, true>::QueryType) +
+                sq8::template query_mean_ip_index<Metric>() * sizeof(float));
             // base = 1 - IP(x', y). We want 1 - IP(x, y).
             // IP(x, y) = IP(x', y) + y_mean_ip
             // => 1 - IP(x, y) = base - y_mean_ip

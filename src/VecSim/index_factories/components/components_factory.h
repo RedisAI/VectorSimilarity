@@ -46,7 +46,8 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
                          const float *mean_ptr) {
     // L2 keeps asymmetric queries to avoid cancellation in the symmetric norm expansion.
 #ifdef MOD19169_SQ8_QUERY
-    constexpr bool quantize_query = MOD19169_SQ8_QUERY && Metric == VecSimMetric_IP;
+    static_assert(MOD19169_SQ8_QUERY >= 0 && MOD19169_SQ8_QUERY <= 2);
+    constexpr bool quantize_query = MOD19169_SQ8_QUERY == 1 && Metric == VecSimMetric_IP;
 #else
     constexpr bool quantize_query =
         std::is_same_v<DataType, vecsim_types::float16> && Metric == VecSimMetric_IP;

@@ -36,7 +36,7 @@
 #endif
 
 namespace {
-static_assert(MOD19169_SQ8_QUERY == 0 || MOD19169_SQ8_QUERY == 1);
+static_assert(MOD19169_SQ8_QUERY >= 0 && MOD19169_SQ8_QUERY <= 2);
 constexpr size_t query_count = 1000;
 constexpr size_t k = 100;
 constexpr size_t training_count = 10240;
@@ -106,7 +106,6 @@ Options parse(int &argc, char **argv) {
     require(o.dtype == "fp16" || o.dtype == "fp32", "--dtype must be fp16 or fp32");
     require(o.dataset == "single" || o.dataset == "multi", "--dataset must be single or multi");
     require(o.corpus == "subset" || o.corpus == "full", "--corpus must be subset or full");
-    require(!o.full() || o.dtype == "fp32", "Full saved-graph validation is FP32 only");
     require(o.stage != "build" || !o.full(), "Build is only supported for subset corpora");
     require(!o.source.empty() && !o.queries.empty() && !o.cache.empty() && !o.output.empty(),
             "--source, --queries, --cache, and --output are required");

@@ -259,8 +259,16 @@ static inline T from_fp32(float x) {
 template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
 class QuantPreprocessor : public PreprocessorInterface {
 public:
+#ifdef MOD19169_SQ8_QUERY
+    static constexpr bool widen_ip_query = MOD19169_SQ8_QUERY == 2 &&
+                                           std::is_same_v<DataType, vecsim_types::float16> &&
+                                           Metric == VecSimMetric_IP;
+#else
+    static constexpr bool widen_ip_query = false;
+#endif
     // Center L2 queries in FP32 even when the original input is FP16.
-    using QueryType = std::conditional_t<WithNorm && Metric == VecSimMetric_L2, float, DataType>;
+    using QueryType = std::conditional_t<widen_ip_query || (WithNorm && Metric == VecSimMetric_L2),
+                                         float, DataType>;
 
 private:
     using OUTPUT_TYPE = uint8_t;
@@ -441,10 +449,17 @@ private:
             }
 
             if constexpr (WithNorm && Metric == VecSimMetric_IP) {
-                m0 += mean[i] * to_fp32<DataType>(original_input[i]);
-                m1 += mean[i + 1] * to_fp32<DataType>(original_input[i + 1]);
-                m2 += mean[i + 2] * to_fp32<DataType>(original_input[i + 2]);
-                m3 += mean[i + 3] * to_fp32<DataType>(original_input[i + 3]);
+                if constexpr (widen_ip_query) {
+                    m0 += mean[i] * y0;
+                    m1 += mean[i + 1] * y1;
+                    m2 += mean[i + 2] * y2;
+                    m3 += mean[i + 3] * y3;
+                } else {
+                    m0 += mean[i] * to_fp32<DataType>(original_input[i]);
+                    m1 += mean[i + 1] * to_fp32<DataType>(original_input[i + 1]);
+                    m2 += mean[i + 2] * to_fp32<DataType>(original_input[i + 2]);
+                    m3 += mean[i + 3] * to_fp32<DataType>(original_input[i + 3]);
+                }
             }
         }
 
@@ -461,7 +476,10 @@ private:
                 sum_squares += y * y;
             }
             if constexpr (WithNorm && Metric == VecSimMetric_IP) {
-                y_mean_ip += mean[i] * to_fp32<DataType>(original_input[i]);
+                if constexpr (widen_ip_query)
+                    y_mean_ip += mean[i] * y;
+                else
+                    y_mean_ip += mean[i] * to_fp32<DataType>(original_input[i]);
             }
         }
 
@@ -594,6 +612,9 @@ public:
             for (size_t i = 0; i < this->dim; ++i) {
                 query_values[i] = to_fp32<DataType>(input[i]) - this->mean[i];
             }
+        } else if constexpr (widen_ip_query) {
+            for (size_t i = 0; i < this->dim; ++i)
+                query_values[i] = to_fp32<DataType>(input[i]);
         } else {
             memcpy(query_values, original_blob, body_bytes);
         }
