@@ -11,6 +11,8 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#include "VecSim/spaces/functions/SVE2.h"
+#include "VecSim/spaces/spaces.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/vec_sim.h"
@@ -59,6 +61,45 @@ protected:
         } else {
             return value;
         }
+    }
+
+    double ExpectedEndpointScore(const std::vector<data_t> &vector,
+                                 const std::vector<data_t> &query, VecSimMetric metric,
+                                 double mathematical_score) const {
+#if defined(CPU_FEATURES_ARCH_AARCH64) && defined(OPT_SVE2) && defined(MOD19169_NATIVE_FP16) &&    \
+    MOD19169_NATIVE_FP16
+        if constexpr (std::is_same_v<data_t, vecsim_types::float16>) {
+            if (metric == VecSimMetric_IP && dim >= 16 &&
+                dim <= spaces::FP16_MAX_UNIT_IP_SIMD_DIM &&
+                spaces::getCpuOptimizationFeatures().sve2) {
+                float low = std::numeric_limits<float>::infinity();
+                float high = -std::numeric_limits<float>::infinity();
+                float query_sum = 0.0f;
+                for (size_t d = 0; d < dim; ++d) {
+                    low = std::min(low, to_fp32(vector[d]));
+                    high = std::max(high, to_fp32(vector[d]));
+                    query_sum += to_fp32(query[d]);
+                }
+                EXPECT_LT(low, high);
+                std::vector<data_t> codes(dim);
+                for (size_t d = 0; d < dim; ++d) {
+                    const float value = to_fp32(vector[d]);
+                    EXPECT_TRUE(value == low || value == high);
+                    codes[d] = ToDataType(value == high ? 255.0f : 0.0f);
+                }
+                // Exact endpoint quantization still rounds the code dot in native FP16.
+                const float dense_distance = spaces::Choose_FP16_IP_implementation_SVE2(dim)(
+                    codes.data(), query.data(), dim);
+                EXPECT_TRUE(std::isfinite(dense_distance));
+                const float mean = index_type_t::with_quant_params ? quantization_mean_value : 0.0f;
+                const float min = low - mean;
+                const float delta = (high - low) / 255.0f;
+                const float base = 1.0f - (min * query_sum + delta * (1.0f - dense_distance));
+                return base - mean * query_sum;
+            }
+        }
+#endif
+        return mathematical_score;
     }
 
     virtual void SetUp(HNSWParams &params) {
@@ -231,8 +272,8 @@ void HNSWSQ8Test<index_type_t>::test_functional_queries(VecSimMetric metric, boo
                          .efRuntime = 64};
     SetUp(params);
 
-    // Binary coordinates survive SQ8 exactly, including mean subtraction. Binary fractions in
-    // the query are exact in FP16 too, so the oracle needs no quantization-error allowance.
+    // Binary coordinates survive SQ8 exactly, including mean subtraction. Their mathematical
+    // distances determine label order and the range cutoff independently of native rounding.
     auto one_hot = [&](size_t coordinate) {
         std::vector<data_t> vector(dim, ToDataType(0.0f));
         vector[coordinate] = ToDataType(1.0f);
@@ -256,6 +297,7 @@ void HNSWSQ8Test<index_type_t>::test_functional_queries(VecSimMetric metric, boo
 
     auto check_queries = [&]() {
         std::vector<std::pair<double, size_t>> expected;
+        std::vector<double> expected_scores(labels, std::numeric_limits<double>::infinity());
         size_t vector_count = 0;
         for (size_t label = 0; label < labels; ++label) {
             double best = std::numeric_limits<double>::infinity();
@@ -268,6 +310,8 @@ void HNSWSQ8Test<index_type_t>::test_functional_queries(VecSimMetric metric, boo
                     score += metric == VecSimMetric_L2 ? (q - x) * (q - x) : -q * x;
                 }
                 best = std::min(best, score);
+                expected_scores[label] = std::min(
+                    expected_scores[label], ExpectedEndpointScore(vector, query, metric, score));
             }
             expected.emplace_back(best, label);
         }
@@ -280,7 +324,7 @@ void HNSWSQ8Test<index_type_t>::test_functional_queries(VecSimMetric metric, boo
         auto check_result = [&](size_t id, double score, size_t position) {
             ASSERT_LT(position, expected.size());
             EXPECT_EQ(id, expected[position].second);
-            EXPECT_NEAR(score, expected[position].first, 1e-4);
+            EXPECT_NEAR(score, expected_scores[expected[position].second], 1e-4);
         };
 
         runTopKSearchTest(index, query.data(), 5, check_result);
@@ -382,11 +426,13 @@ void HNSWSQ8Test<index_type_t>::test_graph_routing(VecSimMetric metric, bool mul
     for (size_t label = 0; label < labels; ++label) {
         SCOPED_TRACE(label);
         const auto query = make_vector(label, label % (multi ? 2 : 1));
+        const double expected_score = ExpectedEndpointScore(
+            query, query, metric, metric == VecSimMetric_L2 ? 0.0 : 1.0 - double(dim));
         runTopKSearchTest(index, query.data(), 1, [&](size_t id, double score, size_t) {
             EXPECT_EQ(id, label);
             // All components have magnitude one. A different vector is at least 4 away in
             // squared L2, or 2 away in IP distance, well above the rounding tolerance.
-            EXPECT_NEAR(score, metric == VecSimMetric_L2 ? 0.0 : 1.0 - double(dim), 1e-4);
+            EXPECT_NEAR(score, expected_score, 1e-4);
         });
     }
 }
