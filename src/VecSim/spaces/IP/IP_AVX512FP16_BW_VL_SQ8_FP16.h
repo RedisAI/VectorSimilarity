@@ -31,7 +31,7 @@ static inline void SQ8_FP16_InnerProductStep_AVX512FP16(const uint8_t *&codes,
 }
 
 // dim >= 32 keeps the residual's full loads within the vector payloads.
-template <unsigned char residual>
+template <unsigned char residual, bool four_sums = false>
 float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const void *query_blob,
                                                    size_t dimension) {
     using sq8 = vecsim_types::sq8;
@@ -52,11 +52,38 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
         codes += residual;
         query += residual;
     }
-    do {
-        SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
-    } while (codes < end);
-    const _Float16 reduced = _mm512_reduce_add_ph(sum);
-    const float dot = static_cast<float>(reduced);
+    if constexpr (four_sums) {
+        __m512h sum1 = _mm512_setzero_ph();
+        __m512h sum2 = _mm512_setzero_ph();
+        __m512h sum3 = _mm512_setzero_ph();
+        while (end - codes >= 128) {
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum1);
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum2);
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum3);
+        }
+        if (codes < end)
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
+        if (codes < end)
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum1);
+        if (codes < end)
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum2);
+        sum = _mm512_add_ph(_mm512_add_ph(sum, sum1), _mm512_add_ph(sum2, sum3));
+    } else {
+        do {
+            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
+        } while (codes < end);
+    }
+    float dot;
+    if constexpr (four_sums) {
+        const __m512i bits = _mm512_castph_si512(sum);
+        const __m512 low = _mm512_cvtph_ps(_mm512_castsi512_si256(bits));
+        const __m512 high = _mm512_cvtph_ps(_mm512_extracti64x4_epi64(bits, 1));
+        dot = _mm512_reduce_add_ps(_mm512_add_ps(low, high));
+    } else {
+        const _Float16 reduced = _mm512_reduce_add_ph(sum);
+        dot = static_cast<float>(reduced);
+    }
     // Nearest rounding leaves intermediate and reduction overflow nonfinite.
     if (!std::isfinite(dot))
         return spaces::Choose_SQ8_FP16_IP_implementation_AVX512F(dimension)(storage, query_blob,
@@ -69,4 +96,12 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
         reinterpret_cast<const uint8_t *>(static_cast<const float16 *>(query_blob) + dimension);
     const float query_sum = load_unaligned<float>(query_meta + sq8::SUM_QUERY * sizeof(float));
     return 1.0f - (min_val * query_sum + delta * dot);
+}
+
+template <unsigned char residual>
+float SQ8_FP16_InnerProductSIMD32_FourSums_AVX512FP16_BW_VL(const void *storage,
+                                                            const void *query_blob,
+                                                            size_t dimension) {
+    return SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL<residual, true>(storage, query_blob,
+                                                                        dimension);
 }
