@@ -102,11 +102,11 @@ jobs:
           ARCH: ${{ inputs.architecture }}
         timeout-minutes: 30
         run: bash tests/benchmark/mod19169-native-first.sh check
-      - name: Compare baseline and native FP16 on saved graphs
+      - name: Build and cross-query baseline and native FP16 graphs
         env:
           ARCH: ${{ inputs.architecture }}
-        timeout-minutes: 150
-        run: bash tests/benchmark/mod19169-native-first.sh query
+        timeout-minutes: 240
+        run: bash tests/benchmark/mod19169-native-first.sh rebuilt
       - name: Upload experimental validation results
         if: always()
         uses: actions/upload-artifact@v7
