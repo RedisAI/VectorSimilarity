@@ -2769,6 +2769,31 @@ TEST(SQ8FactoryTest, FP32QueriesRemainAsymmetric) {
     delete components.indexCalculator;
 }
 
+TEST(SQ8FactoryTest, FP32IPPreservesFiniteDistanceWhenQueryRangeOverflows) {
+    constexpr size_t dim = 2;
+    const float x[dim] = {1e-37f, 1e-37f};
+    const float max = std::numeric_limits<float>::max();
+    const float y[dim] = {max, -max};
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto components = CreateSQ8IndexComponents<float, VecSimMetric_IP>(allocator, dim, nullptr);
+    {
+        auto storage = components.preprocessors->preprocessForStorage(x, sizeof(x));
+        auto query = components.preprocessors->preprocessQuery(y, sizeof(y));
+        ASSERT_NE(storage.get(), nullptr);
+        ASSERT_NE(query.get(), nullptr);
+        EXPECT_EQ(std::memcmp(query.get(), y, sizeof(y)), 0);
+        const float distance =
+            components.indexCalculator->calcDistanceForQuery(storage.get(), query.get(), dim);
+        EXPECT_FLOAT_EQ(distance, 1.0f);
+        const auto dispatch =
+            components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+        ASSERT_TRUE(dispatch.isValid());
+        EXPECT_FLOAT_EQ(dispatch(storage.get(), query.get(), dim), 1.0f);
+    }
+    delete components.preprocessors;
+    delete components.indexCalculator;
+}
+
 TEST(SQ8FactoryTest, FP16CachedDispatchUsesUpdatedMean) {
     using data_t = vecsim_types::float16;
     constexpr size_t dim = 17;
