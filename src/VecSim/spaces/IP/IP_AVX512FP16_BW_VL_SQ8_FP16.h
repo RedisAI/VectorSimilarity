@@ -15,7 +15,7 @@
 #include "VecSim/types/float16.h"
 #include "VecSim/utils/alignment.h"
 
-static inline __m512h SQ8_FP16_LoadCodes_AVX512FP16(const uint8_t *codes) {
+static inline __m512h SQ8_FP16_LoadQuantizedValues_AVX512FP16(const uint8_t *codes) {
     const __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(codes));
     return _mm512_cvtepu16_ph(_mm512_cvtepu8_epi16(bytes));
 }
@@ -23,7 +23,7 @@ static inline __m512h SQ8_FP16_LoadCodes_AVX512FP16(const uint8_t *codes) {
 static inline void SQ8_FP16_InnerProductStep_AVX512FP16(const uint8_t *&codes,
                                                         const vecsim_types::float16 *&query,
                                                         __m512h &sum) {
-    const __m512h values = SQ8_FP16_LoadCodes_AVX512FP16(codes);
+    const __m512h values = SQ8_FP16_LoadQuantizedValues_AVX512FP16(codes);
     const __m512h query_values = _mm512_loadu_ph(query);
     sum = _mm512_fmadd_ph(values, query_values, sum);
     codes += 32;
@@ -46,7 +46,7 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
     __m512h sum = _mm512_setzero_ph();
     if constexpr (residual) {
         constexpr __mmask32 mask = (1U << residual) - 1;
-        const __m512h values = SQ8_FP16_LoadCodes_AVX512FP16(codes);
+        const __m512h values = SQ8_FP16_LoadQuantizedValues_AVX512FP16(codes);
         const __m512h query_values = _mm512_loadu_ph(query);
         sum = _mm512_maskz_mul_ph(mask, values, query_values);
         codes += residual;
