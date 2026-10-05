@@ -117,7 +117,6 @@ private:
 
     // Cost of defrag(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
     std::atomic<uint64_t> defragRuns{0};
-    std::atomic<uint64_t> defragSwapJobs{0};
     std::atomic<uint64_t> defragTimeNs{0};
 
     // Protect the both idToRepairJobs lookup and the pending_repair_jobs_counter for the
@@ -399,6 +398,7 @@ public:
     size_t indexCapacity() const override;
     int updateVectorInPlace(labelType label, HNSWIndex<DataType, DistType> *hnsw_index,
                             const MemoryUtils::unique_blob &storage_blob);
+    auto shouldDefrag();
     double getDistanceFrom_Unsafe(labelType label, const void *blob) const override;
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
@@ -420,12 +420,14 @@ public:
         const auto start = std::chrono::steady_clock::now();
         const size_t executed = this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
         // Includes the wait for the main index guard, which is part of what defrag costs a caller.
-        const auto elapsed = std::chrono::steady_clock::now() - start;
+        const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now() - start)
+                                   .count();
         defragRuns.fetch_add(1, std::memory_order_relaxed);
-        defragSwapJobs.fetch_add(executed, std::memory_order_relaxed);
-        defragTimeNs.fetch_add(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count(),
-            std::memory_order_relaxed);
+        defragTimeNs.fetch_add(elapsedNs, std::memory_order_relaxed);
+        TIERED_LOG(VecSimCommonStrings::LOG_DEBUG_STRING,
+                   "Tiered HNSW index defrag: executed %zu swap jobs in %lld ns", executed,
+                   static_cast<long long>(elapsedNs));
     }
     void runGC() override {
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
@@ -1256,6 +1258,10 @@ int TieredHNSWIndex<DataType, DistType>::updateVectorInPlace(
     int ret = (flat_deleted == 0) ? backend_ret : 0;
     return ret;
 }
+template <typename DataType, typename DistType>
+auto TieredHNSWIndex<DataType, DistType>::shouldDefrag() {
+    return readySwapJobs >= this->pendingSwapJobsThreshold;
+}
 // In the tiered index, we assume that the blobs are processed by the flat buffer
 // before being transferred to the HNSW index.
 // When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
@@ -1360,7 +1366,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute a
     // batch of jobs for which all of its pending repair jobs were executed (otherwise finish and
     // return).
-    if (readySwapJobs >= this->pendingSwapJobsThreshold) {
+    if (shouldDefrag()) {
         this->defrag();
     }
 
@@ -1425,7 +1431,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         num_deleted_vectors += this->deleteLabelFromHNSW(label);
         // Apply ready swap jobs if number of deleted vectors reached the threshold
         // (under exclusive lock of the main index guard).
-        if (readySwapJobs >= this->pendingSwapJobsThreshold) {
+        if (shouldDefrag()) {
             this->defrag();
         }
     } else {
@@ -1536,7 +1542,7 @@ bool TieredHNSWIndex<DataType, DistType>::updateMultiValueAsync(labelType label,
     // here, as they're submitted later by the repair flow.
     auto reuse_jobs = std::span<HNSWInsertJob *>(insert_jobs.data(), insert_jobs.size());
     this->deleteLabelFromHNSW(label, reuse_jobs);
-    if (readySwapJobs >= this->pendingSwapJobsThreshold) {
+    if (shouldDefrag()) {
         this->defrag();
     }
 
@@ -2010,8 +2016,6 @@ VecSimIndexDebugInfo TieredHNSWIndex<DataType, DistType>::debugInfo() const {
 
     HnswTieredInfo hnswTieredInfo = {.pendingSwapJobsThreshold = this->pendingSwapJobsThreshold,
                                      .defragRuns = defragRuns.load(std::memory_order_relaxed),
-                                     .defragSwapJobs =
-                                         defragSwapJobs.load(std::memory_order_relaxed),
                                      .defragTimeNs = defragTimeNs.load(std::memory_order_relaxed)};
     info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
 
@@ -2039,10 +2043,6 @@ VecSimDebugInfoIterator *TieredHNSWIndex<DataType, DistType>::debugInfoIterator(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_DEFRAG_RUNS_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = tieredInfo.defragRuns}}});
-    infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_DEFRAG_SWAP_JOBS_STRING,
-                         .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = tieredInfo.defragSwapJobs}}});
     infoIterator->addInfoField(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_DEFRAG_TIME_NS_STRING,
                          .fieldType = INFOFIELD_UINT64,

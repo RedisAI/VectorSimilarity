@@ -4031,6 +4031,11 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     ASSERT_LT(size_after_gc, size_before_gc);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+
+    // The two GC API calls scheduled a single backend GC, which the info accounts for.
+    auto svs_info = tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.svsTieredInfo;
+    EXPECT_EQ(svs_info.defragRuns, 1);
+    EXPECT_GT(svs_info.defragTimeNs, 0);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, runGCParallel) {
@@ -4169,6 +4174,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCInPlaceMode) {
     ASSERT_EQ(tiered_index->GetSVSIndex()->indexStorageSize(), backend_size);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
     EXPECT_EQ(tiered_index->statisticInfo().numberOfMarkedDeleted, 0);
+
+    // One backend GC for every 64th iteration of the loop plus the final one. The GC on the empty
+    // index at the start returns early and is not counted.
+    auto svs_info = tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.svsTieredInfo;
+    EXPECT_EQ(svs_info.defragRuns, threshold / 64 + 1);
+    EXPECT_GT(svs_info.defragTimeNs, 0);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, switchDeleteModes) {
