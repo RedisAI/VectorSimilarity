@@ -657,9 +657,10 @@ public:
         case svs::concurrent::ReplaceExternalIdResult::NewIdExists:
             return VecSimRelabel_NewLabelTaken;
         case svs::concurrent::ReplaceExternalIdResult::OldIdMissing:
-            break;
+            return VecSimRelabel_OldLabelMissing;
+        default:
+            throw std::logic_error("SVSIndex::relabelVector: unreachable SVS result");
         }
-        return VecSimRelabel_OldLabelMissing;
     }
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
