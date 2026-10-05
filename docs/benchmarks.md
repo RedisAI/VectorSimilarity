@@ -57,6 +57,12 @@ and tiered SQ8 asynchronous ingestion and deletion repair. Direct TopK avoids th
 thread-pool polling included in tiered TopK. Asynchronous ingestion includes waiting for
 workers; asynchronous deletion repair reports final swap cleanup separately as
 `cleanup_time`, following the existing HNSW benchmark.
+`UpdateLabel` (HNSW and HNSW SQ8) re-inserts each label's original vectors with
+`VecSimIndex_UpdateVectors` and reports time per update. Its counters are held-out TopK
+recall before and after the updates (`recall_before`, `recall_after`, k=10, `ef_runtime` 200) and
+the share of updated labels found first when queried with their own vector
+(`self_recall_after`). `updated_ratio` below 1 means some updates were rejected. It changes
+graph links, so it is registered last.
 
 SVS TopK uses the same normalized, held-out DBpedia query file and exact reference
 vectors/labels as HNSW TopK. Its `Recall` counter measures label overlap with brute
@@ -67,6 +73,9 @@ SVS backend, excluding the reference index; compare it with HNSW SQ8 backend mem
 For initial training and ingestion, select `bm-sq8-train-fp32`,
 `bm-sq8-train-fp16`, `bm-svs-train-fp32` or `bm-svs-train-fp16` using
 the benchmark workflow or `make benchmark BM_FILTER=<selection>`.
+To run the whole HNSW, HNSW SQ8 and SVS comparison for one data type, select
+`bm-sq8-compare-fp32` (basics single and multi, SQ8 and SVS training, SVS basics) or
+`bm-sq8-compare-fp16` (basics single and multi, SQ8 and SVS training).
 
 SVS and SQ8 training share the threshold insertion and completion measurement.
 Both exclude index and worker-pool destruction from timing.

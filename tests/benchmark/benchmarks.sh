@@ -100,6 +100,20 @@ elif [ "$BM_TYPE" = "bm-updated-fp32-single" ] ; then
 elif [ "$BM_TYPE" = "bm-hnsw-internals-incoming-edges" ] ; then
     echo index_internals_incoming_edges_fp32
 
+# HNSW SQ8 comparison with unquantized HNSW and SVS, one set per data type
+elif [ "$BM_TYPE" = "bm-sq8-compare-fp32" ] ; then
+    echo basics_single_fp32
+    echo basics_multi_fp32
+    echo sq8_training_fp32
+    echo svs_training_fp32
+    echo basics_svs_single_fp32
+    echo basics_svs_single_fp32_LVQ8
+elif [ "$BM_TYPE" = "bm-sq8-compare-fp16" ] ; then
+    echo basics_single_fp16
+    echo basics_multi_fp16
+    echo sq8_training_fp16
+    echo svs_training_fp16
+
 # SQ8 training benchmarks
 elif [ "$BM_TYPE" = "bm-sq8-train-fp32" ] ; then
     echo sq8_training_fp32
