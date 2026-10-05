@@ -15,18 +15,18 @@
 #include "VecSim/types/float16.h"
 #include "VecSim/utils/alignment.h"
 
-static inline __m512h SQ8_FP16_LoadQuantizedValues_AVX512FP16(const uint8_t *codes) {
-    const __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(codes));
+static inline __m512h SQ8_FP16_LoadQuantizedValues_AVX512FP16(const uint8_t *quantized_values) {
+    const __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(quantized_values));
     return _mm512_cvtepu16_ph(_mm512_cvtepu8_epi16(bytes));
 }
 
-static inline void SQ8_FP16_InnerProductStep_AVX512FP16(const uint8_t *&codes,
+static inline void SQ8_FP16_InnerProductStep_AVX512FP16(const uint8_t *&quantized_values,
                                                         const vecsim_types::float16 *&query,
                                                         __m512h &sum) {
-    const __m512h values = SQ8_FP16_LoadQuantizedValues_AVX512FP16(codes);
+    const __m512h values = SQ8_FP16_LoadQuantizedValues_AVX512FP16(quantized_values);
     const __m512h query_values = _mm512_loadu_ph(query);
     sum = _mm512_fmadd_ph(values, query_values, sum);
-    codes += 32;
+    quantized_values += 32;
     query += 32;
 }
 
@@ -36,39 +36,39 @@ static inline __m512h SQ8_FP16_AccumulateInnerProduct_AVX512FP16(const void *sto
                                                                  const void *query_blob,
                                                                  size_t dimension) {
     using float16 = vecsim_types::float16;
-    const auto *codes = static_cast<const uint8_t *>(storage);
+    const auto *quantized_values = static_cast<const uint8_t *>(storage);
     const auto *query = static_cast<const float16 *>(query_blob);
-    const auto *end = codes + dimension;
+    const auto *end = quantized_values + dimension;
     __m512h sum = _mm512_setzero_ph();
     if constexpr (residual) {
         constexpr __mmask32 mask = (1U << residual) - 1;
-        const __m512h values = SQ8_FP16_LoadQuantizedValues_AVX512FP16(codes);
+        const __m512h values = SQ8_FP16_LoadQuantizedValues_AVX512FP16(quantized_values);
         const __m512h query_values = _mm512_loadu_ph(query);
         sum = _mm512_maskz_mul_ph(mask, values, query_values);
-        codes += residual;
+        quantized_values += residual;
         query += residual;
     }
     if constexpr (four_sums_fp32_reduce) {
         __m512h sum1 = _mm512_setzero_ph();
         __m512h sum2 = _mm512_setzero_ph();
         __m512h sum3 = _mm512_setzero_ph();
-        while (end - codes >= 128) {
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum1);
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum2);
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum3);
+        while (end - quantized_values >= 128) {
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum);
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum1);
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum2);
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum3);
         }
-        if (codes < end)
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
-        if (codes < end)
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum1);
-        if (codes < end)
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum2);
+        if (quantized_values < end)
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum);
+        if (quantized_values < end)
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum1);
+        if (quantized_values < end)
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum2);
         sum = _mm512_add_ph(_mm512_add_ph(sum, sum1), _mm512_add_ph(sum2, sum3));
     } else {
         do {
-            SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
-        } while (codes < end);
+            SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum);
+        } while (quantized_values < end);
     }
     return sum;
 }
