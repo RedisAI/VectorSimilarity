@@ -92,7 +92,7 @@ jobs:
           submodules: recursive
           path: source
       - name: Install test dependencies
-        working-directory: source
+        working-directory: harness
         run: sudo .install/install_script.sh
       - name: Build and test exact production source
         env:
