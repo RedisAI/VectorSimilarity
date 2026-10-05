@@ -31,15 +31,11 @@ static inline void SQ8_FP16_InnerProductStep_AVX512FP16(const uint8_t *&codes,
 }
 
 // dim >= 32 keeps the residual's full loads within the vector payloads.
-template <unsigned char residual, bool four_sums_fp32_reduce = false>
-float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const void *query_blob,
-                                                   size_t dimension) {
-    using sq8 = vecsim_types::sq8;
+template <unsigned char residual, bool four_sums_fp32_reduce>
+static inline __m512h SQ8_FP16_AccumulateInnerProduct_AVX512FP16(const void *storage,
+                                                                 const void *query_blob,
+                                                                 size_t dimension) {
     using float16 = vecsim_types::float16;
-    // Directed rounding can saturate half overflow, hiding it from the finite check below.
-    if ((_mm_getcsr() & _MM_ROUND_MASK) != _MM_ROUND_NEAREST)
-        return spaces::Choose_SQ8_FP16_IP_implementation_AVX512F(dimension)(storage, query_blob,
-                                                                            dimension);
     const auto *codes = static_cast<const uint8_t *>(storage);
     const auto *query = static_cast<const float16 *>(query_blob);
     const auto *end = codes + dimension;
@@ -74,21 +70,27 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
             SQ8_FP16_InnerProductStep_AVX512FP16(codes, query, sum);
         } while (codes < end);
     }
-    float dot;
+    return sum;
+}
+
+template <bool four_sums_fp32_reduce>
+static inline float SQ8_FP16_ReduceInnerProduct_AVX512FP16(__m512h sum) {
     if constexpr (four_sums_fp32_reduce) {
         const __m512i bits = _mm512_castph_si512(sum);
         const __m512 low = _mm512_cvtph_ps(_mm512_castsi512_si256(bits));
         const __m512 high = _mm512_cvtph_ps(_mm512_extracti64x4_epi64(bits, 1));
-        dot = _mm512_reduce_add_ps(_mm512_add_ps(low, high));
+        return _mm512_reduce_add_ps(_mm512_add_ps(low, high));
     } else {
         const _Float16 reduced = _mm512_reduce_add_ph(sum);
-        dot = static_cast<float>(reduced);
+        return static_cast<float>(reduced);
     }
-    // Nearest rounding leaves intermediate and reduction overflow nonfinite.
-    if (!std::isfinite(dot))
-        return spaces::Choose_SQ8_FP16_IP_implementation_AVX512F(dimension)(storage, query_blob,
-                                                                            dimension);
+}
 
+static inline float SQ8_FP16_ApplyInnerProductCorrection_AVX512FP16(const void *storage,
+                                                                    const void *query_blob,
+                                                                    size_t dimension, float dot) {
+    using sq8 = vecsim_types::sq8;
+    using float16 = vecsim_types::float16;
     const auto *storage_meta = static_cast<const uint8_t *>(storage) + dimension;
     const float min_val = load_unaligned<float>(storage_meta + sq8::MIN_VAL * sizeof(float));
     const float delta = load_unaligned<float>(storage_meta + sq8::DELTA * sizeof(float));
@@ -96,6 +98,23 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
         reinterpret_cast<const uint8_t *>(static_cast<const float16 *>(query_blob) + dimension);
     const float query_sum = load_unaligned<float>(query_meta + sq8::SUM_QUERY * sizeof(float));
     return 1.0f - (min_val * query_sum + delta * dot);
+}
+
+template <unsigned char residual, bool four_sums_fp32_reduce = false>
+float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const void *query_blob,
+                                                   size_t dimension) {
+    // Directed rounding can saturate half overflow, hiding it from the finite check below.
+    if ((_mm_getcsr() & _MM_ROUND_MASK) != _MM_ROUND_NEAREST)
+        return spaces::Choose_SQ8_FP16_IP_implementation_AVX512F(dimension)(storage, query_blob,
+                                                                            dimension);
+    const __m512h sum = SQ8_FP16_AccumulateInnerProduct_AVX512FP16<residual, four_sums_fp32_reduce>(
+        storage, query_blob, dimension);
+    const float dot = SQ8_FP16_ReduceInnerProduct_AVX512FP16<four_sums_fp32_reduce>(sum);
+    // Nearest rounding leaves intermediate and reduction overflow nonfinite.
+    if (!std::isfinite(dot))
+        return spaces::Choose_SQ8_FP16_IP_implementation_AVX512F(dimension)(storage, query_blob,
+                                                                            dimension);
+    return SQ8_FP16_ApplyInnerProductCorrection_AVX512FP16(storage, query_blob, dimension, dot);
 }
 
 template <unsigned char residual>
