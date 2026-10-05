@@ -2302,6 +2302,17 @@ TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
     auto state = tiered_index->getHNSWIndex()->checkIntegrity();
     EXPECT_EQ(state.valid_state, true);
     EXPECT_EQ(state.connections_to_repair, 0);
+
+    // Both deleted elements were disposed of by defrag(), which the info reports. Other callers
+    // of defrag() may have run too, so only the swap jobs, which are exactly the two ids, are
+    // compared exactly.
+    EXPECT_GE(tiered_index->defragRuns.load(), 2);
+    EXPECT_EQ(tiered_index->defragSwapJobs.load(), 2);
+    EXPECT_GT(tiered_index->defragTimeNs.load(), 0);
+    auto info = tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo;
+    EXPECT_EQ(info.defragRuns, tiered_index->defragRuns.load());
+    EXPECT_EQ(info.defragSwapJobs, 2);
+    EXPECT_EQ(info.defragTimeNs, tiered_index->defragTimeNs.load());
 }
 
 // A set of lambdas that determine whether a vector should be inserted to the
