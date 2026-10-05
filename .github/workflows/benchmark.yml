@@ -1,6 +1,9 @@
 on:
   workflow_call:
     inputs:
+      production-source:
+        type: string
+        required: false
       setup:
         type: string
         required: true
@@ -11,6 +14,10 @@ on:
         description: 'Run only on specific architecture'
   workflow_dispatch:
     inputs:
+      production-source:
+        type: string
+        required: false
+        description: Exact production commit for final native checks
       setup:
         type: choice
         options:
@@ -42,6 +49,7 @@ on:
           - bm-batch-iter-uint8-multi
           - bm-updated-fp32-single
           - bm-sq8-compare-fp32
+          - bm-mod19169-final-check
           - bm-mod19169-native-first
           - bm-sq8-compare-fp16
           - bm-sq8-train-fp32
@@ -104,7 +112,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   run_benchmarks:
-    if: inputs.setup != 'bm-mod19169-native-first'
+    if: inputs.setup != 'bm-mod19169-native-first' && inputs.setup != 'bm-mod19169-final-check'
     name: Run ${{ matrix.architecture }} benchmarks
     needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
@@ -131,3 +139,19 @@ jobs:
       architecture: ${{ matrix.architecture }}
       instance-type: ${{ matrix.instance-type }}
       ami-id: ${{ matrix.ami-id }}
+
+  run_final_check:
+    if: inputs.setup == 'bm-mod19169-final-check'
+    name: Check final source on ${{ matrix.architecture }}
+    needs: prepare_runner_configurations
+    uses: ./.github/workflows/mod19169-final-check-runner.yml
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare_runner_configurations.outputs.matrix) }}
+    with:
+      setup: ${{ inputs.setup }}
+      architecture: ${{ matrix.architecture }}
+      instance-type: ${{ matrix.instance-type }}
+      ami-id: ${{ matrix.ami-id }}
+      production-source: ${{ inputs.production-source }}
