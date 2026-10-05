@@ -58,11 +58,12 @@ static inline __m512h SQ8_FP16_AccumulateInnerProduct_AVX512FP16(const void *sto
             SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum2);
             SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum3);
         }
-        if (quantized_values < end)
+        const size_t remaining = end - quantized_values;
+        if (remaining >= 32)
             SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum);
-        if (quantized_values < end)
+        if (remaining >= 64)
             SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum1);
-        if (quantized_values < end)
+        if (remaining >= 96)
             SQ8_FP16_InnerProductStep_AVX512FP16(quantized_values, query, sum2);
         sum = _mm512_add_ph(_mm512_add_ph(sum, sum1), _mm512_add_ph(sum2, sum3));
     } else {
