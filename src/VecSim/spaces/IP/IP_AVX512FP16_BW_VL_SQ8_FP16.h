@@ -31,7 +31,7 @@ static inline void SQ8_FP16_InnerProductStep_AVX512FP16(const uint8_t *&codes,
 }
 
 // dim >= 32 keeps the residual's full loads within the vector payloads.
-template <unsigned char residual, bool four_sums = false>
+template <unsigned char residual, bool four_sums_fp32_reduce = false>
 float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const void *query_blob,
                                                    size_t dimension) {
     using sq8 = vecsim_types::sq8;
@@ -52,7 +52,7 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
         codes += residual;
         query += residual;
     }
-    if constexpr (four_sums) {
+    if constexpr (four_sums_fp32_reduce) {
         __m512h sum1 = _mm512_setzero_ph();
         __m512h sum2 = _mm512_setzero_ph();
         __m512h sum3 = _mm512_setzero_ph();
@@ -75,7 +75,7 @@ float SQ8_FP16_InnerProductSIMD32_AVX512FP16_BW_VL(const void *storage, const vo
         } while (codes < end);
     }
     float dot;
-    if constexpr (four_sums) {
+    if constexpr (four_sums_fp32_reduce) {
         const __m512i bits = _mm512_castph_si512(sum);
         const __m512 low = _mm512_cvtph_ps(_mm512_castsi512_si256(bits));
         const __m512 high = _mm512_cvtph_ps(_mm512_extracti64x4_epi64(bits, 1));

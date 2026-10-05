@@ -16,7 +16,7 @@ namespace spaces {
 
 dist_func_t<float> Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(size_t dim) {
     dist_func_t<float> ret_dist_func;
-    if (dim >= 256) {
+    if (dim >= spaces::SQ8_FP16_FOUR_SUMS_MIN_DIM) {
         CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32,
                               SQ8_FP16_InnerProductSIMD32_FourSums_AVX512FP16_BW_VL);
     } else {
