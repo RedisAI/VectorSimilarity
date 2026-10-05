@@ -815,7 +815,7 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorTakesOverPendingConsolidatesOfTheTar
     auto *first_job = static_cast<SVSConsolidateJob *>(mock_thread_pool.jobQ.front().job);
 
     ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 2, 1), VecSimRelabel_OK);
-    ASSERT_FALSE(first_job->isValid);
+    ASSERT_EQ(first_job->status.load(), SVSConsolidateJob::Status::TakenOver);
     ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
     ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(2));
 
@@ -858,7 +858,7 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorWaitsForAnExecutingConsolidate) {
     ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     auto *consolidate_job = static_cast<SVSConsolidateJob *>(mock_thread_pool.jobQ.front().job);
-    consolidate_job->executing.store(true, std::memory_order_release);
+    consolidate_job->status.store(SVSConsolidateJob::Status::Executing, std::memory_order_release);
 
     std::atomic<int> relabel_code{-1};
     std::thread relabeler(
@@ -869,7 +869,7 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorWaitsForAnExecutingConsolidate) {
     EXPECT_EQ(relabel_code.load(), -1) << "the takeover did not wait for the running job";
 
     tiered_index->GetSVSIndex()->consolidate({1});
-    consolidate_job->executing.store(false, std::memory_order_release);
+    consolidate_job->status.store(SVSConsolidateJob::Status::Done, std::memory_order_release);
     relabeler.join();
 
     ASSERT_EQ(relabel_code.load(), static_cast<int>(VecSimRelabel_OK));

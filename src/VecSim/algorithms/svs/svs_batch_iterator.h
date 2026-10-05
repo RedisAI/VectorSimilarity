@@ -71,9 +71,8 @@ public:
                       std::shared_ptr<VecSimAllocator> allocator, bool is_two_level_lvq)
         : VecSimBatchIterator{query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                               std::move(allocator)},
-          dim{index->dimensions()},
-          impl_{index->make_batch_iterator(
-              std::span{static_cast<const DataType *>(query_vector), dim})},
+          dim{index->dimensions()}, impl_{index->make_batch_iterator(std::span{
+                                        static_cast<const DataType *>(query_vector), dim})},
           curr_it{impl_.begin()} {
         auto sp = svs_details::joinSearchParams(index->get_search_parameters(), queryParams,
                                                 is_two_level_lvq);

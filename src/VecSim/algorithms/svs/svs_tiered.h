@@ -35,7 +35,10 @@ struct SVSInsertJob : public TieredInsertJob {
  */
 struct SVSConsolidateJob : public AsyncJob {
     std::vector<labelType> labels;
-    std::atomic<bool> executing{false};
+    // Pending -> Executing -> Done, or Pending -> TakenOver when relabelVector() consolidates these
+    // labels itself.
+    enum class Status : uint8_t { Pending, TakenOver, Executing, Done };
+    std::atomic<Status> status{Status::Pending};
 
     SVSConsolidateJob(std::shared_ptr<VecSimAllocator> allocator,
                       const std::vector<labelType> &labels_, JobCallback insertCb,
@@ -595,18 +598,14 @@ private:
         auto svs_index = index->GetSVSIndex();
         svs_index->setParallelism(1);
 
-        bool valid = false;
-        {
-            std::shared_lock<std::shared_mutex> flat_lock(index->flatIndexGuard);
-            valid = consolidate_job->isValid;
-            if (valid) {
-                consolidate_job->executing.store(true, std::memory_order_release);
-            }
-        }
-        if (valid) {
+        auto expected = SVSConsolidateJob::Status::Pending;
+        if (consolidate_job->status.compare_exchange_strong(
+                expected, SVSConsolidateJob::Status::Executing, std::memory_order_acq_rel)) {
             svs_index->consolidate(consolidate_job->labels);
-            // Cleared before the registry lock is needed again, so a waiter cannot deadlock us.
-            consolidate_job->executing.store(false, std::memory_order_release);
+            // Published before forgetConsolidateJob() needs the registry lock, so a waiter holding
+            // it shared is released before this job can be deleted.
+            consolidate_job->status.store(SVSConsolidateJob::Status::Done,
+                                          std::memory_order_release);
         }
         index->forgetConsolidateJob(consolidate_job);
         delete job;
@@ -674,30 +673,22 @@ private:
             }
         }
     }
-    // Caller must hold flatIndexGuard exclusive
     std::vector<labelType> takeOverConsolidateOf(labelType label) {
         std::vector<labelType> taken_over;
-        vecsim_stl::vector<SVSConsolidateJob *> running(this->allocator);
-        {
-            std::shared_lock<std::shared_mutex> lock(this->consolidateJobsGuard);
-            auto it = this->labelToConsolidateJobs.find(label);
-            if (it == this->labelToConsolidateJobs.end()) {
-                return taken_over;
-            }
-            for (auto *job : it->second) {
-                if (!job->isValid) {
-                    continue; // already taken over by an earlier call
-                }
-                if (job->executing.load(std::memory_order_acquire)) {
-                    running.push_back(job);
-                } else {
-                    job->isValid = false;
-                    taken_over.insert(taken_over.end(), job->labels.begin(), job->labels.end());
-                }
-            }
+        std::shared_lock<std::shared_mutex> lock(this->consolidateJobsGuard);
+        auto it = this->labelToConsolidateJobs.find(label);
+        if (it == this->labelToConsolidateJobs.end()) {
+            return taken_over;
         }
-        for (auto *job : running) {
-            waitForJob(job);
+        for (auto *job : it->second) {
+            auto expected = SVSConsolidateJob::Status::Pending;
+            if (job->status.compare_exchange_strong(expected, SVSConsolidateJob::Status::TakenOver,
+                                                    std::memory_order_acq_rel)) {
+                taken_over.insert(taken_over.end(), job->labels.begin(), job->labels.end());
+            } else if (expected == SVSConsolidateJob::Status::Executing) {
+                waitForJob(job); // its own consolidate covers these labels
+            }
+            // already TakenOver or Done
         }
         return taken_over;
     }
@@ -710,8 +701,10 @@ private:
         }
     }
 
+    // Safe to call while holding consolidateJobsGuard shared
     static void waitForJob(SVSConsolidateJob *job) {
-        while (job->executing.load(std::memory_order_acquire)) {
+        while (job->status.load(std::memory_order_acquire) ==
+               SVSConsolidateJob::Status::Executing) {
             std::this_thread::yield();
         }
     }
