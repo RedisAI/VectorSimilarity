@@ -250,6 +250,9 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
     // Used to prevent scheduling multiple index GC jobs at the same time.
     std::atomic_flag indexGCScheduled = ATOMIC_FLAG_INIT;
+    // Cost of the backend GC, for `debugInfo()`. Statistics only, so relaxed ordering is enough.
+    std::atomic<uint64_t> defragRuns{0};
+    std::atomic<uint64_t> defragTimeNs{0};
     // Used to prevent running multiple index update jobs in parallel.
     // Even if update jobs scheduled sequentially, they can be started in parallel.
     mutable std::mutex updateJobMutex;
@@ -594,6 +597,7 @@ private:
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
 
+        const auto start = std::chrono::steady_clock::now();
         std::lock_guard lock{index->mainIndexGuard};
         // Release the scheduled flag to allow scheduling again
         index->indexGCScheduled.clear();
@@ -610,6 +614,20 @@ private:
         svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
         // VecSimIndexAbstract::runGC() is protected
         static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+        index->recordDefrag(start);
+    }
+
+    // Account for one backend GC run that started at `start`. The time includes the wait for the
+    // main index guard, which is part of what GC costs, as in the tiered HNSW defrag().
+    void recordDefrag(std::chrono::steady_clock::time_point start) {
+        const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now() - start)
+                                   .count();
+        defragRuns.fetch_add(1, std::memory_order_relaxed);
+        defragTimeNs.fetch_add(elapsedNs, std::memory_order_relaxed);
+        this->backendIndex->log(VecSimCommonStrings::LOG_DEBUG_STRING,
+                                "Tiered SVS index defrag took %lld ns",
+                                static_cast<long long>(elapsedNs));
     }
 
 #ifdef BUILD_TESTS
@@ -1116,6 +1134,8 @@ public:
             .trainingTriggerThreshold = this->trainingTriggerThreshold,
             .updateTriggerThreshold = this->updateTriggerThreshold,
             .updateJobWaitTime = this->updateJobWaitTime,
+            .defragRuns = defragRuns.load(std::memory_order_relaxed),
+            .defragTimeNs = defragTimeNs.load(std::memory_order_relaxed),
         };
         {
             // Use try_lock to avoid blocking the main thread during long-running
@@ -1172,6 +1192,18 @@ public:
             .fieldValue = {FieldValue{
                 .uintegerValue =
                     info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.updateJobWaitTime}}});
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_DEFRAG_RUNS_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{
+                .uintegerValue =
+                    info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.defragRuns}}});
+        infoIterator->addInfoField(VecSim_InfoField{
+            .fieldName = VecSimCommonStrings::TIERED_SVS_DEFRAG_TIME_NS_STRING,
+            .fieldType = INFOFIELD_UINT64,
+            .fieldValue = {FieldValue{
+                .uintegerValue =
+                    info.tieredInfo.specificTieredBackendInfo.svsTieredInfo.defragTimeNs}}});
         return infoIterator;
     }
 
@@ -1191,6 +1223,7 @@ public:
             TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                        "running synchronous GC for tiered SVS index in write-in-place mode");
             // In write-in-place mode, we run GC synchronously.
+            const auto start = std::chrono::steady_clock::now();
             std::lock_guard lock{this->mainIndexGuard};
             if (this->backendIndex->indexSize() == 0) {
                 // No need to run GC on an empty index.
@@ -1200,6 +1233,7 @@ public:
             this->GetSVSIndex()->setParallelism(1);
             // VecSimIndexAbstract::runGC() is protected
             static_cast<VecSimIndexInterface *>(this->backendIndex)->runGC();
+            this->recordDefrag(start);
             return;
         }
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,

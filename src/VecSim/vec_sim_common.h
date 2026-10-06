@@ -453,6 +453,8 @@ typedef struct {
 
 typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
+    size_t defragRuns;   // Number of defrag() calls so far.
+    size_t defragTimeNs; // Wall time spent in defrag(), including the main index guard wait.
 } HnswTieredInfo;
 
 typedef struct SvsTieredInfo {
@@ -461,6 +463,8 @@ typedef struct SvsTieredInfo {
     size_t updateJobWaitTime; // The time (microseconds) to wait for Redis threads reservation
                               // before executing the scheduled SVS Index update job.
     bool indexUpdateScheduled;
+    size_t defragRuns;   // Number of backend GC runs so far.
+    size_t defragTimeNs; // Wall time spent in them, including the main index guard wait.
 } SvsTieredInfo;
 
 typedef struct {
