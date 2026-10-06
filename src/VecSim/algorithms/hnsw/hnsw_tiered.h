@@ -113,7 +113,7 @@ private:
     // vectors reached this limit, we apply swap jobs *only for vectors that has no more pending
     // repair jobs*, and are ready to be removed from the graph.
     size_t pendingSwapJobsThreshold;
-    size_t readySwapJobs;
+    std::atomic_size_t readySwapJobs;
 
     // Cost of defrag(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
     std::atomic<uint64_t> defragRuns{0};
@@ -569,7 +569,7 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
     const auto main_index_lock = this->acquireMainIndexGuard();
     TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
-               readySwapJobs, std::min(readySwapJobs, maxJobsToRun));
+               readySwapJobs.load(), std::min(readySwapJobs.load(), maxJobsToRun));
 
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     idsToRemove.reserve(idToSwapJob.size());
@@ -1260,7 +1260,7 @@ int TieredHNSWIndex<DataType, DistType>::updateVectorInPlace(
 }
 template <typename DataType, typename DistType>
 auto TieredHNSWIndex<DataType, DistType>::shouldDefrag() {
-    return readySwapJobs >= this->pendingSwapJobsThreshold;
+    return readySwapJobs.load() >= this->pendingSwapJobsThreshold;
 }
 // In the tiered index, we assume that the blobs are processed by the flat buffer
 // before being transferred to the HNSW index.
@@ -1516,26 +1516,28 @@ bool TieredHNSWIndex<DataType, DistType>::updateMultiValueAsync(labelType label,
                                                                 const void *new_blobs, size_t n) {
     // Drop the label's buffered copies first, which also makes room for the new ones.
     this->deleteFromFlatAndInsertJobs(label);
-    if (this->frontendIndex->indexSize() + n > this->flatBufferLimit) {
-        return false;
-    }
 
     const char *blob = static_cast<const char *>(new_blobs);
     vecsim_stl::vector<HNSWInsertJob *> insert_jobs(this->allocator);
     insert_jobs.reserve(n);
-    this->flatIndexGuard.lock();
-    for (size_t i = 0; i < n; i++) {
-        idType flat_id = this->frontendIndex->indexSize();
-        this->frontendIndex->addVector(blob + i * this->frontendIndex->getInputBlobSize(), label);
-        auto *job = new (this->allocator)
-            HNSWInsertJob(this->allocator, label, flat_id, executeInsertJobWrapper, this);
-        insert_jobs.push_back(job);
-        auto [it, inserted] = this->labelToInsertJobs.try_emplace(label, 1, job, this->allocator);
-        if (!inserted) {
-            it->second.push_back(job);
+    {
+        std::lock_guard flat_lock(this->flatIndexGuard);
+        if (this->frontendIndex->indexSize() + n > this->flatBufferLimit) {
+            return false;
+        }
+        auto &label_jobs =
+            this->labelToInsertJobs.try_emplace(label, this->allocator).first->second;
+        label_jobs.reserve(label_jobs.size() + n);
+        for (size_t i = 0; i < n; i++) {
+            idType flat_id = this->frontendIndex->indexSize();
+            this->frontendIndex->addVector(blob + i * this->frontendIndex->getInputBlobSize(),
+                                           label);
+            auto *job = new (this->allocator)
+                HNSWInsertJob(this->allocator, label, flat_id, executeInsertJobWrapper, this);
+            insert_jobs.push_back(job);
+            label_jobs.push_back(job);
         }
     }
-    this->flatIndexGuard.unlock();
 
     // Mark the label's indexed vectors deleted *before* any of the new ones can be ingested, or
     // they'd be marked deleted as well. The jobs whose id has repairs pending are set to nullptr
