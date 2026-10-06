@@ -262,7 +262,13 @@ protected:
         return std::make_unique<SVSImplHandler>(initImpl(points, ids));
     }
 
-    void storeImpl(impl_type *impl) { this->impl_.store(impl, std::memory_order_release); }
+    // if impl_ == nullptr, store impl, return true
+    // if impl_ != nullptr, do nothing, return false
+    bool CASImpl(impl_type *impl) {
+        impl_type *expected = nullptr;
+        return this->impl_.compare_exchange_strong(expected, impl,
+                                                   std::memory_order_acq_rel);
+    }
 
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
         SVSImplHandler *svs_handler = dynamic_cast<SVSImplHandler *>(handler.get());
@@ -270,11 +276,10 @@ protected:
             throw std::logic_error("Failed to cast to SVSImplHandler");
         }
 
-        if (getImpl()) {
+        if (!CASImpl(svs_handler->impl.get())) {
             throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
         }
-
-        storeImpl(svs_handler->impl.release());
+        svs_handler->impl.release();
     }
 
     // Assuming parallelism was updated to reflect the number of available threads before this
@@ -326,7 +331,16 @@ private:
             impl->add_points(points, ids, /*reuse_empty*/ false);
         } else {
             // SVS index instance cannot be empty, so we have to construct it at first rows
-            storeImpl(initImpl(points, ids).release());
+            auto built = initImpl(points, ids);
+            if (CASImpl(built.get())) {
+                built.release();
+            } else {
+                // Another writer published first.
+                if constexpr (!isMulti) {
+                    deleted_num = deleteVectorsImpl(labels, n);
+                }
+                getImpl()->add_points(points, ids, /*reuse_empty*/ false);
+            }
         }
 
         return n - deleted_num;
