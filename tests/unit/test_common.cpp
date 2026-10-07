@@ -629,7 +629,7 @@ TEST(CommonAPITest, testlogTieredIndex) {
         }
         return buffer;
     };
-    ASSERT_EQ(log.logBuffer.size(), 8) << buffer_as_string();
+    ASSERT_EQ(log.logBuffer.size(), 9) << buffer_as_string();
     size_t log_iter = 0;
     ASSERT_EQ(log.logBuffer[log_iter++],
               "verbose: " + log.prefix + "Resizing FLAT index from 0 to 1024")
@@ -665,6 +665,14 @@ TEST(CommonAPITest, testlogTieredIndex) {
     ASSERT_EQ(log.logBuffer[log_iter++],
               "verbose: " + log.prefix + "Tiered HNSW index GC: done executing 1 swap jobs")
         << "failed at log index:" << log_iter - 1 << std::endl
+        << "expected log: " << buffer_as_string();
+
+    // defrag() summarizes the run at debug level. The elapsed time varies, so only the fixed part
+    // of the message is compared.
+    const std::string defrag_summary =
+        "debug: " + log.prefix + "Tiered HNSW index defrag: executed 1 swap jobs in ";
+    ASSERT_EQ(log.logBuffer[log_iter].rfind(defrag_summary, 0), 0)
+        << "failed at log index:" << log_iter << std::endl
         << "expected log: " << buffer_as_string();
 }
 
