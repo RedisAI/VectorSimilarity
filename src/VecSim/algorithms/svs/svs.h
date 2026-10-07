@@ -266,8 +266,7 @@ protected:
     // if impl_ != nullptr, do nothing, return false
     bool CASImpl(impl_type *impl) {
         impl_type *expected = nullptr;
-        return this->impl_.compare_exchange_strong(expected, impl,
-                                                   std::memory_order_acq_rel);
+        return this->impl_.compare_exchange_strong(expected, impl, std::memory_order_acq_rel);
     }
 
     void setImpl(std::unique_ptr<ImplHandler> handler) override {
@@ -745,6 +744,9 @@ public:
             rep->results.reserve(n_neighbors);
 
             for (size_t i = 0; i < n_neighbors; i++) {
+                if (result.index(0, i) == svs::concurrent::no_external_id) {
+                    continue;
+                }
                 rep->results.push_back(
                     VecSimQueryResult{result.index(0, i), toVecSimDistance(result.distance(0, i))});
             }
@@ -913,18 +915,9 @@ private:
         };
 
         if constexpr (isMulti) {
-            auto it = impl->get_label_to_external_lookup().find(label);
-            if (it == impl->get_label_to_external_lookup().end()) {
-                return;
-            }
-            for (auto external_id : it->second) {
-                append_datum(impl->get_parent_index().get_datum(external_id));
-            }
+            impl->on_data(label, append_datum);
         } else {
-            if (!impl->has_id(label)) {
-                return;
-            }
-            append_datum(impl->get_datum(label));
+            impl->on_datum(label, append_datum);
         }
     }
 

@@ -21,8 +21,9 @@
 struct SVSInsertJob : public TieredInsertJob {
     // Pending -> Executing -> Done. Delayed means a relabel is remapping the label in the backend
     // right now, and publishing would put the vector under a label that is not settled yet.
+    // Parked means a worker consumed that submission; relabel must submit it again when settled.
     // Written under flatIndexGuard, except Executing/Done which waitForJob() reads unlocked.
-    enum class Status : uint8_t { Pending, Delayed, Executing, Done };
+    enum class Status : uint8_t { Pending, Delayed, Parked, Executing, Done };
     std::atomic<Status> status{Status::Pending};
 
     SVSInsertJob(std::shared_ptr<VecSimAllocator> allocator, labelType label_, idType id_,
@@ -373,8 +374,6 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
                 }
                 flat_results.swap(cur_flat_results->results);
                 VecSimQueryReply_Free(cur_flat_results);
-                // We also take the lock on the main index on the first call to getNextResults, and
-                // we hold it until the iterator is depleted or freed.
                 acquire_svs_iterator();
                 auto cur_svs_results = svs_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
                 svs_code = cur_svs_results->code;
@@ -542,18 +541,16 @@ private:
             outcome = job_index->executeInsertJob(insert_job);
         }
 
-        if (outcome == InsertJobOutcome::Deferred) {
-            job_index->submitSingleJob(job);
-            return;
+        if (outcome == InsertJobOutcome::Completed) {
+            delete job;
         }
-        delete job;
     }
 
     /**
      * @brief Run SVS index GC in a thread-safe manner.
      *
      * This static wrapper function performs the following actions:
-     * - Acquires a lock on the index's mainIndexGuard to ensure thread safety during the GC
+     * - Acquires a lock on the index's updateJobMutex to ensure thread safety during the GC
      * - Configures the number of threads for the underlying SVS index update operation.
      * - Calls the SVSIndex::runGC() method to perform the actual index update.
      * - Clears the indexGCScheduled flag to allow future scheduling.
@@ -714,7 +711,7 @@ private:
         return Base::setAndSaveInvalidJob(job);
     }
 
-    enum class InsertJobOutcome { Completed, Deferred };
+    enum class InsertJobOutcome { Completed, Parked };
 
     InsertJobOutcome executeInsertJob(SVSInsertJob *job) {
         auto svs_index = GetSVSIndex();
@@ -733,9 +730,10 @@ private:
         }
 
         if (job->status.load(std::memory_order_relaxed) == SVSInsertJob::Status::Delayed) {
+            job->status.store(SVSInsertJob::Status::Parked, std::memory_order_relaxed);
             this->flatIndexGuard.unlock_shared();
-            // relabelVector() clears it once the backend remap settled the label
-            return InsertJobOutcome::Deferred;
+            // Relabel owns resubmission. It may already have resumed the job after this unlock.
+            return InsertJobOutcome::Parked;
         }
 
         // Copy the vector blob out of the flat buffer while holding flatIndexGuard, so we
@@ -904,7 +902,7 @@ public:
         }
 
         this->flatIndexGuard.lock_shared();
-        if (svs_index->ready() && (this->frontendIndex->indexSize() >= flat_buffer_bound)) {
+        if (this->frontendIndex->indexSize() >= flat_buffer_bound) {
             this->flatIndexGuard.unlock_shared();
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
 
@@ -934,14 +932,12 @@ public:
             // (in case of override in non-MULTI index) - so if it's there, we remove it
             //  we submit the insert job.
             if (!this->backendIndex->isMultiValue()) {
-                if (svs_index->ready()) {
-                    // If we removed the previous vector from both svs and flat in the overwrite
-                    // process, we still return 0 (not -1).
-                    auto deleted = svs_index->deleteVector(label);
-                    if (deleted > 0)
-                        scheduleSVSIndexConsolidate(label);
-                    ret = std::max(ret - deleted, 0);
-                }
+                // If we removed the previous vector from both svs and flat in the overwrite
+                // process, we still return 0 (not -1).
+                auto deleted = svs_index->deleteVector(label);
+                if (deleted > 0)
+                    scheduleSVSIndexConsolidate(label);
+                ret = std::max(ret - deleted, 0);
             }
 
             // Insert job to the queue and signal the workers' updater.
@@ -1160,6 +1156,7 @@ public:
         bool flat_holds_old = false;
         bool delayed_any = false;
         std::vector<labelType> taken_over;
+        vecsim_stl::vector<AsyncJob *> parked_jobs(this->allocator);
         {
             std::lock_guard flat_lock{this->flatIndexGuard};
 
@@ -1206,6 +1203,7 @@ public:
             }
         }
 
+        executeTracingCallback("Relabel::before_backend_remap");
         // Do the taken-over job's,
         // the remap below isn't refused by a leftover translator entry
         if (!taken_over.empty()) {
@@ -1237,14 +1235,23 @@ public:
                 if (it != this->labelToInsertJobs.end()) {
                     for (auto *job : it->second) {
                         auto *insert_job = static_cast<SVSInsertJob *>(job);
-                        if (insert_job->status.load(std::memory_order_relaxed) ==
-                            SVSInsertJob::Status::Delayed) {
+                        auto status = insert_job->status.load(std::memory_order_relaxed);
+                        if (status == SVSInsertJob::Status::Parked) {
+                            parked_jobs.push_back(job);
+                        }
+                        if (status == SVSInsertJob::Status::Delayed ||
+                            status == SVSInsertJob::Status::Parked) {
                             insert_job->status.store(SVSInsertJob::Status::Pending,
                                                      std::memory_order_relaxed);
                         }
                     }
                 }
             }
+        }
+        // The pool's submit callback may wait for workers blocked on either of our locks.
+        lock.unlock();
+        if (!parked_jobs.empty()) {
+            this->submitJobs(parked_jobs);
         }
         return rollback ? VecSimRelabel_NewLabelTaken : VecSimRelabel_OK;
     }

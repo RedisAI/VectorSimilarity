@@ -11,8 +11,16 @@
 #include "mock_thread_pool.h"
 
 #if HAVE_SVS
+#include <algorithm>
+#include <cmath>
+#include <condition_variable>
+#include <functional>
+#include <future>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <chrono>
+#include <unordered_set>
 // For getAvailableCPUs():
 #include <sched.h>
 
@@ -739,10 +747,7 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorRemapsAPendingInsertJob) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 2);
 }
 
-// The delay window: relabelVector marks a pending job Delayed, releases flatIndexGuard, and
-// clears Delayed only after the backend remap settled the label. A worker that runs the job
-// inside that window must requeue it instead of publishing. The test sets Delayed itself
-// rather than racing a relabel.
+// The worker consumes the delayed submission; relabel must resume it exactly once.
 TYPED_TEST(SVSTieredIndexTest, relabelVectorDefersAnInsertJobInsideTheDelayWindow) {
     size_t dim = 4;
     SVSParams params = {.type = TypeParam::get_index_type(),
@@ -765,8 +770,14 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorDefersAnInsertJobInsideTheDelayWindo
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
 
     auto *job = static_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job);
-    job->status.store(SVSInsertJob::Status::Delayed, std::memory_order_relaxed);
-    mock_thread_pool.thread_iteration();
+    tiered_index->registerTracingCallback("Relabel::before_backend_remap", [&]() {
+        std::thread worker([&]() { mock_thread_pool.thread_iteration(); });
+        worker.join();
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        EXPECT_EQ(job->status.load(), SVSInsertJob::Status::Parked);
+        EXPECT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
+    });
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
 
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
@@ -774,11 +785,12 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorDefersAnInsertJobInsideTheDelayWindo
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     ASSERT_EQ(mock_thread_pool.jobQ.front().job, job);
 
-    job->status.store(SVSInsertJob::Status::Pending, std::memory_order_relaxed);
+    ASSERT_EQ(job->status.load(), SVSInsertJob::Status::Pending);
+    ASSERT_EQ(job->label, 70);
     mock_thread_pool.thread_iteration();
 
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
-    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70));
     ASSERT_TRUE(tiered_index->labelToInsertJobs.empty());
     ASSERT_EQ(tiered_index->indexLabelCount(), 2);
 }
@@ -917,15 +929,30 @@ TYPED_TEST(SVSTieredIndexTestBasic, relabelVectorRollsBackWhenTheBackendRefusesT
     ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
     ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(7));
 
-    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 5), VecSimRelabel_NewLabelTaken);
+    // Keep the original completed-job case, then exercise rollback with a parked submission.
+    for (auto status : {SVSInsertJob::Status::Done, SVSInsertJob::Status::Pending}) {
+        job->status.store(status, std::memory_order_relaxed);
+        tiered_index->registerTracingCallback("Relabel::before_backend_remap", [&, status]() {
+            if (status == SVSInsertJob::Status::Pending) {
+                std::thread worker([&]() { mock_thread_pool.thread_iteration(); });
+                worker.join();
+                EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+                EXPECT_EQ(job->status.load(), SVSInsertJob::Status::Parked);
+            }
+        });
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 5), VecSimRelabel_NewLabelTaken);
 
-    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(7));
-    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(5));
-    ASSERT_EQ(tiered_index->labelToInsertJobs.count(5), 0);
-    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
-    ASSERT_EQ(job->label, 7);
-    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
-    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(5));
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(7));
+        ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(5));
+        ASSERT_EQ(tiered_index->labelToInsertJobs.count(5), 0);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
+        ASSERT_EQ(job->label, 7);
+        ASSERT_EQ(job->status.load(), status);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+        ASSERT_EQ(mock_thread_pool.jobQ.front().job, job);
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+        ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(5));
+    }
 
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
@@ -4252,6 +4279,533 @@ TYPED_TEST(SVSTieredIndexTestBasic, preferAdHocOptimization) {
     // Check for preference of tiered with subset (10) smaller than the tiered index size (11),
     // but larger than any of the underlying indexes.
     ASSERT_NO_THROW(tiered_index->preferAdHocSearch(10, 5, false));
+}
+
+TYPED_TEST(SVSTieredIndexTest, runGCBetweenIteratorBatches) {
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "Scalar fallback does not preserve the ordering checked by this test.";
+    }
+    constexpr size_t dim = 4;
+    constexpr size_t n_labels = 6;
+    for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = TypeParam::isMulti()};
+        VecSimParams svs_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock(1);
+        auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
+        auto *backend = tiered_index->GetBackendIndex();
+        for (size_t i = 0; i < n_labels; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(backend, dim, i + 1000, i + 1);
+        }
+
+        TEST_DATA_T query[dim] = {};
+        VecSimQueryParams query_params{};
+        query_params.batchSize = 3;
+        auto *iterator = VecSimBatchIterator_New(tiered_index, query, &query_params);
+        auto verify_first = [](size_t id, double score, size_t i) {
+            EXPECT_EQ(id, i + 1000);
+            if constexpr (TypeParam::get_quant_bits() == VecSimSvsQuant_NONE) {
+                EXPECT_DOUBLE_EQ(score, dim * double(i + 1) * double(i + 1));
+            }
+        };
+        runBatchIteratorSearchTest(iterator, 3, verify_first);
+        for (size_t i = 0; i < 3; ++i) {
+            backend->deleteVector(i + 1000);
+        }
+
+        VecSim_SetWriteMode(mode);
+        std::promise<void> gc_finished;
+        auto completion = gc_finished.get_future();
+        std::thread gc([&]() {
+            VecSimTieredIndex_GC(tiered_index);
+            if (mode == VecSim_WriteAsync) {
+                mock_thread_pool.thread_iteration();
+            }
+            gc_finished.set_value();
+        });
+        const bool completed =
+            completion.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+        // If the old lifetime lock is still present, release it on its owning thread
+        // so GC can finish and the regression fails without hanging the suite.
+        if (!completed) {
+            VecSimBatchIterator_Free(iterator);
+            iterator = nullptr;
+        }
+        gc.join();
+        VecSim_SetWriteMode(VecSim_WriteAsync);
+        ASSERT_TRUE(completed) << "GC waited for an idle iterator to be freed";
+        EXPECT_EQ(backend->indexSize(), 3);
+        EXPECT_TRUE(VecSimBatchIterator_HasNext(iterator));
+        auto verify_remaining = [](size_t id, double score, size_t i) {
+            EXPECT_EQ(id, i + 1003);
+            if constexpr (TypeParam::get_quant_bits() == VecSimSvsQuant_NONE) {
+                EXPECT_DOUBLE_EQ(score, dim * double(i + 4) * double(i + 4));
+            }
+        };
+        runBatchIteratorSearchTest(iterator, 3, verify_remaining);
+        EXPECT_FALSE(VecSimBatchIterator_HasNext(iterator));
+        VecSimBatchIterator_Free(iterator);
+    }
+}
+
+namespace {
+
+constexpr size_t svs_gc_test_dim = 4;
+constexpr size_t svs_gc_label_base = 1'000'000;
+constexpr size_t svs_gc_label_stride = 17;
+using SVSReferenceVectors = std::vector<std::vector<std::vector<float>>>;
+using SVSTestReply = std::unique_ptr<VecSimQueryReply, decltype(&VecSimQueryReply_Free)>;
+
+size_t svsGCLabel(size_t i) { return svs_gc_label_base + svs_gc_label_stride * i; }
+
+SVSReferenceVectors makeSVSReferenceVectors(size_t n, bool multi, bool distinct = false) {
+    SVSReferenceVectors reference(n);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t copy = 0; copy < (multi ? 2U : 1U); ++copy) {
+            std::vector<float> vector(svs_gc_test_dim);
+            for (size_t d = 0; d < vector.size(); ++d) {
+                vector[d] = float(i + 1) + float(d) / 4 + (distinct ? float(copy) / 8 : 0);
+            }
+            reference[i].push_back(std::move(vector));
+        }
+    }
+    return reference;
+}
+
+void addSVSReferenceVectors(VecSimIndex *index, const SVSReferenceVectors &reference,
+                            size_t begin, size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+        for (const auto &vector : reference[i]) {
+            VecSimIndex_AddVector(index, vector.data(), svsGCLabel(i));
+        }
+    }
+}
+
+double svsReferenceDistance(const std::vector<float> &vector, const std::vector<float> &query) {
+    double distance = 0;
+    for (size_t d = 0; d < vector.size(); ++d) {
+        const double delta = double(vector[d]) - double(query[d]);
+        distance += delta * delta;
+    }
+    return distance;
+}
+
+// All references are immutable. Concurrently deleted labels need only remain valid external
+// labels; scores are checked for permanent survivors, whose vectors never change.
+std::string checkSVSReply(const VecSimQueryReply &reply, const SVSReferenceVectors &reference,
+                          const std::vector<float> &query, size_t survivors_begin,
+                          size_t &checked_survivors) {
+    if (reply.code != VecSim_QueryReply_OK) {
+        return "Query did not complete successfully";
+    }
+    std::unordered_set<size_t> labels;
+    for (const auto &result : reply.results) {
+        if (result.id < svs_gc_label_base ||
+            (result.id - svs_gc_label_base) % svs_gc_label_stride != 0 ||
+            (result.id - svs_gc_label_base) / svs_gc_label_stride >= reference.size()) {
+            return "Unknown external label: " + std::to_string(result.id);
+        }
+        if (!std::isfinite(result.score) || !labels.insert(result.id).second) {
+            return "Non-finite score or duplicate label: " + std::to_string(result.id);
+        }
+        const size_t i = (result.id - svs_gc_label_base) / svs_gc_label_stride;
+        if (i >= survivors_begin) {
+            const double expected = svsReferenceDistance(reference[i][0], query);
+            if (std::abs(result.score - expected) > 1e-5 * std::max(1.0, expected)) {
+                return "Wrong score for label " + std::to_string(result.id) + ": got " +
+                       std::to_string(result.score) + ", expected " + std::to_string(expected);
+            }
+            ++checked_survivors;
+        }
+    }
+    return {};
+}
+
+std::string checkSVSCopies(TieredSVSIndex<float> *index, const SVSReferenceVectors &reference,
+                           size_t begin, size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+        std::vector<std::vector<float>> copied;
+        index->getDataByLabel(svsGCLabel(i), copied);
+        std::sort(copied.begin(), copied.end());
+        // Reference copies are generated in sorted order. Equality also checks multiplicity.
+        if (copied != reference[i]) {
+            return "Wrong vectors copied for label " + std::to_string(svsGCLabel(i));
+        }
+    }
+    return {};
+}
+
+class SVSTestWriteMode {
+    VecSimWriteMode previous = TieredSVSIndex<float>::getWriteMode();
+
+public:
+    explicit SVSTestWriteMode(VecSimWriteMode mode) { VecSim_SetWriteMode(mode); }
+    ~SVSTestWriteMode() { VecSim_SetWriteMode(previous); }
+};
+
+// Reader checks run outside the synchronization mutex. Failures are reported after joining,
+// and each mutation round waits for every reader to make progress without using sleeps.
+class SVSTestReaders {
+    std::vector<std::function<std::string()>> checks;
+    std::vector<std::thread> threads;
+    std::vector<size_t> completed;
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::atomic<bool> stopped{false};
+    bool started = false;
+    std::string failure;
+
+public:
+    explicit SVSTestReaders(std::vector<std::function<std::string()>> checks)
+        : checks(std::move(checks)), completed(this->checks.size(), 0) {}
+
+    void start() {
+        for (size_t i = 0; i < checks.size(); ++i) {
+            threads.emplace_back([this, i] {
+                {
+                    std::unique_lock lock(mutex);
+                    changed.wait(lock, [&] { return started || stopped.load(); });
+                }
+                while (!stopped.load()) {
+                    auto error = checks[i]();
+                    {
+                        std::lock_guard lock(mutex);
+                        ++completed[i];
+                        if (!error.empty()) {
+                            if (failure.empty()) {
+                                failure = "Reader " + std::to_string(i) + ": " + error;
+                            }
+                            stopped.store(true);
+                        }
+                    }
+                    changed.notify_all();
+                }
+            });
+        }
+        {
+            std::lock_guard lock(mutex);
+            started = true;
+        }
+        changed.notify_all();
+    }
+
+    bool waitForProgress() {
+        std::unique_lock lock(mutex);
+        const auto before = completed;
+        const bool progressed = changed.wait_for(lock, std::chrono::seconds(5), [&] {
+            if (!failure.empty()) {
+                return true;
+            }
+            for (size_t i = 0; i < completed.size(); ++i) {
+                if (completed[i] == before[i]) {
+                    return false;
+                }
+            }
+            return true;
+        });
+        if (!progressed && failure.empty()) {
+            failure = "Timed out waiting for reader progress";
+            stopped.store(true);
+        }
+        return progressed && failure.empty();
+    }
+
+    void finish() {
+        {
+            std::lock_guard lock(mutex);
+            stopped.store(true);
+        }
+        changed.notify_all();
+        for (auto &thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+    }
+
+    const std::string &error() const { return failure; } // Read only after finish().
+    ~SVSTestReaders() { finish(); }
+};
+
+} // namespace
+
+TYPED_TEST(SVSTieredIndexTestBasic, runGCBetweenIteratorBatchesWithStorageShrink) {
+    constexpr size_t n_labels = 96;
+    constexpr size_t batch_size = 16;
+    const auto reference = makeSVSReferenceVectors(n_labels, false);
+    const std::vector<float> query(svs_gc_test_dim, 0);
+    for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+        for (bool delete_returned : {true, false}) {
+            SCOPED_TRACE(::testing::Message() << "mode=" << mode
+                                             << ", delete_returned=" << delete_returned);
+            SVSParams params = {.type = TypeParam::get_index_type(),
+                                .dim = svs_gc_test_dim,
+                                .metric = VecSimMetric_L2,
+                                .blockSize = 8,
+                                .search_window_size = n_labels,
+                                .search_buffer_capacity = n_labels};
+            auto svs_params = CreateParams(params);
+            tieredIndexMock mock_thread_pool(1);
+            auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+            ASSERT_INDEX(index);
+            // Index creation resizes the thread pool, which switches write mode to async.
+            SVSTestWriteMode write_mode(mode);
+            auto *backend = index->GetBackendIndex();
+            addSVSReferenceVectors(backend, reference, 0, n_labels);
+            ASSERT_EQ(index->GetFlatIndex()->indexSize(), 0);
+
+            VecSimQueryParams query_params{};
+            // Consume the entire native batch, leaving no prefetched external labels.
+            query_params.batchSize = batch_size;
+            std::unique_ptr<VecSimBatchIterator, decltype(&VecSimBatchIterator_Free)> iterator(
+                VecSimBatchIterator_New(index, query.data(), &query_params),
+                VecSimBatchIterator_Free);
+            std::unordered_set<size_t> seen, deleted;
+            auto read_batch = [&] {
+                SVSTestReply reply(VecSimBatchIterator_Next(iterator.get(), batch_size, BY_SCORE),
+                                   VecSimQueryReply_Free);
+                size_t checked = 0;
+                EXPECT_EQ(checkSVSReply(*reply, reference, query, 0, checked), "");
+                for (const auto &result : reply->results) {
+                    EXPECT_EQ(deleted.count(result.id), 0) << result.id;
+                    EXPECT_TRUE(seen.insert(result.id).second) << result.id;
+                }
+                return reply->results.size();
+            };
+            ASSERT_EQ(read_batch(), batch_size);
+            for (size_t round = 0; round < 2; ++round) {
+                const size_t begin = (delete_returned ? round : 2 * round + 1) * batch_size;
+                for (size_t i = begin; i < begin + batch_size; ++i) {
+                    ASSERT_EQ(seen.count(svsGCLabel(i)), delete_returned ? 1 : 0);
+                    // As in runGCBetweenIteratorBatches, defer consolidation to GC so the
+                    // timeout below can unwind an old iterator holding a lifetime lock.
+                    ASSERT_EQ(backend->deleteVector(svsGCLabel(i)), 1);
+                    deleted.insert(svsGCLabel(i));
+                }
+                const auto capacity_before = backend->indexCapacity();
+                std::promise<void> gc_finished;
+                auto completion = gc_finished.get_future();
+                std::thread gc([&] {
+                    VecSimTieredIndex_GC(index);
+                    if (mode == VecSim_WriteAsync) {
+                        mock_thread_pool.thread_iteration();
+                    }
+                    gc_finished.set_value();
+                });
+                const bool completed =
+                    completion.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+                if (!completed) {
+                    iterator.reset();
+                }
+                gc.join();
+                ASSERT_TRUE(completed) << "GC waited for an idle iterator to be freed";
+                EXPECT_EQ(index->GetSVSIndex()->indexStorageSize(),
+                          n_labels - (round + 1) * batch_size);
+                EXPECT_LT(backend->indexCapacity(), capacity_before);
+                ASSERT_EQ(read_batch(), batch_size);
+            }
+
+            auto drain_iterator = [&] {
+                // Bound the loop so failure to reach exhaustion cannot hang the test.
+                for (size_t batch = 0;
+                     batch <= n_labels / batch_size && VecSimBatchIterator_HasNext(iterator.get());
+                     ++batch) {
+                    const auto count = read_batch();
+                    EXPECT_TRUE(count > 0 || !VecSimBatchIterator_HasNext(iterator.get()));
+                }
+                EXPECT_FALSE(VecSimBatchIterator_HasNext(iterator.get()));
+            };
+            drain_iterator();
+            for (size_t i = 0; i < n_labels; ++i) {
+                EXPECT_EQ(seen.count(svsGCLabel(i)),
+                          delete_returned || !deleted.count(svsGCLabel(i)) ? 1 : 0);
+            }
+
+            VecSimBatchIterator_Reset(iterator.get());
+            seen.clear();
+            drain_iterator();
+            EXPECT_EQ(seen.size(), n_labels - deleted.size());
+            for (size_t i = 0; i < n_labels; ++i) {
+                EXPECT_EQ(seen.count(svsGCLabel(i)), deleted.count(svsGCLabel(i)) ? 0 : 1);
+            }
+        }
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, parallelQueriesDuringGC) {
+    constexpr size_t n_labels = 256;
+    constexpr size_t rounds = 3;
+    constexpr size_t delete_per_round = 64;
+    constexpr size_t survivors_begin = rounds * delete_per_round;
+    SVSTestWriteMode write_mode(VecSim_WriteAsync);
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        const auto reference = makeSVSReferenceVectors(n_labels, multi);
+        const auto &query = reference.back()[0];
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = svs_gc_test_dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi,
+                            .blockSize = 16,
+                            .search_window_size = n_labels};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+        addSVSReferenceVectors(index->GetBackendIndex(), reference, 0, n_labels);
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), 0);
+
+        std::array<size_t, 2> checked_survivors{};
+        auto query_once = [&](bool range) -> std::string {
+            SVSTestReply reply(
+                range ? VecSimIndex_RangeQuery(index, query.data(), 4096, nullptr, BY_SCORE)
+                      : VecSimIndex_TopKQuery(index, query.data(), 10, nullptr, BY_SCORE),
+                VecSimQueryReply_Free);
+            if (reply->results.empty()) {
+                return "Empty reply for a query near permanent survivors";
+            }
+            return checkSVSReply(*reply, reference, query, survivors_begin,
+                                 checked_survivors[range ? 1 : 0]);
+        };
+        SVSTestReaders readers({[&] { return query_once(false); },
+                                [&] { return query_once(true); }});
+        bool gc_reader_progress = false;
+        index->registerTracingCallback("GCJob::before_run_gc", [&] {
+            gc_reader_progress = readers.waitForProgress();
+        });
+        readers.start();
+        bool progress = readers.waitForProgress();
+        for (size_t round = 0; round < rounds && progress; ++round) {
+            const auto storage_before = index->GetSVSIndex()->indexStorageSize();
+            const auto capacity_before = index->GetBackendIndex()->indexCapacity();
+            for (size_t i = round * delete_per_round; i < (round + 1) * delete_per_round; ++i) {
+                EXPECT_EQ(index->deleteVector(svsGCLabel(i)), multi ? 2 : 1);
+            }
+            gc_reader_progress = false;
+            VecSimTieredIndex_GC(index);
+            // Also drain the consolidation jobs queued by deleteVector.
+            mock_thread_pool.init_threads();
+            mock_thread_pool.thread_pool_join();
+            progress = gc_reader_progress;
+            EXPECT_LT(index->GetSVSIndex()->indexStorageSize(), storage_before);
+            EXPECT_LT(index->GetBackendIndex()->indexCapacity(), capacity_before);
+        }
+        readers.finish();
+        ASSERT_TRUE(progress) << readers.error();
+        ASSERT_EQ(readers.error(), "");
+        EXPECT_GT(checked_survivors[0], 0);
+        EXPECT_GT(checked_survivors[1], 0);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n_labels - survivors_begin);
+        EXPECT_EQ(index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelDuringGC) {
+    constexpr size_t n_labels = 256;
+    constexpr size_t rounds = 3;
+    constexpr size_t delete_per_round = 64;
+    constexpr size_t monitored_begin = n_labels - 8;
+    SVSTestWriteMode write_mode(VecSim_WriteAsync);
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        const auto reference = makeSVSReferenceVectors(n_labels, multi, true);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = svs_gc_test_dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi,
+                            .blockSize = 16};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+        addSVSReferenceVectors(index->GetBackendIndex(), reference, 0, n_labels);
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), 0);
+
+        SVSTestReaders readers(
+            {[&] { return checkSVSCopies(index, reference, monitored_begin, n_labels); }});
+        bool gc_reader_progress = false;
+        index->registerTracingCallback("GCJob::before_run_gc", [&] {
+            gc_reader_progress = readers.waitForProgress();
+        });
+        readers.start();
+        bool progress = readers.waitForProgress();
+        for (size_t round = 0; round < rounds && progress; ++round) {
+            const auto capacity_before = index->GetBackendIndex()->indexCapacity();
+            for (size_t i = round * delete_per_round; i < (round + 1) * delete_per_round; ++i) {
+                EXPECT_EQ(index->deleteVector(svsGCLabel(i)), multi ? 2 : 1);
+            }
+            gc_reader_progress = false;
+            VecSimTieredIndex_GC(index);
+            mock_thread_pool.init_threads();
+            mock_thread_pool.thread_pool_join();
+            progress = gc_reader_progress;
+            EXPECT_EQ(index->GetSVSIndex()->indexStorageSize(),
+                      (n_labels - (round + 1) * delete_per_round) * (multi ? 2 : 1));
+            EXPECT_LT(index->GetBackendIndex()->indexCapacity(), capacity_before);
+        }
+        readers.finish();
+        ASSERT_TRUE(progress) << readers.error();
+        ASSERT_EQ(readers.error(), "");
+        EXPECT_EQ(checkSVSCopies(index, reference, monitored_begin, n_labels), "");
+        EXPECT_EQ(index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelDuringIngestion) {
+    constexpr size_t initial_labels = 64;
+    constexpr size_t rounds = 4;
+    constexpr size_t labels_per_round = 64;
+    constexpr size_t n_labels = initial_labels + rounds * labels_per_round;
+    SVSTestWriteMode write_mode(VecSim_WriteAsync);
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        const auto reference = makeSVSReferenceVectors(n_labels, multi, true);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = svs_gc_test_dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi,
+                            .blockSize = 16};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool);
+        // Keep each batch on the worker ingestion path instead of bypassing a full buffer.
+        tiered_params.flatBufferLimit = 2 * labels_per_round;
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+        addSVSReferenceVectors(index->GetBackendIndex(), reference, 0, initial_labels);
+        ASSERT_TRUE(index->GetSVSIndex()->ready());
+
+        SVSTestReaders readers(
+            {[&] { return checkSVSCopies(index, reference, initial_labels - 8, initial_labels); }});
+        readers.start();
+        bool progress = readers.waitForProgress();
+        for (size_t round = 0; round < rounds && progress; ++round) {
+            const size_t begin = initial_labels + round * labels_per_round;
+            const auto capacity_before = index->GetBackendIndex()->indexCapacity();
+            addSVSReferenceVectors(index, reference, begin, begin + labels_per_round);
+            EXPECT_EQ(index->GetFlatIndex()->indexSize(), labels_per_round * (multi ? 2 : 1));
+            EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), begin);
+            mock_thread_pool.init_threads();
+            progress = readers.waitForProgress();
+            mock_thread_pool.thread_pool_join();
+            EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+            EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), begin + labels_per_round);
+            EXPECT_EQ(index->GetSVSIndex()->indexStorageSize(),
+                      (begin + labels_per_round) * (multi ? 2 : 1));
+            EXPECT_GT(index->GetBackendIndex()->indexCapacity(), capacity_before);
+            EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        }
+        readers.finish();
+        ASSERT_TRUE(progress) << readers.error();
+        ASSERT_EQ(readers.error(), "");
+        EXPECT_EQ(checkSVSCopies(index, reference, initial_labels - 8, initial_labels), "");
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n_labels);
+    }
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
