@@ -552,7 +552,8 @@ private:
      * @brief Run SVS index GC in a thread-safe manner.
      *
      * This static wrapper function performs the following actions:
-     * - Acquires a lock on the index's updateJobMutex to ensure thread safety during the GC
+     * - Acquires updateJobMutex exclusively to wait for backend update jobs.
+     * - Acquires mainIndexGuard exclusively to exclude base-class readers during GC.
      * - Configures the number of threads for the underlying SVS index update operation.
      * - Calls the SVSIndex::runGC() method to perform the actual index update.
      * - Clears the indexGCScheduled flag to allow future scheduling.
@@ -580,7 +581,10 @@ private:
             return;
         }
         index->executeTracingCallback("GCJob::before_run_gc");
+        // Take updateJobMutex first: workers may need flatIndexGuard while a base-class reader
+        // holds it and waits for mainIndexGuard.
         std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
+        std::lock_guard<std::shared_mutex> main_lock(index->mainIndexGuard);
 
         // Release the scheduled flag to allow scheduling again
         index->indexGCScheduled.clear();
@@ -613,8 +617,8 @@ private:
         delete job;
     }
 
-    // Account for one backend GC run that started at `start`. Async GC timing includes
-    // the wait for updateJobMutex, which is part of what GC costs.
+    // Account for one backend GC run that started at `start`. The time includes waits for
+    // mainIndexGuard and, in async mode, updateJobMutex.
     void recordDefrag(std::chrono::steady_clock::time_point start) {
         const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
@@ -1367,6 +1371,7 @@ public:
                        "running synchronous GC for tiered SVS index in write-in-place mode");
             // In write-in-place mode, we run GC synchronously.
             const auto start = std::chrono::steady_clock::now();
+            std::lock_guard<std::shared_mutex> main_lock(this->mainIndexGuard);
             if (this->backendIndex->indexSize() == 0) {
                 // No need to run GC on an empty index.
                 return;
