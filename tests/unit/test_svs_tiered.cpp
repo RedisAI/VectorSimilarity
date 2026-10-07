@@ -4375,8 +4375,8 @@ SVSReferenceVectors makeSVSReferenceVectors(size_t n, bool multi, bool distinct 
     return reference;
 }
 
-void addSVSReferenceVectors(VecSimIndex *index, const SVSReferenceVectors &reference,
-                            size_t begin, size_t end) {
+void addSVSReferenceVectors(VecSimIndex *index, const SVSReferenceVectors &reference, size_t begin,
+                            size_t end) {
     for (size_t i = begin; i < end; ++i) {
         for (const auto &vector : reference[i]) {
             VecSimIndex_AddVector(index, vector.data(), svsGCLabel(i));
@@ -4539,8 +4539,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCBetweenIteratorBatchesWithStorageShrink
     const std::vector<float> query(svs_gc_test_dim, 0);
     for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
         for (bool delete_returned : {true, false}) {
-            SCOPED_TRACE(::testing::Message() << "mode=" << mode
-                                             << ", delete_returned=" << delete_returned);
+            SCOPED_TRACE(::testing::Message()
+                         << "mode=" << mode << ", delete_returned=" << delete_returned);
             SVSParams params = {.type = TypeParam::get_index_type(),
                                 .dim = svs_gc_test_dim,
                                 .metric = VecSimMetric_L2,
@@ -4670,12 +4670,11 @@ TYPED_TEST(SVSTieredIndexTestBasic, parallelQueriesDuringGC) {
             return checkSVSReply(*reply, reference, query, survivors_begin,
                                  checked_survivors[range ? 1 : 0]);
         };
-        SVSTestReaders readers({[&] { return query_once(false); },
-                                [&] { return query_once(true); }});
+        SVSTestReaders readers(
+            {[&] { return query_once(false); }, [&] { return query_once(true); }});
         bool gc_reader_progress = false;
-        index->registerTracingCallback("GCJob::before_run_gc", [&] {
-            gc_reader_progress = readers.waitForProgress();
-        });
+        index->registerTracingCallback("GCJob::before_run_gc",
+                                       [&] { gc_reader_progress = readers.waitForProgress(); });
         readers.start();
         bool progress = readers.waitForProgress();
         for (size_t round = 0; round < rounds && progress; ++round) {
@@ -4728,9 +4727,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelDuringGC) {
         SVSTestReaders readers(
             {[&] { return checkSVSCopies(index, reference, monitored_begin, n_labels); }});
         bool gc_reader_progress = false;
-        index->registerTracingCallback("GCJob::before_run_gc", [&] {
-            gc_reader_progress = readers.waitForProgress();
-        });
+        index->registerTracingCallback("GCJob::before_run_gc",
+                                       [&] { gc_reader_progress = readers.waitForProgress(); });
         readers.start();
         bool progress = readers.waitForProgress();
         for (size_t round = 0; round < rounds && progress; ++round) {
