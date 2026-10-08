@@ -1236,6 +1236,40 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
                   VecSimParamResolverErr_UnknownParam);
         ASSERT_STREQ(err_msg, "EPSILON is only valid for HNSW or SVS indexes");
     }
+    // SVS runtime params are not valid parameters for BF index.
+    rparams[0] = {.name = "search_window_size",
+                  .nameLen = strlen("search_window_size"),
+                  .value = "100",
+                  .valLen = strlen("100")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "SEARCH_WINDOW_SIZE is only valid for SVS indexes");
+    }
+    rparams[0] = {.name = "search_buffer_capacity",
+                  .nameLen = strlen("search_buffer_capacity"),
+                  .value = "100",
+                  .valLen = strlen("100")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "SEARCH_BUFFER_CAPACITY is only valid for SVS indexes");
+    }
+    rparams[0] = {.name = "use_search_history",
+                  .nameLen = strlen("use_search_history"),
+                  .value = "on",
+                  .valLen = strlen("on")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "USE_SEARCH_HISTORY is only valid for SVS indexes");
+    }
     // EF_RUNTIME is not a valid parameter for BF index.
     rparams[0] = {.name = "ef_runtime",
                   .nameLen = strlen("ef_runtime"),
