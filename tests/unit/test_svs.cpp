@@ -2405,6 +2405,7 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2414,9 +2415,9 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
 
     // Test with empty runtime params.
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSim_OK);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSim_OK);
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
@@ -2424,54 +2425,57 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
     std::string param_val = "100";
     rparams.push_back(mkRawParams(param_name, param_val));
 
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSim_OK);
     ASSERT_EQ(qparams.svsRuntimeParams.windowSize, 100);
 
     param_name = "wrong_name";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, &err_msg),
+              VecSimParamResolverErr_UnknownParam);
+    ASSERT_STREQ(err_msg, "Unknown query parameter: 'wrong_name'");
 
     // Testing for legal prefix but only partial parameter name.
     param_name = "search_window_si";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, nullptr),
+              VecSimParamResolverErr_UnknownParam);
 
     param_name = "search_window_size";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, &err_msg),
+              VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "SEARCH_WINDOW_SIZE must be a positive integer");
 
     param_name = "search_window_size";
     param_val = "-30";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "search_window_size";
     param_val = "1.618";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "search_window_size";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_AlreadySet);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, &err_msg),
+              VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "SEARCH_WINDOW_SIZE was specified more than once");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -2482,7 +2486,7 @@ TYPED_TEST(SVSTest, resolve_ws_search_runtime_params) {
                                        .value = "50",
                                        .valLen = strlen("50")});
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID),
+                                        QUERY_TYPE_HYBRID, nullptr),
               VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 50);
@@ -2499,6 +2503,7 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2508,9 +2513,9 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
 
     // Test with empty runtime params.
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSim_OK);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSim_OK);
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
@@ -2518,54 +2523,55 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
     std::string param_val = "100";
     rparams.push_back(mkRawParams(param_name, param_val));
 
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSim_OK);
     ASSERT_EQ(qparams.svsRuntimeParams.bufferCapacity, 100);
 
     param_name = "wrong_name";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, nullptr),
+              VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     param_name = "search_buffer_cap";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, nullptr),
+              VecSimParamResolverErr_UnknownParam);
 
     param_name = "search_buffer_capacity";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "search_buffer_capacity";
     param_val = "-30";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "search_buffer_capacity";
     param_val = "1.618";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "search_buffer_capacity";
     param_val = "100";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_AlreadySet);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, &err_msg),
+              VecSimParamResolverErr_AlreadySet);
+    ASSERT_STREQ(err_msg, "SEARCH_BUFFER_CAPACITY was specified more than once");
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -2576,7 +2582,7 @@ TYPED_TEST(SVSTest, resolve_bc_search_runtime_params) {
                                        .value = "50",
                                        .valLen = strlen("50")});
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID),
+                                        QUERY_TYPE_HYBRID, nullptr),
               VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 50);
@@ -2593,6 +2599,7 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2602,79 +2609,80 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
 
     // Test with empty runtime params.
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSim_OK);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSim_OK);
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
     std::string param_name = "use_search_history";
     std::string param_val = "on";
     rparams.push_back(mkRawParams(param_name, param_val));
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSim_OK);
     ASSERT_EQ(qparams.svsRuntimeParams.searchHistory, VecSimOption_ENABLE);
 
     param_name = "use_search_history";
     param_val = "off";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSim_OK);
     ASSERT_EQ(qparams.svsRuntimeParams.searchHistory, VecSimOption_DISABLE);
 
     param_name = "use_search_history";
     param_val = "auto";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSim_OK);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSim_OK);
     ASSERT_EQ(qparams.svsRuntimeParams.searchHistory, VecSimOption_AUTO);
 
     param_name = "wrong_name";
     param_val = "on";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, nullptr),
+              VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     param_name = "use_search";
     param_val = "on";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, nullptr),
+              VecSimParamResolverErr_UnknownParam);
 
     param_name = "use_search_history";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, &err_msg),
+              VecSimParamResolverErr_BadValue);
+    ASSERT_STREQ(err_msg, "USE_SEARCH_HISTORY must be one of: ON, OFF, AUTO");
 
     param_name = "use_search_history";
     param_val = "1";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "use_search_history";
     param_val = "disable";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_BadValue);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_BadValue);
 
     param_name = "use_search_history";
     param_val = "on";
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_KNN),
-        VecSimParamResolverErr_AlreadySet);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_KNN, nullptr),
+              VecSimParamResolverErr_AlreadySet);
 
     rparams[1] = (VecSimRawParam){.name = "HYBRID_POLICY",
                                   .nameLen = strlen("HYBRID_POLICY"),
@@ -2685,7 +2693,7 @@ TYPED_TEST(SVSTest, resolve_use_search_history_runtime_params) {
                                        .value = "50",
                                        .valLen = strlen("50")});
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_HYBRID),
+                                        QUERY_TYPE_HYBRID, nullptr),
               VecSim_OK);
     ASSERT_EQ(qparams.searchMode, HYBRID_BATCHES);
     ASSERT_EQ(qparams.batchSize, 50);
@@ -2702,6 +2710,7 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -2711,9 +2720,9 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
 
     // Test with empty runtime params.
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSim_OK);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSim_OK);
     }
     ASSERT_EQ(memcmp(&qparams, &zero, sizeof(VecSimQueryParams)), 0);
 
@@ -2721,13 +2730,14 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     std::string param_val = "0.001";
     rparams.push_back(mkRawParams(param_name, param_val));
     for (VecsimQueryType query_type : {QUERY_TYPE_NONE, QUERY_TYPE_KNN, QUERY_TYPE_HYBRID}) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_InvalidPolicy_NRange);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_InvalidPolicy_NRange);
+        ASSERT_STREQ(err_msg, "EPSILON is only valid for range queries");
     }
 
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE),
+                                        QUERY_TYPE_RANGE, nullptr),
               VecSim_OK);
     ASSERT_FLOAT_EQ(qparams.svsRuntimeParams.epsilon, 0.001);
 
@@ -2735,28 +2745,28 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     param_val = "0.001";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE),
+                                        QUERY_TYPE_RANGE, nullptr),
               VecSimParamResolverErr_UnknownParam);
 
     // Testing for legal prefix but only partial parameter name.
     param_name = "epsi";
     param_val = "0.001";
     rparams[0] = mkRawParams(param_name, param_val);
-    ASSERT_EQ(
-        VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, QUERY_TYPE_NONE),
-        VecSimParamResolverErr_UnknownParam);
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                        QUERY_TYPE_NONE, nullptr),
+              VecSimParamResolverErr_UnknownParam);
 
     param_name = "epsilon";
     param_val = "wrong_val";
     rparams[0] = mkRawParams(param_name, param_val);
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE),
+                                        QUERY_TYPE_RANGE, nullptr),
               VecSimParamResolverErr_BadValue);
 
     rparams[0] = (VecSimRawParam){
         .name = "epsilon", .nameLen = strlen("epsilon"), .value = "-30", .valLen = 3};
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE),
+                                        QUERY_TYPE_RANGE, nullptr),
               VecSimParamResolverErr_BadValue);
 
     param_name = "epsilon";
@@ -2764,7 +2774,7 @@ TYPED_TEST(SVSTest, resolve_epsilon_runtime_params) {
     rparams[0] = mkRawParams(param_name, param_val);
     rparams.push_back(mkRawParams(param_name, param_val));
     ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
-                                        QUERY_TYPE_RANGE),
+                                        QUERY_TYPE_RANGE, nullptr),
               VecSimParamResolverErr_AlreadySet);
 
     VecSimIndex_Free(index);

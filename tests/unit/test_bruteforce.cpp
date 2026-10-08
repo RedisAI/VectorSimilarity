@@ -1223,6 +1223,7 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
 
     VecSimQueryParams qparams, zero;
     bzero(&zero, sizeof(VecSimQueryParams));
+    const char *err_msg = nullptr;
 
     std::vector<VecSimRawParam> rparams;
 
@@ -1230,9 +1231,44 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
     rparams.push_back(VecSimRawParam{"epsilon", strlen("epsilon"), "0.1", strlen("0.1")});
 
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_UnknownParam);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "EPSILON is only valid for HNSW or SVS indexes");
+    }
+    // SVS runtime params are not valid parameters for BF index.
+    rparams[0] = {.name = "search_window_size",
+                  .nameLen = strlen("search_window_size"),
+                  .value = "100",
+                  .valLen = strlen("100")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "SEARCH_WINDOW_SIZE is only valid for SVS indexes");
+    }
+    rparams[0] = {.name = "search_buffer_capacity",
+                  .nameLen = strlen("search_buffer_capacity"),
+                  .value = "100",
+                  .valLen = strlen("100")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "SEARCH_BUFFER_CAPACITY is only valid for SVS indexes");
+    }
+    rparams[0] = {.name = "use_search_history",
+                  .nameLen = strlen("use_search_history"),
+                  .value = "on",
+                  .valLen = strlen("on")};
+
+    for (VecsimQueryType query_type : test_utils::query_types) {
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "USE_SEARCH_HISTORY is only valid for SVS indexes");
     }
     // EF_RUNTIME is not a valid parameter for BF index.
     rparams[0] = {.name = "ef_runtime",
@@ -1241,22 +1277,24 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
                   .valLen = strlen("200")};
 
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_UnknownParam);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, &err_msg),
+                  VecSimParamResolverErr_UnknownParam);
+        ASSERT_STREQ(err_msg, "EF_RUNTIME is only valid for HNSW indexes");
     }
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
     // Sending only "batch_size" param is valid.
     rparams.push_back(VecSimRawParam{"batch_size", strlen("batch_size"), "100", strlen("100")});
-    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data() + 1, 1, &qparams, QUERY_TYPE_HYBRID),
+    ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data() + 1, 1, &qparams, QUERY_TYPE_HYBRID,
+                                        nullptr),
               VecSim_OK);
     ASSERT_EQ(qparams.batchSize, 100);
 
     // With EF_RUNTIME, its again invalid (for hybrid queries as well).
     for (VecsimQueryType query_type : test_utils::query_types) {
-        ASSERT_EQ(
-            VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams, query_type),
-            VecSimParamResolverErr_UnknownParam);
+        ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
+                                            query_type, nullptr),
+                  VecSimParamResolverErr_UnknownParam);
     }
     VecSimIndex_Free(index);
 }
