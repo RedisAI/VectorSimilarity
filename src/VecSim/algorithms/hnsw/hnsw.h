@@ -434,8 +434,7 @@ public:
 #ifdef BUILD_TESTS
     void fitMemory() override {
         if (maxElements > 0) {
-            idToMetaData.shrink_to_fit();
-            resizeLabelLookup(idToMetaData.size());
+            resizeIndexCommon(maxElements);
         }
     }
 
@@ -1515,8 +1514,7 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
     assert(this->maxElements % this->blockSize == 0);
     assert(this->maxElements == indexSize());
     assert(graphDataBlocks.size() == this->maxElements / this->blockSize);
-    assert(idToMetaData.capacity() == maxElements ||
-           idToMetaData.capacity() == maxElements + this->blockSize);
+    assert(idToMetaData.capacity() >= maxElements);
 
     this->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
               "Updating HNSW index capacity from %zu to %zu", maxElements,
@@ -1526,7 +1524,12 @@ void HNSWIndex<DataType, DistType>::growByBlock() {
     graphDataBlocks.emplace_back(this->blockSize, this->elementGraphDataSize, this->allocator);
 
     if (idToMetaData.capacity() == indexSize()) {
-        resizeIndexCommon(maxElements);
+        // Bound spare capacity by the visited-node count's range, preserving block alignment.
+        const size_t capacity_limit = (size_t(UINT_MAX) / this->blockSize) * this->blockSize;
+        const size_t doubled_capacity = idToMetaData.capacity() <= capacity_limit / 2
+                                            ? 2 * idToMetaData.capacity()
+                                            : capacity_limit;
+        resizeIndexCommon(std::max(maxElements, doubled_capacity));
     }
 }
 
@@ -1545,9 +1548,9 @@ void HNSWIndex<DataType, DistType>::shrinkByBlock() {
         // assuming idToMetaData reflects the capacity of the heavy reallocation containers.
         if (indexSize() == 0) {
             resizeIndexCommon(0);
-        } else if (idToMetaData.capacity() >= (indexSize() + 2 * this->blockSize)) {
-            assert(this->maxElements + this->blockSize == idToMetaData.capacity());
-            resizeIndexCommon(idToMetaData.capacity() - this->blockSize);
+        } else if (indexSize() <= idToMetaData.capacity() / 4) {
+            // Keep headroom so alternating insertions and deletions do not repeatedly resize.
+            resizeIndexCommon(2 * indexSize());
         }
 
         // Take the lower bound into account.
