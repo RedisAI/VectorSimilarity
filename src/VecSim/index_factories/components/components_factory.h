@@ -44,17 +44,28 @@ template <typename DataType, VecSimMetric Metric, bool WithMean>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                          const float *mean_ptr) {
-    using Preprocessor = QuantPreprocessor<DataType, Metric, WithMean>;
-    using QueryType = typename Preprocessor::QueryType;
-    unsigned char storage_alignment = 0, asym_storage_alignment = 0;
-
-    // Graph construction compares two stored SQ8 blobs; search compares a stored blob with a
-    // QueryType query. Both dispatchers report alignment for the stored operand.
+    // L2 keeps asymmetric queries to avoid cancellation in the symmetric norm expansion.
+    constexpr bool quantize_query =
+        std::is_same_v<DataType, vecsim_types::float16> && Metric == VecSimMetric_IP;
+    using Preprocessor =
+        std::conditional_t<quantize_query, QuantizedQueryPreprocessor<DataType, Metric, WithMean>,
+                           QuantPreprocessor<DataType, Metric, WithMean>>;
+    using Calculator =
+        std::conditional_t<quantize_query,
+                           QuantizedQueryDistanceCalculatorWithNorm<DataType, float, Metric>,
+                           DistanceCalculatorWithNorm<DataType, float, Metric>>;
+    unsigned char storage_alignment = 0;
     auto sym_func = spaces::GetDistFunc<vecsim_types::sq8, float>(Metric, dim, &storage_alignment);
-    auto asym_func = spaces::GetDistFunc<vecsim_types::sq8, float, QueryType>(
-        Metric, dim, &asym_storage_alignment);
-    storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
-    const unsigned char query_alignment = GetQueryAlignment<QueryType>(Metric, dim);
+    auto query_func = sym_func;
+    unsigned char query_alignment = storage_alignment;
+    if constexpr (!quantize_query) {
+        using QueryType = typename Preprocessor::QueryType;
+        unsigned char asym_storage_alignment = 0;
+        query_func = spaces::GetDistFunc<vecsim_types::sq8, float, QueryType>(
+            Metric, dim, &asym_storage_alignment);
+        storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
+        query_alignment = GetQueryAlignment<QueryType>(Metric, dim);
+    }
 
     PreprocessorInterface *pp = nullptr;
     IndexCalculatorInterface<float> *calc = nullptr;
@@ -69,11 +80,10 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
         }
 
         pp = new (allocator) Preprocessor(allocator, dim, mean_vec);
-        calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, Metric>(
-            allocator, asym_func, sym_func, mean_sum_squares);
+        calc = new (allocator) Calculator(allocator, query_func, sym_func, mean_sum_squares);
     } else {
         pp = new (allocator) Preprocessor(allocator, dim);
-        calc = new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func);
+        calc = new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, query_func);
     }
 
     auto *container = new (allocator)

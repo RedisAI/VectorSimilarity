@@ -251,3 +251,22 @@ public:
         return DistanceDispatch<DistType>::stateful(&context_, calcQueryWithContext);
     }
 };
+
+// Both operands are centered SQ8 blobs, so queries need the symmetric mean correction.
+template <typename DataType, typename DistType, VecSimMetric Metric>
+class QuantizedQueryDistanceCalculatorWithNorm
+    : public DistanceCalculatorWithNorm<DataType, DistType, Metric> {
+    using Base = DistanceCalculatorWithNorm<DataType, DistType, Metric>;
+
+public:
+    using Base::Base;
+
+    DistType calcDistanceForQuery(const void *candidate, const void *query,
+                                  size_t dim) const override {
+        return Base::calcDistance(candidate, query, dim);
+    }
+
+    DistanceDispatch<DistType> getDistanceDispatch(DistanceMode) const override {
+        return Base::getDistanceDispatch(DistanceMode::StoredToStored);
+    }
+};

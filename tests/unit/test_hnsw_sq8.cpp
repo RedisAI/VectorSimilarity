@@ -2064,3 +2064,85 @@ TEST(SQ8TieredHNSWTest, MeanCenteredFP16L2BufferedAndMigratedValues) {
         verify_queries();
     }
 }
+
+// Query scores for constant vectors are exact after SQ8 reconstruction. Check the public query
+// paths against those scores, including the best vector selected for a multi-value label.
+TEST(HNSWSQ8QueryTest, FP16QuantizedQueriesAcrossPublicAPIs) {
+    using data_t = vecsim_types::float16;
+    constexpr size_t dim = 17;
+    constexpr size_t count = 3;
+    const auto make_vector = [=](float value) {
+        return std::vector<data_t>(dim, vecsim_types::FP32_to_FP16(value));
+    };
+    const auto query = make_vector(0.0625f);
+    const auto original_query = query;
+
+    for (auto metric : {VecSimMetric_L2, VecSimMetric_IP}) {
+        for (bool with_mean : {false, true}) {
+            for (bool multi : {false, true}) {
+                SCOPED_TRACE(::testing::Message()
+                             << "metric=" << metric << " mean=" << with_mean << " multi=" << multi);
+                std::vector<float> mean(dim, 0.125f);
+                HNSWParams params = {.type = VecSimType_FLOAT16,
+                                     .dim = dim,
+                                     .metric = metric,
+                                     .multi = multi,
+                                     .initialCapacity = count + 1,
+                                     .M = 8,
+                                     .efConstruction = 20,
+                                     .efRuntime = count + 1,
+                                     .quantType = VecSimQuant_SQ8,
+                                     .quantParams = with_mean ? mean.data() : nullptr};
+                VecSimParams vecsim_params = CreateParams(params);
+                std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> index(
+                    VecSimIndex_New(&vecsim_params), VecSimIndex_Free);
+                ASSERT_NE(index, nullptr);
+                for (const auto [label, value] :
+                     {std::pair<size_t, float>{0, -0.5f}, {1, 0.0f}, {2, 0.5f}}) {
+                    const auto vector = make_vector(value);
+                    ASSERT_EQ(VecSimIndex_AddVector(index.get(), vector.data(), label), 1);
+                }
+                if (multi) {
+                    const auto extra = make_vector(0.75f);
+                    ASSERT_EQ(VecSimIndex_AddVector(index.get(), extra.data(), 1), 1);
+                }
+
+                const auto expected_score = [&](size_t label) {
+                    float value = label == 0 ? -0.5f : (label == 1 ? 0.0f : 0.5f);
+                    if (multi && metric == VecSimMetric_IP && label == 1)
+                        value = 0.75f;
+                    if (metric == VecSimMetric_IP)
+                        return 1.0f - dim * value * 0.0625f;
+                    const float diff = value - 0.0625f;
+                    return dim * diff * diff;
+                };
+                const std::vector<size_t> order = metric == VecSimMetric_L2
+                                                      ? std::vector<size_t>{1, 2, 0}
+                                                  : multi ? std::vector<size_t>{1, 2, 0}
+                                                          : std::vector<size_t>{2, 1, 0};
+                const auto verify = [&](size_t id, double score, size_t rank) {
+                    EXPECT_EQ(id, order[rank]);
+                    EXPECT_NEAR(score, expected_score(id), 1e-4f);
+                };
+                runTopKSearchTest(index.get(), query.data(), count, verify);
+                for (size_t label = 0; label < count; ++label) {
+                    EXPECT_NEAR(
+                        VecSimIndex_GetDistanceFrom_Unsafe(index.get(), label, query.data()),
+                        expected_score(label), 1e-4f)
+                        << "label " << label;
+                }
+
+                const double radius = metric == VecSimMetric_L2 ? 1.0 : 0.75;
+                const size_t range_count = metric == VecSimMetric_L2 ? 1 : (multi ? 2 : 1);
+                runRangeQueryTest(index.get(), query.data(), radius, verify, range_count, BY_SCORE);
+                VecSimBatchIterator *iterator =
+                    VecSimBatchIterator_New(index.get(), query.data(), nullptr);
+                ASSERT_NE(iterator, nullptr);
+                runBatchIteratorSearchTest(iterator, count, verify);
+                VecSimBatchIterator_Free(iterator);
+                EXPECT_EQ(std::memcmp(query.data(), original_query.data(), dim * sizeof(data_t)),
+                          0);
+            }
+        }
+    }
+}
