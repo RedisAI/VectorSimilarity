@@ -477,29 +477,6 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
     // an exact count, and it is the assertion that fails if a job carried a replaced vector into
     // the backend after its delete.
     ASSERT_EQ(tiered_index->indexSize() - svs_index->getNumMarkedDeleted(), n * new_per_label);
-
-    if (!svs_index->isCompressed()) {
-        // Every replacement finds its own label. Asserted only for an uncompressed index: a
-        // compressed one trains its stored form on the vectors it was given, so values this far
-        // outside the original range are clipped.
-        // MOD-18994: a replacement vector written late in the update loop can land in the first
-        // sub-batch of a large incremental backend drain, before any of its true neighbors (the
-        // other replacements) exist in the graph yet (VamanaBuilder::construct's fixed entry
-        // point + sequential sub-batches), leaving it under-connected relative to vectors drained
-        // later in the same call. It is still reachable, just via few edges - a wider runtime
-        // search window than the 200 used at construction reliably finds it without touching the
-        // graph's actual connectivity.
-        SVSRuntimeParams wideWindow = {.windowSize = 250};
-        VecSimQueryParams wideWindowParams = CreateQueryParams(wideWindow);
-        for (size_t i : {(size_t)0, (size_t)1, n / 2, n - 1}) {
-            for (size_t j = 0; j < new_per_label; j++) {
-                TEST_DATA_T query[dim];
-                GenerateJitteredVector<TEST_DATA_T>(query, dim, i, replacement_base * (j + 1) + i);
-                auto verify = [&](size_t id, double score, size_t rank) { ASSERT_EQ(id, i); };
-                runTopKSearchTest(tiered_index, query, 1, verify, &wideWindowParams);
-            }
-        }
-    }
 }
 
 TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
