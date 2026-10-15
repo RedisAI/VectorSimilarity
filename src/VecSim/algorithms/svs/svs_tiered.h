@@ -1212,6 +1212,9 @@ public:
      * Reports `Unsupported` when the backend holds the label and cannot move it, which is the
      * case when built against an SVS without `replace_external_id`. All-or-nothing: on any code
      * other than `VecSimRelabel_OK` both tiers are untouched.
+     *
+     * Relabel is not atomic with concurrent queries. An overlapping query may return both the
+     * old and new labels, using two top-k positions for the moved label.
      */
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override {
         if (old_label == new_label) {
