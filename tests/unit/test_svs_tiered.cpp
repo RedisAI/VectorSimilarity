@@ -1299,8 +1299,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorBeforeInitializationPublishes) {
         params.search_window_size = n;
         auto svs_params = CreateParams(params);
         tieredIndexMock mock_thread_pool(2);
-        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
-                                                n + (multi ? 1 : 0));
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n + (multi ? 1 : 0));
         ASSERT_INDEX(index);
         for (size_t i = 0; i < n - 1; ++i) {
             GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
@@ -1346,8 +1345,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorBeforeInitializationPublishes) {
             search_finished.set_value();
         };
         SVSMultiThreadJob::JobsRegistry registry(index->getAllocator());
-        auto jobs = SVSMultiThreadJob::createJobs(index->getAllocator(), HNSW_SEARCH_JOB,
-                                                 search, index, 1, timeout, &registry);
+        auto jobs = SVSMultiThreadJob::createJobs(index->getAllocator(), HNSW_SEARCH_JOB, search,
+                                                  index, 1, timeout, &registry);
         index->submitJobs(jobs);
         mock_thread_pool.init_threads();
         const bool search_occupies_worker =
