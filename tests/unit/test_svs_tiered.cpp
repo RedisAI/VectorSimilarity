@@ -1282,6 +1282,110 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuf
     }
 }
 
+// A search already occupies one worker, so init proceeds after its reservation timeout.
+// The search reaches the backend while init is still paused immediately after publication.
+TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorBeforeInitializationPublishes) {
+    if (std::thread::hardware_concurrency() < 2) {
+        GTEST_SKIP() << "Requires two workers";
+    }
+    constexpr size_t dim = 4;
+    constexpr size_t n = 8;
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi};
+        params.search_window_size = n;
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(2);
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                n + (multi ? 1 : 0));
+        ASSERT_INDEX(index);
+        for (size_t i = 0; i < n - 1; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        }
+        if (multi) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 20);
+        }
+
+        std::promise<void> worker_started, start_search, build_finished;
+        std::promise<void> query_between_tiers, published, search_finished;
+        auto worker_ready = worker_started.get_future();
+        auto start_ready = start_search.get_future();
+        auto build_ready = build_finished.get_future();
+        auto query_ready = query_between_tiers.get_future();
+        auto publish_ready = published.get_future();
+        auto search_ready = search_finished.get_future();
+        const auto timeout = std::chrono::seconds(5);
+        bool query_reached_hook = false;
+        bool query_saw_publication = false;
+        bool search_completed_during_init = false;
+        index->registerTracingCallback("UpdateJob::before_publish", [&] {
+            EXPECT_FALSE(index->GetSVSIndex()->ready());
+            build_finished.set_value();
+            query_reached_hook = query_ready.wait_for(timeout) == std::future_status::ready;
+        });
+        index->registerTracingCallback("Query::before_backend", [&] {
+            query_between_tiers.set_value();
+            query_saw_publication = publish_ready.wait_for(timeout) == std::future_status::ready;
+        });
+        index->registerTracingCallback("UpdateJob::after_publish", [&] {
+            published.set_value();
+            search_completed_during_init =
+                search_ready.wait_for(timeout) == std::future_status::ready;
+        });
+
+        VecSimQueryReply *reply = nullptr;
+        auto search = [&](VecSimIndex *, size_t) {
+            worker_started.set_value();
+            if (start_ready.wait_for(timeout) == std::future_status::ready) {
+                TEST_DATA_T query[dim] = {};
+                reply = VecSimIndex_TopKQuery(index, query, n, nullptr, BY_ID);
+            }
+            search_finished.set_value();
+        };
+        SVSMultiThreadJob::JobsRegistry registry(index->getAllocator());
+        auto jobs = SVSMultiThreadJob::createJobs(index->getAllocator(), HNSW_SEARCH_JOB,
+                                                 search, index, 1, timeout, &registry);
+        index->submitJobs(jobs);
+        mock_thread_pool.init_threads();
+        const bool search_occupies_worker =
+            worker_ready.wait_for(timeout) == std::future_status::ready;
+        // Cross the training threshold only after the search worker has been occupied.
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, n - 1, n - 1);
+        const bool reached_build_hook = build_ready.wait_for(timeout) == std::future_status::ready;
+        if (reached_build_hook) {
+            EXPECT_EQ(VecSimIndex_DeleteVector(index, 0), multi ? 2 : 1);
+            EXPECT_EQ(VecSimIndex_DeleteVector(index, 0), 0);
+        }
+        start_search.set_value();
+        // Init can still enqueue consolidation after the queue first becomes empty.
+        mock_thread_pool.thread_pool_wait();
+        mock_thread_pool.thread_pool_join();
+
+        std::unique_ptr<VecSimQueryReply, decltype(&VecSimQueryReply_Free)> result(
+            reply, VecSimQueryReply_Free);
+        ASSERT_TRUE(search_occupies_worker);
+        ASSERT_TRUE(reached_build_hook);
+        ASSERT_TRUE(query_reached_hook);
+        ASSERT_TRUE(query_saw_publication);
+        ASSERT_TRUE(search_completed_during_init);
+        ASSERT_NE(reply, nullptr);
+        EXPECT_EQ(VecSimQueryReply_GetCode(reply), VecSim_QueryReply_OK);
+        ASSERT_EQ(VecSimQueryReply_Len(reply), n - 1);
+        for (size_t i = 0; i < n - 1; ++i) {
+            EXPECT_EQ(VecSimQueryResult_GetId(reply->results.data() + i), i + 1);
+        }
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_FALSE(index->GetSVSIndex()->isLabelExists(0));
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(index->indexLabelCount(), n - 1);
+        EXPECT_EQ(index->getNumMarkedDeleted(), multi ? 2 : 1);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs
     const auto num_threads = std::min(4U, getAvailableCPUs());

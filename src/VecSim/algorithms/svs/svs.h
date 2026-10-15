@@ -63,6 +63,7 @@ struct SVSIndexBase
     // Derived SVSIndex class should implement it
     struct ImplHandler {
         virtual ~ImplHandler() = default;
+        virtual void deleteVectors(const labelType *labels, size_t n) = 0;
     };
     virtual std::unique_ptr<ImplHandler> createImpl(const void *vectors_data,
                                                     const labelType *labels, size_t n) = 0;
@@ -243,7 +244,14 @@ protected:
     // Handler to manage SVS implementation instance
     struct SVSImplHandler : public SVSIndexBase::ImplHandler {
         std::unique_ptr<impl_type> impl;
+        size_t num_deleted{0};
         SVSImplHandler(std::unique_ptr<impl_type> impl) : impl{std::move(impl)} {}
+
+        void deleteVectors(const labelType *labels, size_t n) override {
+            if (impl) {
+                num_deleted += impl->delete_entries(std::span{labels, n});
+            }
+        }
     };
 
     std::unique_ptr<ImplHandler> createImpl(const void *vectors_data, const labelType *labels,
@@ -279,6 +287,9 @@ protected:
             throw std::logic_error("SVSIndex::setImpl called on non-empty impl_");
         }
         svs_handler->impl.release();
+        if (svs_handler->num_deleted > 0) {
+            this->markIndexUpdate(svs_handler->num_deleted);
+        }
     }
 
     // Assuming parallelism was updated to reflect the number of available threads before this

@@ -502,6 +502,9 @@ public:
 
 protected:
     ScopedLocks lockMainIndexForQuery() const override {
+#ifdef BUILD_TESTS
+        executeTracingCallback("Query::before_backend");
+#endif
         // No-op: SVS does its query locking internally.
         return ScopedLocks();
     }
@@ -787,6 +790,7 @@ private:
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
         std::vector<labelType> deleted_labels;
+        std::unique_ptr<SVSIndexBase::ImplHandler> impl;
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
         {
@@ -824,17 +828,17 @@ private:
                        vectors_to_move.size() / this->frontendIndex->getDim());
                 assert(!svs_index->ready());
 
-                auto impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
-                                                  labels_to_move.size());
+                impl = svs_index->createImpl(vectors_to_move.data(), labels_to_move.data(),
+                                             labels_to_move.size());
                 svs_index->setParallelism(1);
-                svs_index->setImpl(std::move(impl));
             }
         }
+        executeTracingCallback("UpdateJob::before_publish");
         {
             std::lock_guard flat_lock{this->flatIndexGuard};
             deleted_labels.swap(initDeletedLabels);
             if (!deleted_labels.empty()) {
-                GetSVSIndex()->deleteVectors(deleted_labels.data(), deleted_labels.size());
+                impl->deleteVectors(deleted_labels.data(), deleted_labels.size());
             }
             // Deletions can swap surviving rows; cleanup needs their current IDs.
             ids_to_move.assign(ids_to_init_.begin(), ids_to_init_.end());
@@ -860,6 +864,11 @@ private:
             assert(total_deleted == ids_to_move.size() &&
                    "Deleted vectors count does not match the number of labels to delete");
 
+            // Publish only after applying writes made while the snapshot was built.
+            if (impl) {
+                GetSVSIndex()->setImpl(std::move(impl));
+                executeTracingCallback("UpdateJob::after_publish");
+            }
             initInProgress = false;
             indexUpdateScheduled.clear();
         } // release frontend index
