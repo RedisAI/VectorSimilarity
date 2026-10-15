@@ -620,6 +620,9 @@ private:
         if (consolidate_job->status.compare_exchange_strong(
                 expected, SVSConsolidateJob::Status::Executing, std::memory_order_acq_rel)) {
             svs_index->consolidate(consolidate_job->labels);
+#ifdef BUILD_TESTS
+            index->executeTracingCallback("ConsolidateJob::before_done");
+#endif
             // Published before forgetConsolidateJob() needs the registry lock, so a waiter holding
             // it shared is released before this job can be deleted.
             consolidate_job->status.store(SVSConsolidateJob::Status::Done,
@@ -627,6 +630,9 @@ private:
         }
         index->forgetConsolidateJob(consolidate_job);
         delete job;
+#ifdef BUILD_TESTS
+        index->executeTracingCallback("ConsolidateJob::after_delete");
+#endif
     }
 
     // Account for one backend GC run that started at `start`. The time includes waits for
@@ -717,6 +723,9 @@ private:
                                                     std::memory_order_acq_rel)) {
                 taken_over.insert(taken_over.end(), job->labels.begin(), job->labels.end());
             } else if (expected == SVSConsolidateJob::Status::Executing) {
+#ifdef BUILD_TESTS
+                executeTracingCallback("Relabel::before_wait_for_consolidate");
+#endif
                 waitForJob(job); // its own consolidate covers these labels
             }
             // already TakenOver or Done

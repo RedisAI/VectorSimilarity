@@ -893,6 +893,77 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorWaitsForAnExecutingConsolidate) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
 }
 
+// Use the real worker's Done -> unregister -> delete path while relabel holds its job pointer.
+// Without the shared registry guard, deletion can precede waitForJob's next load (an ASan UAF).
+TYPED_TEST(SVSTieredIndexTest, relabelVectorProtectsExecutingConsolidateJobLifetime) {
+    const size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    tieredIndexMock mock_thread_pool(1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 2);
+    ASSERT_INDEX(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration(); // initialize before starting the consolidate worker
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->ready());
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_CONSOLIDATE_JOB);
+
+    std::promise<void> worker_paused, relabel_waiting, job_deleted;
+    auto paused = worker_paused.get_future();
+    auto waiting = relabel_waiting.get_future();
+    auto deleted = job_deleted.get_future();
+    const auto timeout = std::chrono::seconds(5);
+    bool worker_saw_waiter = false;
+    bool waiter_entered = false;
+    bool deleted_while_waiting = false;
+    tiered_index->registerTracingCallback("ConsolidateJob::before_done", [&] {
+        worker_paused.set_value();
+        worker_saw_waiter = waiting.wait_for(timeout) == std::future_status::ready;
+    });
+    tiered_index->registerTracingCallback("Relabel::before_wait_for_consolidate", [&] {
+        waiter_entered = true;
+        relabel_waiting.set_value();
+        // Let the worker publish Done and attempt cleanup before waitForJob reads the job.
+        // The registry guard must prevent deletion until this callback and the wait return.
+        deleted_while_waiting =
+            deleted.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready;
+    });
+    tiered_index->registerTracingCallback("ConsolidateJob::after_delete",
+                                          [&] { job_deleted.set_value(); });
+
+    mock_thread_pool.init_threads();
+    const bool reached_worker = paused.wait_for(timeout) == std::future_status::ready;
+    auto relabel_code = VecSimRelabel_OldLabelMissing;
+    if (reached_worker) {
+        // Public writes stay on the test thread; the worker alone changes the job's status.
+        relabel_code = VecSimIndex_RelabelVector(tiered_index, 0, 1);
+    }
+    if (!waiter_entered) {
+        relabel_waiting.set_value(); // release the worker if relabel never reached its wait
+    }
+    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(reached_worker);
+    ASSERT_TRUE(worker_saw_waiter);
+    ASSERT_TRUE(waiter_entered);
+    EXPECT_FALSE(deleted_while_waiting);
+    EXPECT_EQ(deleted.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_EQ(relabel_code, VecSimRelabel_OK);
+    EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    EXPECT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
+    EXPECT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(0));
+    EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    EXPECT_EQ(tiered_index->indexLabelCount(), 1);
+}
+
 // Rollback needs the backend to refuse the target, and to hold old_label live while the buffer
 // still holds it with a registered job. Both are built by hand:
 //  - the target keeps a stale translator entry, because a backend-side delete leaves no
