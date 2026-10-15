@@ -1213,6 +1213,75 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorCannotLandInsideAnUpdateJobsWindow) 
 
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
+TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuffer) {
+    constexpr size_t dim = 4;
+    constexpr size_t n = 8;
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, n);
+        tiered_params.flatBufferLimit = n;
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+
+        for (size_t i = 0; i < n; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        }
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), n);
+        ASSERT_FALSE(index->GetSVSIndex()->ready());
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+
+        std::promise<void> snapshot_taken;
+        auto snapshot_ready = snapshot_taken.get_future();
+        std::promise<void> additions_finished;
+        auto additions_ready = additions_finished.get_future();
+        bool completed_during_init = false;
+        size_t buffered_during_init = 0;
+        // Pause with the snapshot fixed, flat unlocked, and updateJobMutex held exclusively.
+        index->registerTracingCallback("UpdateJob::after_snapshot", [&] {
+            snapshot_taken.set_value();
+            completed_during_init =
+                additions_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+            if (completed_during_init) {
+                buffered_during_init = index->GetFlatIndex()->indexSize();
+            }
+            // On timeout, let init finish so a blocked add can return without hanging the test.
+        });
+        mock_thread_pool.init_threads();
+        const bool reached_snapshot =
+            snapshot_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+        if (reached_snapshot) {
+            // Public writes stay on the test thread. The first add sees a full buffer;
+            // the second sees a buffer above the limit. Both must return before init resumes.
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n), 1);
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, n + 1, n + 1), 1);
+        }
+        additions_finished.set_value();
+        mock_thread_pool.thread_pool_join();
+
+        ASSERT_TRUE(reached_snapshot) << "Initialization did not reach the snapshot hook";
+        ASSERT_TRUE(completed_during_init) << "addVector waited for initialization";
+        EXPECT_EQ(buffered_during_init, n + 2);
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(index->GetBackendIndex()->indexSize(), n + 2);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n + 2);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        for (size_t i = 0; i < n + 2; ++i) {
+            std::vector<std::vector<TEST_DATA_T>> stored;
+            index->getDataByLabel(i, stored);
+            const std::vector<std::vector<TEST_DATA_T>> expected{
+                std::vector<TEST_DATA_T>(dim, static_cast<TEST_DATA_T>(i))};
+            EXPECT_EQ(stored, expected) << "label=" << i;
+        }
+    }
+}
+
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs
     const auto num_threads = std::min(4U, getAvailableCPUs());

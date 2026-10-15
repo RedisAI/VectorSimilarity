@@ -813,6 +813,7 @@ private:
             // Keep tracking surviving snapshot IDs; new arrivals use insert jobs.
             initInProgress = true;
         }
+        executeTracingCallback("UpdateJob::after_snapshot");
         {
             // Nothing to initialize from an empty batch, and setParallelism(0) is not a
             // valid request against the shared pool.
@@ -946,7 +947,8 @@ public:
         }
 
         this->flatIndexGuard.lock_shared();
-        if (this->frontendIndex->indexSize() >= flat_buffer_bound) {
+        // Before the backend is ready, a direct insert would wait for the build.
+        if (svs_index->ready() && this->frontendIndex->indexSize() >= flat_buffer_bound) {
             this->flatIndexGuard.unlock_shared();
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
 
