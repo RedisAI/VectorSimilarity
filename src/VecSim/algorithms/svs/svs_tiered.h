@@ -287,8 +287,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
 
     size_t flat_buffer_bound;
 
+    // flatIndexGuard: init (serialized by updateJobMutex) writes under a shared lock.
+    // Every other access to these two fields must hold the lock exclusively.
     bool initInProgress{false};
-    std::vector<labelType> initDeletedLabels; // Protected by flatIndexGuard.
+    std::vector<labelType> initDeletedLabels;
 
     /// <batch_iterator>
     ////////////////////////////////////////////////////////////////////////////////////////////////////
