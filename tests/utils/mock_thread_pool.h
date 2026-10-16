@@ -107,6 +107,7 @@ public:
     std::mutex queue_guard;
     std::condition_variable queue_cond;
     JobQueue jobQ;
+    size_t max_submit_batch = 0; // Largest jobs_len seen by a single submit callback.
     bool run_thread;
     IndexExtCtx *ctx;
 

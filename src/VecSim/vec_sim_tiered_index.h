@@ -18,6 +18,7 @@
 #include "VecSim/utils/alignment.h"
 #include "VecSim/utils/scoped_locks.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <mutex>
@@ -29,6 +30,9 @@
 #endif
 
 #define TIERED_LOG this->backendIndex->log
+
+// RediSearch's submit callback places an n_jobs-sized array on the worker's stack.
+inline constexpr size_t TIERED_MAX_JOBS_PER_SUBMIT = 4096;
 
 /**
  * Definition of generic job structure for asynchronous tiered index.
@@ -182,12 +186,16 @@ protected:
     }
 
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) {
-        vecsim_stl::vector<JobCallback> callbacks(jobs.size(), this->allocator);
-        for (size_t i = 0; i < jobs.size(); i++) {
-            callbacks[i] = jobs[i]->Execute;
+        vecsim_stl::vector<JobCallback> callbacks(this->allocator);
+        for (size_t start = 0; start < jobs.size(); start += TIERED_MAX_JOBS_PER_SUBMIT) {
+            const size_t n = std::min(TIERED_MAX_JOBS_PER_SUBMIT, jobs.size() - start);
+            callbacks.assign(n, nullptr);
+            for (size_t i = 0; i < n; i++) {
+                callbacks[i] = jobs[start + i]->Execute;
+            }
+            this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data() + start,
+                                    callbacks.data(), n);
         }
-        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
-                                jobs.size());
     }
 
     /**
