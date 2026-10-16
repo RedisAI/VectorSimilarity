@@ -1362,6 +1362,59 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuf
     }
 }
 
+// Inserts buffered during initialization are submitted in bounded batches: the real thread
+// pool's submit callback stack-allocates per-call, so one huge batch overflows a worker stack.
+TYPED_TEST(SVSTieredIndexTestBasic, buffersSubmittedInBoundedBatchesAfterInitialization) {
+    constexpr size_t dim = 4;
+    constexpr size_t n = 8;
+    constexpr size_t n_during_init = TIERED_MAX_JOBS_PER_SUBMIT + 100;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    auto svs_params = CreateParams(params);
+    tieredIndexMock mock_thread_pool(1);
+    auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, n);
+    tiered_params.flatBufferLimit = n;
+    auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+    ASSERT_INDEX(index);
+
+    for (size_t i = 0; i < n; ++i) {
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+    }
+    ASSERT_FALSE(index->GetSVSIndex()->ready());
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+
+    std::promise<void> snapshot_taken, additions_finished;
+    auto snapshot_ready = snapshot_taken.get_future();
+    auto additions_ready = additions_finished.get_future();
+    const auto timeout = std::chrono::seconds(30);
+    bool completed_during_init = false;
+    index->registerTracingCallback("UpdateJob::after_snapshot", [&] {
+        snapshot_taken.set_value();
+        completed_during_init = additions_ready.wait_for(timeout) == std::future_status::ready;
+        // Release init on timeout as well, so a regressed blocking add can return.
+    });
+
+    mock_thread_pool.init_threads();
+    const bool reached_snapshot = snapshot_ready.wait_for(timeout) == std::future_status::ready;
+    if (reached_snapshot) {
+        for (size_t i = 0; i < n_during_init; ++i) {
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, n + i, n + i), 1);
+        }
+    }
+    additions_finished.set_value();
+    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(reached_snapshot) << "Initialization did not reach the snapshot hook";
+    ASSERT_TRUE(completed_during_init) << "addVector waited for initialization";
+    EXPECT_LE(mock_thread_pool.max_submit_batch, TIERED_MAX_JOBS_PER_SUBMIT);
+    EXPECT_TRUE(index->GetSVSIndex()->ready());
+    EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+    EXPECT_EQ(index->GetBackendIndex()->indexSize(), n + n_during_init);
+    EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n + n_during_init);
+    EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, overwriteSnapshotLabelDuringInitialization) {
     constexpr size_t dim = 4;
     constexpr size_t n = 8;

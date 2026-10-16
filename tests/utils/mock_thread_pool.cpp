@@ -9,6 +9,8 @@
 
 #include "mock_thread_pool.h"
 
+#include <algorithm>
+
 /*
  * Mock callbacks and synchronization primitives for testing async tiered index.
  * We use a simple std::queue to simulate the job queue.
@@ -41,6 +43,7 @@ void tieredIndexMock::reset_ctx(IndexExtCtx *new_ctx) {
 int tieredIndexMock::submit_callback_internal(AsyncJob **jobs, JobCallback *CBs, size_t jobs_len) {
     {
         std::unique_lock<std::mutex> lock(this->queue_guard);
+        this->max_submit_batch = std::max(this->max_submit_batch, jobs_len);
         for (size_t i = 0; i < jobs_len; i++) {
             // Wrap the job with a struct that contains a weak reference to the related index.
             auto owned_job =
