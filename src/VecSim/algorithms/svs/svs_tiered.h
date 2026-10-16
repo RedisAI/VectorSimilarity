@@ -292,6 +292,11 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     bool initInProgress{false};
     std::vector<labelType> initDeletedLabels;
 
+    // Submission list only; labelToInsertJobs/invalidJobs retain ownership of these jobs.
+    // Access under flatIndexGuard exclusively. Submit after releasing updateJobMutex so
+    // inserts arriving during initialization do not occupy workers waiting for the build.
+    vecsim_stl::vector<AsyncJob *> initInsertJobs;
+
     /// <batch_iterator>
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     //  TieredSVS_BatchIterator //
@@ -536,12 +541,19 @@ private:
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
         std::vector<labelType> deleted_labels;
+        vecsim_stl::vector<AsyncJob *> insert_jobs(index->allocator);
         {
             std::lock_guard<std::shared_mutex> lock(index->updateJobMutex);
             deleted_labels = index->initSVSIndex(availableThreads);
+            std::lock_guard flat_lock{index->flatIndexGuard};
+            insert_jobs.swap(index->initInsertJobs);
         }
         for (labelType label : deleted_labels) {
             index->scheduleSVSIndexConsolidate(label);
+        }
+        // Include invalidated jobs: their callbacks remove them from invalidJobs and delete them.
+        if (!insert_jobs.empty()) {
+            index->submitJobs(insert_jobs);
         }
     }
 
@@ -892,7 +904,8 @@ public:
                    const TieredIndexParams &tiered_index_params,
                    std::shared_ptr<VecSimAllocator> allocator)
         : Base(svs_index, bf_index, tiered_index_params, allocator),
-          uncompletedJobs(this->allocator), labelToConsolidateJobs(this->allocator) {
+          uncompletedJobs(this->allocator), labelToConsolidateJobs(this->allocator),
+          initInsertJobs(this->allocator) {
         const auto &tiered_svs_params = tiered_index_params.specificParams.tieredSVSParams;
 
         // If flatBufferLimit is not initialized (0), use the default update threshold.
@@ -998,13 +1011,16 @@ public:
             ret += this->frontendIndex->addVector(blob, label);
 
             TieredInsertJob *new_insert_job = createInsertJob(label, new_flat_id);
-            const bool defer_delete = initInProgress;
+            const bool defer_until_initialized = initInProgress;
+            if (defer_until_initialized) {
+                initInsertJobs.push_back(new_insert_job);
+            }
             this->flatIndexGuard.unlock();
 
             // Here, a worker might ingest the previous vector that was stored under "label"
             // (in case of override in non-MULTI index) - so if it's there, we remove it
             //  we submit the insert job.
-            if (!this->backendIndex->isMultiValue() && !defer_delete) {
+            if (!this->backendIndex->isMultiValue() && !defer_until_initialized) {
                 // If we removed the previous vector from both svs and flat in the overwrite
                 // process, we still return 0 (not -1).
                 auto deleted = svs_index->deleteVector(label);
@@ -1013,8 +1029,10 @@ public:
                 ret = std::max(ret - deleted, 0);
             }
 
-            // Insert job to the queue and signal the workers' updater.
-            this->submitSingleJob(new_insert_job);
+            // Initialization submits its buffered jobs after releasing updateJobMutex.
+            if (!defer_until_initialized) {
+                this->submitSingleJob(new_insert_job);
+            }
             return ret;
         }
     }
