@@ -1394,23 +1394,20 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteSnapshotLabelDuringInitialization) 
         bool completed_during_init = false;
         index->registerTracingCallback("UpdateJob::after_snapshot", [&] {
             snapshot_taken.set_value();
-            completed_during_init =
-                overwrites_ready.wait_for(timeout) == std::future_status::ready;
+            completed_during_init = overwrites_ready.wait_for(timeout) == std::future_status::ready;
             // Release init on timeout as well, so a regressed blocking add can return.
         });
 
         mock_thread_pool.init_threads();
-        const bool reached_snapshot =
-            snapshot_ready.wait_for(timeout) == std::future_status::ready;
+        const bool reached_snapshot = snapshot_ready.wait_for(timeout) == std::future_status::ready;
         if (reached_snapshot) {
             // The first overwrite cancels a captured row with no insert job. Removing
             // label 0 swaps the last captured row down; init cleanup must later preserve
             // the replacement and update its insert job's id as the buffer shrinks.
             // A second overwrite also exercises invalidation of an unsubmitted job.
             for (size_t i = 0; i < overwrite_count; ++i) {
-                EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, overwritten_label,
-                                                          n + i + 1),
-                          0);
+                EXPECT_EQ(
+                    GenerateAndAddVector<TEST_DATA_T>(index, dim, overwritten_label, n + i + 1), 0);
             }
         }
         overwrites_finished.set_value();
