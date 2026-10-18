@@ -18,7 +18,7 @@
 #include <utility>
 
 #include "VecSim/algorithms/brute_force/brute_force_single.h"
-#include "VecSim/spaces/computer/preprocessors.h"
+#include "VecSim/quantization/sq8_training_state.h"
 #include "VecSim/vec_sim_tiered_index.h"
 #include "hnsw.h"
 
@@ -70,7 +70,6 @@ struct HNSWSwapJob : public VecsimBaseObject {
 
 static const size_t DEFAULT_PENDING_SWAP_JOBS_THRESHOLD = DEFAULT_BLOCK_SIZE;
 static const size_t MAX_PENDING_SWAP_JOBS_THRESHOLD = 100000;
-static const size_t MAX_QUANT_NORMALIZATION_SET_SIZE = 100 * DEFAULT_BLOCK_SIZE;
 
 /**
  * Definition of a job that repairs a certain node's connection in HNSW Index after delete
@@ -150,17 +149,7 @@ private:
 
     // Writer-owned state exists only while SQ8 vectors are accumulating in FLAT.
     // Reads and maintenance always use the real, initially empty backend.
-    struct SQAccumulationState {
-        size_t normalizationSetSize;
-        vecsim_stl::vector<double> runningSumVec;
-
-        SQAccumulationState(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
-                            size_t normalizationSetSize)
-            : normalizationSetSize(
-                  std::min(normalizationSetSize, MAX_QUANT_NORMALIZATION_SET_SIZE)),
-              runningSumVec(dim, 0.0, allocator) {}
-    };
-    std::optional<SQAccumulationState> sqAccumulationState;
+    std::optional<SQ8TrainingState> sqAccumulationState;
 
 #ifdef BUILD_TESTS
     std::function<void()> beforeQuantizationFinalization;
@@ -171,25 +160,16 @@ private:
 
     void addToSum(std::span<const DataType> vector) {
         if constexpr (QuantInput<DataType>) {
-            auto &sum = sqAccumulationState->runningSumVec;
-            assert(vector.size() == sum.size());
-            for (size_t i = 0; i < vector.size(); ++i) {
-                sum[i] += to_fp32(vector[i]);
-            }
+            sqAccumulationState->add(vector);
         }
     }
 
     void subtractFromSum(std::span<const DataType> vector) {
         if constexpr (QuantInput<DataType>) {
-            auto &sum = sqAccumulationState->runningSumVec;
-            assert(vector.size() == sum.size());
-            for (size_t i = 0; i < vector.size(); ++i) {
-                sum[i] -= to_fp32(vector[i]);
-            }
+            sqAccumulationState->subtract(vector);
         }
     }
 
-    [[nodiscard]] vecsim_stl::vector<float> calculateQuantizationMean(size_t count) const;
     int addVectorDuringAccumulation(const void *blob, labelType label);
     int deleteVectorDuringAccumulation(labelType label);
     void finalizeQuantizationAndSubmitJobs(size_t count);
@@ -1130,7 +1110,8 @@ int TieredHNSWIndex<DataType, DistType>::addVectorDuringAccumulation(const void 
             }
         }
         const size_t count = this->frontendIndex->indexSize();
-        const bool should_finalize = count >= sqAccumulationState->normalizationSetSize;
+        assert(sqAccumulationState->getCount() == count);
+        const bool should_finalize = sqAccumulationState->shouldFinalize();
         return std::tuple{result, count, should_finalize};
     }();
 
@@ -1158,25 +1139,17 @@ int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringAccumulation(labelTyp
     for (const auto &[new_id, previous] : updated_ids) {
         updateInsertJobInternalId(previous.first, new_id, previous.second);
     }
+    assert(sqAccumulationState->getCount() == this->frontendIndex->indexSize());
     return removed;
 }
 
 template <typename DataType, typename DistType>
-vecsim_stl::vector<float>
-TieredHNSWIndex<DataType, DistType>::calculateQuantizationMean(size_t count) const {
-    assert(sqAccumulationState);
-    assert(count >= sqAccumulationState->normalizationSetSize);
-    const auto &sum = sqAccumulationState->runningSumVec;
-    vecsim_stl::vector<float> mean(sum.size(), this->allocator);
-    for (size_t i = 0; i < sum.size(); ++i) {
-        mean[i] = static_cast<float>(sum[i] / static_cast<double>(count));
-    }
-    return mean;
-}
-
-template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size_t count) {
-    const auto mean = calculateQuantizationMean(count);
+    assert(sqAccumulationState);
+    assert(sqAccumulationState->getCount() == count);
+    assert(sqAccumulationState->getCount() == this->frontendIndex->indexSize());
+    assert(sqAccumulationState->shouldFinalize());
+    const auto mean = sqAccumulationState->calculateMean();
     // Allocate the snapshot before finishing accumulation. Synchronous execution removes jobs
     // from labelToInsertJobs, so iterating the map while dispatching would invalidate iterators.
     vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
