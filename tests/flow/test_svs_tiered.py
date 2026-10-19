@@ -166,6 +166,9 @@ def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=
     test_logger.info(f"Total time for inserting vectors to the tiered index and indexing them into SVS using {threads_num}"
           f" threads took {round_ms(tiered_index_time)} ms")
 
+    index.run_gc()
+    index.wait_for_index()
+
     # Measure total memory of the tiered index.
     tiered_memory = bytes_to_mega(index.index_memory())
 
@@ -175,6 +178,8 @@ def create_tiered_index(test_logger, is_multi: bool, num_per_label=1, data_type=
     _, svs_index_time, _ = indices_ctx.populate_index(svs_index)
 
     test_logger.info(f"Insert {num_elements} vectors directly to SVS index (one by one) took {round_(svs_index_time)} s")
+
+    svs_index.run_gc()
     svs_memory = bytes_to_mega(svs_index.index_memory())
     test_logger.info(f"total memory of svs index = {svs_memory} MB")
 

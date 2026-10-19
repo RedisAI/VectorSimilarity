@@ -11,8 +11,16 @@
 #include "mock_thread_pool.h"
 
 #if HAVE_SVS
+#include <algorithm>
+#include <cmath>
+#include <condition_variable>
+#include <functional>
+#include <future>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <chrono>
+#include <unordered_set>
 // For getAvailableCPUs():
 #include <sched.h>
 
@@ -31,6 +39,11 @@
             GTEST_SKIP() << "SVS LVQ is not supported.";                                           \
         }                                                                                          \
     }
+
+static size_t EstimateReverseEdgesSize(size_t num_elements) {
+    return SVSGraphBuilder<uint32_t>::reverse_edges_element_size() *
+           svs::lib::SegmentedVector<uint8_t>(num_elements).capacity();
+}
 
 // Get available number of CPUs
 // Returns the number of logical processors on the process
@@ -371,6 +384,10 @@ TYPED_TEST(SVSTieredIndexTest, updateVectors) {
         ASSERT_EQ(tiered_index->updateVectors(7, two, 2), VecSimUpdate_OK);
         mock_thread_pool.init_threads();
         mock_thread_pool.thread_pool_join();
+        // The replaced vectors leave tombstones behind, so compact before counting.
+        VecSimTieredIndex_GC(tiered_index);
+        mock_thread_pool.init_threads();
+        mock_thread_pool.thread_pool_join();
         ASSERT_EQ(tiered_index->indexSize(), 2);
         ASSERT_EQ(tiered_index->indexLabelCount(), 1);
         for (size_t i = 0; i < 2; i++) {
@@ -457,6 +474,7 @@ TYPED_TEST(SVSTieredIndexTest, updateVectorsDuringUpdateJob) {
         ASSERT_EQ(tiered_index->updateVectors(i, replacements, new_per_label), VecSimUpdate_OK)
             << "label " << i;
     }
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
 
     auto *svs_index = tiered_index->GetSVSIndex();
@@ -572,6 +590,7 @@ TYPED_TEST(SVSTieredIndexTest, addRelabelAndUpdateTogetherUnderLoad) {
         GenerateVector<TEST_DATA_T>(fresh, dim, 7000.0f + 10.0f * i);
         ASSERT_EQ(VecSimIndex_AddVector(tiered_index, fresh, fresh_base + i), 1);
     }
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
 
     auto *svs_index = tiered_index->GetSVSIndex();
@@ -680,6 +699,342 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorMovesTheLabelInBothWriteStates) {
         ASSERT_NEAR(score, 0, 1e-4);
     };
     runTopKSearchTest(tiered_index, vector, 1, verify);
+}
+
+// The test above never reaches `labelToInsertJobs`: with a training threshold of 1 the first
+// vector is training data, and training data has no insert job. Draining once makes the backend
+// ready, so the next add does get one.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorRemapsAPendingInsertJob) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    mock_thread_pool.init_threads();
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->ready());
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    const size_t per_label = TypeParam::isMulti() ? 2 : 1;
+    for (size_t j = 0; j < per_label; j++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7 + j);
+    }
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), per_label);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), per_label);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+
+    ASSERT_EQ(tiered_index->labelToInsertJobs.count(7), 0);
+    ASSERT_EQ(tiered_index->labelToInsertJobs.at(70).size(), per_label);
+    for (auto *job : tiered_index->labelToInsertJobs.at(70)) {
+        ASSERT_EQ(job->label, 70);
+        // Left Delayed, the ingest below would defer forever.
+        ASSERT_EQ(static_cast<SVSInsertJob *>(job)->status.load(), SVSInsertJob::Status::Pending);
+    }
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(7));
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
+}
+
+// The worker consumes the delayed submission; relabel must resume it exactly once.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorDefersAnInsertJobInsideTheDelayWindow) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    mock_thread_pool.init_threads();
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->ready());
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+
+    auto *job = static_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job);
+    tiered_index->registerTracingCallback("Relabel::before_backend_remap", [&]() {
+        std::thread worker([&]() { mock_thread_pool.thread_iteration(); });
+        worker.join();
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        EXPECT_EQ(job->status.load(), SVSInsertJob::Status::Parked);
+        EXPECT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(70));
+    });
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 70), VecSimRelabel_OK);
+
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job, job);
+
+    ASSERT_EQ(job->status.load(), SVSInsertJob::Status::Pending);
+    ASSERT_EQ(job->label, 70);
+    mock_thread_pool.thread_iteration();
+
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(70));
+    ASSERT_TRUE(tiered_index->labelToInsertJobs.empty());
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
+}
+
+// isLabelExists() reports a soft-deleted label as free, but SVS keeps its translator entry
+// until the label's consolidate job runs, and would refuse the remap. So relabelVector takes
+// those jobs over and consolidates them itself.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorTakesOverPendingConsolidatesOfTheTarget) {
+    size_t dim = 4;
+    const size_t n = 3;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    mock_thread_pool.init_threads();
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(i));
+    }
+
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_CONSOLIDATE_JOB);
+    auto *first_job = static_cast<SVSConsolidateJob *>(mock_thread_pool.jobQ.front().job);
+
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 2, 1), VecSimRelabel_OK);
+    ASSERT_EQ(first_job->status.load(), SVSConsolidateJob::Status::TakenOver);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(2));
+
+    // The first job is still registered under label 1, so this one is appended to it.
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+
+    // The takeover now has to skip the job it already invalidated.
+    ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 0, 1), VecSimRelabel_OK);
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(0));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+}
+
+// A consolidate job that is already inside consolidate() cannot be taken over, so the takeover
+// waits for it to leave. The test holds the flag and does the consolidation the wrapper would,
+// so the remap that follows really is unblocked.
+TYPED_TEST(SVSTieredIndexTest, relabelVectorWaitsForAnExecutingConsolidate) {
+    size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    mock_thread_pool.init_threads();
+    for (size_t i = 0; i < 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
+
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    auto *consolidate_job = static_cast<SVSConsolidateJob *>(mock_thread_pool.jobQ.front().job);
+    consolidate_job->status.store(SVSConsolidateJob::Status::Executing, std::memory_order_release);
+
+    std::atomic<int> relabel_code{-1};
+    std::thread relabeler(
+        [&]() { relabel_code = static_cast<int>(VecSimIndex_RelabelVector(tiered_index, 0, 1)); });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // EXPECT, so the thread is always joined below.
+    EXPECT_EQ(relabel_code.load(), -1) << "the takeover did not wait for the running job";
+
+    tiered_index->GetSVSIndex()->consolidate({1});
+    consolidate_job->status.store(SVSConsolidateJob::Status::Done, std::memory_order_release);
+    relabeler.join();
+
+    ASSERT_EQ(relabel_code.load(), static_cast<int>(VecSimRelabel_OK));
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(0));
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+}
+
+// Use the real worker's Done -> unregister -> delete path while relabel holds its job pointer.
+// Without the shared registry guard, deletion can precede waitForJob's next load (an ASan UAF).
+TYPED_TEST(SVSTieredIndexTest, relabelVectorProtectsExecutingConsolidateJobLifetime) {
+    const size_t dim = 4;
+    SVSParams params = {.type = TypeParam::get_index_type(),
+                        .dim = dim,
+                        .metric = VecSimMetric_L2,
+                        .multi = TypeParam::isMulti(),
+                        .quantBits = TypeParam::get_quant_bits()};
+    VecSimParams svs_params = CreateParams(params);
+    tieredIndexMock mock_thread_pool(1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 2);
+    ASSERT_INDEX(tiered_index);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 1);
+    mock_thread_pool.thread_iteration(); // initialize before starting the consolidate worker
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->ready());
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.front().job->jobType, SVS_CONSOLIDATE_JOB);
+
+    std::promise<void> worker_paused, relabel_waiting, job_deleted;
+    auto paused = worker_paused.get_future();
+    auto waiting = relabel_waiting.get_future();
+    auto deleted = job_deleted.get_future();
+    const auto timeout = std::chrono::seconds(5);
+    bool worker_saw_waiter = false;
+    bool waiter_entered = false;
+    bool deleted_while_waiting = false;
+    tiered_index->registerTracingCallback("ConsolidateJob::before_done", [&] {
+        worker_paused.set_value();
+        worker_saw_waiter = waiting.wait_for(timeout) == std::future_status::ready;
+    });
+    tiered_index->registerTracingCallback("Relabel::before_wait_for_consolidate", [&] {
+        waiter_entered = true;
+        relabel_waiting.set_value();
+        // Let the worker publish Done and attempt cleanup before waitForJob reads the job.
+        // The registry guard must prevent deletion until this callback and the wait return.
+        deleted_while_waiting =
+            deleted.wait_for(std::chrono::milliseconds(100)) == std::future_status::ready;
+    });
+    tiered_index->registerTracingCallback("ConsolidateJob::after_delete",
+                                          [&] { job_deleted.set_value(); });
+
+    mock_thread_pool.init_threads();
+    const bool reached_worker = paused.wait_for(timeout) == std::future_status::ready;
+    auto relabel_code = VecSimRelabel_OldLabelMissing;
+    if (reached_worker) {
+        // Public writes stay on the test thread; the worker alone changes the job's status.
+        relabel_code = VecSimIndex_RelabelVector(tiered_index, 0, 1);
+    }
+    if (!waiter_entered) {
+        relabel_waiting.set_value(); // release the worker if relabel never reached its wait
+    }
+    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(reached_worker);
+    ASSERT_TRUE(worker_saw_waiter);
+    ASSERT_TRUE(waiter_entered);
+    EXPECT_FALSE(deleted_while_waiting);
+    EXPECT_EQ(deleted.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_EQ(relabel_code, VecSimRelabel_OK);
+    EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    EXPECT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(1));
+    EXPECT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(0));
+    EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    EXPECT_EQ(tiered_index->indexLabelCount(), 1);
+}
+
+// Rollback needs the backend to refuse the target, and to hold old_label live while the buffer
+// still holds it with a registered job. Both are built by hand:
+//  - the target keeps a stale translator entry, because a backend-side delete leaves no
+//    consolidate job for the takeover to run. Single-value only - the multi backend checks live
+//    labels only, so a soft-deleted target never blocks it.
+//  - old_label is live in both tiers, the state an insert job is in after it published and
+//    before it dropped its buffer copy. Published here directly, then the job marked Done.
+TYPED_TEST(SVSTieredIndexTestBasic, relabelVectorRollsBackWhenTheBackendRefusesTheTarget) {
+    size_t dim = 4;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+
+    mock_thread_pool.init_threads();
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 0, 0);
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->ready());
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 5, 5);
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index->GetBackendIndex(), 5), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(5));
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 7, 7);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    auto *job = static_cast<SVSInsertJob *>(mock_thread_pool.jobQ.front().job);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetBackendIndex(), dim, 7, 7);
+    job->status.store(SVSInsertJob::Status::Done, std::memory_order_relaxed);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(7));
+
+    // Keep the original completed-job case, then exercise rollback with a parked submission.
+    for (auto status : {SVSInsertJob::Status::Done, SVSInsertJob::Status::Pending}) {
+        job->status.store(status, std::memory_order_relaxed);
+        tiered_index->registerTracingCallback("Relabel::before_backend_remap", [&, status]() {
+            if (status == SVSInsertJob::Status::Pending) {
+                std::thread worker([&]() { mock_thread_pool.thread_iteration(); });
+                worker.join();
+                EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+                EXPECT_EQ(job->status.load(), SVSInsertJob::Status::Parked);
+            }
+        });
+        ASSERT_EQ(VecSimIndex_RelabelVector(tiered_index, 7, 5), VecSimRelabel_NewLabelTaken);
+
+        ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(7));
+        ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(5));
+        ASSERT_EQ(tiered_index->labelToInsertJobs.count(5), 0);
+        ASSERT_EQ(tiered_index->labelToInsertJobs.at(7).size(), 1);
+        ASSERT_EQ(job->label, 7);
+        ASSERT_EQ(job->status.load(), status);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+        ASSERT_EQ(mock_thread_pool.jobQ.front().job, job);
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+        ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(5));
+    }
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(7));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(5));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
 }
 
 TYPED_TEST(SVSTieredIndexTest, relabelVectorRejectsOnATier) {
@@ -933,6 +1288,387 @@ TYPED_TEST(SVSTieredIndexTest, relabelVectorCannotLandInsideAnUpdateJobsWindow) 
 
 #endif // HAVE_SVS_REPLACE_EXTERNAL_ID
 
+TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuffer) {
+    constexpr size_t dim = 4;
+    constexpr size_t n = 8;
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi};
+        auto svs_params = CreateParams(params);
+        std::atomic<size_t> submitted_insert_jobs{0};
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, n);
+        tiered_params.flatBufferLimit = n;
+        // The mock resolves its queue through index_ctx; use jobQueue to count submissions.
+        tiered_params.jobQueue = &submitted_insert_jobs;
+        tiered_params.submitCb = [](void *counter, void *ctx, AsyncJob **jobs,
+                                    JobCallback *callbacks, size_t count) {
+            for (size_t i = 0; i < count; ++i) {
+                if (jobs[i]->jobType == SVS_INSERT_VECTOR_JOB) {
+                    static_cast<std::atomic<size_t> *>(counter)->fetch_add(
+                        1, std::memory_order_relaxed);
+                }
+            }
+            return tieredIndexMock::submit_callback(nullptr, ctx, jobs, callbacks, count);
+        };
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+
+        for (size_t i = 0; i < n; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        }
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), n);
+        ASSERT_FALSE(index->GetSVSIndex()->ready());
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+
+        std::promise<void> snapshot_taken;
+        auto snapshot_ready = snapshot_taken.get_future();
+        std::promise<void> additions_finished;
+        auto additions_ready = additions_finished.get_future();
+        bool completed_during_init = false;
+        size_t buffered_during_init = 0;
+        // Pause with the snapshot fixed, flat unlocked, and updateJobMutex held exclusively.
+        index->registerTracingCallback("UpdateJob::after_snapshot", [&] {
+            snapshot_taken.set_value();
+            completed_during_init =
+                additions_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+            if (completed_during_init) {
+                buffered_during_init = index->GetFlatIndex()->indexSize();
+            }
+            // On timeout, let init finish so a blocked add can return without hanging the test.
+        });
+        mock_thread_pool.init_threads();
+        const bool reached_snapshot =
+            snapshot_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+        if (reached_snapshot) {
+            // Public writes stay on the test thread. The first add sees a full buffer;
+            // the second sees a buffer above the limit. Both must return before init resumes.
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, n, n), 1);
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, n + 1, n + 1), 1);
+            // The only worker is paused in init. Neither insert may be submitted yet,
+            // where another worker could pick it up and block behind updateJobMutex.
+            std::lock_guard queue_lock{mock_thread_pool.queue_guard};
+            EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        }
+        additions_finished.set_value();
+        mock_thread_pool.thread_pool_wait();
+        mock_thread_pool.thread_pool_join();
+
+        ASSERT_TRUE(reached_snapshot) << "Initialization did not reach the snapshot hook";
+        ASSERT_TRUE(completed_during_init) << "addVector waited for initialization";
+        EXPECT_EQ(buffered_during_init, n + 2);
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(index->GetBackendIndex()->indexSize(), n + 2);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n + 2);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        // Both deferred inserts were consumed by init, not queued and later drained by the mock.
+        EXPECT_EQ(submitted_insert_jobs.load(std::memory_order_relaxed), 0);
+        EXPECT_EQ(index->GetSVSIndex()->getParallelism(), 1);
+        for (size_t i = 0; i < n + 2; ++i) {
+            std::vector<std::vector<TEST_DATA_T>> stored;
+            index->getDataByLabel(i, stored);
+            const std::vector<std::vector<TEST_DATA_T>> expected{
+                std::vector<TEST_DATA_T>(dim, static_cast<TEST_DATA_T>(i))};
+            EXPECT_EQ(stored, expected) << "label=" << i;
+        }
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, mainLockLimitWaitsForInitialization) {
+    constexpr size_t dim = 4;
+    constexpr size_t training_rows = 8;
+    constexpr size_t main_lock_limit = 100'000;
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params =
+            this->CreateTieredSVSParams(svs_params, mock_thread_pool, training_rows);
+        tiered_params.flatBufferLimit = training_rows;
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+
+        std::promise<void> before_publish, resume_init, before_wait;
+        auto publish_ready = before_publish.get_future();
+        auto resume_ready = resume_init.get_future();
+        auto wait_ready = before_wait.get_future();
+        std::atomic<bool> pause_timed_out{false};
+        std::atomic<bool> wait_seen{false};
+        index->registerTracingCallback("UpdateJob::before_publish", [&] {
+            before_publish.set_value();
+            pause_timed_out.store(resume_ready.wait_for(std::chrono::seconds(60)) !=
+                                  std::future_status::ready);
+        });
+        index->registerTracingCallback("AddVector::before_init_wait", [&] {
+            if (!wait_seen.exchange(true)) {
+                before_wait.set_value();
+            }
+        });
+
+        for (size_t i = 0; i < training_rows; ++i) {
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i), 1);
+        }
+        mock_thread_pool.init_threads();
+        const bool reached_publish =
+            publish_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+
+        size_t added = training_rows;
+        if (reached_publish) {
+            // Exercise the actual policy floor, not a test-only smaller limit.
+            // Each addition below the limit must return while init is held open.
+            for (; added < main_lock_limit; ++added) {
+                EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, added, added), 1);
+                if (pause_timed_out.load()) {
+                    break;
+                }
+            }
+        }
+        const bool filled_during_init =
+            reached_publish && added == main_lock_limit && !pause_timed_out.load();
+        std::future<int> writer;
+        bool reached_wait = false;
+        bool blocked_at_limit = false;
+        bool still_waiting_after_delete = false;
+        if (filled_during_init) {
+            writer = std::async(std::launch::async, [&] {
+                return GenerateAndAddVector<TEST_DATA_T>(index, dim, main_lock_limit,
+                                                         main_lock_limit);
+            });
+            reached_wait =
+                wait_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+            blocked_at_limit = reached_wait && writer.wait_for(std::chrono::milliseconds(50)) ==
+                                                   std::future_status::timeout;
+            if (blocked_at_limit && !pause_timed_out.load()) {
+                // Acquiring flat shared here also checks that the waiting add released it.
+                index->acquireSharedLocks();
+                EXPECT_EQ(index->GetFlatIndex()->indexSize(), main_lock_limit);
+                index->releaseSharedLocks();
+                EXPECT_FALSE(index->GetSVSIndex()->ready());
+
+                // Keep the snapshot, but invalidate all deferred filler jobs. This avoids
+                // constructing a large graph; the wait must still last until init completes.
+                for (size_t i = training_rows; i < main_lock_limit; ++i) {
+                    EXPECT_EQ(index->deleteVector(i), 1);
+                }
+                still_waiting_after_delete =
+                    writer.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout;
+            }
+        }
+
+        // Release init before any fatal assertion or future destruction.
+        resume_init.set_value();
+        int add_result = -1;
+        if (writer.valid()) {
+            EXPECT_NO_THROW(add_result = writer.get());
+        }
+        mock_thread_pool.thread_pool_wait();
+        mock_thread_pool.thread_pool_join();
+
+        ASSERT_TRUE(reached_publish);
+        ASSERT_TRUE(filled_during_init);
+        ASSERT_TRUE(reached_wait);
+        ASSERT_TRUE(blocked_at_limit);
+        ASSERT_TRUE(still_waiting_after_delete);
+        ASSERT_FALSE(pause_timed_out.load());
+        EXPECT_EQ(add_result, 1);
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(index->GetBackendIndex()->indexSize(), training_rows + 1);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), training_rows + 1);
+        EXPECT_TRUE(index->GetSVSIndex()->isLabelExists(main_lock_limit));
+        EXPECT_TRUE(index->labelToInsertJobs.empty());
+        EXPECT_TRUE(index->invalidJobs.empty());
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, overwriteSnapshotLabelDuringInitialization) {
+    constexpr size_t dim = 4;
+    constexpr size_t n = 8;
+    constexpr labelType overwritten_label = 0;
+    for (size_t overwrite_count : {size_t{1}, size_t{2}}) {
+        SCOPED_TRACE(::testing::Message() << "overwrite_count=" << overwrite_count);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = false};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, n);
+        tiered_params.flatBufferLimit = n;
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+
+        for (size_t i = 0; i < n; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        }
+        ASSERT_FALSE(index->GetSVSIndex()->ready());
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), n);
+        ASSERT_EQ(index->labelToInsertJobs.count(overwritten_label), 0);
+        ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+
+        std::promise<void> snapshot_taken, overwrites_finished;
+        auto snapshot_ready = snapshot_taken.get_future();
+        auto overwrites_ready = overwrites_finished.get_future();
+        const auto timeout = std::chrono::seconds(5);
+        bool completed_during_init = false;
+        index->registerTracingCallback("UpdateJob::after_snapshot", [&] {
+            snapshot_taken.set_value();
+            completed_during_init = overwrites_ready.wait_for(timeout) == std::future_status::ready;
+            // Release init on timeout as well, so a regressed blocking add can return.
+        });
+
+        mock_thread_pool.init_threads();
+        const bool reached_snapshot = snapshot_ready.wait_for(timeout) == std::future_status::ready;
+        if (reached_snapshot) {
+            // The first overwrite cancels a captured row with no insert job. Removing
+            // label 0 swaps the last captured row down; init cleanup must later preserve
+            // the replacement and update its insert job's id as the buffer shrinks.
+            // A second overwrite also exercises invalidation of an unsubmitted job.
+            for (size_t i = 0; i < overwrite_count; ++i) {
+                EXPECT_EQ(
+                    GenerateAndAddVector<TEST_DATA_T>(index, dim, overwritten_label, n + i + 1), 0);
+            }
+        }
+        overwrites_finished.set_value();
+        mock_thread_pool.thread_pool_wait();
+        mock_thread_pool.thread_pool_join();
+
+        ASSERT_TRUE(reached_snapshot) << "Initialization did not reach the snapshot hook";
+        ASSERT_TRUE(completed_during_init) << "Overwrite waited for initialization";
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        // Per-label consolidation does not compact the deleted snapshot row.
+        EXPECT_EQ(index->GetBackendIndex()->indexSize(), n + 1);
+        EXPECT_EQ(index->getNumMarkedDeleted(), 1);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n);
+        EXPECT_TRUE(index->labelToInsertJobs.empty());
+        EXPECT_TRUE(index->invalidJobs.empty());
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        for (size_t i = 0; i < n; ++i) {
+            // Read the backend directly so a surviving flat row cannot hide a stale
+            // snapshot copy. Exact cardinality and values detect duplicates as well.
+            std::vector<std::vector<TEST_DATA_T>> stored;
+            index->GetBackendIndex()->getDataByLabel(i, stored);
+            const auto value = i == overwritten_label ? n + overwrite_count : i;
+            const std::vector<std::vector<TEST_DATA_T>> expected{
+                std::vector<TEST_DATA_T>(dim, static_cast<TEST_DATA_T>(value))};
+            EXPECT_EQ(stored, expected) << "label=" << i;
+        }
+    }
+}
+
+// A search already occupies one worker, so init proceeds after its reservation timeout.
+// The search reaches the backend while init is still paused immediately after publication.
+TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorBeforeInitializationPublishes) {
+    if (std::thread::hardware_concurrency() < 2) {
+        GTEST_SKIP() << "Requires two workers";
+    }
+    constexpr size_t dim = 4;
+    constexpr size_t n = 8;
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi};
+        params.search_window_size = n;
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(2);
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n + (multi ? 1 : 0));
+        ASSERT_INDEX(index);
+        for (size_t i = 0; i < n - 1; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i);
+        }
+        if (multi) {
+            GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 20);
+        }
+
+        std::promise<void> worker_started, start_search, build_finished;
+        std::promise<void> query_between_tiers, published, search_finished;
+        auto worker_ready = worker_started.get_future();
+        auto start_ready = start_search.get_future();
+        auto build_ready = build_finished.get_future();
+        auto query_ready = query_between_tiers.get_future();
+        auto publish_ready = published.get_future();
+        auto search_ready = search_finished.get_future();
+        const auto timeout = std::chrono::seconds(5);
+        bool query_reached_hook = false;
+        bool query_saw_publication = false;
+        bool search_completed_during_init = false;
+        index->registerTracingCallback("UpdateJob::before_publish", [&] {
+            EXPECT_FALSE(index->GetSVSIndex()->ready());
+            build_finished.set_value();
+            query_reached_hook = query_ready.wait_for(timeout) == std::future_status::ready;
+        });
+        index->registerTracingCallback("Query::before_backend", [&] {
+            query_between_tiers.set_value();
+            query_saw_publication = publish_ready.wait_for(timeout) == std::future_status::ready;
+        });
+        index->registerTracingCallback("UpdateJob::after_publish", [&] {
+            published.set_value();
+            search_completed_during_init =
+                search_ready.wait_for(timeout) == std::future_status::ready;
+        });
+
+        VecSimQueryReply *reply = nullptr;
+        auto search = [&](VecSimIndex *, size_t) {
+            worker_started.set_value();
+            if (start_ready.wait_for(timeout) == std::future_status::ready) {
+                TEST_DATA_T query[dim] = {};
+                reply = VecSimIndex_TopKQuery(index, query, n, nullptr, BY_ID);
+            }
+            search_finished.set_value();
+        };
+        SVSMultiThreadJob::JobsRegistry registry(index->getAllocator());
+        auto jobs = SVSMultiThreadJob::createJobs(index->getAllocator(), HNSW_SEARCH_JOB, search,
+                                                  index, 1, timeout, &registry);
+        index->submitJobs(jobs);
+        mock_thread_pool.init_threads();
+        const bool search_occupies_worker =
+            worker_ready.wait_for(timeout) == std::future_status::ready;
+        // Cross the training threshold only after the search worker has been occupied.
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, n - 1, n - 1);
+        const bool reached_build_hook = build_ready.wait_for(timeout) == std::future_status::ready;
+        if (reached_build_hook) {
+            EXPECT_EQ(VecSimIndex_DeleteVector(index, 0), multi ? 2 : 1);
+            EXPECT_EQ(VecSimIndex_DeleteVector(index, 0), 0);
+        }
+        start_search.set_value();
+        // Init can still enqueue consolidation after the queue first becomes empty.
+        mock_thread_pool.thread_pool_wait();
+        mock_thread_pool.thread_pool_join();
+
+        std::unique_ptr<VecSimQueryReply, decltype(&VecSimQueryReply_Free)> result(
+            reply, VecSimQueryReply_Free);
+        ASSERT_TRUE(search_occupies_worker);
+        ASSERT_TRUE(reached_build_hook);
+        ASSERT_TRUE(query_reached_hook);
+        ASSERT_TRUE(query_saw_publication);
+        ASSERT_TRUE(search_completed_during_init);
+        ASSERT_NE(reply, nullptr);
+        EXPECT_EQ(VecSimQueryReply_GetCode(reply), VecSim_QueryReply_OK);
+        ASSERT_EQ(VecSimQueryReply_Len(reply), n - 1);
+        for (size_t i = 0; i < n - 1; ++i) {
+            EXPECT_EQ(VecSimQueryResult_GetId(reply->results.data() + i), i + 1);
+        }
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_FALSE(index->GetSVSIndex()->isLabelExists(0));
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(index->indexLabelCount(), n - 1);
+        EXPECT_EQ(index->getNumMarkedDeleted(), multi ? 2 : 1);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
 TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCount) {
     // Set thread_pool_size to 4 or actual number of available CPUs
     const auto num_threads = std::min(4U, getAvailableCPUs());
@@ -1066,7 +1802,7 @@ TYPED_TEST(SVSTieredIndexTest, TestDebugInfoThreadCountWriteInPlace) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     // Verify: numThreads (pool size) unchanged, lastReservedThreads (parallelism) reflects
-    // we only used one thread (write-in-place calls updateSVSIndexWrapper with availableThreads=1).
+    // we only used one thread (write-in-place calls initSVSIndexWrapper with availableThreads=1).
     backendIndexInfo = tiered_index->GetBackendIndex()->debugInfo();
     ASSERT_EQ(backendIndexInfo.svsInfo.numThreads, num_threads);
     ASSERT_EQ(backendIndexInfo.svsInfo.lastReservedThreads, 1);
@@ -1151,7 +1887,7 @@ TYPED_TEST(SVSTieredIndexTest, CreateIndexInstance) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
 
     // Submit the index update job.
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
 
     // Execute the job from the queue and validate that the index was updated properly.
@@ -1208,7 +1944,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelReadsSvsBackendWhenUncompresse
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
     // Ingest it into the SVS backend.
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
@@ -1290,7 +2026,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledUpdateIsDeferred) {
         shrink_callback_ran = true;
     });
 
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads);
 
     mock_thread_pool.init_threads();
@@ -1374,7 +2110,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, ShrinkDuringScheduledGCIsDeferred) {
     });
 
     VecSimTieredIndex_GC(tiered_index);
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads);
+    // Each soft-deleted slot has corresponding consolidate() job
+    size_t num_consolidate = tiered_index->GetSVSIndex()->getNumMarkedDeleted();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), num_threads + num_consolidate);
 
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
@@ -1442,13 +2180,13 @@ TYPED_TEST(SVSTieredIndexTest, addVector) {
     ASSERT_LE(expected_mem, tiered_index->getAllocationSize());
 
     if constexpr (TypeParam::isMulti()) {
-        // Add another vector under the same label
+        // Add another vector under the same label.
         VecSimIndex_AddVector(tiered_index, vector, vec_label);
         ASSERT_EQ(tiered_index->indexSize(), 2);
         ASSERT_EQ(tiered_index->indexLabelCount(), 1);
         ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
         ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 2);
-        // Validate that there still 1 update jobs set
+        // The batch-init jobs.
         ASSERT_EQ(mock_thread_pool.jobQ.size(), mock_thread_pool.thread_pool_size);
     }
 }
@@ -1498,6 +2236,12 @@ TYPED_TEST(SVSTieredIndexTest, background_indexing_check) {
     while (tiered_index->debugInfo().tieredInfo.backgroundIndexing != VecSimBool_FALSE) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+
+    // The backgroundIndexing flag tracks the batch update job only; individual async
+    // SVS_INSERT_VECTOR_JOBs may still be in flight, each transiently holding its vector in
+    // both the flat and backend indices. Drain the queue so the total size is stable before
+    // asserting the exact count.
+    mock_thread_pool.thread_pool_join();
 
     ASSERT_GT(tiered_index->GetBackendIndex()->indexSize(), training_th + second_batch / update_th);
     ASSERT_LT(tiered_index->GetFlatIndex()->indexSize(), update_th);
@@ -1569,6 +2313,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, insertJobAsync) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i / (TEST_DATA_T)n);
     }
 
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
     ASSERT_EQ(tiered_index->indexSize(), n);
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
@@ -1621,6 +2366,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, insertJobAsyncMulti) {
         }
     }
 
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
     EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
     EXPECT_EQ(tiered_index->indexLabelCount(), n / per_label);
@@ -1956,6 +2702,10 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     // Remove from main index.
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 1);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
+
     ASSERT_EQ(tiered_index->indexSize(), 0);
 
     // Re-insert a deleted label with a different vector.
@@ -1965,8 +2715,9 @@ TYPED_TEST(SVSTieredIndexTest, deleteVector) {
     ASSERT_EQ(tiered_index->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
 
-    // Move the vector to SVS by executing the insert job.
-    mock_thread_pool.thread_iteration();
+    // Move the vector to SVS by executing the pending jobs.
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     // Scalar quantization accuracy is insufficient for this check.
@@ -2007,7 +2758,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
 
     // Move vectors to the backend
-    mock_thread_pool.thread_iteration();
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexSize(), n);
@@ -2049,7 +2801,10 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
         VecSimIndex_DeleteVector(tiered_index, i);
     }
 
-    // Consolidate should be triggered and mark deleted count should be zeroed.
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
+
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 0);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
@@ -2087,10 +2842,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->indexSize(), 2);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
+
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
-    mock_thread_pool.thread_iteration();
-    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in the flat index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
@@ -2101,13 +2858,20 @@ TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     ASSERT_EQ(tiered_index->indexSize(), 2);
     ASSERT_EQ(tiered_index->deleteVector(vec_label), 2);
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
     mock_thread_pool.thread_iteration();
     ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
 
     // Test deleting a label for which both of its vector's is in SVS index.
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, vec_label);
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, vec_label, other_vec_val);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
     mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
@@ -2323,6 +3087,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertSearch) {
         tiered_index->submitSingleJob(search_job);
     }
 
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
 
     // Verify that vectors were moved to SVS as expected
@@ -2427,8 +3192,9 @@ TYPED_TEST(SVSTieredIndexTest, testSizeEstimation) {
     }
     mock_thread_pool.thread_pool_wait();
 
-    // Estimate memory delta for filling up the first block and adding another block.
-    size_t estimation = VecSimIndex_EstimateElementSize(&params) * bs;
+    const size_t reverse_edges_per_slot = SVSGraphBuilder<uint32_t>::reverse_edges_element_size();
+    size_t estimation = (VecSimIndex_EstimateElementSize(&params) - reverse_edges_per_slot) * bs +
+                        EstimateReverseEdgesSize(n + 1) - EstimateReverseEdgesSize(n);
 
     size_t before = index->getAllocationSize();
     GenerateAndAddVector<TEST_DATA_T>(index, dim, bs + n, bs + n);
@@ -2501,7 +3267,7 @@ TYPED_TEST(SVSTieredIndexTest, parallelInsertAdHoc) {
         tiered_index->submitSingleJob(search_job);
     }
 
-    tiered_index->scheduleSVSIndexUpdate();
+    tiered_index->scheduleSVSIndexInit();
     mock_thread_pool.thread_pool_join();
 
     EXPECT_EQ(successful_searches, n);
@@ -3518,12 +4284,14 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorBasic) {
     ASSERT_EQ(tiered_index->addVector(overwritten_vec, 0), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
     // Overriding vector in tiered index should remove the vector from SVS to avoid duplicates.
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), 0);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, overwritten_vec), 0);
 
     // Ingest the updated vector to SVS.
-    mock_thread_pool.thread_iteration();
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 1);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->indexLabelCount(), 1);
@@ -3573,6 +4341,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, overwriteVectorAsync) {
             EXPECT_EQ(tiered_index->addVector(vector, label_to_overwrite), 0);
         }
 
+        mock_thread_pool.thread_pool_wait();
         mock_thread_pool.thread_pool_join();
 
         EXPECT_LE(tiered_index->GetFlatIndex()->indexSize(), updateThreshold);
@@ -3706,6 +4475,10 @@ TYPED_TEST(SVSTieredIndexTest, testInfo) {
     }
 
     VecSimIndex_DeleteVector(tiered_index, 1);
+    VecSimTieredIndex_GC(tiered_index);
+    while (mock_thread_pool.jobQ.size() > 0)
+        mock_thread_pool.thread_iteration();
+
     info = tiered_index->debugInfo();
 
     EXPECT_EQ(info.commonInfo.indexSize, 0);
@@ -3802,8 +4575,10 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), 2);
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 
-    // Overwrite inplace - only in single-value mode
+    // In write-in-place mode every mutation runs synchronously, including consolidation
+    // of soft-deleted slots.
     size_t expected_marked_deleted = 0;
+    // Overwrite inplace - only in single-value mode
     if (!TypeParam::isMulti()) {
         TEST_DATA_T overwritten_vec[] = {1, 1, 1, 1};
         tiered_index->addVector(overwritten_vec, vec_label);
@@ -3815,7 +4590,8 @@ TYPED_TEST(SVSTieredIndexTest, writeInPlaceMode) {
         ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(vec_label, overwritten_vec), 0);
         ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), expected_marked_deleted);
     }
-    // Validate that the vector is marked as deleted.
+    // Validate that the vector is deleted and consolidated synchronously (in-place mode),
+    // so no marked-deleted entry remains.
     tiered_index->deleteVector(vec_label);
     expected_marked_deleted++;
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), TypeParam::isMulti() ? 2 : 3);
@@ -3867,6 +4643,7 @@ TYPED_TEST(SVSTieredIndexTest, switchWriteModes) {
         }
         VecSimIndex_AddVector(tiered_index, vector, i % n_labels + n_labels);
     }
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
     EXPECT_GE(tiered_index->GetBackendIndex()->indexSize(), 2 * n - this->getUpdateThreshold());
 
@@ -3965,6 +4742,531 @@ TYPED_TEST(SVSTieredIndexTestBasic, preferAdHocOptimization) {
     ASSERT_NO_THROW(tiered_index->preferAdHocSearch(10, 5, false));
 }
 
+TYPED_TEST(SVSTieredIndexTest, runGCBetweenIteratorBatches) {
+    if (this->isFallbackToSQ()) {
+        GTEST_SKIP() << "Scalar fallback does not preserve the ordering checked by this test.";
+    }
+    constexpr size_t dim = 4;
+    constexpr size_t n_labels = 6;
+    for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = TypeParam::isMulti()};
+        VecSimParams svs_params = CreateParams(params);
+        auto mock_thread_pool = tieredIndexMock(1);
+        auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_INDEX(tiered_index);
+        auto *backend = tiered_index->GetBackendIndex();
+        for (size_t i = 0; i < n_labels; ++i) {
+            GenerateAndAddVector<TEST_DATA_T>(backend, dim, i + 1000, i + 1);
+        }
+
+        TEST_DATA_T query[dim] = {};
+        VecSimQueryParams query_params{};
+        query_params.batchSize = 3;
+        auto *iterator = VecSimBatchIterator_New(tiered_index, query, &query_params);
+        auto verify_first = [](size_t id, double score, size_t i) {
+            EXPECT_EQ(id, i + 1000);
+            if constexpr (TypeParam::get_quant_bits() == VecSimSvsQuant_NONE) {
+                EXPECT_DOUBLE_EQ(score, dim * double(i + 1) * double(i + 1));
+            }
+        };
+        runBatchIteratorSearchTest(iterator, 3, verify_first);
+        for (size_t i = 0; i < 3; ++i) {
+            backend->deleteVector(i + 1000);
+        }
+
+        VecSim_SetWriteMode(mode);
+        std::promise<void> gc_finished;
+        auto completion = gc_finished.get_future();
+        std::thread gc([&]() {
+            VecSimTieredIndex_GC(tiered_index);
+            if (mode == VecSim_WriteAsync) {
+                mock_thread_pool.thread_iteration();
+            }
+            gc_finished.set_value();
+        });
+        const bool completed =
+            completion.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+        // If the old lifetime lock is still present, release it on its owning thread
+        // so GC can finish and the regression fails without hanging the suite.
+        if (!completed) {
+            VecSimBatchIterator_Free(iterator);
+            iterator = nullptr;
+        }
+        gc.join();
+        VecSim_SetWriteMode(VecSim_WriteAsync);
+        ASSERT_TRUE(completed) << "GC waited for an idle iterator to be freed";
+        EXPECT_EQ(backend->indexSize(), 3);
+        EXPECT_TRUE(VecSimBatchIterator_HasNext(iterator));
+        auto verify_remaining = [](size_t id, double score, size_t i) {
+            EXPECT_EQ(id, i + 1003);
+            if constexpr (TypeParam::get_quant_bits() == VecSimSvsQuant_NONE) {
+                EXPECT_DOUBLE_EQ(score, dim * double(i + 4) * double(i + 4));
+            }
+        };
+        runBatchIteratorSearchTest(iterator, 3, verify_remaining);
+        EXPECT_FALSE(VecSimBatchIterator_HasNext(iterator));
+        VecSimBatchIterator_Free(iterator);
+    }
+}
+
+namespace {
+
+constexpr size_t svs_gc_test_dim = 4;
+constexpr size_t svs_gc_label_base = 1'000'000;
+constexpr size_t svs_gc_label_stride = 17;
+using SVSReferenceVectors = std::vector<std::vector<std::vector<float>>>;
+using SVSTestReply = std::unique_ptr<VecSimQueryReply, decltype(&VecSimQueryReply_Free)>;
+
+size_t svsGCLabel(size_t i) { return svs_gc_label_base + svs_gc_label_stride * i; }
+
+SVSReferenceVectors makeSVSReferenceVectors(size_t n, bool multi, bool distinct = false) {
+    SVSReferenceVectors reference(n);
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t copy = 0; copy < (multi ? 2U : 1U); ++copy) {
+            std::vector<float> vector(svs_gc_test_dim);
+            for (size_t d = 0; d < vector.size(); ++d) {
+                vector[d] = float(i + 1) + float(d) / 4 + (distinct ? float(copy) / 8 : 0);
+            }
+            reference[i].push_back(std::move(vector));
+        }
+    }
+    return reference;
+}
+
+void addSVSReferenceVectors(VecSimIndex *index, const SVSReferenceVectors &reference, size_t begin,
+                            size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+        for (const auto &vector : reference[i]) {
+            VecSimIndex_AddVector(index, vector.data(), svsGCLabel(i));
+        }
+    }
+}
+
+double svsReferenceDistance(const std::vector<float> &vector, const std::vector<float> &query) {
+    double distance = 0;
+    for (size_t d = 0; d < vector.size(); ++d) {
+        const double delta = double(vector[d]) - double(query[d]);
+        distance += delta * delta;
+    }
+    return distance;
+}
+
+// All references are immutable. Concurrently deleted labels need only remain valid external
+// labels; scores are checked for permanent survivors, whose vectors never change.
+std::string checkSVSReply(const VecSimQueryReply &reply, const SVSReferenceVectors &reference,
+                          const std::vector<float> &query, size_t survivors_begin,
+                          size_t &checked_survivors) {
+    if (reply.code != VecSim_QueryReply_OK) {
+        return "Query did not complete successfully";
+    }
+    std::unordered_set<size_t> labels;
+    for (const auto &result : reply.results) {
+        if (result.id < svs_gc_label_base ||
+            (result.id - svs_gc_label_base) % svs_gc_label_stride != 0 ||
+            (result.id - svs_gc_label_base) / svs_gc_label_stride >= reference.size()) {
+            return "Unknown external label: " + std::to_string(result.id);
+        }
+        if (!std::isfinite(result.score) || !labels.insert(result.id).second) {
+            return "Non-finite score or duplicate label: " + std::to_string(result.id);
+        }
+        const size_t i = (result.id - svs_gc_label_base) / svs_gc_label_stride;
+        if (i >= survivors_begin) {
+            const double expected = svsReferenceDistance(reference[i][0], query);
+            if (std::abs(result.score - expected) > 1e-5 * std::max(1.0, expected)) {
+                return "Wrong score for label " + std::to_string(result.id) + ": got " +
+                       std::to_string(result.score) + ", expected " + std::to_string(expected);
+            }
+            ++checked_survivors;
+        }
+    }
+    return {};
+}
+
+std::string checkSVSCopies(TieredSVSIndex<float> *index, const SVSReferenceVectors &reference,
+                           size_t begin, size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+        std::vector<std::vector<float>> copied;
+        index->getDataByLabel(svsGCLabel(i), copied);
+        std::sort(copied.begin(), copied.end());
+        // Reference copies are generated in sorted order. Equality also checks multiplicity.
+        if (copied != reference[i]) {
+            return "Wrong vectors copied for label " + std::to_string(svsGCLabel(i));
+        }
+    }
+    return {};
+}
+
+class SVSTestWriteMode {
+    VecSimWriteMode previous = TieredSVSIndex<float>::getWriteMode();
+
+public:
+    explicit SVSTestWriteMode(VecSimWriteMode mode) { VecSim_SetWriteMode(mode); }
+    ~SVSTestWriteMode() { VecSim_SetWriteMode(previous); }
+};
+
+// Reader checks run outside the synchronization mutex. Failures are reported after joining,
+// and each mutation round waits for every reader to make progress without using sleeps.
+class SVSTestReaders {
+    std::vector<std::function<std::string()>> checks;
+    std::vector<std::thread> threads;
+    std::vector<size_t> completed;
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::atomic<bool> stopped{false};
+    bool started = false;
+    std::string failure;
+
+public:
+    explicit SVSTestReaders(std::vector<std::function<std::string()>> checks)
+        : checks(std::move(checks)), completed(this->checks.size(), 0) {}
+
+    void start() {
+        for (size_t i = 0; i < checks.size(); ++i) {
+            threads.emplace_back([this, i] {
+                {
+                    std::unique_lock lock(mutex);
+                    changed.wait(lock, [&] { return started || stopped.load(); });
+                }
+                while (!stopped.load()) {
+                    auto error = checks[i]();
+                    {
+                        std::lock_guard lock(mutex);
+                        ++completed[i];
+                        if (!error.empty()) {
+                            if (failure.empty()) {
+                                failure = "Reader " + std::to_string(i) + ": " + error;
+                            }
+                            stopped.store(true);
+                        }
+                    }
+                    changed.notify_all();
+                }
+            });
+        }
+        {
+            std::lock_guard lock(mutex);
+            started = true;
+        }
+        changed.notify_all();
+    }
+
+    bool waitForProgress() {
+        std::unique_lock lock(mutex);
+        const auto before = completed;
+        const bool progressed = changed.wait_for(lock, std::chrono::seconds(5), [&] {
+            if (!failure.empty()) {
+                return true;
+            }
+            for (size_t i = 0; i < completed.size(); ++i) {
+                if (completed[i] == before[i]) {
+                    return false;
+                }
+            }
+            return true;
+        });
+        if (!progressed && failure.empty()) {
+            failure = "Timed out waiting for reader progress";
+            stopped.store(true);
+        }
+        return progressed && failure.empty();
+    }
+
+    void finish() {
+        {
+            std::lock_guard lock(mutex);
+            stopped.store(true);
+        }
+        changed.notify_all();
+        for (auto &thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+    }
+
+    const std::string &error() const { return failure; } // Read only after finish().
+    ~SVSTestReaders() { finish(); }
+};
+
+} // namespace
+
+TYPED_TEST(SVSTieredIndexTestBasic, runGCBetweenIteratorBatchesWithStorageShrink) {
+    constexpr size_t n_labels = 96;
+    constexpr size_t batch_size = 16;
+    const auto reference = makeSVSReferenceVectors(n_labels, false);
+    const std::vector<float> query(svs_gc_test_dim, 0);
+    for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+        for (bool delete_returned : {true, false}) {
+            SCOPED_TRACE(::testing::Message()
+                         << "mode=" << mode << ", delete_returned=" << delete_returned);
+            SVSParams params = {.type = TypeParam::get_index_type(),
+                                .dim = svs_gc_test_dim,
+                                .metric = VecSimMetric_L2,
+                                .blockSize = 8,
+                                .search_window_size = n_labels,
+                                .search_buffer_capacity = n_labels};
+            auto svs_params = CreateParams(params);
+            tieredIndexMock mock_thread_pool(1);
+            auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+            ASSERT_INDEX(index);
+            // Index creation resizes the thread pool, which switches write mode to async.
+            SVSTestWriteMode write_mode(mode);
+            auto *backend = index->GetBackendIndex();
+            addSVSReferenceVectors(backend, reference, 0, n_labels);
+            ASSERT_EQ(index->GetFlatIndex()->indexSize(), 0);
+
+            VecSimQueryParams query_params{};
+            // Consume the entire native batch, leaving no prefetched external labels.
+            query_params.batchSize = batch_size;
+            std::unique_ptr<VecSimBatchIterator, decltype(&VecSimBatchIterator_Free)> iterator(
+                VecSimBatchIterator_New(index, query.data(), &query_params),
+                VecSimBatchIterator_Free);
+            std::unordered_set<size_t> seen, deleted;
+            auto read_batch = [&] {
+                SVSTestReply reply(VecSimBatchIterator_Next(iterator.get(), batch_size, BY_SCORE),
+                                   VecSimQueryReply_Free);
+                size_t checked = 0;
+                EXPECT_EQ(checkSVSReply(*reply, reference, query, 0, checked), "");
+                for (const auto &result : reply->results) {
+                    EXPECT_EQ(deleted.count(result.id), 0) << result.id;
+                    EXPECT_TRUE(seen.insert(result.id).second) << result.id;
+                }
+                return reply->results.size();
+            };
+            ASSERT_EQ(read_batch(), batch_size);
+            for (size_t round = 0; round < 2; ++round) {
+                const size_t begin = (delete_returned ? round : 2 * round + 1) * batch_size;
+                for (size_t i = begin; i < begin + batch_size; ++i) {
+                    ASSERT_EQ(seen.count(svsGCLabel(i)), delete_returned ? 1 : 0);
+                    // As in runGCBetweenIteratorBatches, defer consolidation to GC so the
+                    // timeout below can unwind an old iterator holding a lifetime lock.
+                    ASSERT_EQ(backend->deleteVector(svsGCLabel(i)), 1);
+                    deleted.insert(svsGCLabel(i));
+                }
+                const auto capacity_before = backend->indexCapacity();
+                std::promise<void> gc_finished;
+                auto completion = gc_finished.get_future();
+                std::thread gc([&] {
+                    VecSimTieredIndex_GC(index);
+                    if (mode == VecSim_WriteAsync) {
+                        mock_thread_pool.thread_iteration();
+                    }
+                    gc_finished.set_value();
+                });
+                const bool completed =
+                    completion.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+                if (!completed) {
+                    iterator.reset();
+                }
+                gc.join();
+                ASSERT_TRUE(completed) << "GC waited for an idle iterator to be freed";
+                EXPECT_EQ(index->GetSVSIndex()->indexStorageSize(),
+                          n_labels - (round + 1) * batch_size);
+                EXPECT_LT(backend->indexCapacity(), capacity_before);
+                ASSERT_EQ(read_batch(), batch_size);
+            }
+
+            auto drain_iterator = [&] {
+                // Bound the loop so failure to reach exhaustion cannot hang the test.
+                for (size_t batch = 0;
+                     batch <= n_labels / batch_size && VecSimBatchIterator_HasNext(iterator.get());
+                     ++batch) {
+                    const auto count = read_batch();
+                    EXPECT_TRUE(count > 0 || !VecSimBatchIterator_HasNext(iterator.get()));
+                }
+                EXPECT_FALSE(VecSimBatchIterator_HasNext(iterator.get()));
+            };
+            drain_iterator();
+            for (size_t i = 0; i < n_labels; ++i) {
+                EXPECT_EQ(seen.count(svsGCLabel(i)),
+                          delete_returned || !deleted.count(svsGCLabel(i)) ? 1 : 0);
+            }
+
+            VecSimBatchIterator_Reset(iterator.get());
+            seen.clear();
+            drain_iterator();
+            EXPECT_EQ(seen.size(), n_labels - deleted.size());
+            for (size_t i = 0; i < n_labels; ++i) {
+                EXPECT_EQ(seen.count(svsGCLabel(i)), deleted.count(svsGCLabel(i)) ? 0 : 1);
+            }
+        }
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, parallelQueriesDuringGC) {
+    constexpr size_t n_labels = 256;
+    constexpr size_t rounds = 3;
+    constexpr size_t delete_per_round = 64;
+    constexpr size_t survivors_begin = rounds * delete_per_round;
+    SVSTestWriteMode write_mode(VecSim_WriteAsync);
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        const auto reference = makeSVSReferenceVectors(n_labels, multi);
+        const auto &query = reference.back()[0];
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = svs_gc_test_dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi,
+                            .blockSize = 16,
+                            .search_window_size = n_labels};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+        addSVSReferenceVectors(index->GetBackendIndex(), reference, 0, n_labels);
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), 0);
+
+        std::array<size_t, 2> checked_survivors{};
+        auto query_once = [&](bool range) -> std::string {
+            SVSTestReply reply(
+                range ? VecSimIndex_RangeQuery(index, query.data(), 4096, nullptr, BY_SCORE)
+                      : VecSimIndex_TopKQuery(index, query.data(), 10, nullptr, BY_SCORE),
+                VecSimQueryReply_Free);
+            if (reply->results.empty()) {
+                return "Empty reply for a query near permanent survivors";
+            }
+            return checkSVSReply(*reply, reference, query, survivors_begin,
+                                 checked_survivors[range ? 1 : 0]);
+        };
+        SVSTestReaders readers(
+            {[&] { return query_once(false); }, [&] { return query_once(true); }});
+        bool gc_reader_progress = false;
+        index->registerTracingCallback("GCJob::before_run_gc",
+                                       [&] { gc_reader_progress = readers.waitForProgress(); });
+        readers.start();
+        bool progress = readers.waitForProgress();
+        for (size_t round = 0; round < rounds && progress; ++round) {
+            const auto storage_before = index->GetSVSIndex()->indexStorageSize();
+            const auto capacity_before = index->GetBackendIndex()->indexCapacity();
+            for (size_t i = round * delete_per_round; i < (round + 1) * delete_per_round; ++i) {
+                EXPECT_EQ(index->deleteVector(svsGCLabel(i)), multi ? 2 : 1);
+            }
+            gc_reader_progress = false;
+            VecSimTieredIndex_GC(index);
+            // Also drain the consolidation jobs queued by deleteVector.
+            mock_thread_pool.init_threads();
+            mock_thread_pool.thread_pool_join();
+            progress = gc_reader_progress;
+            EXPECT_LT(index->GetSVSIndex()->indexStorageSize(), storage_before);
+            EXPECT_LT(index->GetBackendIndex()->indexCapacity(), capacity_before);
+        }
+        readers.finish();
+        ASSERT_TRUE(progress) << readers.error();
+        ASSERT_EQ(readers.error(), "");
+        EXPECT_GT(checked_survivors[0], 0);
+        EXPECT_GT(checked_survivors[1], 0);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n_labels - survivors_begin);
+        EXPECT_EQ(index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelDuringGC) {
+    constexpr size_t n_labels = 256;
+    constexpr size_t rounds = 3;
+    constexpr size_t delete_per_round = 64;
+    constexpr size_t monitored_begin = n_labels - 8;
+    SVSTestWriteMode write_mode(VecSim_WriteAsync);
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        const auto reference = makeSVSReferenceVectors(n_labels, multi, true);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = svs_gc_test_dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi,
+                            .blockSize = 16};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto *index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+        addSVSReferenceVectors(index->GetBackendIndex(), reference, 0, n_labels);
+        ASSERT_EQ(index->GetFlatIndex()->indexSize(), 0);
+
+        SVSTestReaders readers(
+            {[&] { return checkSVSCopies(index, reference, monitored_begin, n_labels); }});
+        bool gc_reader_progress = false;
+        index->registerTracingCallback("GCJob::before_run_gc",
+                                       [&] { gc_reader_progress = readers.waitForProgress(); });
+        readers.start();
+        bool progress = readers.waitForProgress();
+        for (size_t round = 0; round < rounds && progress; ++round) {
+            const auto capacity_before = index->GetBackendIndex()->indexCapacity();
+            for (size_t i = round * delete_per_round; i < (round + 1) * delete_per_round; ++i) {
+                EXPECT_EQ(index->deleteVector(svsGCLabel(i)), multi ? 2 : 1);
+            }
+            gc_reader_progress = false;
+            VecSimTieredIndex_GC(index);
+            mock_thread_pool.init_threads();
+            mock_thread_pool.thread_pool_join();
+            progress = gc_reader_progress;
+            EXPECT_EQ(index->GetSVSIndex()->indexStorageSize(),
+                      (n_labels - (round + 1) * delete_per_round) * (multi ? 2 : 1));
+            EXPECT_LT(index->GetBackendIndex()->indexCapacity(), capacity_before);
+        }
+        readers.finish();
+        ASSERT_TRUE(progress) << readers.error();
+        ASSERT_EQ(readers.error(), "");
+        EXPECT_EQ(checkSVSCopies(index, reference, monitored_begin, n_labels), "");
+        EXPECT_EQ(index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, getDataByLabelDuringIngestion) {
+    constexpr size_t initial_labels = 64;
+    constexpr size_t rounds = 4;
+    constexpr size_t labels_per_round = 64;
+    constexpr size_t n_labels = initial_labels + rounds * labels_per_round;
+    SVSTestWriteMode write_mode(VecSim_WriteAsync);
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        const auto reference = makeSVSReferenceVectors(n_labels, multi, true);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = svs_gc_test_dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi,
+                            .blockSize = 16};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool);
+        // Keep each batch on the worker ingestion path instead of bypassing a full buffer.
+        tiered_params.flatBufferLimit = 2 * labels_per_round;
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+        addSVSReferenceVectors(index->GetBackendIndex(), reference, 0, initial_labels);
+        ASSERT_TRUE(index->GetSVSIndex()->ready());
+
+        SVSTestReaders readers(
+            {[&] { return checkSVSCopies(index, reference, initial_labels - 8, initial_labels); }});
+        readers.start();
+        bool progress = readers.waitForProgress();
+        for (size_t round = 0; round < rounds && progress; ++round) {
+            const size_t begin = initial_labels + round * labels_per_round;
+            const auto capacity_before = index->GetBackendIndex()->indexCapacity();
+            addSVSReferenceVectors(index, reference, begin, begin + labels_per_round);
+            EXPECT_EQ(index->GetFlatIndex()->indexSize(), labels_per_round * (multi ? 2 : 1));
+            EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), begin);
+            mock_thread_pool.init_threads();
+            progress = readers.waitForProgress();
+            mock_thread_pool.thread_pool_join();
+            EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+            EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), begin + labels_per_round);
+            EXPECT_EQ(index->GetSVSIndex()->indexStorageSize(),
+                      (begin + labels_per_round) * (multi ? 2 : 1));
+            EXPECT_GT(index->GetBackendIndex()->indexCapacity(), capacity_before);
+            EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        }
+        readers.finish();
+        ASSERT_TRUE(progress) << readers.error();
+        ASSERT_EQ(readers.error(), "");
+        EXPECT_EQ(checkSVSCopies(index, reference, initial_labels - 8, initial_labels), "");
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n_labels);
+    }
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
@@ -4013,11 +5315,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, runGCAPI) {
     auto jobs_before_gc = mock_thread_pool.jobQ.size();
     // Run the GC API call, expect that we will clean up the SVS index.
     VecSimTieredIndex_GC(tiered_index);
-    // Expected that GC jobs were added to the queue.
+    // Expected that a multi-thread GC job was added to the queue.
     ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
     // Run GC twice.
     VecSimTieredIndex_GC(tiered_index);
-    // Expected that no new GC jobs were added to the queue.
+    // Expected that no new GC jobs were added to the queue (indexGCScheduled is still set until the
+    // pending jobs run).
     ASSERT_EQ(mock_thread_pool.jobQ.size(), jobs_before_gc + mock_thread_pool.thread_pool_size);
     // Wait for any pending jobs to complete. As far as SVS GC is done via a job.
     mock_thread_pool.init_threads();
@@ -4297,7 +5600,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalSingle) {
         // update job paused, we have vectors 0-(n-1) in the index, let's do index modifications
 
         // Remove vector label=n-2, it is copied to backend index.
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 2), 2);
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 2), 1);
         // Update vector label=1.
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 10), 0);
         // Add a new vector
@@ -4305,9 +5608,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalSingle) {
         // Add another one
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n + 1, n + 1), 1);
         // Remove vector label=0, it is copied to backend index.
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 2);
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1);
         // Remove the last vector copied to backend index
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 2);
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 1);
         // Update vector label=2.
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 20), 0);
         // Remove vector label=2.
@@ -4329,16 +5632,15 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalSingle) {
     // 0:deleted, 1: 10, 2: deleted, 3:3, ..., n-2:deleted n-1: 10(n-1), n+1: n+1;
     // total: n-2 vectors and labels
     ASSERT_EQ(tiered_index->indexLabelCount(), n - 2);
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 5);
+    // Nothing remains in flat.
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 2);
 
-    // We added 3 vectors to the flat index and removed 5 vectors from the backend index.
-    // Backend index: 0:deleted, 1:deleted, 2:deleted, 3:3, ..., n-2:deleted, n-1:deleted;
-    // total: n-5
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n + 3);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 5);
-    // Frontend index: 1:10, n-1:10(n-1), n+1:n+1
-    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 3);
-    ASSERT_EQ(tiered_index->indexSize(), n + tiered_index->GetFlatIndex()->indexSize());
+    // Flat buffer fully drained by the insert jobs.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), tiered_index->GetBackendIndex()->indexSize() +
+                                             tiered_index->GetFlatIndex()->indexSize());
 
     double abs_err = 1e-2; // Allow a larger relative error for quantization.
     TEST_DATA_T expected_vector[dim];
@@ -4351,7 +5653,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalSingle) {
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 0);
     ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(n - 2, expected_vector)));
 
-    // Vector label=1, with value 10 should be in the flat index.
+    // Vector label=1 was updated to value 10; its latest value is retrievable from the index.
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
     ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
 
@@ -4430,22 +5732,24 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalMulti) {
 
         // update job paused, we have vectors 0-(n-1) in the index, let's do index modifications
 
-        // Remove vector label=n-2, it is copied to backend index.
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 2), 2);
+        // Remove vector label=n-2. At the pause it lives only in the backend
+        //, so a single vector is removed.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 2), 1);
         // Add one more vector label=1.
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 1, 10), 1);
         // Add a new vector
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n, n), 1);
         // Add another one
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n + 1, n + 1), 1);
-        // Remove vector label=0, it is copied to backend index.
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 2);
-        // Remove the last vector copied to backend index
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 2);
+        // Remove vector label=0, only in the backend at the pause.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 0), 1);
+        // Remove the last vector, only in the backend at the pause.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n - 1), 1);
         // Add one more vector label=2.
         EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 2, 20), 1);
-        // Remove vector label=2: for multi: old is copied to backend , old + new are in flat
-        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 2), 3);
+        // Remove vector label=2: for multi both the original (2) and the new (20) copies sit in
+        // the flat buffer at this point, so 2 vectors are removed.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 2), 2);
         // Remove vector label=n - in flat only
         EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, n), 1);
         // Add vector (n-1) again
@@ -4463,15 +5767,16 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalMulti) {
     // 0: deleted, 1: (1,10), 2: deleted, 3:3, ..., n-2: deleted n-1: 10(n-1), n+1: n+1;
     // total: n-2 labels, n-1 vectors
     ASSERT_EQ(tiered_index->indexLabelCount(), n - 2);
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 4);
+    // In the async-insert design the per-vector insert jobs drain every surviving vector from
+    // the flat buffer into the backend, so nothing remains in flat.
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), n - 2);
 
-    // We added 3 vectors to the flat index and removed 4 vectors from the backend index.
-    // Backend index: 0:deleted, 1:1, 2:deleted, 3:3, ..., n-2:deleted, n-1:deleted; total: n-4
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n + 3);
     ASSERT_EQ(tiered_index->getNumMarkedDeleted(), 4);
-    // Frontend index: 1:10, n-1:10(n-1), n+1:n+1
-    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 3);
-    ASSERT_EQ(tiered_index->indexSize(), n + tiered_index->GetFlatIndex()->indexSize());
+    // Flat buffer fully drained by the insert jobs.
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexSize(), tiered_index->GetBackendIndex()->indexSize() +
+                                             tiered_index->GetFlatIndex()->indexSize());
 
     double abs_err = 1e-2; // Allow a larger relative error for quantization.
     TEST_DATA_T expected_vector[dim];
@@ -4484,11 +5789,11 @@ TYPED_TEST(SVSTieredIndexTestBasic, testSwapJournalMulti) {
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 0);
     ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(n - 2, expected_vector)));
 
-    // There are 2 vectors labeled "1" with values 1 in backend and 10 in flat.
-    // We expect the minimal distance for the query 10 to be taken from flat index.
+    // Label "1" is multi-valued and keeps both of its vectors (values 1 and 10).
+    // The minimal distance for the query 10 should match the second value.
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
     ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
-    // And the minimal distance for the query 1.0 to be taken from backend
+    // And the minimal distance for the query 1.0 should match the first value.
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 1);
     ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
 
@@ -4588,8 +5893,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalSingle) {
 
     mock_thread_pool.thread_pool_join();
 
-    // Verify that vectors labels: {0, 1, 2, n-1} are marked as deleted in the SVS index.
-    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 4);
+    // The update job is paused before it transfers vectors to the backend, so at the pause the
+    // backend is still empty.
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
 
     // Verify that the deleted vectors are not accessible.
     double abs_err = 1e-2; // Allow a larger relative error for quantization.
@@ -4606,9 +5912,10 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalSingle) {
         ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(label, expected_vector)));
     }
 
-    // label 1 - updated to 10 but deleted in the SVS index
-    ASSERT_TRUE(flat_index->isLabelExists(1));
-    ASSERT_FALSE(svs_index->isLabelExists(1));
+    // label 1 - updated to 10 during the pause. The insert job drains it from the flat buffer
+    // into the backend, so it now lives in the SVS index (not flat) with its updated value.
+    ASSERT_FALSE(flat_index->isLabelExists(1));
+    ASSERT_TRUE(svs_index->isLabelExists(1));
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
     ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
 }
@@ -4690,8 +5997,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalMulti) {
 
     mock_thread_pool.thread_pool_join();
 
-    // Verify that vectors labels: {0, 2, n-1} are marked as deleted in the SVS index.
-    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 3);
+    // The update job is paused before it transfers vectors to the backend, so at the pause the
+    // backend is still empty.
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
 
     // Verify that the deleted vectors are not accessible.
     double abs_err = 1e-2; // Allow a larger relative error for quantization.
@@ -4708,13 +6016,149 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalMulti) {
         ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(label, expected_vector)));
     }
 
-    // label 1 - multi-value 1 (in SVS) and 10 (in flat)
-    ASSERT_TRUE(flat_index->isLabelExists(1));
+    // label 1 - multi-value with both vectors (1 and 10). The insert jobs drain the flat buffer
+    // into the backend, so both values now live in the SVS index and none remain in flat.
+    ASSERT_FALSE(flat_index->isLabelExists(1));
     ASSERT_TRUE(svs_index->isLabelExists(1));
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 1);
     ASSERT_NEAR(backend_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
     GenerateVector<TEST_DATA_T>(expected_vector, dim, 10);
-    ASSERT_NEAR(flat_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+    ASSERT_NEAR(backend_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
+}
+
+// scheduleSVSIndexConsolidate() always registers the label, so a job with an unregistered one
+// can only be built by hand. The callback is taken from a real job because the wrapper is
+// private.
+TYPED_TEST(SVSTieredIndexTestBasic, forgetConsolidateJobIgnoresAnUnregisteredLabel) {
+    const size_t dim = 4;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 1, 1);
+    ASSERT_INDEX(tiered_index);
+    auto allocator = tiered_index->getAllocator();
+
+    mock_thread_pool.init_threads();
+    for (size_t i = 0; i < 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.thread_pool_wait();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, 1), 1);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    auto *registered_job = mock_thread_pool.jobQ.front().job;
+    ASSERT_EQ(registered_job->jobType, SVS_CONSOLIDATE_JOB);
+
+    auto *orphan_job =
+        new (allocator) SVSConsolidateJob(allocator, {999}, registered_job->Execute, tiered_index);
+    tiered_index->submitSingleJob(orphan_job);
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 2);
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(0));
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(1));
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+}
+
+// Every add made while the backend is not ready becomes training data, so the init normally
+// deletes the whole buffer and never swaps. Adding straight to the frontend leaves a vector the
+// batch does not own, which the init has to swap down and keep.
+TYPED_TEST(SVSTieredIndexTestBasic, initSVSIndexKeepsANonTrainingFlatVector) {
+    const size_t dim = 4;
+    const size_t n = 5;
+    const labelType kept_label = 99;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 100, 100);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->ready());
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index->GetFlatIndex(), dim, kept_label, kept_label);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n + 1);
+
+    tiered_index->scheduleSVSIndexInit();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 1);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->getVectorLabel(0), kept_label);
+    TEST_DATA_T expected_vector[dim];
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, kept_label);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(kept_label, expected_vector), 0);
+    for (size_t i = 0; i < n; i++) {
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(i));
+    }
+    ASSERT_EQ(tiered_index->indexLabelCount(), n + 1);
+}
+
+// ids_to_init_ is only non-empty while the backend is not ready, and insert jobs only exist once
+// it is, so the swap bookkeeping of the two together is out of reach of addVector. The hand-made
+// job below builds that state. Do not trigger an init after it: initSVSIndex asserts on a ready
+// backend.
+TYPED_TEST(SVSTieredIndexTestBasic, insertJobFollowsTrainingIdsThroughAFlatSwap) {
+    const size_t dim = 4;
+    const size_t n = 5;
+    const labelType ingested_label = 2;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 100, 100);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 0);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->ready());
+
+    // Label i sits at flat id i, so the last id gets swapped onto the ingested one.
+    tiered_index->submitSingleJob(tiered_index->createInsertJob(ingested_label, ingested_label));
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), 1);
+    mock_thread_pool.thread_iteration();
+
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n - 1);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(ingested_label));
+    ASSERT_TRUE(tiered_index->labelToInsertJobs.empty());
+
+    TEST_DATA_T expected_vector[dim];
+    for (size_t i : {size_t{0}, size_t{1}, size_t{3}, size_t{4}}) {
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
+        ASSERT_EQ(tiered_index->GetFlatIndex()->getDistanceFrom_Unsafe(i, expected_vector), 0)
+            << "label " << i;
+    }
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+}
+
+// deleteVector() drops its shared lock before taking the exclusive one, so the label can be gone
+// by the time removeLabelFromFlat() runs.
+TYPED_TEST(SVSTieredIndexTestBasic, removeLabelFromFlatIgnoresAnAbsentLabel) {
+    const size_t dim = 4;
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, 100, 100);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < 2; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    ASSERT_EQ(tiered_index->removeLabelFromFlat(999), 0);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 2);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 2);
 }
 
 TEST(SVSTieredIndexTest, testThreadPool) {

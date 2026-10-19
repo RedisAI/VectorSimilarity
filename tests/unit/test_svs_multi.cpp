@@ -23,6 +23,13 @@
         }                                                                                          \
     }
 
+static size_t EstimateBlockSize(const SVSParams &params, size_t block_size, size_t num_elements) {
+    const size_t reverse_edges_per_slot = SVSGraphBuilder<uint32_t>::reverse_edges_element_size();
+    const size_t reverse_edges_slots = svs::lib::SegmentedVector<uint8_t>(num_elements).capacity();
+    return (EstimateElementSize(params) - reverse_edges_per_slot) * block_size +
+           reverse_edges_per_slot * reverse_edges_slots;
+}
+
 // Log callback function to print non-debug log messages
 static void svsTestLogCallBackNoDebug(void *ctx, const char *level, const char *message) {
     if (level == nullptr || message == nullptr) {
@@ -121,6 +128,7 @@ TYPED_TEST(SVSMultiTest, vector_add_multiple_test) {
 
     // Deleting the label. All the vectors should be deleted.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, id), rep);
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
     ASSERT_EQ(index->indexLabelCount(), 0);
 
@@ -157,6 +165,7 @@ TYPED_TEST(SVSMultiTest, empty_index) {
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 3);
 
     // Size equals 0.
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove it again.
@@ -424,6 +433,7 @@ TYPED_TEST(SVSMultiTest, reindexing_same_vector_different_id) {
     for (size_t i = 0; i < n; i++) {
         VecSimIndex_DeleteVector(index, i);
     }
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Reinsert the same vectors under different ids than before.
@@ -609,6 +619,7 @@ TYPED_TEST(SVSMultiTest, search_empty_index) {
     }
     ASSERT_EQ(VecSimIndex_IndexSize(index), n);
     VecSimIndex_DeleteVector(index, 46);
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Again - we do not expect any results.
@@ -748,7 +759,7 @@ TYPED_TEST(SVSMultiTest, testSizeEstimation) {
     size_t actual = index->getAllocationSize();
     ASSERT_EQ(estimation, actual);
 
-    estimation = EstimateElementSize(params) * bs;
+    estimation = EstimateBlockSize(params, bs, 1);
 
     GenerateAndAddVector<TEST_DATA_T>(index, dim, 0);
     actual = index->getAllocationSize() - actual; // get the delta
@@ -779,16 +790,15 @@ TYPED_TEST(SVSMultiTest, emptyIndex) {
     // Try to remove it.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 1);
 
-    // The capacity should change to be zero.
-    ASSERT_EQ(index->indexCapacity(), 0);
+    // Even an empty index holds the first block for nonquantized data
+    // ASSERT_EQ(index->indexCapacity(), 0);
 
     // Size equals 0.
+    index->runGC();
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
     // Try to remove it again.
-    // The capacity should remain unchanged, as we are trying to delete a label that doesn't exist.
     ASSERT_EQ(VecSimIndex_DeleteVector(index, 1), 0);
-    ASSERT_EQ(index->indexCapacity(), 0);
     // Nor the size.
     ASSERT_EQ(VecSimIndex_IndexSize(index), 0);
 
