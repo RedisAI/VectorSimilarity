@@ -1404,8 +1404,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, mainLockLimitWaitsForInitialization) {
         std::atomic<bool> wait_seen{false};
         index->registerTracingCallback("UpdateJob::before_publish", [&] {
             before_publish.set_value();
-            pause_timed_out.store(
-                resume_ready.wait_for(std::chrono::seconds(60)) != std::future_status::ready);
+            pause_timed_out.store(resume_ready.wait_for(std::chrono::seconds(60)) !=
+                                  std::future_status::ready);
         });
         index->registerTracingCallback("AddVector::before_init_wait", [&] {
             if (!wait_seen.exchange(true)) {
@@ -1439,14 +1439,13 @@ TYPED_TEST(SVSTieredIndexTestBasic, mainLockLimitWaitsForInitialization) {
         bool still_waiting_after_delete = false;
         if (filled_during_init) {
             writer = std::async(std::launch::async, [&] {
-                return GenerateAndAddVector<TEST_DATA_T>(
-                    index, dim, main_lock_limit, main_lock_limit);
+                return GenerateAndAddVector<TEST_DATA_T>(index, dim, main_lock_limit,
+                                                         main_lock_limit);
             });
             reached_wait =
                 wait_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
-            blocked_at_limit = reached_wait &&
-                               writer.wait_for(std::chrono::milliseconds(50)) ==
-                                   std::future_status::timeout;
+            blocked_at_limit = reached_wait && writer.wait_for(std::chrono::milliseconds(50)) ==
+                                                   std::future_status::timeout;
             if (blocked_at_limit && !pause_timed_out.load()) {
                 // Acquiring flat shared here also checks that the waiting add released it.
                 index->acquireSharedLocks();
