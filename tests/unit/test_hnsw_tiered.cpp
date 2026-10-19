@@ -5827,6 +5827,30 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceShrinkToZeroRemove
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(2, v2), 0);
 }
 
+// On a single-value index, replacing a label with zero vectors must remove it, like it does on a
+// multi-value one - not read the (null) blob as a vector to overwrite it with. Covers a label
+// still in the flat buffer (async) and one already in HNSW (in-place).
+TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsSingleValueZeroVectorsRemovesLabel) {
+    size_t dim = 4;
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+
+    for (auto mode : {VecSim_WriteAsync, VecSim_WriteInPlace}) {
+        VecSim_SetWriteMode(mode);
+        labelType label = mode == VecSim_WriteAsync ? 1 : 11;
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, label);
+        size_t labels_before = tiered_index->indexLabelCount();
+        ASSERT_EQ(labels_before, 1);
+
+        ASSERT_EQ(tiered_index->updateVectors(label, nullptr, 0), VecSimUpdate_OK);
+
+        ASSERT_EQ(tiered_index->indexLabelCount(), 0);
+    }
+}
+
 // A repair job filed against a multi-value label's id (because some other, unrelated element was
 // deleted and needs that id's edge fixed) can still be sitting in the queue when the label itself
 // is overwritten in place. `updateMultiValueInPlace` must invalidate that stale job before reusing
