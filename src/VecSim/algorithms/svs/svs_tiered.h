@@ -5,6 +5,8 @@
 #include "VecSim/algorithms/svs/svs.h"
 #include "VecSim/index_factories/svs_factory.h"
 
+#include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
@@ -285,7 +287,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         labelToConsolidateJobs;
     mutable std::shared_mutex consolidateJobsGuard;
 
-    static constexpr size_t MIN_MAIN_LOCK_LIMIT = 100000;
+    // trade main-thread latency for bounded growth during active init.
+    // The effective limit is max(this limit, trainingTriggerThreshold).
+    // So this value should be ~ max(trainingTriggerThreshold) ~ 1e5
+    static constexpr size_t INIT_BACKPRESSURE_LIMIT = 100'000;
     size_t flat_buffer_bound;
 
     // flatIndexGuard: init (serialized by updateJobMutex) writes under a shared lock.
@@ -293,8 +298,8 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     bool initInProgress{false};
     std::vector<labelType> initDeletedLabels;
 
-    // Submission list only; labelToInsertJobs/invalidJobs retain ownership of these jobs.
-    // Access under flatIndexGuard exclusively. Submit after releasing updateJobMutex so
+    // Deferred execution list; labelToInsertJobs/invalidJobs retain ownership of these jobs.
+    // Access under flatIndexGuard exclusively. Drain after releasing updateJobMutex so
     // inserts arriving during initialization do not occupy workers waiting for the build.
     vecsim_stl::vector<AsyncJob *> initInsertJobs;
 
@@ -553,6 +558,11 @@ private:
             index->scheduleSVSIndexConsolidate(label);
         }
         // Include invalidated jobs: their callbacks remove them from invalidJobs and delete them.
+        // Catch-up is synchronous: the wrapper returns only after this parallel pass finishes.
+        // With availableThreads == 1, including in-place initialization, the caller runs it.
+        // Init resets per-operation parallelism to 1. Each insert's shared updateJobMutex
+        // excludes multi-threaded GC, so nested single-vector SVS work runs inline without
+        // renting more workers. runParallel supplies only the outer job-level parallelism.
         if (!insert_jobs.empty()) {
             const size_t num_jobs = insert_jobs.size();
             std::atomic<size_t> next_job{0};
@@ -1008,9 +1018,10 @@ public:
             this->flatIndexGuard.unlock_shared();
             this->flatIndexGuard.lock();
             if (initInProgress && this->frontendIndex->indexSize() >=
-                                      std::max(MIN_MAIN_LOCK_LIMIT, trainingTriggerThreshold)) {
+                                      std::max(INIT_BACKPRESSURE_LIMIT, trainingTriggerThreshold)) {
                 // Init owns updateJobMutex exclusively and needs flat access to finish.
                 this->flatIndexGuard.unlock();
+                executeTracingCallback("AddVector::before_init_wait");
                 { std::shared_lock<std::shared_mutex> wait_for_init(updateJobMutex); }
                 // Release the update lock before retrying normal insertion.
                 return addVector(blob, label);
@@ -1050,7 +1061,7 @@ public:
                 ret = std::max(ret - deleted, 0);
             }
 
-            // Initialization submits its buffered jobs after releasing updateJobMutex.
+            // Initialization drains its deferred jobs after releasing updateJobMutex.
             if (!defer_until_initialized) {
                 this->submitSingleJob(new_insert_job);
             }

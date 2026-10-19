@@ -1298,9 +1298,22 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuf
                             .metric = VecSimMetric_L2,
                             .multi = multi};
         auto svs_params = CreateParams(params);
+        std::atomic<size_t> submitted_insert_jobs{0};
         tieredIndexMock mock_thread_pool(1);
         auto tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool, n);
         tiered_params.flatBufferLimit = n;
+        // The mock resolves its queue through index_ctx; use jobQueue to count submissions.
+        tiered_params.jobQueue = &submitted_insert_jobs;
+        tiered_params.submitCb = [](void *counter, void *ctx, AsyncJob **jobs,
+                                    JobCallback *callbacks, size_t count) {
+            for (size_t i = 0; i < count; ++i) {
+                if (jobs[i]->jobType == SVS_INSERT_VECTOR_JOB) {
+                    static_cast<std::atomic<size_t> *>(counter)->fetch_add(
+                        1, std::memory_order_relaxed);
+                }
+            }
+            return tieredIndexMock::submit_callback(nullptr, ctx, jobs, callbacks, count);
+        };
         auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
         ASSERT_INDEX(index);
 
@@ -1352,6 +1365,9 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuf
         EXPECT_EQ(index->GetBackendIndex()->indexSize(), n + 2);
         EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), n + 2);
         EXPECT_TRUE(mock_thread_pool.jobQ.empty());
+        // Both deferred inserts were consumed by init, not queued and later drained by the mock.
+        EXPECT_EQ(submitted_insert_jobs.load(std::memory_order_relaxed), 0);
+        EXPECT_EQ(index->GetSVSIndex()->getParallelism(), 1);
         for (size_t i = 0; i < n + 2; ++i) {
             std::vector<std::vector<TEST_DATA_T>> stored;
             index->getDataByLabel(i, stored);
@@ -1359,6 +1375,119 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorDuringInitializationWithFullFlatBuf
                 std::vector<TEST_DATA_T>(dim, static_cast<TEST_DATA_T>(i))};
             EXPECT_EQ(stored, expected) << "label=" << i;
         }
+    }
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, mainLockLimitWaitsForInitialization) {
+    constexpr size_t dim = 4;
+    constexpr size_t training_rows = 8;
+    constexpr size_t main_lock_limit = 100'000;
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << "multi=" << multi);
+        SVSParams params = {.type = TypeParam::get_index_type(),
+                            .dim = dim,
+                            .metric = VecSimMetric_L2,
+                            .multi = multi};
+        auto svs_params = CreateParams(params);
+        tieredIndexMock mock_thread_pool(1);
+        auto tiered_params =
+            this->CreateTieredSVSParams(svs_params, mock_thread_pool, training_rows);
+        tiered_params.flatBufferLimit = training_rows;
+        auto *index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+        ASSERT_INDEX(index);
+
+        std::promise<void> before_publish, resume_init, before_wait;
+        auto publish_ready = before_publish.get_future();
+        auto resume_ready = resume_init.get_future();
+        auto wait_ready = before_wait.get_future();
+        std::atomic<bool> pause_timed_out{false};
+        std::atomic<bool> wait_seen{false};
+        index->registerTracingCallback("UpdateJob::before_publish", [&] {
+            before_publish.set_value();
+            pause_timed_out.store(
+                resume_ready.wait_for(std::chrono::seconds(60)) != std::future_status::ready);
+        });
+        index->registerTracingCallback("AddVector::before_init_wait", [&] {
+            if (!wait_seen.exchange(true)) {
+                before_wait.set_value();
+            }
+        });
+
+        for (size_t i = 0; i < training_rows; ++i) {
+            EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, i, i), 1);
+        }
+        mock_thread_pool.init_threads();
+        const bool reached_publish =
+            publish_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+
+        size_t added = training_rows;
+        if (reached_publish) {
+            // Exercise the actual policy floor, not a test-only smaller limit.
+            // Each addition below the limit must return while init is held open.
+            for (; added < main_lock_limit; ++added) {
+                EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(index, dim, added, added), 1);
+                if (pause_timed_out.load()) {
+                    break;
+                }
+            }
+        }
+        const bool filled_during_init =
+            reached_publish && added == main_lock_limit && !pause_timed_out.load();
+        std::future<int> writer;
+        bool reached_wait = false;
+        bool blocked_at_limit = false;
+        bool still_waiting_after_delete = false;
+        if (filled_during_init) {
+            writer = std::async(std::launch::async, [&] {
+                return GenerateAndAddVector<TEST_DATA_T>(
+                    index, dim, main_lock_limit, main_lock_limit);
+            });
+            reached_wait =
+                wait_ready.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+            blocked_at_limit = reached_wait &&
+                               writer.wait_for(std::chrono::milliseconds(50)) ==
+                                   std::future_status::timeout;
+            if (blocked_at_limit && !pause_timed_out.load()) {
+                // Acquiring flat shared here also checks that the waiting add released it.
+                index->acquireSharedLocks();
+                EXPECT_EQ(index->GetFlatIndex()->indexSize(), main_lock_limit);
+                index->releaseSharedLocks();
+                EXPECT_FALSE(index->GetSVSIndex()->ready());
+
+                // Keep the snapshot, but invalidate all deferred filler jobs. This avoids
+                // constructing a large graph; the wait must still last until init completes.
+                for (size_t i = training_rows; i < main_lock_limit; ++i) {
+                    EXPECT_EQ(index->deleteVector(i), 1);
+                }
+                still_waiting_after_delete =
+                    writer.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout;
+            }
+        }
+
+        // Release init before any fatal assertion or future destruction.
+        resume_init.set_value();
+        int add_result = -1;
+        if (writer.valid()) {
+            EXPECT_NO_THROW(add_result = writer.get());
+        }
+        mock_thread_pool.thread_pool_wait();
+        mock_thread_pool.thread_pool_join();
+
+        ASSERT_TRUE(reached_publish);
+        ASSERT_TRUE(filled_during_init);
+        ASSERT_TRUE(reached_wait);
+        ASSERT_TRUE(blocked_at_limit);
+        ASSERT_TRUE(still_waiting_after_delete);
+        ASSERT_FALSE(pause_timed_out.load());
+        EXPECT_EQ(add_result, 1);
+        EXPECT_TRUE(index->GetSVSIndex()->ready());
+        EXPECT_EQ(index->GetFlatIndex()->indexSize(), 0);
+        EXPECT_EQ(index->GetBackendIndex()->indexSize(), training_rows + 1);
+        EXPECT_EQ(index->GetBackendIndex()->indexLabelCount(), training_rows + 1);
+        EXPECT_TRUE(index->GetSVSIndex()->isLabelExists(main_lock_limit));
+        EXPECT_TRUE(index->labelToInsertJobs.empty());
+        EXPECT_TRUE(index->invalidJobs.empty());
+        EXPECT_TRUE(mock_thread_pool.jobQ.empty());
     }
 }
 
