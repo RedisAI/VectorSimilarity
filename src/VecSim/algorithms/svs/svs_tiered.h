@@ -1007,14 +1007,11 @@ public:
         } else {
             this->flatIndexGuard.unlock_shared();
             this->flatIndexGuard.lock();
-            if (initInProgress &&
-                this->frontendIndex->indexSize() >=
-                    std::max(MIN_MAIN_LOCK_LIMIT, trainingTriggerThreshold)) {
+            if (initInProgress && this->frontendIndex->indexSize() >=
+                                      std::max(MIN_MAIN_LOCK_LIMIT, trainingTriggerThreshold)) {
                 // Init owns updateJobMutex exclusively and needs flat access to finish.
                 this->flatIndexGuard.unlock();
-                {
-                    std::shared_lock<std::shared_mutex> wait_for_init(updateJobMutex);
-                }
+                { std::shared_lock<std::shared_mutex> wait_for_init(updateJobMutex); }
                 // Release the update lock before retrying normal insertion.
                 return addVector(blob, label);
             }
