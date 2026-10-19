@@ -1168,11 +1168,12 @@ public:
             ids_to_init_.insert(this->frontendIndex->indexSize());
             ret = std::max(this->frontendIndex->addVector(blob, label) - deleted, 0);
             run_init = ids_to_init_.size() >= this->trainingTriggerThreshold;
-            if (run_init && !in_place) {
-                scheduleSVSIndexInit();
-                run_init = false;
-            }
         }
+        if (run_init && !in_place) {
+            scheduleSVSIndexInit();
+            run_init = false;
+        }
+
         if (run_init) {
             initSVSIndexWrapper(this, 1);
         }
