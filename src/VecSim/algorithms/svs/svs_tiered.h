@@ -285,6 +285,7 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
         labelToConsolidateJobs;
     mutable std::shared_mutex consolidateJobsGuard;
 
+    static constexpr size_t MIN_MAIN_LOCK_LIMIT = 100000;
     size_t flat_buffer_bound;
 
     // flatIndexGuard: init (serialized by updateJobMutex) writes under a shared lock.
@@ -553,7 +554,19 @@ private:
         }
         // Include invalidated jobs: their callbacks remove them from invalidJobs and delete them.
         if (!insert_jobs.empty()) {
-            index->submitJobs(insert_jobs);
+            const size_t num_jobs = insert_jobs.size();
+            std::atomic<size_t> next_job{0};
+            index->GetSVSIndex()->runParallel(
+                [&](size_t) {
+                    while (true) {
+                        const size_t i = next_job.fetch_add(1, std::memory_order_relaxed);
+                        if (i >= num_jobs) {
+                            return;
+                        }
+                        executeInsertJobWrapper(insert_jobs[i]);
+                    }
+                },
+                std::min(availableThreads, num_jobs));
         }
     }
 
@@ -994,6 +1007,17 @@ public:
         } else {
             this->flatIndexGuard.unlock_shared();
             this->flatIndexGuard.lock();
+            if (initInProgress &&
+                this->frontendIndex->indexSize() >=
+                    std::max(MIN_MAIN_LOCK_LIMIT, trainingTriggerThreshold)) {
+                // Init owns updateJobMutex exclusively and needs flat access to finish.
+                this->flatIndexGuard.unlock();
+                {
+                    std::shared_lock<std::shared_mutex> wait_for_init(updateJobMutex);
+                }
+                // Release the update lock before retrying normal insertion.
+                return addVector(blob, label);
+            }
             idType new_flat_id = this->frontendIndex->indexSize();
             if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
                 // We are going to update the internal id that currently holds the vector associated

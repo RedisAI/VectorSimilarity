@@ -15,6 +15,7 @@
 #include <cmath>
 #include <memory>
 #include <cassert>
+#include <functional>
 #include <limits>
 #include <mutex>
 #include <shared_mutex>
@@ -51,6 +52,9 @@ struct SVSIndexBase
     virtual size_t getParallelism() const = 0;
     virtual void setParallelism(size_t parallelism) = 0;
     virtual size_t getPoolSize() const = 0;
+    // Run synchronously using caller-reserved threads, without changing the
+    // backend's per-operation parallelism.
+    virtual void runParallel(std::function<void(size_t)> task, size_t num_threads) = 0;
     virtual bool isCompressed() const = 0;
     virtual bool ready() const = 0;
 
@@ -697,6 +701,10 @@ public:
     void setParallelism(size_t parallelism) override { threadpool_.setParallelism(parallelism); }
 
     size_t getPoolSize() const override { return threadpool_.poolSize(); }
+
+    void runParallel(std::function<void(size_t)> task, size_t num_threads) override {
+        threadpool_.parallel_for(std::move(task), num_threads);
+    }
 
     bool isCompressed() const override { return storage_traits_t::is_compressed(); }
 
