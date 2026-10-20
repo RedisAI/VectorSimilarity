@@ -600,7 +600,8 @@ private:
      *
      * This static wrapper function performs the following actions:
      * - Acquires updateJobMutex exclusively to wait for backend update jobs.
-     * - Acquires mainIndexGuard exclusively to exclude base-class readers during GC.
+     * - Acquires mainIndexGuard exclusively to exclude base-class readers and backend deletions
+     *   during GC.
      * - Configures the number of threads for the underlying SVS index update operation.
      * - Calls the SVSIndex::runGC() method to perform the actual index update.
      * - Clears the indexGCScheduled flag to allow future scheduling.
@@ -980,14 +981,14 @@ public:
             }
             // backend index is initialized - we can add the vector directly
             auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-            // Only updateJobMutex is needed here
+            // Match GC's lock order: updateJobMutex, then mainIndexGuard in the delete helper.
             std::lock_guard<std::shared_mutex> lock(this->updateJobMutex);
             // Defensive: ensure single-threaded operation for write-in-place mode.
             // parallelism_ defaults to 1, so this is a no-op in the normal case.
             svs_index->setParallelism(1);
             int deleted = 0;
             if (!this->backendIndex->isMultiValue()) {
-                deleted = svs_index->deleteVector(label);
+                deleted = deleteVectorFromBackend(label);
                 if (deleted > 0)
                     svs_index->consolidate({label});
             }
@@ -1055,7 +1056,7 @@ public:
             if (!this->backendIndex->isMultiValue() && !defer_until_initialized) {
                 // If we removed the previous vector from both svs and flat in the overwrite
                 // process, we still return 0 (not -1).
-                auto deleted = svs_index->deleteVector(label);
+                auto deleted = deleteVectorFromBackend(label);
                 if (deleted > 0)
                     scheduleSVSIndexConsolidate(label);
                 ret = std::max(ret - deleted, 0);
@@ -1191,6 +1192,15 @@ public:
         return ret;
     }
 
+private:
+    int deleteVectorFromBackend(labelType label) {
+        // GC holds mainIndexGuard exclusively through both compact() and the deletion-counter
+        // reset, so a backend deletion and its counter increment belong wholly to one GC epoch.
+        std::shared_lock main_lock{this->mainIndexGuard};
+        return this->backendIndex->deleteVector(label);
+    }
+
+public:
     int deleteVector(labelType label) override {
         int ret = 0;
 
@@ -1203,7 +1213,7 @@ public:
             this->flatIndexGuard.unlock_shared();
         }
 
-        auto deleted = this->backendIndex->deleteVector(label);
+        auto deleted = deleteVectorFromBackend(label);
         if (deleted > 0) {
             if (this->getWriteMode() == VecSim_WriteInPlace) {
                 GetSVSIndex()->consolidate({label});

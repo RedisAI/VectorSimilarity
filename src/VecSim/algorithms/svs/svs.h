@@ -79,6 +79,7 @@ struct SVSIndexBase
     // the checks preceding those calls rule out, and it grows its dataset rather than refusing a
     // write, so without this the code that reports a failed write would go untested.
     virtual void throwOnNextWriteForTest() = 0;
+    virtual void setAfterCompactCallbackForTest(std::function<void()> callback) = 0;
 #endif
 protected:
     // Index marked deleted vectors counter to initiate reindexing if it exceeds threshold
@@ -305,9 +306,13 @@ protected:
 #ifdef BUILD_TESTS
 public:
     void throwOnNextWriteForTest() override { throw_on_next_write_ = true; }
+    void setAfterCompactCallbackForTest(std::function<void()> callback) override {
+        after_compact_callback_ = std::move(callback);
+    }
 
 private:
     bool throw_on_next_write_ = false;
+    std::function<void()> after_compact_callback_;
     void maybeThrowForTest() {
         if (throw_on_next_write_) {
             throw_on_next_write_ = false;
@@ -901,6 +906,11 @@ public:
             // pending per-label consolidate jobs need not be drained - they become no-ops
             impl->compact();
         }
+#ifdef BUILD_TESTS
+        if (after_compact_callback_) {
+            after_compact_callback_();
+        }
+#endif
         num_marked_deleted.store(0, std::memory_order_relaxed);
     }
 

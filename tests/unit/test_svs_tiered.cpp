@@ -2814,6 +2814,61 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, deletionAfterCompactWaitsForCounterReset) {
+    constexpr size_t dim = 4;
+    constexpr size_t n = 2;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock(1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n, n);
+    ASSERT_INDEX(tiered_index);
+
+    for (labelType label = 0; label < n; ++label) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label);
+    }
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+
+    ASSERT_EQ(tiered_index->deleteVector(0), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+
+    std::future<int> concurrent_delete;
+    bool deletion_started_after_compact = false;
+    bool deletion_was_blocked = false;
+    tiered_index->GetSVSIndex()->setAfterCompactCallbackForTest([&] {
+        // GC still holds mainIndexGuard exclusively here. A tiered deletion may reach this window
+        // without updateJobMutex, but its shared mainIndexGuard must wait until after the reset.
+        concurrent_delete =
+            std::async(std::launch::async, [&] { return tiered_index->deleteVector(1); });
+        deletion_started_after_compact = true;
+        deletion_was_blocked = concurrent_delete.wait_for(std::chrono::milliseconds(100)) ==
+                               std::future_status::timeout;
+    });
+
+    VecSimTieredIndex_GC(tiered_index);
+    while (!deletion_started_after_compact && !mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_TRUE(deletion_started_after_compact);
+    ASSERT_TRUE(deletion_was_blocked);
+    ASSERT_EQ(concurrent_delete.get(), 1);
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(1));
+
+    tiered_index->GetSVSIndex()->setAfterCompactCallbackForTest({});
+    VecSimTieredIndex_GC(tiered_index);
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
