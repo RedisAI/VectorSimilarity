@@ -2814,6 +2814,51 @@ TYPED_TEST(SVSTieredIndexTestBasic, markedDeleted) {
     ASSERT_EQ(tiered_index->indexLabelCount(), 0);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, deletionAfterCompactIsKeptInMarkedDeletedCount) {
+    constexpr size_t dim = 4;
+    constexpr size_t n = 2;
+    SVSParams params = {.type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock(1);
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool, n, n);
+    ASSERT_INDEX(tiered_index);
+
+    for (labelType label = 0; label < n; ++label) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label);
+    }
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+
+    ASSERT_EQ(tiered_index->deleteVector(0), 1);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+
+    bool deleted_after_compact = false;
+    tiered_index->GetSVSIndex()->setAfterCompactCallbackForTest([&] {
+        // The tiered deletion path does not take updateJobMutex or mainIndexGuard, so it can
+        // reach the backend in the window between compact() and the GC counter adjustment.
+        ASSERT_EQ(tiered_index->deleteVector(1), 1);
+        deleted_after_compact = true;
+    });
+
+    VecSimTieredIndex_GC(tiered_index);
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    ASSERT_TRUE(deleted_after_compact);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 1);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(1));
+
+    tiered_index->GetSVSIndex()->setAfterCompactCallbackForTest({});
+    VecSimTieredIndex_GC(tiered_index);
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getNumMarkedDeleted(), 0);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, deleteVectorMulti) {
     // Create TieredSVS index instance with a mock queue.
     size_t dim = 4;
