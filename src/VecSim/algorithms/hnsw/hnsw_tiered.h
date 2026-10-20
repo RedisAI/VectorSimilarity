@@ -279,6 +279,10 @@ private:
     // the label and adding the blobs one by one.
     bool updateMultiValueAsync(labelType label, const void *new_blobs, size_t n);
 
+    VecSimUpdateCode updateVectorSingleValue(labelType label, const void *new_blobs, size_t n);
+    int addVectorInPlace(const void *blob, labelType label);
+    HNSWInsertJob *addVectorToFlat(const void *blob, labelType label, int &ret);
+
 #ifdef BUILD_TESTS
 #include "VecSim/algorithms/hnsw/hnsw_tiered_tests_friends.h"
 #endif
@@ -373,6 +377,8 @@ public:
 #endif
 
     int addVector(const void *blob, labelType label) override;
+    // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
+    // remove vector from the flat buffer and/or the HNSW index.
     int deleteVector(labelType label) override;
     VecSimRelabelCode relabelVector(labelType old_label, labelType new_label) override;
 
@@ -1155,63 +1161,29 @@ template <typename DataType, typename DistType>
 auto TieredHNSWIndex<DataType, DistType>::shouldDefrag() {
     return readySwapJobs.load() >= this->pendingSwapJobsThreshold;
 }
-// In the tiered index, we assume that the blobs are processed by the flat buffer
-// before being transferred to the HNSW index.
-// When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
-// the flat buffer is full, we must manually preprocess the blob according to the **frontend** index
-// parameters.
 template <typename DataType, typename DistType>
-int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
-    if (sqAccumulationState) {
-        return addVectorDuringAccumulation(blob, label);
-    }
+int TieredHNSWIndex<DataType, DistType>::addVectorInPlace(const void *blob, labelType label) {
     int ret = 1;
     auto hnsw_index = this->getHNSWIndex();
-    // writeMode is not protected since it is assumed to be called only from the "main thread"
-    // (that is the thread that is exclusively calling add/delete vector).
-    if (this->getWriteMode() == VecSim_WriteInPlace) {
-        // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
-        // index.
-        auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-        if (this->reuseIdOnUpdate) {
-            ret = updateVectorInPlace(label, hnsw_index, storage_blob);
-        } else {
-            // Reuse disabled: delete the label outright (from both tiers) and append a fresh
-            // element, as this index did before id reuse existed.
-            if (!this->backendIndex->isMultiValue()) {
-                ret -= this->deleteVector(label);
-            }
-            const auto main_index_lock = this->acquireMainIndexGuard();
-            hnsw_index->addVector(storage_blob.get(), label);
-        }
-        // Track direct insertion to HNSW (bypassing flat buffer)
-        ++this->directHNSWInsertions;
-        // Removing the old id in place can complete a reserved id's repairs.
-        this->submitDeferredReuseInsertJobs();
-        return ret;
-    }
-    if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
-        // Handle overwrite situation.
+    auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+    if (this->reuseIdOnUpdate) {
+        ret = updateVectorInPlace(label, hnsw_index, storage_blob);
+    } else {
         if (!this->backendIndex->isMultiValue()) {
-            // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
-            // remove vector from the flat buffer and/or the HNSW index.
             ret -= this->deleteVector(label);
         }
-        if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
-            // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
-            // directly to HNSW. Since flat buffer guard was not held, no need to release it
-            // internally.
-            // Use the frontend parameters to manually prepare the blob for its transfer to the HNSW
-            // index.
-            auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-            this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
-            // Track direct insertion to HNSW (flat buffer was full)
-            ++this->directHNSWInsertions;
-            return ret;
-        }
-        // Otherwise, we fall back to the "regular" insertion into the flat buffer
-        // (since it is not full anymore after removing the previous vector stored under the label).
+        const auto main_index_lock = this->acquireMainIndexGuard();
+        hnsw_index->addVector(storage_blob.get(), label);
     }
+    // Track direct insertion to HNSW (bypassing flat buffer)
+    ++this->directHNSWInsertions;
+    // Removing the old id in place can complete a reserved id's repairs.
+    this->submitDeferredReuseInsertJobs();
+    return ret;
+}
+template <typename DataType, typename DistType>
+HNSWInsertJob *TieredHNSWIndex<DataType, DistType>::addVectorToFlat(const void *blob,
+                                                                    labelType label, int &ret) {
     this->flatIndexGuard.lock();
     idType new_flat_id = this->frontendIndex->indexSize();
     if (this->frontendIndex->isLabelExists(label) && !this->frontendIndex->isMultiValue()) {
@@ -1225,11 +1197,48 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     // If this label already exists, this will do overwrite.
     this->frontendIndex->addVector(blob, label);
 
-    auto *new_insert_job = new (this->allocator)
+    auto new_insert_job = new (this->allocator)
         HNSWInsertJob(this->allocator, label, new_flat_id, executeInsertJobWrapper, this);
     this->registerInsertJob(label, new_insert_job);
     this->flatIndexGuard.unlock();
-
+    return new_insert_job;
+}
+// In the tiered index, we assume that the blobs are processed by the flat buffer
+// before being transferred to the HNSW index.
+// When inserting vectors directly into the HNSW index—such as in VecSim_WriteInPlace mode— or when
+// the flat buffer is full, we must manually preprocess the blob according to the **frontend** index
+// parameters.
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
+    if (sqAccumulationState) {
+        return addVectorDuringAccumulation(blob, label);
+    }
+    // writeMode is not protected since it is assumed to be called only from the "main thread"
+    // (that is the thread that is exclusively calling add/delete vector).
+    if (this->getWriteMode() == VecSim_WriteInPlace) {
+        return addVectorInPlace(blob, label);
+    }
+    int ret = 1;
+    if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
+        // Handle overwrite situation.
+        if (!this->backendIndex->isMultiValue()) {
+            ret -= this->deleteVector(label);
+        }
+        if (this->frontendIndex->indexSize() >= this->flatBufferLimit) {
+            // We didn't remove a vector from flat buffer due to overwrite, insert the new vector
+            // directly to HNSW. Since flat buffer guard was not held, no need to release it
+            // internally.
+            auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
+            auto hnsw_index = this->getHNSWIndex();
+            this->insertVectorToHNSW<false>(hnsw_index, label, storage_blob.get());
+            // Track direct insertion to HNSW (flat buffer was full)
+            ++this->directHNSWInsertions;
+            return ret;
+        }
+        // Otherwise, we fall back to the "regular" insertion into the flat buffer
+        // (since it is not full anymore after removing the previous vector stored under the label).
+    }
+    auto new_insert_job = addVectorToFlat(blob, label, ret);
     // Here, a worker might ingest the previous vector that was stored under "label"
     // (in case of override in non-MULTI index) - so if it's there, we remove it (and create the
     // required repair jobs), *before* we submit the insert job.
@@ -1244,9 +1253,6 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
-    // If swapJobs size is equal or larger than a threshold, go over the swap jobs and execute a
-    // batch of jobs for which all of its pending repair jobs were executed (otherwise finish and
-    // return).
     if (shouldDefrag()) {
         this->defrag();
     }
@@ -1327,6 +1333,26 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     return num_deleted_vectors;
 }
 
+template <typename DataType, typename DistType>
+VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectorSingleValue(labelType label,
+                                                                              const void *new_blobs,
+                                                                              size_t n) {
+    if (n > 1) {
+        return VecSimUpdate_MultiNotSupported;
+    }
+    if (n == 0) {
+        // Nothing to store, so replacing the label's content means removing it.
+        this->deleteVector(label);
+        return VecSimUpdate_OK;
+    }
+    // One vector replacing a single-value label *is* an overwrite, and `addVector` serves that
+    // better than a deleted and an insert would: it writes over the buffered copy in place, keeping
+    // its id and the pending job that will ingest it, and only then marks the backend's copy
+    // deleted - so the label is never without a vector, where removing first would leave a window
+    // with none.
+    this->addVector(new_blobs, label);
+    return VecSimUpdate_OK;
+}
 /**
  * Replace everything stored under a label with the given vectors.
  *
@@ -1350,38 +1376,23 @@ template <typename DataType, typename DistType>
 VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType label,
                                                                     const void *new_blobs,
                                                                     size_t n) {
-    if (!this->backendIndex->isMultiValue() && n > 1) {
-        return VecSimUpdate_MultiNotSupported;
-    }
-    // One vector replacing a single-value label *is* an overwrite, and `addVector` serves that
-    // better than a deleted and an insert would: it writes over the buffered copy in place, keeping
-    // its id and the pending job that will ingest it, and only then marks the backend's copy
-    // deleted - so the label is never without a vector, where removing first would leave a window
-    // with none. It is also the case a caller hits most, a hash document holding one vector per
-    // field.
-    if (n == 1 && !this->backendIndex->isMultiValue()) {
-        this->addVector(new_blobs, label);
-        return VecSimUpdate_OK;
-    }
+    if (!this->backendIndex->isMultiValue())
+        return updateVectorSingleValue(label, new_blobs, n);
 
-    // From here on the backend is always multi-value - single-value with n > 1 already returned
-    // above.
+    // -- Multi Value --
     // During SQ accumulation, training writes must stay in FLAT regardless of write mode - the
     // in-place path writes straight into the (still untrained) HNSW backend and bypasses the
-    // running-sum bookkeeping that `addVector`/`deleteVector` maintain for it, so it is skipped
-    // here in favor of the generic delete-then-add path below, which routes through both of those
-    // and so stays accumulation-safe.
-    if (this->getWriteMode() == VecSim_WriteInPlace && this->reuseIdOnUpdate &&
-        !sqAccumulationState) {
-        this->updateMultiValueInPlace(label, new_blobs, n);
-        // Removing ids in place can complete a reserved id's repairs.
-        this->submitDeferredReuseInsertJobs();
-        return VecSimUpdate_OK;
-    }
-
-    if (this->getWriteMode() == VecSim_WriteAsync && this->reuseIdOnUpdate &&
-        !sqAccumulationState && n > 0 && this->updateMultiValueAsync(label, new_blobs, n)) {
-        return VecSimUpdate_OK;
+    // running-sum bookkeeping that `addVector`/`deleteVector` maintain for it
+    if (this->reuseIdOnUpdate && !sqAccumulationState) {
+        if (this->getWriteMode() == VecSim_WriteInPlace) {
+            this->updateMultiValueInPlace(label, new_blobs, n);
+            // Removing ids in place can complete a reserved id's repairs.
+            this->submitDeferredReuseInsertJobs();
+            return VecSimUpdate_OK;
+        }
+        if (n > 0 && this->updateMultiValueAsync(label, new_blobs, n)) {
+            return VecSimUpdate_OK;
+        }
     }
 
     this->deleteVector(label);
