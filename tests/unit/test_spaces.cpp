@@ -5662,13 +5662,14 @@ TEST(SQ8FP16NativeIPTest, MinimumSmallAndLargestFiniteFP16Values) {
     for (float value :
          {0.0f, 0x1p-24f, -0x1p-24f, 37.0f * 0x1p-24f, 0x1p-14f, -0x1p-14f, 65504.0f, -65504.0f}) {
         SCOPED_TRACE(value);
-        SQ8FP16NativeCase input(dim);
+        // Amplify subnormal dots so subtracting from one cannot hide their loss.
+        const float delta = std::abs(value) < 0x1p-14f ? 0x1p24f : 1.0f;
+        SQ8FP16NativeCase input(dim, 0.0f, delta);
         input.storage[0] = 1;
         input.query[0] = vecsim_types::FP32_to_FP16(value);
         input.setQuerySum(dim);
         ASSERT_FLOAT_EQ(vecsim_types::FP16_to_FP32(input.query[0]), value);
-        // Compare distances directly: subtracting a distance near one can erase a tiny dot.
-        const float expected = 1.0f - value;
+        const float expected = 1.0f - delta * value;
         EXPECT_FLOAT_EQ(Choose_SQ8_FP16_IP_implementation_AVX512FP16_BW_VL(dim)(
                             input.storage.data(), input.query.data(), dim),
                         expected);
