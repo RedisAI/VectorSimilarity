@@ -50,6 +50,7 @@ on:
           - bm-updated-fp32-single
           - bm-sq8-compare-fp32
           - bm-mod19169-final-check
+          - bm-mod19169-paired-production
           - bm-mod19169-native-first
           - bm-sq8-compare-fp16
           - bm-sq8-train-fp32
@@ -98,7 +99,9 @@ jobs:
           '
 
           # Filter the matrix based on architecture
-          if [ "${{ inputs.architecture }}" = "all" ]; then
+          if [ "${{ inputs.setup }}" = "bm-mod19169-paired-production" ]; then
+            FILTERED_MATRIX=$(echo "$FULL_MATRIX" | jq -c '{include: [.include[] | select(.architecture == "x86_64")]}')
+          elif [ "${{ inputs.architecture }}" = "all" ]; then
             # Use the full matrix
             FILTERED_MATRIX="$FULL_MATRIX"
           else
@@ -112,7 +115,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   run_benchmarks:
-    if: inputs.setup != 'bm-mod19169-native-first' && inputs.setup != 'bm-mod19169-final-check'
+    if: inputs.setup != 'bm-mod19169-native-first' && inputs.setup != 'bm-mod19169-final-check' && inputs.setup != 'bm-mod19169-paired-production'
     name: Run ${{ matrix.architecture }} benchmarks
     needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
@@ -141,7 +144,7 @@ jobs:
       ami-id: ${{ matrix.ami-id }}
 
   run_final_check:
-    if: inputs.setup == 'bm-mod19169-final-check'
+    if: inputs.setup == 'bm-mod19169-final-check' || inputs.setup == 'bm-mod19169-paired-production'
     name: Check final source on ${{ matrix.architecture }}
     needs: prepare_runner_configurations
     uses: ./.github/workflows/mod19169-final-check-runner.yml

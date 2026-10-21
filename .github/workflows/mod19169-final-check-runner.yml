@@ -100,6 +100,32 @@ jobs:
           PRODUCTION_SOURCE: ${{ inputs.production-source }}
         timeout-minutes: 60
         run: bash harness/tests/benchmark/mod19169-final-check.sh
+      - name: Download identical saved graphs and queries
+        if: inputs.setup == 'bm-mod19169-paired-production'
+        working-directory: harness
+        timeout-minutes: 30
+        run: bash tests/benchmark/bm_files.sh bm-basics-fp16-single
+      - name: Build final native and mixed FP32 control
+        if: inputs.setup == 'bm-mod19169-paired-production'
+        env:
+          ARCH: ${{ inputs.architecture }}
+          PRODUCTION_SOURCE: ${{ inputs.production-source }}
+        timeout-minutes: 60
+        run: bash harness/tests/benchmark/mod19169-paired-production.sh build
+      - name: Compare saved-graph query latency and recall
+        if: inputs.setup == 'bm-mod19169-paired-production'
+        env:
+          ARCH: ${{ inputs.architecture }}
+          PRODUCTION_SOURCE: ${{ inputs.production-source }}
+        timeout-minutes: 150
+        run: bash harness/tests/benchmark/mod19169-paired-production.sh query
+      - name: Upload paired production benchmark evidence
+        if: always() && inputs.setup == 'bm-mod19169-paired-production'
+        uses: actions/upload-artifact@v7
+        with:
+          name: paired-production-${{ inputs.architecture }}
+          path: paired-production-results/
+          if-no-files-found: warn
       - name: Upload final source execution evidence
         if: always()
         uses: actions/upload-artifact@v7

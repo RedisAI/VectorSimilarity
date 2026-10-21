@@ -6,7 +6,8 @@ set -euo pipefail
 : "${PRODUCTION_SOURCE:?}"
 [[ "$PRODUCTION_SOURCE" =~ ^[0-9a-f]{40}$ ]]
 [[ "$ARCH" == x86_64 || "$ARCH" == arm64 ]]
-cd "$GITHUB_WORKSPACE/source"
+export ROOT="$GITHUB_WORKSPACE/source"
+cd "$ROOT"
 results_dir="$GITHUB_WORKSPACE/final-native-check-results"
 build_dir="$RUNNER_TEMP/mod19169-final-production"
 mkdir -p "$results_dir"
