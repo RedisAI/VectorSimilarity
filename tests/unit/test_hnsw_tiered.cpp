@@ -6808,11 +6808,11 @@ protected:
     }
 
     const vecsim_stl::vector<double> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->runningSumVec;
+        return idx->sqAccumulationState->getRunningSum();
     }
 
     size_t getNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->normalizationSetSize;
+        return idx->sqAccumulationState->getNormalizationSetSize();
     }
 
     // Compare the actual cached dispatches and preprocessing with a backend constructed with
