@@ -14,6 +14,10 @@ on:
         description: 'Run only on specific architecture'
   workflow_dispatch:
     inputs:
+      results-run:
+        type: string
+        required: false
+        description: Existing paired measurement run for report regeneration
       production-source:
         type: string
         required: false
@@ -51,6 +55,7 @@ on:
           - bm-sq8-compare-fp32
           - bm-mod19169-final-check
           - bm-mod19169-paired-production
+          - bm-mod19169-paired-summary
           - bm-mod19169-native-first
           - bm-sq8-compare-fp16
           - bm-sq8-train-fp32
@@ -115,7 +120,7 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
 
   run_benchmarks:
-    if: inputs.setup != 'bm-mod19169-native-first' && inputs.setup != 'bm-mod19169-final-check' && inputs.setup != 'bm-mod19169-paired-production'
+    if: inputs.setup != 'bm-mod19169-native-first' && inputs.setup != 'bm-mod19169-final-check' && inputs.setup != 'bm-mod19169-paired-production' && inputs.setup != 'bm-mod19169-paired-summary'
     name: Run ${{ matrix.architecture }} benchmarks
     needs: prepare_runner_configurations
     uses: ./.github/workflows/benchmark-runner.yml
@@ -158,3 +163,32 @@ jobs:
       instance-type: ${{ matrix.instance-type }}
       ami-id: ${{ matrix.ami-id }}
       production-source: ${{ inputs.production-source }}
+
+  run_paired_summary:
+    if: inputs.setup == 'bm-mod19169-paired-summary'
+    name: Regenerate paired measurement report
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate measurement run
+        env:
+          RESULTS_RUN: ${{ inputs.results-run }}
+        run: '[[ "$RESULTS_RUN" =~ ^[0-9]+$ ]]'
+      - uses: actions/download-artifact@v4
+        with:
+          name: paired-production-x86_64
+          path: paired-production-results
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.results-run }}
+      - name: Validate and summarize saved measurements
+        run: |
+          python3 tests/benchmark/mod19169_paired_summary.py paired-production-results
+          cat paired-production-results/summary.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload validated report and raw measurements
+        uses: actions/upload-artifact@v7
+        with:
+          name: paired-production-validated-report
+          path: paired-production-results/

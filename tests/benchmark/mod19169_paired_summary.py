@@ -49,11 +49,14 @@ def integer(value, context, low, high):
     return value
 
 
-def read_json(path):
+def read_json(path, allow_nonfinite=False):
     def reject_constant(value):
         raise ValueError(f"{path.name}: nonfinite JSON constant {value}")
     with path.open() as stream:
-        value = json.load(stream, parse_constant=reject_constant)
+        # Google Benchmark emits NaN for aggregate CV counters whose mean is
+        # zero. These aggregate rows are discarded; raw metrics are checked
+        # individually before use. Provenance always uses strict parsing.
+        value = json.load(stream, **({} if allow_nonfinite else {"parse_constant": reject_constant}))
     require(isinstance(value, dict), f"{path.name}: expected JSON object")
     return value
 
@@ -71,7 +74,7 @@ def load_run(directory, dataset, run):
     path = directory / f"{prefix}_results.json"
     provenance_path = directory / f"{prefix}-provenance.json"
     report = read_json(provenance_path)
-    result = read_json(path)
+    result = read_json(path, allow_nonfinite=True)
     context = prefix
     mode = 0 if run.startswith("mixed-") else 1
     mode_name = "mixedFP32" if mode == 0 else "finalnative"
@@ -122,12 +125,14 @@ def load_run(directory, dataset, run):
         require(type(row.get("iterations")) is int and row["iterations"] == 1000,
                 f"{context}: expected 1000 iterations")
         require(row.get("time_unit") == "ms", f"{context}: expected milliseconds")
-        require(row.get("query_mode") == mode, f"{context}: wrong benchmark query_mode")
+        require(number(row.get("query_mode"), context + ": query_mode") == mode,
+                f"{context}: wrong benchmark query_mode")
         if "query_mode_name" in row:
             require(row["query_mode_name"] == mode_name,
                     f"{context}: wrong benchmark query_mode_name")
         require(row.get("label") == LABEL, f"{context}: unexpected timing label")
-        require(row.get("FP32_BF_boundary_tied_queries") == report["boundary_tied_queries"],
+        require(number(row.get("FP32_BF_boundary_tied_queries"), context + ": boundary ties")
+                == report["boundary_tied_queries"],
                 f"{context}: boundary-tie counter differs from provenance")
         recall = number(row.get("Recall_vs_FP32_BF"), context + ": recall")
         require(0 <= recall <= 1 and math.isclose(
