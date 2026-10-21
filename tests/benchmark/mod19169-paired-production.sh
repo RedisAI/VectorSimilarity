@@ -50,7 +50,7 @@ CPU
     done
     baseline="$RUNNER_TEMP/mod19169-paired-mixed-source"
     git -C "$source_root" worktree add --detach "$baseline" "$PRODUCTION_SOURCE"
-    git -C "$baseline" submodule update --init --recursive --reference "$source_root/deps/ScalableVectorSearch"
+    git -C "$baseline" submodule update --init --recursive --depth 1
     python3 - "$baseline/src/VecSim/spaces/IP_space.cpp" <<'CONTROL'
 import sys
 from pathlib import Path
