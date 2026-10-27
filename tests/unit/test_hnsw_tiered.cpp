@@ -5773,6 +5773,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertTakesClearedSlotsFromGC) {
         ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1 - i);
     }
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->reusedSlots.load(), 2);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 
     // With the cache empty, the next one is appended.

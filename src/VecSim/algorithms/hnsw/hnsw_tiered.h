@@ -100,6 +100,8 @@ private:
     // Cost of defrag(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
     std::atomic<uint64_t> defragRuns{0};
     std::atomic<uint64_t> defragTimeNs{0};
+    // Inserts that took a cleared slot from `reusableSlots`. Statistics only.
+    std::atomic<uint64_t> reusedSlots{0};
 
     // Protect the both idToRepairJobs lookup and the pending_repair_jobs_counter for the
     // associated swap jobs.
@@ -531,6 +533,7 @@ idType TieredHNSWIndex<DataType, DistType>::takeReusableSlot() {
     assert(idToSwapJob.at(id) == swap_job);
     idToSwapJob.erase(id);
     delete swap_job;
+    reusedSlots.fetch_add(1, std::memory_order_relaxed);
     return id;
 }
 
@@ -1540,7 +1543,8 @@ VecSimIndexDebugInfo TieredHNSWIndex<DataType, DistType>::debugInfo() const {
 
     HnswTieredInfo hnswTieredInfo = {.pendingSwapJobsThreshold = this->pendingSwapJobsThreshold,
                                      .defragRuns = defragRuns.load(std::memory_order_relaxed),
-                                     .defragTimeNs = defragTimeNs.load(std::memory_order_relaxed)};
+                                     .defragTimeNs = defragTimeNs.load(std::memory_order_relaxed),
+                                     .reusedSlots = reusedSlots.load(std::memory_order_relaxed)};
     info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
 
     info.tieredInfo.backgroundIndexing =
@@ -1571,6 +1575,10 @@ VecSimDebugInfoIterator *TieredHNSWIndex<DataType, DistType>::debugInfoIterator(
         VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_DEFRAG_TIME_NS_STRING,
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = tieredInfo.defragTimeNs}}});
+    infoIterator->addInfoField(
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_REUSED_SLOTS_STRING,
+                         .fieldType = INFOFIELD_UINT64,
+                         .fieldValue = {FieldValue{.uintegerValue = tieredInfo.reusedSlots}}});
 
     return infoIterator;
 }
