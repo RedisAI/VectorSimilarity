@@ -58,6 +58,7 @@ struct HNSWSwapJob : public VecsimBaseObject {
 
 static const size_t DEFAULT_PENDING_SWAP_JOBS_THRESHOLD = DEFAULT_BLOCK_SIZE;
 static const size_t MAX_PENDING_SWAP_JOBS_THRESHOLD = 100000;
+static const size_t DEFAULT_SLOTS_TO_COMPACT_PER_GC = 512;
 static const size_t MAX_QUANT_NORMALIZATION_SET_SIZE = 100 * DEFAULT_BLOCK_SIZE;
 
 /**
@@ -119,9 +120,9 @@ private:
     // fresh one. Off by default. Read by the workers, written by the main thread.
     std::atomic<bool> reuseIdOnInsert{false};
 
-    // The number of cleared slots the GC leaves in `reusableSlots`: it compacts the oldest ones
-    // beyond it, so a burst of deletions is not kept as empty slots forever.
-    size_t reusableSlotsLimit;
+    // The number of the oldest cleared slots of `reusableSlots` that each GC compacts, so that
+    // cleared slots are not kept forever when inserts do not take them.
+    size_t slotsToCompactPerGC;
 
     bool isQuantized;
 
@@ -312,7 +313,7 @@ public:
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
         return this->reusableSlots.size();
     }
-    void setReusableSlotsLimit(size_t limit) { this->reusableSlotsLimit = limit; }
+    void setSlotsToCompactPerGC(size_t count) { this->slotsToCompactPerGC = count; }
 
 #ifdef BUILD_TESTS
     void setBeforeQuantizationFinalizationHook(std::function<void()> hook) {
@@ -568,13 +569,13 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
     }
     size_t executed = idsToRemove.size();
 
-    // Compact the oldest cleared slots beyond what the cache keeps for inserts (all of them when
-    // reuse is off). Their swap jobs were taken out of `readySwapJobs` when they were cleared.
+    // Compact the oldest cleared slots, up to `slotsToCompactPerGC` of them (all of them when reuse
+    // is off). Their swap jobs were taken out of `readySwapJobs` when they were cleared.
     vecsim_stl::vector<HNSWSwapJob *> to_compact(this->allocator);
     {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        const size_t keep = reuse ? reusableSlotsLimit : 0;
-        size_t count = reusableSlots.size() > keep ? reusableSlots.size() - keep : 0;
+        size_t count =
+            reuse ? std::min(reusableSlots.size(), slotsToCompactPerGC) : reusableSlots.size();
         if (maxJobsToRun > 0) {
             count = std::min(count, maxJobsToRun);
         }
@@ -907,7 +908,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       idToRepairJobs(this->allocator), idToSwapJob(this->allocator), readySwapJobs(0),
-      reusableSlotsLimit(DEFAULT_PENDING_SWAP_JOBS_THRESHOLD),
+      slotsToCompactPerGC(DEFAULT_SLOTS_TO_COMPACT_PER_GC),
       isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;

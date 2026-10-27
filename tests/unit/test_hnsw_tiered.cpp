@@ -5750,6 +5750,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertTakesClearedSlotsFromGC) {
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
     tiered_index->setReuseOnInsert(true);
+    tiered_index->setSlotsToCompactPerGC(0);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
     std::set<idType> cleared_ids = {ids_before[2], ids_before[5], ids_before[7]};
@@ -5792,15 +5793,15 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertTakesClearedSlotsFromGC) {
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
-// The GC keeps only `reusableSlotsLimit` cleared slots, compacting the oldest ones beyond it - also
-// when a compaction relocates a slot that is still in the cache.
+// Each GC compacts the `slotsToCompactPerGC` oldest cleared slots, also when a compaction relocates
+// a slot that is still in the cache.
 TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsClearedSlotsBeyondTheLimit) {
     size_t dim = 4;
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
     tiered_index->setReuseOnInsert(true);
-    tiered_index->setReusableSlotsLimit(2);
+    tiered_index->setSlotsToCompactPerGC(3);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     // Deleting the last ids too, so that compactions have to relocate cached slots.
@@ -5839,6 +5840,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsClearedSlotsWhenReuseIsTurnedOff)
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
     tiered_index->setReuseOnInsert(true);
+    tiered_index->setSlotsToCompactPerGC(0);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2, 5, 7});
@@ -5864,6 +5866,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwritesStopGrowingTheIndexWithReuse) {
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
     tiered_index->setReuseOnInsert(true);
+    tiered_index->setSlotsToCompactPerGC(0);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     size_t rounds = 6;
