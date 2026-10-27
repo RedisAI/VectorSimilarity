@@ -6160,6 +6160,53 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesSlotRelocatedAfterClear
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
+// The reuse insert clears its reserved slot without the flat index guard, so the label may be
+// overwritten again in the meantime. The insert must then find its job invalidated, give the
+// reserved id back for compaction, and leave the newer vector as the one the label holds.
+TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteDuringReuseBarrierDropsSupersededInsert) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    labelType label = n / 2;
+    TEST_DATA_T first_vec[dim];
+    GenerateVector<TEST_DATA_T>(first_vec, dim, 100);
+    TEST_DATA_T second_vec[dim];
+    GenerateVector<TEST_DATA_T>(second_vec, dim, 200);
+    ASSERT_EQ(tiered_index->addVector(first_vec, label), 0);
+
+    // Run the old id's repairs, so the held back insert job is the next one.
+    while (mock_thread_pool.jobQ.front().job->jobType != HNSW_INSERT_VECTOR_JOB) {
+        mock_thread_pool.thread_iteration();
+    }
+
+    // Overwrite the label again right after the insert job cleared the reserved slot, when it
+    // holds no flat guard.
+    bool overwritten = false;
+    tiered_index->setAfterReuseBarrierHook([&]() {
+        overwritten = true;
+        ASSERT_EQ(tiered_index->addVector(second_vec, label), 0);
+    });
+    mock_thread_pool.thread_iteration();
+    ASSERT_TRUE(overwritten);
+
+    // The first insert stored nothing: the cleared slot is still a deleted element, and only the
+    // newer vector is pending.
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), n);
+
+    RunAllJobs(mock_thread_pool);
+    tiered_index->runGC();
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, second_vec), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
 // With reuse disabled, an async overwrite reserves nothing: the new vector gets a fresh id even
 // though the old id's repairs are done by then, and the old id is compacted as before.
 TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteWithReuseDisabledAppends) {

@@ -158,6 +158,7 @@ private:
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
     std::function<void()> afterReusedSlotCleared;
+    std::function<void()> afterReuseBarrier;
 #endif
 
     void addToSum(std::span<const DataType> vector) {
@@ -234,13 +235,24 @@ private:
     // swap-job compaction. Takes the main index guard shared and `idToRepairJobsGuard` itself.
     void releaseReuseReservation(HNSWSwapJob *swap_job);
 
-    // Store `blob` in the id reserved by `swap_job` (already isolated) rather than a fresh one.
-    // Called with the flat index guard held shared, which it releases once the vector is stored.
-    // Takes the main index guard exclusively only to free the id's old graph data (a concurrent
-    // graph scan may still hold a stale link to it), then stores and links the vector with it held
-    // shared, like a fresh insert.
+    // Free the graph data of the id reserved by `swap_job`, leaving a valid empty deleted element
+    // in its slot. Takes the main index guard exclusively, which waits out every graph scan that
+    // may still hold a stale link to the id. That can take as long as the slowest concurrent
+    // insert or search, so the flat index guard must NOT be held: `addVectorToFlat` takes it
+    // exclusively, and would queue behind this wait.
+    void clearReservedSlot(HNSWIndex<DataType, DistType> *hnsw_index, HNSWSwapJob *swap_job);
+
+    // Store `blob` in the id reserved by `swap_job`, whose slot `clearReservedSlot` already
+    // cleared, rather than in a fresh one. Called with the flat index guard held shared, which it
+    // releases once the vector is stored. Stores and links the vector with the main index guard
+    // held shared, like a fresh insert.
     void insertVectorToHNSWReusingId(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
                                      const void *blob, HNSWSwapJob *swap_job);
+
+    // Drop an insert job that was overwritten or deleted before it ran: nothing will fill its
+    // reserved id (if it has one), so let it be compacted. The caller must have released the flat
+    // index guard, as this takes the main index guard.
+    void dropInvalidInsertJob(HNSWInsertJob *job, HNSWSwapJob *reuse_swap_job);
 
     // Take a deleted element out of the graph once the last repair job created for its deletion is
     // done - no edge in or out of it is left, so the swap job that disposes of it later only has to
@@ -373,6 +385,11 @@ public:
     // index guard held.
     void setAfterReusedSlotClearedHook(std::function<void()> hook) {
         afterReusedSlotCleared = std::move(hook);
+    }
+    // Runs in a reuse insert right after the reserved slot is cleared and before the flat index
+    // guard is taken again, so the guard is free and the label can be overwritten meanwhile.
+    void setAfterReuseBarrierHook(std::function<void()> hook) {
+        afterReuseBarrier = std::move(hook);
     }
 #endif
 
@@ -777,25 +794,42 @@ void TieredHNSWIndex<DataType, DistType>::releaseReuseReservation(HNSWSwapJob *s
 }
 
 template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::clearReservedSlot(
+    HNSWIndex<DataType, DistType> *hnsw_index, HNSWSwapJob *swap_job) {
+    // Exclusively, just long enough to free the old element's graph data: a graph scan that
+    // picked the id up as a candidate before it was isolated may still read it, and taking the
+    // main guard exclusively waits every such scan out.
+    const auto main_index_lock = this->acquireMainIndexGuard();
+    // Another swap may have relocated the reserved element since it was reserved - read its id
+    // only now, as `fixJobsAfterSwap` keeps `deleted_id` pointing at wherever it went.
+    const idType deleted_id = swap_job->deleted_id;
+    // As `executeSwapJob` does for an id it disposes of.
+    this->invalidateRepairJobs(deleted_id);
+    hnsw_index->clearDeletedSlot(deleted_id);
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::dropInvalidInsertJob(HNSWInsertJob *job,
+                                                               HNSWSwapJob *reuse_swap_job) {
+    // The vector this id was held for was overwritten or deleted before it got here, so
+    // nothing will fill it - let it be compacted.
+    if (reuse_swap_job) {
+        this->releaseReuseReservation(reuse_swap_job);
+    }
+    // Job has been invalidated in the meantime - nothing to execute, and remove it from the
+    // lookup.
+    this->invalidJobsLookupGuard.lock();
+    this->invalidJobs.erase(job->id);
+    this->invalidJobsLookupGuard.unlock();
+}
+
+template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSWReusingId(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob,
     HNSWSwapJob *swap_job) {
     ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
 
-    // 1. Exclusively, just long enough to free the old element's graph data: a graph scan that
-    // picked the id up as a candidate before it was isolated may still read it, and taking the
-    // main guard exclusively waits every such scan out.
-    {
-        const auto main_index_lock = this->acquireMainIndexGuard();
-        // Another swap may have relocated the reserved element since it was reserved - read its id
-        // only now, as `fixJobsAfterSwap` keeps `deleted_id` pointing at wherever it went.
-        const idType deleted_id = swap_job->deleted_id;
-        // As `executeSwapJob` does for an id it disposes of.
-        this->invalidateRepairJobs(deleted_id);
-        hnsw_index->clearDeletedSlot(deleted_id);
-    }
-
-    // 2. Unlocked: the slot is now an empty, unreachable, still reserved deleted element. A swap
+    // 1. Unlocked: the slot is now an empty, unreachable, still reserved deleted element. A swap
     // (by GC, or an in-place removal) may move it here like any other element, and the reserved
     // swap job keeps tracking where to.
 #ifdef BUILD_TESTS
@@ -804,7 +838,7 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSWReusingId(
     }
 #endif
 
-    // 3. Shared from here on, exactly as a fresh insert (see `insertVectorToHNSW`) - the shared
+    // 2. Shared from here on, exactly as a fresh insert (see `insertVectorToHNSW`) - the shared
     // lock keeps any swap from moving the element while it's stored and linked, and the entry
     // point, max level and data guard are all taken the standard way.
     this->mainIndexGuard.lock_shared();
@@ -865,16 +899,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     HNSWSwapJob *reuse_swap_job = job->reuseSwapJob;
     if (!job->isValid) {
         this->flatIndexGuard.unlock_shared();
-        // The vector this id was held for was overwritten or deleted before it got here, so
-        // nothing will fill it - let it be compacted.
-        if (reuse_swap_job) {
-            this->releaseReuseReservation(reuse_swap_job);
-        }
-        // Job has been invalidated in the meantime - nothing to execute, and remove it from the
-        // lookup.
-        this->invalidJobsLookupGuard.lock();
-        this->invalidJobs.erase(job->id);
-        this->invalidJobsLookupGuard.unlock();
+        this->dropInvalidInsertJob(job, reuse_swap_job);
         return;
     }
 
@@ -890,6 +915,25 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
     if (reuse_swap_job) {
         // A reserved job is run only once its id's repairs are done.
         assert(reuse_swap_job->pending_repair_jobs_counter.load() == 0);
+        // Clear the reserved slot without the flat guard: the wait for graph scans must not hold up
+        // the writers queued on it. Nobody else can dispose of or reuse the slot meanwhile, as only
+        // this job releases its reservation and defrag skips reserved swap jobs.
+        this->flatIndexGuard.unlock_shared();
+        this->clearReservedSlot(hnsw_index, reuse_swap_job);
+#ifdef BUILD_TESTS
+        if (afterReuseBarrier) {
+            afterReuseBarrier();
+        }
+#endif
+        // The label may have been overwritten or deleted while the guard was free. Take it again
+        // and check once more: from here until the vector is stored, as for any insert, it keeps
+        // the job from being invalidated.
+        this->flatIndexGuard.lock_shared();
+        if (!job->isValid) {
+            this->flatIndexGuard.unlock_shared();
+            this->dropInvalidInsertJob(job, reuse_swap_job);
+            return;
+        }
         this->insertVectorToHNSWReusingId(hnsw_index, job->label, blob_copy.get(), reuse_swap_job);
     } else {
         this->insertVectorToHNSW<true>(hnsw_index, job->label, blob_copy.get());
