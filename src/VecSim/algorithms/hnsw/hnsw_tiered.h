@@ -13,6 +13,7 @@
 #include <chrono>
 #include <deque>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <span>
 #include <tuple>
@@ -58,7 +59,6 @@ struct HNSWSwapJob : public VecsimBaseObject {
 
 static const size_t DEFAULT_PENDING_SWAP_JOBS_THRESHOLD = DEFAULT_BLOCK_SIZE;
 static const size_t MAX_PENDING_SWAP_JOBS_THRESHOLD = 100000;
-static const size_t DEFAULT_SLOTS_TO_COMPACT_PER_GC = 512;
 static const size_t MAX_QUANT_NORMALIZATION_SET_SIZE = 100 * DEFAULT_BLOCK_SIZE;
 
 /**
@@ -119,10 +119,6 @@ private:
     // Whether an insert takes the id of a deleted element from `reusableSlots` before appending a
     // fresh one. Off by default. Read by the workers, written by the main thread.
     std::atomic<bool> reuseIdOnInsert{false};
-
-    // The number of the oldest cleared slots of `reusableSlots` that each GC compacts, so that
-    // cleared slots are not kept forever when inserts do not take them.
-    size_t slotsToCompactPerGC;
 
     bool isQuantized;
 
@@ -207,10 +203,10 @@ private:
     // main index guard must be held shared, so no swap moves the slot until it is filled.
     idType takeReusableSlot();
 
-    // Clear the slot of every ready swap job and queue it in `reusableSlots`. The main index guard
-    // must be held exclusively, which waits out every graph scan that may still hold a stale link
-    // to one of them.
-    void clearReadySlots();
+    // Clear the slot of up to `maxSlots` ready swap jobs and queue them in `reusableSlots`. The
+    // main index guard must be held exclusively, which waits out every graph scan that may still
+    // hold a stale link to one of them.
+    void clearReadySlots(size_t maxSlots);
 
     // Take a deleted element out of the graph once the last repair job created for its deletion is
     // done - no edge in or out of it is left, so the swap job that disposes of it later only has to
@@ -313,7 +309,6 @@ public:
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
         return this->reusableSlots.size();
     }
-    void setSlotsToCompactPerGC(size_t count) { this->slotsToCompactPerGC = count; }
 
 #ifdef BUILD_TESTS
     void setBeforeQuantizationFinalizationHook(std::function<void()> hook) {
@@ -499,9 +494,13 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(vecsim_stl::vector<idTy
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::clearReadySlots() {
+void TieredHNSWIndex<DataType, DistType>::clearReadySlots(size_t maxSlots) {
     auto *hnsw_index = this->getHNSWIndex();
+    size_t cleared = 0;
     for (auto &it : idToSwapJob) {
+        if (cleared >= maxSlots) {
+            break;
+        }
         auto *swap_job = it.second;
         if (swap_job->pending_repair_jobs_counter.load() != 0 || swap_job->slotCleared) {
             continue;
@@ -516,6 +515,7 @@ void TieredHNSWIndex<DataType, DistType>::clearReadySlots() {
             reusableSlots.push_back(swap_job);
         }
         readySwapJobs--;
+        cleared++;
     }
 }
 
@@ -546,8 +546,8 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
     const bool reuse = this->reuseIdOnInsert.load(std::memory_order_relaxed);
     vecsim_stl::vector<idType> idsToRemove(this->allocator);
     if (reuse) {
-        // Every ready swap job gives its slot to the cache rather than being compacted.
-        this->clearReadySlots();
+        // The ready swap jobs give their slots to the cache rather than being compacted.
+        this->clearReadySlots(maxJobsToRun > 0 ? maxJobsToRun : std::numeric_limits<size_t>::max());
     } else {
         idsToRemove.reserve(idToSwapJob.size());
         for (auto &it : idToSwapJob) {
@@ -569,13 +569,13 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
     }
     size_t executed = idsToRemove.size();
 
-    // Compact the oldest cleared slots, up to `slotsToCompactPerGC` of them (all of them when reuse
-    // is off). Their swap jobs were taken out of `readySwapJobs` when they were cleared.
+    // Compact the oldest half of the cleared slots (all of them when reuse is off), so they are not
+    // kept forever when inserts do not take them. Their swap jobs were taken out of
+    // `readySwapJobs` when they were cleared.
     vecsim_stl::vector<HNSWSwapJob *> to_compact(this->allocator);
     {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        size_t count =
-            reuse ? std::min(reusableSlots.size(), slotsToCompactPerGC) : reusableSlots.size();
+        size_t count = reuse ? reusableSlots.size() / 2 : reusableSlots.size();
         if (maxJobsToRun > 0) {
             count = std::min(count, maxJobsToRun);
         }
@@ -908,7 +908,6 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       idToRepairJobs(this->allocator), idToSwapJob(this->allocator), readySwapJobs(0),
-      slotsToCompactPerGC(DEFAULT_SLOTS_TO_COMPACT_PER_GC),
       isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
