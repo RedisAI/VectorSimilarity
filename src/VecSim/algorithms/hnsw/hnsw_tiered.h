@@ -224,6 +224,14 @@ private:
     void insertVectorToHNSW(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
                             const void *blob);
 
+    // Store a vector, already processed for storage and for indexing, in the oldest cleared slot
+    // of `reusableSlots` and link it, if there is one. Returns whether it did, and then it also
+    // released the main index guard and, if `releaseFlatGuard`, the flat index guard. Otherwise it
+    // took nothing, and both are still held. The caller holds the main index guard shared.
+    template <bool releaseFlatGuard>
+    bool insertVectorToReusableSlot(HNSWIndex<DataType, DistType> *hnsw_index, labelType label,
+                                    const void *storage_blob, const void *index_blob);
+
     // Handle deletion of vector inplace considering that async deletion might occurred beforehand.
     int deleteLabelFromHNSWInplace(labelType label);
 
@@ -679,6 +687,35 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
 template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
+bool TieredHNSWIndex<DataType, DistType>::insertVectorToReusableSlot(
+    HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *storage_blob,
+    const void *index_blob) {
+    // A cleared slot needs no resize, and nothing but the shared guard: the GC cleared it while
+    // holding the main index guard exclusively, so no graph scan holds a stale link to it, and
+    // the shared guard keeps any swap from moving it until the new element is stored and
+    // linked.
+    const idType reused_id = this->takeReusableSlot();
+    if (reused_id == INVALID_ID) {
+        return false;
+    }
+    hnsw_index->lockIndexDataGuard();
+    auto state = hnsw_index->storeNewElementInClearedSlot(label, storage_blob, reused_id);
+    if constexpr (releaseFlatGuard) {
+        this->flatIndexGuard.unlock_shared();
+    }
+    if (state.elementMaxLevel <= state.currMaxLevel) {
+        hnsw_index->unlockIndexDataGuard();
+    }
+    hnsw_index->indexVector(index_blob, label, state);
+    if (state.elementMaxLevel > state.currMaxLevel) {
+        hnsw_index->unlockIndexDataGuard();
+    }
+    this->mainIndexGuard.unlock_shared();
+    return true;
+}
+
+template <typename DataType, typename DistType>
+template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
 
@@ -690,29 +727,10 @@ void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     // Acquire the index data lock, so we know what is the exact index size at this time. Acquire
     // the main r/w lock before to avoid deadlocks.
     this->mainIndexGuard.lock_shared();
-    if (this->reuseIdOnInsert.load(std::memory_order_relaxed)) {
-        // A cleared slot needs no resize, and nothing but the shared guard: the GC cleared it while
-        // holding the main index guard exclusively, so no graph scan holds a stale link to it, and
-        // the shared guard keeps any swap from moving it until the new element is stored and
-        // linked.
-        const idType reused_id = this->takeReusableSlot();
-        if (reused_id != INVALID_ID) {
-            hnsw_index->lockIndexDataGuard();
-            auto state =
-                hnsw_index->storeNewElementInClearedSlot(label, processed_storage_blob, reused_id);
-            if constexpr (releaseFlatGuard) {
-                this->flatIndexGuard.unlock_shared();
-            }
-            if (state.elementMaxLevel <= state.currMaxLevel) {
-                hnsw_index->unlockIndexDataGuard();
-            }
-            hnsw_index->indexVector(processed_for_index, label, state);
-            if (state.elementMaxLevel > state.currMaxLevel) {
-                hnsw_index->unlockIndexDataGuard();
-            }
-            this->mainIndexGuard.unlock_shared();
-            return;
-        }
+    if (this->reuseIdOnInsert.load(std::memory_order_relaxed) &&
+        this->insertVectorToReusableSlot<releaseFlatGuard>(
+            hnsw_index, label, processed_storage_blob, processed_for_index)) {
+        return;
     }
     hnsw_index->lockIndexDataGuard();
     // Check if resizing is needed for HNSW index (requires write lock).
