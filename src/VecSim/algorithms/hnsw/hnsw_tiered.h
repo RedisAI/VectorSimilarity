@@ -937,6 +937,9 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
         if (!job->isValid) {
             this->flatIndexGuard.unlock_shared();
             this->dropInvalidInsertJob(job, reuse_swap_job);
+            // Clearing the slot invalidates repair jobs, which can complete another reserved id's
+            // repairs - make sure its insert job is not left unsubmitted.
+            this->submitDeferredReuseInsertJobs();
             return;
         }
         this->insertVectorToHNSWReusingId(hnsw_index, job->label, blob_copy.get(), reuse_swap_job);
