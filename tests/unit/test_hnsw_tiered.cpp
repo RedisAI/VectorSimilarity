@@ -2978,6 +2978,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwriteVectorBasic) {
     auto mock_thread_pool = tieredIndexMock();
 
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool, 1);
+    tiered_index->setReuseOnUpdate(true);
     auto allocator = tiered_index->getAllocator();
 
     TEST_DATA_T val = 1.0;
@@ -5700,6 +5701,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceReusesIds) {
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     VecSim_SetWriteMode(VecSim_WriteInPlace);
@@ -5862,6 +5864,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsMultiInPlaceInvalidatesPending
     VecSimParams hnsw_params = CreateParams(params);
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     // Insert all three vectors directly into HNSW (in-place), so they become mutual neighbors
@@ -5944,6 +5947,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdOnceRepaired) {
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
 
@@ -5991,6 +5995,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdWhenNeighborRepairIsI
     size_t n = 2;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
 
@@ -6035,6 +6040,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReleasesIdWhenOverwrittenAgai
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
 
@@ -6073,6 +6079,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesIdRelocatedBySwap) {
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
 
@@ -6118,6 +6125,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteReusesSlotRelocatedAfterClear
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
     auto ids_before = LabelIds(hnsw_index, n);
 
@@ -6168,6 +6176,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteDuringReuseBarrierDropsSupers
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     labelType label = n / 2;
@@ -6205,6 +6214,26 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncOverwriteDuringReuseBarrierDropsSupers
     ASSERT_EQ(tiered_index->indexLabelCount(), n);
     ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, second_vec), 0);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// A tiered HNSW index does not reuse ids on update unless asked to: the exclusive main index
+// acquisition each reuse insert needs serialises the workers under an update load.
+TYPED_TEST(HNSWTieredIndexTestBasic, reuseOnUpdateIsDisabledByDefault) {
+    size_t dim = 4;
+    auto mock_thread_pool = tieredIndexMock();
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    TieredIndexParams tiered_params = {.jobQueue = &mock_thread_pool.jobQ,
+                                       .jobQueueCtx = mock_thread_pool.ctx,
+                                       .submitCb = tieredIndexMock::submit_callback,
+                                       .flatBufferLimit = SIZE_MAX,
+                                       .primaryIndexParams = &hnsw_params,
+                                       .specificParams = {TieredHNSWParams{.swapJobThreshold = 0}}};
+    auto *tiered_index = reinterpret_cast<TieredHNSWIndex<TEST_DATA_T, TEST_DIST_T> *>(
+        TieredFactory::NewIndex(&tiered_params));
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+    ASSERT_FALSE(tiered_index->isReuseOnUpdate());
 }
 
 // With reuse disabled, an async overwrite reserves nothing: the new vector gets a fresh id even
@@ -6253,6 +6282,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncUpdateVectorsMultiReusesIds) {
         auto mock_thread_pool = tieredIndexMock();
         auto *tiered_index =
             this->CreateIngestedAsyncMultiIndex(mock_thread_pool, n_labels, per_label, dim);
+        tiered_index->setReuseOnUpdate(true);
         auto *hnsw_index = this->CastToHNSW(tiered_index);
         const size_t total_before = n_labels * per_label;
 
@@ -6329,6 +6359,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, asyncUpdateVectorsMultiReleasesIdsWhenUpdat
     auto mock_thread_pool = tieredIndexMock();
     auto *tiered_index =
         this->CreateIngestedAsyncMultiIndex(mock_thread_pool, n_labels, per_label, dim);
+    tiered_index->setReuseOnUpdate(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
     labelType label = n_labels / 2;

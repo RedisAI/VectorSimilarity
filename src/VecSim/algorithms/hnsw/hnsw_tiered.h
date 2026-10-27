@@ -134,8 +134,13 @@ private:
     // internal id(s) - in place in write-in-place mode, once the old id is repaired in async mode
     // (for a multi-value label, only through updateVectors) - instead of deleting them and
     // appending fresh ones.
+    // Off by default: a reuse insert takes the main index guard exclusively to clear its slot,
+    // which waits out every concurrent graph scan and, while pending, blocks the shared
+    // acquisitions of the repair jobs and of `deleteLabelFromHNSW` on the main thread. Under a
+    // sustained single-value update load that serialises the workers: about 1.1k ops/s with reuse
+    // against 4.4k without, on 100k documents. Turn it on with `setReuseOnUpdate(true)`.
     // unprotected because it is only ever read or written from the main thread.
-    bool reuseIdOnUpdate{true};
+    bool reuseIdOnUpdate{false};
 
     bool isQuantized;
 
