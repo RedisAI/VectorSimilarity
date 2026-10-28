@@ -17,9 +17,9 @@
 // Install before storing vectors, with queries excluded by the caller. Requires exactly one
 // SQ8 WithNorm preprocessor in slot 0; cosine normalization must be performed by the frontend.
 template <QuantInput DataType, VecSimMetric Metric>
-void installSQ8Mean(PreprocessorsContainerAbstract &preprocessors,
-                    IndexCalculatorInterface<float> &index_calculator,
-                    std::span<const float> mean) noexcept {
+void applySQ8Mean(PreprocessorsContainerAbstract &preprocessors,
+                  IndexCalculatorInterface<float> &index_calculator,
+                  std::span<const float> mean) noexcept {
     auto &container = static_cast<MultiPreprocessorsContainer<DataType, 1> &>(preprocessors);
     auto *preprocessor =
         dynamic_cast<QuantPreprocessor<DataType, Metric, true> *>(container.getPreprocessors()[0]);

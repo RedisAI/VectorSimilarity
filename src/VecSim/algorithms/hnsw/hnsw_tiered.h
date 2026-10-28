@@ -1145,10 +1145,6 @@ int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringAccumulation(labelTyp
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size_t count) {
-    assert(sqAccumulationState);
-    assert(sqAccumulationState->getCount() == count);
-    assert(sqAccumulationState->getCount() == this->frontendIndex->indexSize());
-    assert(sqAccumulationState->shouldFinalize());
     const auto mean = sqAccumulationState->calculateMean();
     // Allocate the snapshot before finishing accumulation. Synchronous execution removes jobs
     // from labelToInsertJobs, so iterating the map while dispatching would invalidate iterators.

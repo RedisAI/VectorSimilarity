@@ -95,8 +95,8 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
 private:
     template <VecSimMetric Metric>
     void setSQ8Mean(std::span<const float> mean) noexcept {
-        installSQ8Mean<DataType, Metric>(*this->getPreprocessorsContainer(),
-                                         *this->getIndexCalculator(), mean);
+        applySQ8Mean<DataType, Metric>(*this->getPreprocessorsContainer(),
+                                       *this->getIndexCalculator(), mean);
     }
 
 public:
