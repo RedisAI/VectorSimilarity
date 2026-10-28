@@ -1659,7 +1659,9 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
 
 TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
     for (auto [n, dim, m] : {std::tuple<size_t, size_t, size_t>{35000, 128, 16},
-                            {105126, 384, 16}, {161812, 768, 16}, {300000, 768, 32}}) {
+                             {105126, 384, 16},
+                             {161812, 768, 16},
+                             {300000, 768, 32}}) {
         HNSWParams params = {.dim = dim, .metric = VecSimMetric_Cosine, .M = m};
         VecSimIndex *index = this->CreateNewIndex(params);
         auto *hnsw = this->CastToHNSW(index);
@@ -1671,7 +1673,7 @@ TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
         for (size_t k : {12, 13, 50, 200}) {
             for (size_t subset : {n * 95 / 100, n, n * 2}) {
                 SCOPED_TRACE(::testing::Message() << "n=" << n << " dim=" << dim << " M=" << m
-                                                 << " k=" << k << " subset=" << subset);
+                                                  << " k=" << k << " subset=" << subset);
                 EXPECT_FALSE(VecSimIndex_PreferAdHocSearch(index, subset, k, true));
                 EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES);
             }
