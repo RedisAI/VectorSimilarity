@@ -111,7 +111,7 @@ private:
     // id, oldest first. Filled by the GC (`executeReadySwapJobs`) with the main index guard held
     // exclusively, emptied by inserts (`takeReusableSlot`) with it held shared. Protected by
     // `idToRepairJobsGuard`, like `idToSwapJob`, which keeps their swap jobs. Non-owning.
-    std::deque<HNSWSwapJob *> reusableSlots;
+    std::deque<HNSWSwapJob *, VecsimSTLAllocator<HNSWSwapJob *>> reusableSlots;
 
     // Counter for vectors inserted directly into HNSW by the main thread (bypassing flat buffer).
     // This happens in WriteInPlace mode or when the flat buffer is full.
@@ -929,6 +929,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       idToRepairJobs(this->allocator), idToSwapJob(this->allocator), readySwapJobs(0),
+      reusableSlots(VecsimSTLAllocator<HNSWSwapJob *>(this->allocator)),
       isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
