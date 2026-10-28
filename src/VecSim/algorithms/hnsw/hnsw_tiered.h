@@ -11,7 +11,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <deque>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -111,7 +110,10 @@ private:
     // id, oldest first. Filled by the GC (`executeReadySwapJobs`) with the main index guard held
     // exclusively, emptied by inserts (`takeReusableSlot`) with it held shared. Protected by
     // `idToRepairJobsGuard`, like `idToSwapJob`, which keeps their swap jobs. Non-owning.
-    std::deque<HNSWSwapJob *, VecsimSTLAllocator<HNSWSwapJob *>> reusableSlots;
+    // A vector read from `reusableSlotsHead`, rather than a deque: an empty one allocates nothing,
+    // so the size of a fresh index does not depend on the standard library.
+    vecsim_stl::vector<HNSWSwapJob *> reusableSlots;
+    size_t reusableSlotsHead{0};
 
     // Counter for vectors inserted directly into HNSW by the main thread (bypassing flat buffer).
     // This happens in WriteInPlace mode or when the flat buffer is full.
@@ -200,6 +202,11 @@ private:
 
     // Account for a swap job whose last repair is done. Called with `idToRepairJobsGuard` held.
     void onSwapJobRepaired(HNSWSwapJob *swap_job);
+
+    // The number of cleared slots in `reusableSlots`, and removing the oldest of them, which must
+    // exist. Both with `idToRepairJobsGuard` held.
+    size_t reusableSlotsCount() const { return reusableSlots.size() - reusableSlotsHead; }
+    HNSWSwapJob *popReusableSlot();
 
     // Take the id of the oldest cleared slot in `reusableSlots`, or INVALID_ID if it is empty. The
     // main index guard must be held shared, so no swap moves the slot until it is filled.
@@ -317,7 +324,7 @@ public:
     bool isReuseOnInsert() const { return this->reuseIdOnInsert; }
     size_t getReusableSlotsCount() {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        return this->reusableSlots.size();
+        return this->reusableSlotsCount();
     }
 
 #ifdef BUILD_TESTS
@@ -530,13 +537,29 @@ void TieredHNSWIndex<DataType, DistType>::clearReadySlots(size_t maxSlots) {
 }
 
 template <typename DataType, typename DistType>
+HNSWSwapJob *TieredHNSWIndex<DataType, DistType>::popReusableSlot() {
+    assert(reusableSlotsCount() > 0);
+    auto *swap_job = reusableSlots[reusableSlotsHead++];
+    if (reusableSlotsHead == reusableSlots.size()) {
+        reusableSlots.clear();
+        reusableSlotsHead = 0;
+    } else if (reusableSlotsHead * 2 >= reusableSlots.size()) {
+        // Drop the consumed front once it is at least half of the vector, which keeps the cost of
+        // a pop constant on average.
+        reusableSlots.erase(reusableSlots.begin(),
+                            reusableSlots.begin() + static_cast<std::ptrdiff_t>(reusableSlotsHead));
+        reusableSlotsHead = 0;
+    }
+    return swap_job;
+}
+
+template <typename DataType, typename DistType>
 idType TieredHNSWIndex<DataType, DistType>::takeReusableSlot() {
     std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-    if (reusableSlots.empty()) {
+    if (reusableSlotsCount() == 0) {
         return INVALID_ID;
     }
-    auto *swap_job = reusableSlots.front();
-    reusableSlots.pop_front();
+    auto *swap_job = popReusableSlot();
     const idType id = swap_job->deleted_id;
     assert(idToSwapJob.at(id) == swap_job);
     idToSwapJob.erase(id);
@@ -586,13 +609,12 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
     vecsim_stl::vector<HNSWSwapJob *> to_compact(this->allocator);
     {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        size_t count = reuse ? reusableSlots.size() / 2 : reusableSlots.size();
+        size_t count = reuse ? reusableSlotsCount() / 2 : reusableSlotsCount();
         if (maxJobsToRun > 0) {
             count = std::min(count, maxJobsToRun);
         }
         for (; count > 0; count--) {
-            to_compact.push_back(reusableSlots.front());
-            reusableSlots.pop_front();
+            to_compact.push_back(popReusableSlot());
         }
     }
     vecsim_stl::vector<idType> cachedIdsToRemove(this->allocator);
@@ -929,8 +951,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
                                                      std::shared_ptr<VecSimAllocator> allocator)
     : VecSimTieredIndex<DataType, DistType>(hnsw_index, bf_index, tiered_index_params, allocator),
       idToRepairJobs(this->allocator), idToSwapJob(this->allocator), readySwapJobs(0),
-      reusableSlots(VecsimSTLAllocator<HNSWSwapJob *>(this->allocator)),
-      isQuantized(hnsw_index->usesQuantizedStorage()) {
+      reusableSlots(this->allocator), isQuantized(hnsw_index->usesQuantizedStorage()) {
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
     if (isQuantized && normalization_set_size > 0) {
