@@ -9,6 +9,7 @@
 #pragma once
 
 #include "graph_data.h"
+#include "hnsw_hybrid_policy.h"
 #include "visited_nodes_handler.h"
 #include "VecSim/memory/vecsim_malloc.h"
 #include "VecSim/utils/vecsim_stl.h"
@@ -2556,8 +2557,8 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
                                                       bool initial_check) const {
-    // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
-    // see scripts/HNSW_batches_clf.py
+    // The original tree is from scripts/HNSW_batches_clf.py. Its broad-filter leaf is
+    // retrained from paired timings in scripts/hnsw_policy for the measured index kinds.
     size_t index_size = this->indexSize();
     // Referring to too large subset size as if it was the maximum possible size.
     subsetSize = std::min(subsetSize, index_size);
@@ -2668,6 +2669,13 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
                         if (index_size <= 300000) {
                             // node 35
                             res = true;
+                            if (!this->usesQuantizedStorage() &&
+                                (this->getType() == VecSimType_FLOAT32 ||
+                                 this->getType() == VecSimType_FLOAT64) &&
+                                this->getMetric() == VecSimMetric_Cosine &&
+                                this->indexLabelCount() == index_size) {
+                                res = preferHnswAdhocMeasured(k, index_size, d, M, r);
+                            }
                         } else {
                             // node 36
                             if (r <= 0.17) {
