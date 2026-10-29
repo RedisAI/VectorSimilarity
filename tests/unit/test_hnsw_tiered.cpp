@@ -5738,6 +5738,37 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsInTheIngestWindow) {
     }
 }
 
+TYPED_TEST(HNSWTieredIndexTestBasic, addVectorInPlaceOverwritesLabelInBothTiers) {
+    size_t dim = 4;
+    TEST_DATA_T ingesting[dim], replacement[dim];
+    GenerateVector<TEST_DATA_T>(ingesting, dim, 1);
+    GenerateVector<TEST_DATA_T>(replacement, dim, 10);
+
+    HNSWParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams hnsw_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredHNSWIndex(hnsw_params, mock_thread_pool);
+    auto *frontend_index = this->GetFlatIndex(tiered_index);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // The label is in the flat buffer and in HNSW at once, as inside the ingest window of an
+    // insert job, so deleting it removes two vectors.
+    VecSimIndex_AddVector(tiered_index, ingesting, 0);
+    hnsw_index->addVector(ingesting, 0);
+    ASSERT_EQ(frontend_index->indexSize(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), 1);
+
+    // Overwriting an existing label is not adding a new one, whatever number of copies it had.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    ASSERT_EQ(VecSimIndex_AddVector(tiered_index, replacement, 0), 0);
+
+    ASSERT_EQ(frontend_index->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), 1);
+    ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(0, replacement), 0);
+    ASSERT_NE(tiered_index->getDistanceFrom_Unsafe(0, ingesting), 0);
+}
+
 TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsWithFullFlatBuffer) {
     size_t dim = 4;
     HNSWParams params = {

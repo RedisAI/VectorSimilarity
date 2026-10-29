@@ -549,11 +549,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         this->submitJobs(repair_jobs);
         // Insert the swap job into the swap jobs lookup (for fast update in case that the
         // node id is changed due to swap job).
-        {
-            std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-            assert(idToSwapJob.find(id) == idToSwapJob.end());
-            idToSwapJob[id] = swap_job;
-        }
+        assert(idToSwapJob.find(id) == idToSwapJob.end());
+        idToSwapJob[id] = swap_job;
     }
     this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
@@ -909,7 +906,9 @@ int TieredHNSWIndex<DataType, DistType>::addVectorInPlace(const void *blob, labe
     auto hnsw_index = this->getHNSWIndex();
     auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
     if (!this->backendIndex->isMultiValue()) {
-        ret -= this->deleteVector(label);
+        // A label ingested into HNSW whose flat copy is not dropped yet exists in both tiers, so
+        // `deleteVector` may report 2 deletions. It is still one overwrite, not a new label.
+        ret = this->deleteVector(label) == 0 ? 1 : 0;
     }
     {
         const auto main_index_lock = this->acquireMainIndexGuard();
