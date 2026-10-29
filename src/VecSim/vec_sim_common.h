@@ -457,7 +457,6 @@ typedef struct HnswTieredInfo {
     size_t pendingSwapJobsThreshold;
     size_t defragRuns;   // Number of defrag() calls so far.
     size_t defragTimeNs; // Wall time spent in defrag(), including the main index guard wait.
-    size_t reusedSlots;  // Number of inserts that took a cleared slot instead of appending.
 } HnswTieredInfo;
 
 typedef struct SvsTieredInfo {
