@@ -5688,6 +5688,231 @@ TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsSingleValueZeroVectorsRemovesL
     }
 }
 
+static void RunAllJobs(tieredIndexMock &mock_thread_pool) {
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+}
+
+static size_t CountQueuedInsertJobs(tieredIndexMock &mock_thread_pool) {
+    auto queue = mock_thread_pool.jobQ;
+    size_t count = 0;
+    for (; !queue.empty(); queue.pop()) {
+        count += queue.front().job->jobType == HNSW_INSERT_VECTOR_JOB;
+    }
+    return count;
+}
+
+// Each of labels 0..n-1's (single) id.
+template <typename data_t, typename dist_t>
+static std::vector<idType> LabelIds(HNSWIndex<data_t, dist_t> *hnsw_index, size_t n) {
+    std::vector<idType> ids(n);
+    for (size_t i = 0; i < n; i++) {
+        ids[i] = hnsw_index->getElementIds(i).at(0);
+    }
+    return ids;
+}
+
+// Deletes the given labels asynchronously and runs their repairs, leaving a ready swap job each.
+template <typename data_t, typename dist_t>
+static void DeleteLabelsAndRepair(TieredHNSWIndex<data_t, dist_t> *tiered_index,
+                                  tieredIndexMock &mock_thread_pool,
+                                  const std::vector<labelType> &labels) {
+    for (labelType label : labels) {
+        ASSERT_EQ(tiered_index->deleteVector(label), 1);
+    }
+    RunAllJobs(mock_thread_pool);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, reuseOnInsertIsDisabledByDefault) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+    ASSERT_FALSE(tiered_index->isReuseOnInsert());
+
+    // The GC compacts the deleted elements as it always did, leaving nothing to reuse.
+    DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2, 5, 7});
+    ASSERT_EQ(tiered_index->readySwapJobs, 3);
+    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 3);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// With reuse on, the GC clears the slots of the ready swap jobs instead of compacting them, then
+// compacts the oldest half of the cache. Each insert takes one of the remaining slots rather than
+// appending a fresh id, until none is left.
+TYPED_TEST(HNSWTieredIndexTestBasic, insertTakesClearedSlotsFromGC) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2, 4, 5, 7});
+    ASSERT_EQ(tiered_index->readySwapJobs, 4);
+    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 2);
+    ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 2);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // Every new label lands in one of the cleared slots, and the index doesn't grow.
+    for (size_t i = 0; i < 2; i++) {
+        labelType label = 100 + i;
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, 100 + i);
+        RunAllJobs(mock_thread_pool);
+        ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1 - i);
+        ASSERT_EQ(hnsw_index->indexSize(), n - 2);
+        ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1 - i);
+    }
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->reusedSlots.load(), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // With the cache empty, the next one is appended.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 200, 200);
+    RunAllJobs(mock_thread_pool);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 1);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n - 1);
+    for (labelType label : {100, 101, 200}) {
+        TEST_DATA_T vec[dim];
+        GenerateVector<TEST_DATA_T>(vec, dim, label);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, vec), 0);
+    }
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// The GC compacts the oldest half of the cleared slots, also when that relocates a slot that is
+// still in the cache.
+TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsHalfOfTheClearedSlots) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    // Deleting the last ids too, so that compactions have to relocate cached slots.
+    std::vector<labelType> deleted = {1, 3, 6, 8, 9};
+    DeleteLabelsAndRepair(tiered_index, mock_thread_pool, deleted);
+    ASSERT_EQ(tiered_index->readySwapJobs, deleted.size());
+    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 3);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 2);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 3);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 3);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    // The survivors are intact, and the cached slots, wherever they went, can be filled.
+    for (labelType label : {0, 2, 4, 5, 7}) {
+        TEST_DATA_T vec[dim];
+        GenerateVector<TEST_DATA_T>(vec, dim, label);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, vec), 0);
+    }
+    for (size_t i = 0; i < 3; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 100 + i, 100 + i);
+        RunAllJobs(mock_thread_pool);
+    }
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 2);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n - 2);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// A GC clears no more slots than the number of swap jobs it may run; the rest stay ready for the
+// next one.
+TYPED_TEST(HNSWTieredIndexTestBasic, gcClearsAtMostTheSwapJobLimit) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {1, 3, 6, 8, 9});
+    ASSERT_EQ(tiered_index->readySwapJobs, 5);
+    ASSERT_EQ(tiered_index->executeReadySwapJobs(2), 1);
+    // Two cleared, one of them compacted (half of the cache).
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1);
+    ASSERT_EQ(tiered_index->readySwapJobs, 3);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 1);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+
+    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 2);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 3);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 2);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// Turning reuse off hands the cleared slots back to the ordinary compaction.
+TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsClearedSlotsWhenReuseIsTurnedOff) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2, 5, 7});
+    ASSERT_EQ(tiered_index->readySwapJobs, 3);
+    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 2);
+
+    tiered_index->setReuseOnInsert(false);
+    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 3);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// Overwriting every label over and over, with the GC running between the rounds, stops the index
+// from growing: each round's inserts take the slots the previous GC kept, and append the rest.
+TYPED_TEST(HNSWTieredIndexTestBasic, overwritesStopGrowingTheIndexWithReuse) {
+    size_t dim = 4;
+    size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+
+    size_t rounds = 6;
+    for (size_t round = 1; round <= rounds; round++) {
+        for (size_t label = 0; label < n; label++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, 1000 * round + label);
+        }
+        RunAllJobs(mock_thread_pool);
+        tiered_index->runGC();
+        // Each GC clears the n replaced ids and compacts half of them, and the next round takes
+        // the other half.
+        ASSERT_LE(hnsw_index->indexSize(), 2 * n);
+        if (round >= 2) {
+            ASSERT_EQ(hnsw_index->indexSize(), n + n / 2);
+        }
+        ASSERT_EQ(tiered_index->indexLabelCount(), n);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    }
+    for (size_t label = 0; label < n; label++) {
+        TEST_DATA_T vec[dim];
+        GenerateVector<TEST_DATA_T>(vec, dim, 1000 * rounds + label);
+        ASSERT_EQ(tiered_index->getDistanceFrom_Unsafe(label, vec), 0);
+    }
+}
+
 TYPED_TEST(HNSWTieredIndexTestBasic, updateVectorsInTheIngestWindow) {
     size_t dim = 4;
     TEST_DATA_T ingesting[dim], replacement[dim];
