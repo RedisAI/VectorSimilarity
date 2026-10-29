@@ -3855,6 +3855,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
             /*do nothing*/
         }
     }
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
     // Multi-value appends on the second run. Single-value overwrites: an overwrite that goes
     // through the flat buffer reuses its old id, while one inserted straight into HNSW (the buffer
