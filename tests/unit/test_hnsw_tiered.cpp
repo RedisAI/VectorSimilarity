@@ -3787,6 +3787,7 @@ TYPED_TEST(HNSWTieredIndexTest, bufferLimitAsync) {
             /*do nothing*/
         }
     }
+    mock_thread_pool.thread_pool_wait();
     mock_thread_pool.thread_pool_join();
     // Multi-value appends on the second run. Single-value overwrites: an overwrite that goes
     // through the flat buffer reuses its old id, while one inserted straight into HNSW (the buffer
@@ -6012,11 +6013,11 @@ protected:
     }
 
     const vecsim_stl::vector<double> &getRunningSumVec(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->runningSumVec;
+        return idx->sqAccumulationState->getRunningSum();
     }
 
     size_t getNormalizationSetSize(TieredHNSWIndex<data_t, dist_t> *idx) {
-        return idx->sqAccumulationState->normalizationSetSize;
+        return idx->sqAccumulationState->getNormalizationSetSize();
     }
 
     // Compare the actual cached dispatches and preprocessing with a backend constructed with

@@ -12,6 +12,7 @@
 #include <cmath>
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
+#include "VecSim/quantization/sq8_training_state.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/preprocessors.h"
 #include "VecSim/spaces/computer/calculator.h"
@@ -2643,4 +2644,86 @@ TEST(DistanceCalculatorWithNormTest, OddDimension_MatchesBruteForce) {
         allocator->free_allocation(y_query);
         delete calc;
     }
+}
+
+template <typename T>
+class SQ8TrainingStateTest : public ::testing::Test {};
+
+using SQ8TrainingInputTypes = ::testing::Types<float, vecsim_types::float16>;
+TYPED_TEST_SUITE(SQ8TrainingStateTest, SQ8TrainingInputTypes);
+
+TYPED_TEST(SQ8TrainingStateTest, SumMeanAndRemoval) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    SQ8TrainingState state(allocator, 2, 2);
+    const TypeParam first[] = {from_fp32<TypeParam>(1.5f), from_fp32<TypeParam>(-2.0f)};
+    const TypeParam second[] = {from_fp32<TypeParam>(-0.5f), from_fp32<TypeParam>(4.0f)};
+    EXPECT_EQ(state.getCount(), 0);
+    EXPECT_FALSE(state.shouldFinalize());
+    state.add(std::span<const TypeParam>(first));
+    EXPECT_EQ(state.getCount(), 1);
+    EXPECT_FALSE(state.shouldFinalize());
+    state.add(std::span<const TypeParam>(second));
+    EXPECT_EQ(state.getCount(), 2);
+    EXPECT_TRUE(state.shouldFinalize());
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[0], 1.0);
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[1], 2.0);
+    const auto mean = state.calculateMean();
+    EXPECT_EQ(mean.getAllocator(), allocator);
+    EXPECT_FLOAT_EQ(mean[0], 0.5f);
+    EXPECT_FLOAT_EQ(mean[1], 1.0f);
+
+    state.subtract(std::span<const TypeParam>(first));
+    EXPECT_EQ(state.getCount(), 1);
+    EXPECT_FALSE(state.shouldFinalize());
+    const auto remaining_mean = state.calculateMean();
+    EXPECT_FLOAT_EQ(remaining_mean[0], -0.5f);
+    EXPECT_FLOAT_EQ(remaining_mean[1], 4.0f);
+    state.subtract(std::span<const TypeParam>(second));
+    EXPECT_EQ(state.getCount(), 0);
+    EXPECT_FALSE(state.shouldFinalize());
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[0], 0.0);
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[1], 0.0);
+}
+
+TYPED_TEST(SQ8TrainingStateTest, ReplacementKeepsLiveCount) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    SQ8TrainingState state(allocator, 1, 2);
+    const TypeParam original[] = {from_fp32<TypeParam>(2.0f)};
+    const TypeParam replacement[] = {from_fp32<TypeParam>(8.0f)};
+    state.add(std::span<const TypeParam>(original));
+    state.subtract(std::span<const TypeParam>(original));
+    state.add(std::span<const TypeParam>(replacement));
+    EXPECT_EQ(state.getCount(), 1);
+    EXPECT_FALSE(state.shouldFinalize());
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[0], 8.0);
+    EXPECT_FLOAT_EQ(state.calculateMean()[0], 8.0f);
+}
+
+TEST(SQ8TrainingStateTest, ThresholdIsCapped) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    SQ8TrainingState state(allocator, 1, std::numeric_limits<size_t>::max());
+    EXPECT_EQ(state.getNormalizationSetSize(), MAX_QUANT_NORMALIZATION_SET_SIZE);
+    const float vector[] = {1.0f};
+    for (size_t i = 0; i < MAX_QUANT_NORMALIZATION_SET_SIZE - 1; ++i) {
+        state.add(std::span<const float>(vector));
+    }
+    EXPECT_FALSE(state.shouldFinalize());
+    state.add(std::span<const float>(vector));
+    EXPECT_TRUE(state.shouldFinalize());
+    EXPECT_EQ(state.getCount(), MAX_QUANT_NORMALIZATION_SET_SIZE);
+    EXPECT_FLOAT_EQ(state.calculateMean()[0], 1.0f);
+}
+
+TEST(SQ8TrainingStateTest, AccumulatesInFP64) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    SQ8TrainingState state(allocator, 1, 3);
+    const float large[] = {16777216.0f};
+    const float small[] = {1.0f};
+    state.add(std::span<const float>(large));
+    state.add(std::span<const float>(small));
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[0], 16777217.0);
+    state.subtract(std::span<const float>(large));
+    EXPECT_EQ(state.getCount(), 1);
+    EXPECT_DOUBLE_EQ(state.getRunningSum()[0], 1.0);
+    EXPECT_FLOAT_EQ(state.calculateMean()[0], 1.0f);
 }

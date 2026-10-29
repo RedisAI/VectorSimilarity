@@ -254,7 +254,8 @@ typedef struct {
 // A struct that contains HNSW Disk tiered index specific params.
 // Consider removing and use TieredHNSWParams instead if they both share swapJobThreshold
 typedef struct {
-    char _placeholder; // Reserved for future fields and avoid compiler errors
+    size_t QuantNormalizationSetSize; // Training threshold, with the semantics of
+                                      // TieredHNSWParams::QuantNormalizationSetSize.
 } TieredHNSWDiskParams;
 
 // A struct that contains SVS tiered index specific params.
