@@ -1400,9 +1400,10 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
     // Don't allow choosing a deleted node as an entry point upon searching for neighbors
     // candidates (that is, we're NOT running a query, but inserting a new vector).
     idType bestNonDeletedCand = bestCand;
+    VecSimStopPoller stop(timeoutCtx, VECSIM_STOP_CHECK_INTERVAL);
 
     do {
-        if (running_query && VECSIM_TIMEOUT(timeoutCtx)) {
+        if (running_query && (VECSIM_TIMEOUT(timeoutCtx) || stop.due())) {
             *rc = VecSim_QueryReply_TimedOut;
             bestCand = INVALID_ID;
             return;
@@ -2278,6 +2279,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
     }
 
     visited_nodes_handler->tagNode(ep_id, visited_tag);
+    VecSimStopPoller stop(timeoutCtx, VECSIM_STOP_CHECK_INTERVAL);
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
@@ -2285,7 +2287,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         if ((-curr_el_pair.first) > lowerBound && top_candidates->size() >= ef) {
             break;
         }
-        if (VECSIM_TIMEOUT(timeoutCtx)) {
+        if (VECSIM_TIMEOUT(timeoutCtx) || stop.due()) {
             returnVisitedList(visited_nodes_handler);
             *rc = VecSim_QueryReply_TimedOut;
             return top_candidates;
@@ -2386,6 +2388,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
 
     candidate_set.emplace(-ep_dist, ep_id);
     visited_nodes_handler->tagNode(ep_id, visited_tag);
+    VecSimStopPoller stop(timeoutCtx, VECSIM_STOP_CHECK_INTERVAL);
 
     while (!candidate_set.empty()) {
         pair<DistType, idType> curr_el_pair = candidate_set.top();
@@ -2395,7 +2398,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
         if ((-curr_el_pair.first) > dynamic_range_search_boundaries) {
             break;
         }
-        if (VECSIM_TIMEOUT(timeoutCtx)) {
+        if (VECSIM_TIMEOUT(timeoutCtx) || stop.due()) {
             *rc = VecSim_QueryReply_TimedOut;
             break;
         }

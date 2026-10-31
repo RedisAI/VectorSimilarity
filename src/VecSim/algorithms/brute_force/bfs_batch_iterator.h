@@ -27,9 +27,10 @@ private:
 
         idType curr_id = 0;
         auto vectors_it = this->index->getVectorsIterator();
+        VecSimStopPoller stop(this->getTimeoutCtx(), this->index->getBlockSize());
         while (auto *vector = vectors_it->next()) {
             // Compute the scores for every vector and extend the scores array.
-            if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
+            if (VECSIM_TIMEOUT(this->getTimeoutCtx()) || stop.due()) {
                 return VecSim_QueryReply_TimedOut;
             }
             auto score = this->index->calcDistance(vector, this->getQueryBlob());

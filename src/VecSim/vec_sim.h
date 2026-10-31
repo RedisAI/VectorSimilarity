@@ -340,6 +340,16 @@ void VecSim_SetMemoryFunctions(VecSimMemoryFunctions memoryfunctions);
 void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 
 /**
+ * @brief Allow a 3rd party stop callback to end a running query early, for reasons other than
+ * its timeout. Searches call it with the query's timeoutCtx once per vector block (brute force)
+ * or once every VECSIM_STOP_CHECK_INTERVAL steps (graph searches), and a search it stops returns
+ * VecSim_QueryReply_TimedOut. NULL (the default) disables it.
+ *
+ * @param callback stopCallbackFunction function. should get void* and return int.
+ */
+void VecSim_SetStopCallbackFunction(stopCallbackFunction callback);
+
+/**
  * @brief Allow 3rd party log callback to be used for logging.
  *
  * @param callback logCallbackFunction function. should get void* and return void.

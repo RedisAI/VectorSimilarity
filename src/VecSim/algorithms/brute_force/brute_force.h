@@ -289,9 +289,10 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
 
     // For vector, compute its scores and update the Top candidates max heap
     auto vectors_it = this->vectors->getIterator();
+    VecSimStopPoller stop(timeoutCtx, this->blockSize);
     idType curr_id = 0;
     while (auto *vector = vectors_it->next()) {
-        if (VECSIM_TIMEOUT(timeoutCtx)) {
+        if (VECSIM_TIMEOUT(timeoutCtx) || stop.due()) {
             rep->code = VecSim_QueryReply_TimedOut;
             delete TopCandidates;
             return rep;
@@ -334,10 +335,11 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
 
     DistType radius_ = DistType(radius);
     auto vectors_it = this->vectors->getIterator();
+    VecSimStopPoller stop(timeoutCtx, this->blockSize);
     idType curr_id = 0;
     const void *processed_query = processed_query_ptr.get();
     while (vectors_it->hasNext()) {
-        if (VECSIM_TIMEOUT(timeoutCtx)) {
+        if (VECSIM_TIMEOUT(timeoutCtx) || stop.due()) {
             rep->code = VecSim_QueryReply_TimedOut;
             break;
         }
