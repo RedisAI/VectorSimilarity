@@ -342,10 +342,10 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
 /**
  * @brief Allow a 3rd party stop callback to end a running query early, for reasons other than
  * its timeout. Searches call it with the query's timeoutCtx once every blockSize vectors (brute
- * force scans), once per batch (batch iterators) and once every VECSIM_STOP_CHECK_INTERVAL
- * (vec_sim_interface.h) candidate pops (graph searches), so a loop shorter than its interval
- * never calls it. A search it stops returns VecSim_QueryReply_TimedOut. NULL (the default)
- * disables it; it may be changed while queries run.
+ * force scans), once per batch (brute force and HNSW batch iterators) and once every
+ * VECSIM_STOP_CHECK_INTERVAL (vec_sim_interface.h) candidate pops or SVS cancel checks (graph
+ * searches), so a loop shorter than its interval never calls it. A search it stops returns
+ * VecSim_QueryReply_TimedOut. NULL (the default) disables it; it may be changed while queries run.
  *
  * @param callback stopCallbackFunction function. should get void* and return int.
  */
