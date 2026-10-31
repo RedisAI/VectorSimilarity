@@ -323,14 +323,12 @@ constexpr size_t VECSIM_STOP_CHECK_INTERVAL = 64;
 
 /**
  * Amortizes VECSIM_STOP over one search loop on one thread: `due()` calls the stop callback once
- * every `interval` calls, so the other calls cost a decrement and a branch. Without a stop
- * callback it never calls one.
+ * every `interval` calls, so the other calls cost a decrement and a branch. It reads the callback
+ * at each interval, so one installed while the search runs is seen too.
  */
 class VecSimStopPoller {
 public:
-    VecSimStopPoller(void *ctx, size_t interval)
-        : ctx(ctx), interval(interval),
-          left(VecSimIndexInterface::hasStopCallback() ? interval : SIZE_MAX) {}
+    VecSimStopPoller(void *ctx, size_t interval) : ctx(ctx), interval(interval), left(interval) {}
 
     // True when this call reached the interval and the stop callback asked to stop.
     bool due() {
@@ -354,14 +352,15 @@ private:
  */
 class VecSimSharedStopPoller {
 public:
-    VecSimSharedStopPoller(void *ctx, size_t interval)
-        : ctx(ctx), interval(VecSimIndexInterface::hasStopCallback() ? interval : 0) {}
+    VecSimSharedStopPoller(void *ctx, size_t interval) : ctx(ctx), interval(interval) {}
 
     bool due() const {
         if (stopped.load(std::memory_order_relaxed)) {
             return true;
         }
-        if (interval == 0 || (calls.fetch_add(1, std::memory_order_relaxed) + 1) % interval != 0) {
+        // Checked per call, so a callback installed while the search runs is seen too.
+        if (!VecSimIndexInterface::hasStopCallback() ||
+            (calls.fetch_add(1, std::memory_order_relaxed) + 1) % interval != 0) {
             return false;
         }
         if (!VECSIM_STOP(ctx)) {
@@ -376,7 +375,7 @@ public:
 
 private:
     void *ctx;
-    size_t interval; // 0: no stop callback.
+    size_t interval;
     mutable std::atomic<size_t> calls{0};
     mutable std::atomic<bool> stopped{false};
 };
