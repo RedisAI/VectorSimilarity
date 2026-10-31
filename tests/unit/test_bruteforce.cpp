@@ -1655,7 +1655,7 @@ TYPED_TEST(BruteForceTest, stopCallbackOncePerBlock) {
     size_t dim = 4;
     size_t block_size = 5;
     size_t n = 23;
-    size_t full_blocks = n / block_size;
+    size_t blocks = (n + block_size - 1) / block_size;
 
     BFParams params = {.dim = dim, .metric = VecSimMetric_L2, .blockSize = block_size};
     VecSimIndex *index = this->CreateNewIndex(params);
@@ -1680,7 +1680,7 @@ TYPED_TEST(BruteForceTest, stopCallbackOncePerBlock) {
         VecSimQueryReply_Free(rep);
         // One timeout check per vector, as without a stop callback; one stop check per block.
         ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), n);
-        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), full_blocks);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), blocks);
 
         CountingQueryCallbacks::reset();
         rep = VecSimIndex_RangeQuery(index, query, radius, nullptr, BY_SCORE);
@@ -1688,7 +1688,7 @@ TYPED_TEST(BruteForceTest, stopCallbackOncePerBlock) {
         ASSERT_EQ(VecSimQueryReply_Len(rep), n);
         VecSimQueryReply_Free(rep);
         ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), n);
-        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), full_blocks);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), blocks);
 
         // The first full pass scores every vector; each batch then checks once more.
         CountingQueryCallbacks::reset();
@@ -1696,22 +1696,22 @@ TYPED_TEST(BruteForceTest, stopCallbackOncePerBlock) {
         rep = VecSimBatchIterator_Next(it, 2, BY_SCORE);
         ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_OK);
         VecSimQueryReply_Free(rep);
-        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), full_blocks + 1);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), blocks + 1);
         rep = VecSimBatchIterator_Next(it, 2, BY_SCORE);
         ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_OK);
         VecSimQueryReply_Free(rep);
-        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), full_blocks + 2);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), blocks + 2);
         VecSimBatchIterator_Free(it);
     }
 
     {
-        // Asked to stop at its second block, each search ends there as on timeout.
+        // Asked to stop before its second block, each search ends there as on timeout.
         CountingQueryCallbacks callbacks(2);
         VecSimQueryReply *rep = VecSimIndex_TopKQuery(index, query, 3, nullptr, BY_SCORE);
         ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_TimedOut);
         ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
         VecSimQueryReply_Free(rep);
-        ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), 2 * block_size);
+        ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), block_size);
 
         CountingQueryCallbacks::reset(2);
         rep = VecSimIndex_RangeQuery(index, query, radius, nullptr, BY_SCORE);

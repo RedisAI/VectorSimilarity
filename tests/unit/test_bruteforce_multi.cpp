@@ -1238,7 +1238,7 @@ TYPED_TEST(BruteForceMultiTest, stopCallbackOncePerBlockInBatchIterator) {
         ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_OK);
         VecSimQueryReply_Free(rep);
         VecSimBatchIterator_Free(it);
-        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), n / block_size + 1);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), (n + block_size - 1) / block_size + 1);
     }
     {
         CountingQueryCallbacks callbacks(1);
@@ -1248,7 +1248,8 @@ TYPED_TEST(BruteForceMultiTest, stopCallbackOncePerBlockInBatchIterator) {
         ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
         VecSimQueryReply_Free(rep);
         VecSimBatchIterator_Free(it);
-        ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), block_size);
+        // Stopped before the first block.
+        ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), 0);
     }
 
     VecSimIndex_Free(index);
