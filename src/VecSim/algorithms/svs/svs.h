@@ -760,7 +760,7 @@ public:
             };
 
             impl->search(result.view(), query, sp, cancel);
-            if (cancel()) {
+            if (VECSIM_TIMEOUT(timeoutCtx) || stop.hasStopped()) {
                 rep->code = VecSim_QueryReply_TimedOut;
                 return rep;
             }
@@ -817,7 +817,7 @@ public:
             // Search result is cached in the iterator and can be accessed by the user
             auto svs_it = impl->make_batch_iterator(query);
             svs_it.next(batch_size, cancel);
-            if (cancel()) {
+            if (VECSIM_TIMEOUT(timeoutCtx) || stop.hasStopped()) {
                 rep->code = VecSim_QueryReply_TimedOut;
                 return rep;
             }
@@ -845,7 +845,7 @@ public:
                 // next batch
                 if (keep_searching) {
                     svs_it.next(batch_size, cancel);
-                    if (cancel()) {
+                    if (VECSIM_TIMEOUT(timeoutCtx) || stop.hasStopped()) {
                         rep->code = VecSim_QueryReply_TimedOut;
                         return rep;
                     }

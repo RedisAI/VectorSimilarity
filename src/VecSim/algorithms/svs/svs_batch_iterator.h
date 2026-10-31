@@ -50,7 +50,7 @@ private:
         for (size_t i = 0; i < n_res; i++) {
             if (curr_it == impl_.end()) {
                 impl_.next(bs, cancel);
-                if (cancel()) {
+                if (VECSIM_TIMEOUT(timeoutCtx) || stop.hasStopped()) {
                     rep->code = VecSim_QueryReply_TimedOut;
                     rep->results.clear();
                     return rep;

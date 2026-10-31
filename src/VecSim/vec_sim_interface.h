@@ -275,9 +275,16 @@ public:
      * @brief Allow a 3rd party stop callback to end a query early (see stopCallbackFunction).
      * Searches that hit it return VecSim_QueryReply_TimedOut, as on timeout. NULL disables it.
      */
-    static stopCallbackFunction stopCallback;
+    static std::atomic<stopCallbackFunction> stopCallback;
     inline static void setStopCallbackFunction(stopCallbackFunction callback) {
-        VecSimIndexInterface::stopCallback = callback;
+        VecSimIndexInterface::stopCallback.store(callback, std::memory_order_relaxed);
+    }
+    inline static bool hasStopCallback() {
+        return stopCallback.load(std::memory_order_relaxed) != nullptr;
+    }
+    inline static bool callStopCallback(void *ctx) {
+        stopCallbackFunction callback = stopCallback.load(std::memory_order_relaxed);
+        return callback && callback(ctx);
     }
 
     static logCallbackFunction logCallback;
@@ -323,7 +330,7 @@ class VecSimStopPoller {
 public:
     VecSimStopPoller(void *ctx, size_t interval)
         : ctx(ctx), interval(interval),
-          left(VecSimIndexInterface::stopCallback ? interval : SIZE_MAX) {}
+          left(VecSimIndexInterface::hasStopCallback() ? interval : SIZE_MAX) {}
 
     // True when this call reached the interval and the stop callback asked to stop.
     bool due() {
@@ -342,13 +349,13 @@ private:
 
 /**
  * VecSimStopPoller for a search that may poll from several threads, such as an SVS search's
- * cancel predicate. Sticky: once the callback asked to stop, every later call reports it, so a
- * caller can re-check the outcome after the search returns.
+ * cancel predicate. Sticky: once the callback asked to stop, every later call reports it, and
+ * hasStopped() lets the caller check the outcome after the search returns.
  */
 class VecSimSharedStopPoller {
 public:
     VecSimSharedStopPoller(void *ctx, size_t interval)
-        : ctx(ctx), interval(VecSimIndexInterface::stopCallback ? interval : 0) {}
+        : ctx(ctx), interval(VecSimIndexInterface::hasStopCallback() ? interval : 0) {}
 
     bool due() const {
         if (stopped.load(std::memory_order_relaxed)) {
@@ -363,6 +370,9 @@ public:
         stopped.store(true, std::memory_order_relaxed);
         return true;
     }
+
+    // Whether an earlier due() stopped the search, without counting a call.
+    bool hasStopped() const { return stopped.load(std::memory_order_relaxed); }
 
 private:
     void *ctx;
