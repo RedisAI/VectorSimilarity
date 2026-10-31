@@ -1716,8 +1716,10 @@ TYPED_TEST(BruteForceTest, stopCallbackOncePerBlock) {
         CountingQueryCallbacks::reset(2);
         rep = VecSimIndex_RangeQuery(index, query, radius, nullptr, BY_SCORE);
         ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_TimedOut);
-        ASSERT_LT(VecSimQueryReply_Len(rep), n);
+        // A range query keeps the matches of the blocks it scanned.
+        ASSERT_EQ(VecSimQueryReply_Len(rep), block_size);
         VecSimQueryReply_Free(rep);
+        ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), block_size);
 
         CountingQueryCallbacks::reset(2);
         VecSimBatchIterator *it = VecSimBatchIterator_New(index, query, nullptr);
@@ -1726,6 +1728,23 @@ TYPED_TEST(BruteForceTest, stopCallbackOncePerBlock) {
         ASSERT_EQ(VecSimQueryReply_Len(rep), 0);
         VecSimQueryReply_Free(rep);
         VecSimBatchIterator_Free(it);
+        ASSERT_EQ(CountingQueryCallbacks::timeoutCalls.load(), block_size);
+    }
+
+    VecSimIndex_Free(index);
+
+    // An index within one block is polled once per scan, an empty one never.
+    index = this->CreateNewIndex(params);
+    {
+        CountingQueryCallbacks callbacks;
+        VecSimQueryReply *rep = VecSimIndex_TopKQuery(index, query, 3, nullptr, BY_SCORE);
+        VecSimQueryReply_Free(rep);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), 0);
+        GenerateAndAddVector<TEST_DATA_T>(index, dim, 0, 0);
+        rep = VecSimIndex_TopKQuery(index, query, 3, nullptr, BY_SCORE);
+        ASSERT_EQ(VecSimQueryReply_GetCode(rep), VecSim_QueryReply_OK);
+        VecSimQueryReply_Free(rep);
+        ASSERT_EQ(CountingQueryCallbacks::stopCalls.load(), 1);
     }
 
     VecSimIndex_Free(index);

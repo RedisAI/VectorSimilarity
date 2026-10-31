@@ -41,7 +41,6 @@ public:
 
     size_t indexSize() const override;
     size_t indexCapacity() const override;
-    std::unique_ptr<RawDataContainer::Iterator> getVectorsIterator() const;
     /**
      * Calls `visit(vector, id)` for every vector in id order, one storage block at a time: the
      * stop callback is polled before each block, the timeout before each vector. Returns false
@@ -270,17 +269,12 @@ size_t BruteForceIndex<DataType, DistType>::indexCapacity() const {
 }
 
 template <typename DataType, typename DistType>
-std::unique_ptr<RawDataContainer::Iterator>
-BruteForceIndex<DataType, DistType>::getVectorsIterator() const {
-    return this->vectors->getIterator();
-}
-
-template <typename DataType, typename DistType>
 template <typename Visit>
 bool BruteForceIndex<DataType, DistType>::scanVectors(void *timeoutCtx, Visit &&visit) const {
     // `vectors` is always a DataBlocksContainer, whose blocks hold their elements contiguously.
     const auto *container = static_cast<const DataBlocksContainer *>(this->vectors);
     const size_t count = container->size();
+    assert(count == this->count);
     const size_t block_size = container->blockSize();
     const size_t stride = container->elementByteCount();
     for (size_t block_start = 0; block_start < count; block_start += block_size) {

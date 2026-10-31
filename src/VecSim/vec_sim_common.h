@@ -533,7 +533,7 @@ typedef int (*timeoutCallbackFunction)(void *ctx);
 /**
  * @brief A 3rd party function that asks a running query to stop for a reason other than its
  * timeout, such as memory pressure. Unlike the timeout callback it is called only every so many
- * steps of a search (see VecSimStopPoller), so it may do more work per call.
+ * steps of a search (see VecSim_SetStopCallbackFunction), so it may do more work per call.
  * @param ctx the query's timeoutCtx (VecSimQueryParams::timeoutCtx), NULL for a query without
  * query params
  * @return the function should return a non-zero value to stop the query
