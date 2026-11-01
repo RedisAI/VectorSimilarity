@@ -498,6 +498,13 @@ public:
                    : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
     }
 
+    bool preferAdHocSearchAfterBatch(size_t subsetSize, size_t k,
+                                     size_t k_remaining) const override {
+        return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
+                   ? this->backendIndex->preferAdHocSearchAfterBatch(subsetSize, k, k_remaining)
+                   : this->frontendIndex->preferAdHocSearchAfterBatch(subsetSize, k, k_remaining);
+    }
+
     // Return the current state of the global write mode (async/in-place).
     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
 

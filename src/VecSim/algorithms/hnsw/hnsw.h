@@ -312,7 +312,17 @@ public:
     VecSimIndexDebugInfo debugInfo() const override;
     VecSimIndexBasicInfo basicInfo() const override;
     VecSimDebugInfoIterator *debugInfoIterator() const override;
-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
+        return preferAdHocSearch(subsetSize, k, initial_check, 0);
+    }
+
+    bool preferAdHocSearchAfterBatch(size_t subsetSize, size_t k,
+                                     size_t k_remaining) const override {
+        return preferAdHocSearch(subsetSize, k, false, k_remaining);
+    }
+
+    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check,
+                           size_t k_remaining) const;
     const char *getDataByInternalId(idType internal_id) const;
     ElementGraphData *getGraphDataByInternalId(idType internal_id) const;
     ElementLevelData &getElementLevelData(idType internal_id, size_t level) const;
@@ -2556,7 +2566,8 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
 
 template <typename DataType, typename DistType>
 bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
-                                                      bool initial_check) const {
+                                                      bool initial_check,
+                                                      size_t k_remaining) const {
     // The original tree is from scripts/HNSW_batches_clf.py. The broad-filter leaf uses
     // the measured policy in hnsw_hybrid_policy.h.
     size_t index_size = this->indexSize();
@@ -2567,6 +2578,14 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     size_t M = this->getM();
     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
     bool res;
+    auto measured_policy = [&]() {
+        if (!this->usesQuantizedStorage() &&
+            (this->getType() == VecSimType_FLOAT32 || this->getType() == VecSimType_FLOAT64) &&
+            this->getMetric() == VecSimMetric_Cosine && this->indexLabelCount() == index_size) {
+            return preferHnswAdhocMeasured(k, index_size, d, M, r, initial_check ? 0 : k_remaining);
+        }
+        return true;
+    };
 
     // node 0
     if (index_size <= 30000) {
@@ -2608,7 +2627,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
             // node 3
             if (index_size <= 750000) {
                 // node 15
-                res = true;
+                res = (!initial_check && k_remaining) ? measured_policy() : true;
             } else {
                 // node 16
                 if (k <= 7) {
@@ -2668,14 +2687,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
                         // node 26
                         if (index_size <= 300000) {
                             // node 35
-                            res = true;
-                            if (!this->usesQuantizedStorage() &&
-                                (this->getType() == VecSimType_FLOAT32 ||
-                                 this->getType() == VecSimType_FLOAT64) &&
-                                this->getMetric() == VecSimMetric_Cosine &&
-                                this->indexLabelCount() == index_size) {
-                                res = preferHnswAdhocMeasured(k, index_size, d, M, r);
-                            }
+                            res = measured_policy();
                         } else {
                             // node 36
                             if (r <= 0.17) {

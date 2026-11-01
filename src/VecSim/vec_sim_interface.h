@@ -227,6 +227,11 @@ public:
 
     virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const = 0;
 
+    // Indexes without a continuation cost model retain their existing policy.
+    virtual bool preferAdHocSearchAfterBatch(size_t subsetSize, size_t k, size_t) const {
+        return preferAdHocSearch(subsetSize, k, false);
+    }
+
     /**
      * @brief Set the latest search mode in the index data (for info/debugging).
      * @param mode The search mode.

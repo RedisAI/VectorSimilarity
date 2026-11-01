@@ -1637,6 +1637,9 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
         ASSERT_EQ(res, comb.second);
+        EXPECT_EQ(
+            VecSimIndex_PreferAdHocSearchAfterBatch(index, (size_t)(r * (float)index_size), k, 1),
+            comb.second);
         // Clean-up.
         this->CastToHNSW(index)->curElementCount = 0;
         VecSimIndex_Free(index);
@@ -1657,8 +1660,43 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
     VecSimIndex_Free(index);
 }
 
+TEST(HnswHybridPolicy, MeasuredBoundaries) {
+    struct Case {
+        size_t n, k, m;
+        float ratio;
+        bool adhoc;
+    };
+    for (const auto &c : {
+             Case{35000, 200, 32, 0.26f, true},
+             Case{55000, 200, 16, 0.26f, true},
+             Case{55001, 200, 16, 0.26f, false},
+             Case{73187, 200, 16, 0.26f, false},
+             Case{73187, 200, 16, 0.124626f, true},
+             Case{35000, 500, 16, 0.5f, true},
+             Case{73187, 500, 16, 0.26f, true},
+             Case{73187, 31, 16, 0.125f, false},
+             Case{73187, 32, 16, 0.125f, true},
+             Case{112500, 50, 16, 0.125f, true},
+             Case{112501, 50, 16, 0.125f, false},
+             Case{161812, 125, 16, 0.125f, false},
+             Case{161812, 126, 16, 0.125f, true},
+             Case{161812, 200, 24, 0.125f, true},
+             Case{161812, 200, 25, 0.125f, false},
+         }) {
+        SCOPED_TRACE(::testing::Message()
+                     << "n=" << c.n << " k=" << c.k << " M=" << c.m << " ratio=" << c.ratio);
+        EXPECT_EQ(preferHnswAdhocMeasured(c.k, c.n, 768, c.m, c.ratio), c.adhoc);
+    }
+    EXPECT_TRUE(preferHnswAdhocMeasured(501, 73187, 768, 16, 1.0f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(200, 34999, 768, 16, 1.0f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(200, 300001, 768, 16, 1.0f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 1537, 16, 1.0f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 768, 65, 1.0f));
+}
+
 TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
     for (auto [n, dim, m] : {std::tuple<size_t, size_t, size_t>{35000, 128, 16},
+                             {73187, 768, 16},
                              {105126, 384, 16},
                              {161812, 768, 16},
                              {300000, 768, 32}}) {
@@ -1686,6 +1724,41 @@ TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
         hnsw->curElementCount = 0;
         VecSimIndex_Free(index);
     }
+}
+
+TYPED_TEST(HNSWTest, progressAwareHybridPolicy) {
+    const size_t n = 73187;
+    HNSWParams params = {.dim = 768, .metric = VecSimMetric_Cosine, .M = 16};
+    VecSimIndex *index = this->CreateNewIndex(params);
+    auto *hnsw = this->CastToHNSW(index);
+    for (size_t id = 0; id < n; ++id) {
+        this->CastToHNSW_Single(index)->labelLookup[id] = id;
+    }
+    hnsw->curElementCount = n;
+
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n / 8, 200, false));
+    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 1));
+    EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES);
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 142));
+    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n * 8 / 100, 200, 1));
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n * 6 / 100, 200, false));
+    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n * 6 / 100, 200, 1));
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 31, 200, 1));
+    EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES_TO_ADHOC_BF);
+    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 31 + 1, 200, 1));
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 0));
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 201));
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 501, 1));
+    size_t estimate = n * 69 / 1000;
+    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, estimate, 200, 1));
+    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, estimate / 2, 200, 1));
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, estimate / 4, 200, 1));
+
+    // Deleted labels keep the policy outside the calibrated single-vector domain.
+    this->CastToHNSW_Single(index)->labelLookup.erase(0);
+    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 1));
+    hnsw->curElementCount = 0;
+    VecSimIndex_Free(index);
 }
 
 TYPED_TEST(HNSWTest, testCosine) {

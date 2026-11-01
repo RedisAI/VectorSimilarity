@@ -277,6 +277,15 @@ bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t
                                    bool initial_check);
 
 /**
+ * @brief Review an ongoing hybrid search, accounting for results already retained.
+ * @param k total number of requested results.
+ * @param k_remaining number of results still needed; zero preserves the original heuristic.
+ * Other arguments have the same meaning as in VecSimIndex_PreferAdHocSearch.
+ */
+bool VecSimIndex_PreferAdHocSearchAfterBatch(VecSimIndex *index, size_t subsetSize, size_t k,
+                                             size_t k_remaining);
+
+/**
  * @brief Acquire/Release the required locks of the tiered index externally before executing an
  * an unsafe *READ* operation (as the locks are acquired for shared ownership).
  * @param index the tiered index to protect (no nothing for non-tiered indexes).

@@ -531,6 +531,11 @@ extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetS
     return index->preferAdHocSearch(subsetSize, k, initial_check);
 }
 
+extern "C" bool VecSimIndex_PreferAdHocSearchAfterBatch(VecSimIndex *index, size_t subsetSize,
+                                                        size_t k, size_t k_remaining) {
+    return index->preferAdHocSearchAfterBatch(subsetSize, k, k_remaining);
+}
+
 // Ad-hoc Brute Force Context API - delegates to virtual methods on the index/context
 extern "C" VecSimAdhocBfCtx *VecSimIndex_AdhocBfCtx_New(VecSimIndex *index, const void *queryBlob) {
     return index->newAdhocBfCtx(queryBlob);
