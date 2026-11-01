@@ -1,0 +1,12 @@
+{
+  "status": "Completed40320 measurements across3development graph shapes; all result-set checks passed.",
+  "decision": "Do not adopt90%remaining fallback: customer-like correlated-filter p95 rose from6.785ms to9.909ms. Adopt only the conservative effective-K>350 guard in the10\u201317.5% branch, then validate fresh query IDs3000..3019.",
+  "candidate_for_experiment": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
+  "native_limit": "No Search filter traversal/doc-ID-hole costs; AWS remains required.",
+  "evidence": [
+    "guard-dev-customer-summary.json",
+    "guard-dev-dense-summary.json",
+    "guard-dev-large-m32-summary.json"
+  ],
+  "product_change": "One boolean clause plus8test assertions; no change to K200 decisions."
+}

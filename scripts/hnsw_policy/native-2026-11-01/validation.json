@@ -1,5 +1,5 @@
 {
-  "status": "preliminary; AWS end-to-end validation and remaining reserved shapes pending",
+  "status": "Full frozen native matrix complete; this is the parent policy. High-K follow-up and rejected early-fallback experiment are recorded separately. AWS end-to-end validation remains pending.",
   "candidate_commit_before_rebase": "7e4d75ee7f9b7ae71f3285beea44e15892f68f1a",
   "candidate_base": "12e3c03e0bcbe05d0ea94cbeefcb5e5c70d1bc65",
   "rebased_candidate": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
@@ -10,7 +10,9 @@
     "BF operates on preselected matching IDs; excludes RedisSearch NOT/intersection/doc-ID-hole costs.",
     "DBpedia vectors/queries are proxies, not customer data.",
     "Default EF10 results are approximate. No99% per-query guarantee.",
-    "Native HNSW/helper/API files are identical across pre-rebase and rebased candidates; rebased tiered index includes upstream ID-reuse removal."
+    "Native HNSW/helper/API files are identical across pre-rebase and rebased candidates; rebased tiered index includes upstream ID-reuse removal.",
+    "Repeated timings do not increase independent query count: each reserved shape uses10 queries,3repeats.",
+    "At EF400, reserved projection filters with accurate estimates reach98.95% mean recall; the provisional99% mean target is not met in every group. EF800 reaches99.25\u201399.7% mean across the customer quality groups, with97\u201398% minimum recall."
   ],
   "heldout_customer": {
     "n": 73186,
@@ -53,21 +55,324 @@
     "python3 analyze_auto.py heldout-customer"
   ],
   "file_sha256": {
-    "bounded-nearest-edges-traces.csv": "9e1feb52de3d51fc8110bdcb6b7919dd0d9442b114bd671bdf559e840e04c091",
-    "bounded-nearest-edges-results.csv": "43c8a1a8216519924ceb994f84a1019033771f422d5a94a9862ed1ff2e96cdb8",
-    "bounded-quality-traces.csv": "54ebf51b7255e53417684f72bfa211047cb8b4522dc0975ccc8da26231cd957b",
-    "heldout-customer-summary.json": "15c08cf370f62731b3aa0303d962922f861b8a676a0c7cc251c33e42a064c692",
     "analyze_auto.py": "20fcf6f07e65f692301fd648b57ee95d136c12ea2eb09c3344e889fd648bdee5",
+    "bounded-nearest-edges-results.csv": "43c8a1a8216519924ceb994f84a1019033771f422d5a94a9862ed1ff2e96cdb8",
     "bounded-nearest-edges-summary.json": "9aac09f56a14c7c8e3b92ffdbdd5cb5d24b52e127e9f62529c3eb53a2a920303",
-    "bounded-quality-summary.json": "b67dd1a0c1cf876e0158b188fab91378ace66b80489f2ab062052c850b296dec",
-    "heldout-customer-traces.csv": "2701c0e3f90315f9234e0bbce3a99f656379d8972fc6d3c330899d9bab39b5c9",
-    "original-draft-policy.h": "902fb7a64d8191643d67040e59782570eef46a966173f11326bb063e63b7a70c",
-    "frozen-validation.json": "024513dd7ee1b3aada36c6702827cb39f75306e4c74782c513ab6856fb855ff9",
-    "progress-policy.h": "221f0fe46329d49f1d710e35e52483be8ddbf813311d946627f896526f4f11ad",
+    "bounded-nearest-edges-traces.csv": "9e1feb52de3d51fc8110bdcb6b7919dd0d9442b114bd671bdf559e840e04c091",
     "bounded-quality-results.csv": "fb94a13197b2cdd9089c4df99905e988c52b639d04ee96d9173487147e856c3f",
+    "bounded-quality-summary.json": "b67dd1a0c1cf876e0158b188fab91378ace66b80489f2ab062052c850b296dec",
+    "bounded-quality-traces.csv": "54ebf51b7255e53417684f72bfa211047cb8b4522dc0975ccc8da26231cd957b",
     "candidate.patch": "4af0cf2cdff5d4ca5fe679fb27a8d2eba0b6700783e483430c163e5b7c16d5ef",
-    "heldout-customer-results.csv": "ff48c3a89f7423affa951da394550b69ccec1c02190f396f20c9c4f4569483f6",
+    "frozen-validation.json": "024513dd7ee1b3aada36c6702827cb39f75306e4c74782c513ab6856fb855ff9",
+    "harness/CMakeLists.txt": "2a872b3c8ce2660921f252a3999ecd2965a01719aa8418f178848c2e8b8faff4",
     "harness/auto_measure.cpp": "16303c9304e865b6631fadbfecb1628473311b29c7dbd7bc53132b71f032b605",
-    "harness/CMakeLists.txt": "1f67d8ff0dea5863148300c864f2b9302ffdb02cbed0b6ab7cf4b4408d268693"
+    "heldout-customer-quality-results.csv": "c0df358b6193e8a98caefb0e98b7d743be89ba0f2605920e9a9ed8a2c8913cf2",
+    "heldout-customer-quality-summary.json": "fb32326d85ef7647b34ddab16228a657d752c4835e409c78916c3a232fdb605c",
+    "heldout-customer-quality-traces.csv": "0edeabe5f3a757f73fc168f7adc84076d1280ca229c468a07d584454f4581638",
+    "heldout-customer-results.csv": "ff48c3a89f7423affa951da394550b69ccec1c02190f396f20c9c4f4569483f6",
+    "heldout-customer-summary.json": "15c08cf370f62731b3aa0303d962922f861b8a676a0c7cc251c33e42a064c692",
+    "heldout-customer-traces.csv": "2701c0e3f90315f9234e0bbce3a99f656379d8972fc6d3c330899d9bab39b5c9",
+    "heldout-dense-results.csv": "81f2f619ad3489700d7230cda0c2e90971078381d4ed34f3b34af60a7b78e4d9",
+    "heldout-dense-summary.json": "c8958ca22b7d0b939d18eef0c979675f5ef35cd2dd6b6a3e49a69a84d1fdf075",
+    "heldout-dense-traces.csv": "7c806b3825ad7a9c88a6c6e5544dd5209aa28c6af5624e4f38b24bce4db4973d",
+    "heldout-fashion-results.csv": "dcac0a2a60b0d474b2dec121ac4d9554f38e1a4ef199c8e2838cb17ec208b872",
+    "heldout-fashion-summary.json": "1467d909fae23778a413ad6c33c4cb1b488481b0d7ded0a964916b177bd90889",
+    "heldout-fashion-traces.csv": "9dca8d0dcffe56dc9b17caac1d664c8322a375496799a3034927c139efc15acf",
+    "heldout-large-m32-results.csv": "47e4e0f520a4b285aa8f1325ed0865d9673b1fa5f19ea624a768fba426decba8",
+    "heldout-large-m32-summary.json": "7fc3fe7a8e9d0b81a8e25d6cc4ab63d2d031f3cbad188aad0e9bbd9572c04455",
+    "heldout-large-m32-traces.csv": "4829405c9ab4912ae1ae218a0b16dd86a508b916b2e2415785fa1f3a7f83d0ab",
+    "heldout-large-results.csv": "4c97e46a2d4f83c8ffbafe2358769873d90ca584417461e777c5ed17fb53761b",
+    "heldout-large-summary.json": "6b4ba6a64944d79b53415074e045ad7396fc66344ccbef16372ea9676f61b844",
+    "heldout-large-traces.csv": "fd47ff0c5b654ba1f92a0b100c15b2bf8e8a0e704f889fb78b17e40c6bac0021",
+    "heldout-mid-results.csv": "4643864fc760d575716a17e01a648e68aa1ac45bdb4ceeaa44e44ec7175ca613",
+    "heldout-mid-summary.json": "908851e6804e166a9ab52dfd7c03edd3d2faeba7a241adf1951813bb7e5f6c92",
+    "heldout-mid-traces.csv": "18fe8d951e77aef991461e687e14a89e74ba43c75895b924219ce66fe7e42f47",
+    "original-draft-policy.h": "902fb7a64d8191643d67040e59782570eef46a966173f11326bb063e63b7a70c",
+    "progress-policy.h": "221f0fe46329d49f1d710e35e52483be8ddbf813311d946627f896526f4f11ad",
+    "reserved-summary.json": "598de124bdaf4209f6656f901c71887830e40245adb5322e26a60220da09ba9f",
+    "summarize_reserved.py": "1feb697b8346ace1e26f3d0e576dfef36b22eb06fa718133b0c4e8287cdb092b"
+  },
+  "heldout_customer_quality": {
+    "measurements": 1920,
+    "queries": 10,
+    "query_ids": [
+      1000,
+      1009
+    ],
+    "groups": [
+      {
+        "filter": "random",
+        "estimate_kind": "actual",
+        "ef": "10",
+        "mean_recall": 0.9884999999999999,
+        "min_recall": 0.965,
+        "paired_speedup": 2.0948957701525117,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "actual",
+        "ef": "200",
+        "mean_recall": 0.99,
+        "min_recall": 0.975,
+        "paired_speedup": 2.015224056810358,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "actual",
+        "ef": "400",
+        "mean_recall": 0.9904999999999999,
+        "min_recall": 0.975,
+        "paired_speedup": 2.034255049261974,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "actual",
+        "ef": "800",
+        "mean_recall": 0.9924999999999999,
+        "min_recall": 0.98,
+        "paired_speedup": 1.9404420594027654,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "full",
+        "ef": "10",
+        "mean_recall": 0.9884999999999999,
+        "min_recall": 0.97,
+        "paired_speedup": 2.1625942439925003,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "full",
+        "ef": "200",
+        "mean_recall": 0.992,
+        "min_recall": 0.975,
+        "paired_speedup": 1.7946038553128978,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "full",
+        "ef": "400",
+        "mean_recall": 0.995,
+        "min_recall": 0.98,
+        "paired_speedup": 1.4916851465363483,
+        "switches": 0
+      },
+      {
+        "filter": "random",
+        "estimate_kind": "full",
+        "ef": "800",
+        "mean_recall": 0.997,
+        "min_recall": 0.98,
+        "paired_speedup": 1.1844813921694102,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "actual",
+        "ef": "10",
+        "mean_recall": 0.983,
+        "min_recall": 0.925,
+        "paired_speedup": 2.0444741086604266,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "actual",
+        "ef": "200",
+        "mean_recall": 0.9875,
+        "min_recall": 0.945,
+        "paired_speedup": 2.041152458957401,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "actual",
+        "ef": "400",
+        "mean_recall": 0.9895,
+        "min_recall": 0.955,
+        "paired_speedup": 2.0450990128905118,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "actual",
+        "ef": "800",
+        "mean_recall": 0.993,
+        "min_recall": 0.97,
+        "paired_speedup": 1.982588675286432,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "full",
+        "ef": "10",
+        "mean_recall": 0.979,
+        "min_recall": 0.925,
+        "paired_speedup": 2.464410414570592,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "full",
+        "ef": "200",
+        "mean_recall": 0.9864999999999999,
+        "min_recall": 0.945,
+        "paired_speedup": 1.9814102522681722,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "full",
+        "ef": "400",
+        "mean_recall": 0.99,
+        "min_recall": 0.955,
+        "paired_speedup": 1.7148566038143072,
+        "switches": 0
+      },
+      {
+        "filter": "projection",
+        "estimate_kind": "full",
+        "ef": "800",
+        "mean_recall": 0.994,
+        "min_recall": 0.97,
+        "paired_speedup": 1.2691037640896305,
+        "switches": 0
+      }
+    ]
+  },
+  "heldout_mid": {
+    "measurements": 13440,
+    "queries": 10,
+    "query_ids": [
+      1000,
+      1009
+    ],
+    "regressions": {
+      "actual": {
+        "groups": 56,
+        "over_10pct_median_slowdown": 0,
+        "worst_paired_slowdown": 1.0070671144410943
+      },
+      "full": {
+        "groups": 56,
+        "over_10pct_median_slowdown": 20,
+        "worst_paired_slowdown": 11.59447048327552
+      }
+    },
+    "customer_like_groups": [
+      {
+        "n": "105126",
+        "dim": "768",
+        "m": "32",
+        "efc": "200",
+        "bytes": "4",
+        "seed": "48302",
+        "filter": "random",
+        "ratio": "0.26",
+        "k": "200",
+        "estimate_kind": "actual",
+        "ef": "10",
+        "policy": "compiled",
+        "samples": 30,
+        "bf_p50_us": 8538.6315,
+        "bf_p95_us": 8713.954,
+        "policy_p50_us": 3836.593,
+        "policy_p95_us": 4796.673,
+        "mean_recall": 0.9924999999999999,
+        "min_recall": 0.975,
+        "switches": 0,
+        "initial_adhoc": 0,
+        "paired_speedup": 2.2454915958779846
+      },
+      {
+        "n": "105126",
+        "dim": "768",
+        "m": "32",
+        "efc": "200",
+        "bytes": "4",
+        "seed": "48302",
+        "filter": "random",
+        "ratio": "0.26",
+        "k": "200",
+        "estimate_kind": "full",
+        "ef": "10",
+        "policy": "compiled",
+        "samples": 30,
+        "bf_p50_us": 8534.582999999999,
+        "bf_p95_us": 8619.946,
+        "policy_p50_us": 3849.284,
+        "policy_p95_us": 4703.064,
+        "mean_recall": 0.9915,
+        "min_recall": 0.97,
+        "switches": 0,
+        "initial_adhoc": 0,
+        "paired_speedup": 2.2221193013913023
+      },
+      {
+        "n": "105126",
+        "dim": "768",
+        "m": "32",
+        "efc": "200",
+        "bytes": "4",
+        "seed": "48302",
+        "filter": "projection",
+        "ratio": "0.26",
+        "k": "200",
+        "estimate_kind": "actual",
+        "ef": "10",
+        "policy": "compiled",
+        "samples": 30,
+        "bf_p50_us": 8871.6725,
+        "bf_p95_us": 10328.922,
+        "policy_p50_us": 4358.684499999999,
+        "policy_p95_us": 6730.823,
+        "mean_recall": 0.9944999999999999,
+        "min_recall": 0.98,
+        "switches": 0,
+        "initial_adhoc": 0,
+        "paired_speedup": 2.115215831647368
+      },
+      {
+        "n": "105126",
+        "dim": "768",
+        "m": "32",
+        "efc": "200",
+        "bytes": "4",
+        "seed": "48302",
+        "filter": "projection",
+        "ratio": "0.26",
+        "k": "200",
+        "estimate_kind": "full",
+        "ef": "10",
+        "policy": "compiled",
+        "samples": 30,
+        "bf_p50_us": 8938.2405,
+        "bf_p95_us": 10331.153,
+        "policy_p50_us": 3641.194,
+        "policy_p95_us": 7013.775,
+        "mean_recall": 0.9935,
+        "min_recall": 0.98,
+        "switches": 0,
+        "initial_adhoc": 0,
+        "paired_speedup": 2.529477324597236
+      }
+    ]
+  },
+  "reserved_matrix": {
+    "measurements": 80640,
+    "shapes": 6,
+    "queries_per_shape": 10,
+    "accurate_estimate_groups": 336,
+    "accurate_estimate_median_regressions_over_10pct": 2,
+    "full_estimate_groups": 336,
+    "full_estimate_median_regressions_over_10pct": 114,
+    "worst_full_estimate_slowdown": 25.975525291753303,
+    "see": "reserved-summary.json"
   }
 }

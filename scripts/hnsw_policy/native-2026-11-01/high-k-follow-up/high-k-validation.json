@@ -1,0 +1,22 @@
+{
+  "status": "Candidate frozen before reserved query evaluation. Narrow high-K guard only; 90%remaining fallback rejected.",
+  "parent_vecsim": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
+  "query_offset": 3000,
+  "queries": 20,
+  "seed": 58305,
+  "n": 180000,
+  "dim": 768,
+  "m": 32,
+  "efc": 100,
+  "bytes": 4,
+  "k": 500,
+  "graph_cache": "heldout-large-m32.hnsw",
+  "guard": "Retain BF for effective K>350 in the10\u201317.5% selectivity branch. K200 customer policy decisions are unchanged.",
+  "limits": [
+    "Native BF excludes Search filter/doc-ID traversal.",
+    "All prior reserved measurements are for the parent policy, not this updated guard."
+  ],
+  "helper_sha256": "89a49f1dcda4879a9c77b43238adaeafd24912e983c93beb24f510d51fdee9bb",
+  "candidate_vecsim": "2d27f83f0cdb23f060983c5ca7eb74139fb05a93",
+  "candidate_redisearch": "50b3cb6d667494982941dc09ae4fac65c2287174"
+}

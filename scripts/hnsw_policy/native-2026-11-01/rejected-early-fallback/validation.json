@@ -1,0 +1,32 @@
+{
+  "status": "Completed40320 measurements across3development graph shapes; all result-set checks passed.",
+  "decision": "Do not adopt90%remaining fallback: customer-like correlated-filter p95 rose from6.785ms to9.909ms. Adopt only the conservative effective-K>350 guard in the10\u201317.5% branch, then validate fresh query IDs3000..3019.",
+  "candidate_for_experiment": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
+  "native_limit": "No Search filter traversal/doc-ID-hole costs; AWS remains required.",
+  "evidence": [
+    "guard-dev-customer-summary.json",
+    "guard-dev-dense-summary.json",
+    "guard-dev-large-m32-summary.json"
+  ],
+  "product_change": "One boolean clause plus8test assertions; no change to K200 decisions.",
+  "binary_sha256": "f6080e8f5a946f4df97fc644332b08d129219c8ff32f77b2378bb0ef29719865",
+  "file_sha256": {
+    "analyze_auto.py": "20fcf6f07e65f692301fd648b57ee95d136c12ea2eb09c3344e889fd648bdee5",
+    "guard-decision.json": "1d0896dd67b17ff1876b4c01ee9cb9ee8425f793c4fed24d71eb0730d18adb2a",
+    "guard-dev-customer-results.csv": "316861d98c9b76df205fca2b96562e9deb7a04d6c45943ea723f95f23bd92c34",
+    "guard-dev-customer-summary.json": "6dbcce3f107f100d1dca8706a1b462c5b061dcd8bb40a030d5252b0fe8ebca36",
+    "guard-dev-customer-traces.csv": "2b3417b8df7bea175b027f734cf77e3946590eb384fbdc580f120eb98f6e37ac",
+    "guard-dev-dense-results.csv": "6a89deefc35bc7897760d418b3f6b40329379c593b8b0cefa0ca78f86fe74645",
+    "guard-dev-dense-summary.json": "cb8b33350b1d03d62a5d10889d2b46dfa01234e4e3e6f41bd3f1fec3101f586b",
+    "guard-dev-dense-traces.csv": "759db97a7974b197ef98d6a4f1810208797986f5fa454c58e955b3c3df9821de",
+    "guard-dev-large-m32-results.csv": "a92821176cf6b97705bcc4389f645ef7b598b3fa9d00ec03e80f143a2ac8f792",
+    "guard-dev-large-m32-summary.json": "a8d13a9ef58a1eb0607ec9d6a41a80efe7601878267ea8156d04bcfb94fbed19",
+    "guard-dev-large-m32-traces.csv": "1f49b9c940223a608e05c9cbbba7c4943f8da32d1d461b702d7d83a4b9136e4b",
+    "guard-experiment.json": "cc6ec1d56ddd29653a35f2ea716a418a3c5de54324146c33870a4f06bbd7554a",
+    "guard-policy.h": "05f47765d52ab145d25ff43efe3f75a5131e587bd8db9b0a493f4906ce540805",
+    "harness/CMakeLists.txt": "70aba6524ff940e1d6c5844b52a10e6d94d51a3a91f390b75a520903c11d28d0",
+    "harness/auto_measure_guard.cpp": "37aa780b761ce8371780ca7582a6b7d8efba8e7be690761a93bb21f31cbe0112",
+    "original-draft-policy.h": "902fb7a64d8191643d67040e59782570eef46a966173f11326bb063e63b7a70c",
+    "progress-policy.h": "4250af3104e8c4768d467ab76ba9ddf19083860e7c0f097b5f3017fc2dd56cd3"
+  }
+}

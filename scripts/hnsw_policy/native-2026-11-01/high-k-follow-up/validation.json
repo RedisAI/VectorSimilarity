@@ -1,0 +1,41 @@
+{
+  "status": "Completed6720paired measurements on20fresh queries; compiled production API and prototype IDs matched in every paired case.",
+  "parent_vecsim": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
+  "query_offset": 3000,
+  "queries": 20,
+  "seed": 58305,
+  "n": 180000,
+  "dim": 768,
+  "m": 32,
+  "efc": 100,
+  "bytes": 4,
+  "k": 500,
+  "graph_cache": "heldout-large-m32.hnsw",
+  "guard": "Retain BF for effective K>350 in the10\u201317.5% selectivity branch. K200 customer policy decisions are unchanged.",
+  "limits": [
+    "Native BF excludes Search filter/doc-ID traversal.",
+    "All prior reserved measurements are for the parent policy, not this updated guard."
+  ],
+  "helper_sha256": "89a49f1dcda4879a9c77b43238adaeafd24912e983c93beb24f510d51fdee9bb",
+  "candidate_vecsim": "2d27f83f0cdb23f060983c5ca7eb74139fb05a93",
+  "candidate_redisearch": "50b3cb6d667494982941dc09ae4fac65c2287174",
+  "binary_sha256": "d1e9c3cf2eb04e439c6da0714ac351147998d72d97c17e687659602df74920f0",
+  "tests": "11native policy tests passed.",
+  "reproduce": [
+    "Configure harness/CMakeLists.txt with VECSIM_SOURCE at candidate_vecsim and downloaded dependencies; build target auto_measure.",
+    "Use the shared DBpedia prefix and query input described in the parent validation.json.",
+    "MOD18264_GRAPH_CACHE=high-k.hnsw taskset -c 2 auto_measure dbpedia-shuffled-300k.raw QUERY_VECTORS 180000 768 32 100 4 3000 20 58305 high-k-reserved-traces.csv high-k-reserved:highk > high-k-reserved-results.csv",
+    "python3 analyze_auto.py high-k-reserved"
+  ],
+  "file_sha256": {
+    "analyze_auto.py": "20fcf6f07e65f692301fd648b57ee95d136c12ea2eb09c3344e889fd648bdee5",
+    "harness/CMakeLists.txt": "2a872b3c8ce2660921f252a3999ecd2965a01719aa8418f178848c2e8b8faff4",
+    "harness/auto_measure.cpp": "465c44acf262ac8d536aa2288430e6e333ca9c6baa6fdd2a360244a66fb0d305",
+    "high-k-reserved-results.csv": "8ab0660d9b91772386f8e69597f4dc77eb5186166863855159857abf06937818",
+    "high-k-reserved-summary.json": "85208efa3a10f4a454352ed2b69b4314dceb08ff27cb33cf7c6131d4512b0da1",
+    "high-k-reserved-traces.csv": "682856239f829fa6fa579ed79dc859011f53950bffcde38ae17e88ea434487ff",
+    "high-k-validation.json": "2f6351407ad74a21170b7518900dab4a19ce2db6eb419dbce5acc9f943c37039",
+    "original-draft-policy.h": "902fb7a64d8191643d67040e59782570eef46a966173f11326bb063e63b7a70c",
+    "progress-policy.h": "ab2986d29a06830945d372fd575a7d6885f4a7872816f20c6cc27ce411c9d91b"
+  }
+}

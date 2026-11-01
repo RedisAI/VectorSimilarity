@@ -1,0 +1,32 @@
+{
+  "status": "Prepared external experiment, not built or executed. No production source change.",
+  "candidate_commit": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
+  "guard": "After a batch, k > 31 and remaining*10 >= k*9 chooses BF; otherwise use current compiled policy. Initial choice unchanged.",
+  "query_offset": 0,
+  "queries": 20,
+  "seed": 18264,
+  "repeats": 3,
+  "data": "Existing DBpedia shuffled prefix, matching saved same-graph customer and dense caches. Development queries only.",
+  "shapes": [
+    "heldout-customer.hnsw (73186,768,16,100,FLOAT64)",
+    "heldout-dense.hnsw (73187,768,64,512,FLOAT32)",
+    "heldout-large-m32.hnsw (180000,768,32,100,FLOAT32)"
+  ],
+  "strategies": [
+    "compiled candidate",
+    "external guarded candidate"
+  ],
+  "checks": [
+    "Each strategy paired with exact BF. Order alternates.",
+    "If guard continues batches through completion, IDs must equal compiled candidate.",
+    "Every guard BF result, initial or fallback, must equal exact filtered BF."
+  ],
+  "limits": [
+    "Native timings omit Search filter traversal and document-ID holes.",
+    "Performance differences are development evidence; no production policy acceptance from this alone."
+  ],
+  "guards": [
+    "After a batch, k > 31 and remaining*10 >= k*9 chooses BF before considering remaining K.",
+    "Preserve BF when effective K >350 in the 10\u201317.5% helper branch, including large M>24 indexes."
+  ]
+}
