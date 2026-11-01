@@ -1,0 +1,73 @@
+{
+  "status": "preliminary; AWS end-to-end validation and remaining reserved shapes pending",
+  "candidate_commit_before_rebase": "7e4d75ee7f9b7ae71f3285beea44e15892f68f1a",
+  "candidate_base": "12e3c03e0bcbe05d0ea94cbeefcb5e5c70d1bc65",
+  "rebased_candidate": "d8bd429c9d29eee723fff69b27c82e3d20862b85",
+  "binary_sha256": "17875250beea3ea593ce55ccfcb4c1f692970ccf9fd25e3d27468dbe07dec523",
+  "host": "Intel Core Ultra7 155U, pinned to CPU2; native measurements only",
+  "comparison": "Forced batches, original draft helper, progress prototype and compiled production API on one shared graph, each paired with exact BF. Strategy order rotated,3repeats per query.",
+  "limits": [
+    "BF operates on preselected matching IDs; excludes RedisSearch NOT/intersection/doc-ID-hole costs.",
+    "DBpedia vectors/queries are proxies, not customer data.",
+    "Default EF10 results are approximate. No99% per-query guarantee.",
+    "Native HNSW/helper/API files are identical across pre-rebase and rebased candidates; rebased tiered index includes upstream ID-reuse removal."
+  ],
+  "heldout_customer": {
+    "n": 73186,
+    "dim": 768,
+    "M": 16,
+    "ef_construction": 100,
+    "type": "FLOAT64",
+    "query_ids": [
+      1000,
+      1009
+    ],
+    "measurements": 13440,
+    "k200_26pct_paired_median_speedup_range": [
+      2.37,
+      2.91
+    ],
+    "k200_26pct_mean_recall_range": [
+      0.979,
+      0.9885
+    ],
+    "k200_26pct_minimum_recall": 0.925,
+    "k200_26pct_runtime_fallbacks": 0,
+    "accurate_estimate_groups_over_10pct_median_regression": 0,
+    "full_estimate_groups_over_10pct_median_regression": 20,
+    "worst_sparse_full_estimate_slowdown_approx": 14.7
+  },
+  "development_runs": {
+    "bounded-quality": "20queries at offsets0..19,26%matching,K200,EF10/200/400/800. Same dataset prefix; one graph per run.",
+    "bounded-nearest-edges": "199/200/201 closest matching vectors,K200. Confirms eventual BF fallback rather than indefinite near-complete continuation."
+  },
+  "input_files": {
+    "source_graph": "dbpedia-cosine-dim768-M64-efc512.hnsw_v3 from VecSim benchmark dataset",
+    "query_vectors": "dbpedia-cosine-dim768-test_vectors.raw",
+    "query_sha256": "4c63a75134c43b4eefe599800c6d7a041b503cdeb1344567b7be4c28a520f2a6"
+  },
+  "reproduce": [
+    "Apply candidate.patch to candidate_base; configure harness/CMakeLists.txt with VECSIM_SOURCE pointing to that checkout, CMAKE_BUILD_TYPE=Release and downloaded VecSim dependencies. Build target auto_measure.",
+    "auto_measure extract SOURCE_GRAPH dbpedia-shuffled-300k.raw 300000 18264",
+    "MOD18264_GRAPH_CACHE=customer.hnsw taskset -c 2 auto_measure dbpedia-shuffled-300k.raw QUERY_VECTORS 73186 768 16 100 8 1000 10 48301 heldout-customer-traces.csv heldout-customer > heldout-customer-results.csv",
+    "python3 analyze_auto.py heldout-customer"
+  ],
+  "file_sha256": {
+    "bounded-nearest-edges-traces.csv": "9e1feb52de3d51fc8110bdcb6b7919dd0d9442b114bd671bdf559e840e04c091",
+    "bounded-nearest-edges-results.csv": "43c8a1a8216519924ceb994f84a1019033771f422d5a94a9862ed1ff2e96cdb8",
+    "bounded-quality-traces.csv": "54ebf51b7255e53417684f72bfa211047cb8b4522dc0975ccc8da26231cd957b",
+    "heldout-customer-summary.json": "15c08cf370f62731b3aa0303d962922f861b8a676a0c7cc251c33e42a064c692",
+    "analyze_auto.py": "fd23c7b307c9ffb99949fb5f084b4c5536e479c0c23a997e8482dd781de0c2b9",
+    "bounded-nearest-edges-summary.json": "9aac09f56a14c7c8e3b92ffdbdd5cb5d24b52e127e9f62529c3eb53a2a920303",
+    "bounded-quality-summary.json": "b67dd1a0c1cf876e0158b188fab91378ace66b80489f2ab062052c850b296dec",
+    "heldout-customer-traces.csv": "2701c0e3f90315f9234e0bbce3a99f656379d8972fc6d3c330899d9bab39b5c9",
+    "original-draft-policy.h": "902fb7a64d8191643d67040e59782570eef46a966173f11326bb063e63b7a70c",
+    "frozen-validation.json": "024513dd7ee1b3aada36c6702827cb39f75306e4c74782c513ab6856fb855ff9",
+    "progress-policy.h": "b98e5f89ee14bbb66d996c9cccd1113857ab0c7670b11ed475f943edb8a1839b",
+    "bounded-quality-results.csv": "fb94a13197b2cdd9089c4df99905e988c52b639d04ee96d9173487147e856c3f",
+    "candidate.patch": "4af0cf2cdff5d4ca5fe679fb27a8d2eba0b6700783e483430c163e5b7c16d5ef",
+    "heldout-customer-results.csv": "ff48c3a89f7423affa951da394550b69ccec1c02190f396f20c9c4f4569483f6",
+    "harness/auto_measure.cpp": "16303c9304e865b6631fadbfecb1628473311b29c7dbd7bc53132b71f032b605",
+    "harness/CMakeLists.txt": "885495d08689a041574e5873ec4887adb19665ea0ded69d51a64f1b76884dba0"
+  }
+}

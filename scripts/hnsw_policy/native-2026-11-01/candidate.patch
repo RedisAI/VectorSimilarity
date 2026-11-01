@@ -1,0 +1,357 @@
+diff --git a/src/VecSim/algorithms/hnsw/hnsw.h b/src/VecSim/algorithms/hnsw/hnsw.h
+index 3e922f51..8c8df31c 100644
+--- a/src/VecSim/algorithms/hnsw/hnsw.h
++++ b/src/VecSim/algorithms/hnsw/hnsw.h
+@@ -9,6 +9,7 @@
+ #pragma once
+ 
+ #include "graph_data.h"
++#include "hnsw_hybrid_policy.h"
+ #include "visited_nodes_handler.h"
+ #include "VecSim/memory/vecsim_malloc.h"
+ #include "VecSim/utils/vecsim_stl.h"
+@@ -311,7 +312,17 @@ public:
+     VecSimIndexDebugInfo debugInfo() const override;
+     VecSimIndexBasicInfo basicInfo() const override;
+     VecSimDebugInfoIterator *debugInfoIterator() const override;
+-    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override;
++    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const override {
++        return preferAdHocSearch(subsetSize, k, initial_check, 0);
++    }
++
++    bool preferAdHocSearchAfterBatch(size_t subsetSize, size_t k,
++                                     size_t k_remaining) const override {
++        return preferAdHocSearch(subsetSize, k, false, k_remaining);
++    }
++
++    bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check,
++                           size_t k_remaining) const;
+     const char *getDataByInternalId(idType internal_id) const;
+     ElementGraphData *getGraphDataByInternalId(idType internal_id) const;
+     ElementLevelData &getElementLevelData(idType internal_id, size_t level) const;
+@@ -2555,9 +2566,10 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
+ 
+ template <typename DataType, typename DistType>
+ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t k,
+-                                                      bool initial_check) const {
+-    // This heuristic is based on sklearn decision tree classifier (with 20 leaves nodes) -
+-    // see scripts/HNSW_batches_clf.py
++                                                      bool initial_check,
++                                                      size_t k_remaining) const {
++    // The original tree is from scripts/HNSW_batches_clf.py. The broad-filter leaf uses
++    // the measured policy in hnsw_hybrid_policy.h.
+     size_t index_size = this->indexSize();
+     // Referring to too large subset size as if it was the maximum possible size.
+     subsetSize = std::min(subsetSize, index_size);
+@@ -2566,6 +2578,14 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t
+     size_t M = this->getM();
+     float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
+     bool res;
++    auto measured_policy = [&]() {
++        if (!this->usesQuantizedStorage() &&
++            (this->getType() == VecSimType_FLOAT32 || this->getType() == VecSimType_FLOAT64) &&
++            this->getMetric() == VecSimMetric_Cosine && this->indexLabelCount() == index_size) {
++            return preferHnswAdhocMeasured(k, index_size, d, M, r, initial_check ? 0 : k_remaining);
++        }
++        return true;
++    };
+ 
+     // node 0
+     if (index_size <= 30000) {
+@@ -2607,7 +2627,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t
+             // node 3
+             if (index_size <= 750000) {
+                 // node 15
+-                res = true;
++                res = (!initial_check && k_remaining) ? measured_policy() : true;
+             } else {
+                 // node 16
+                 if (k <= 7) {
+@@ -2667,7 +2687,7 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t
+                         // node 26
+                         if (index_size <= 300000) {
+                             // node 35
+-                            res = true;
++                            res = measured_policy();
+                         } else {
+                             // node 36
+                             if (r <= 0.17) {
+diff --git a/src/VecSim/algorithms/hnsw/hnsw_base_tests_friends.h b/src/VecSim/algorithms/hnsw/hnsw_base_tests_friends.h
+index 37566aa9..132ac705 100644
+--- a/src/VecSim/algorithms/hnsw/hnsw_base_tests_friends.h
++++ b/src/VecSim/algorithms/hnsw/hnsw_base_tests_friends.h
+@@ -9,6 +9,8 @@
+ #include "VecSim/friend_test_decl.h"
+ INDEX_TEST_FRIEND_CLASS(HNSWTest_test_dynamic_hnsw_info_iterator_Test)
+ INDEX_TEST_FRIEND_CLASS(HNSWTest_preferAdHocOptimization_Test)
++INDEX_TEST_FRIEND_CLASS(HNSWTest_broadFilterHybridPolicy_Test)
++INDEX_TEST_FRIEND_CLASS(HNSWTest_progressAwareHybridPolicy_Test)
+ INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_test_dynamic_hnsw_info_iterator_Test)
+ INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_preferAdHocOptimization_Test)
+ INDEX_TEST_FRIEND_CLASS(HNSWMultiTest_MultiBatchIteratorHeapLogic_Test)
+diff --git a/src/VecSim/algorithms/hnsw/hnsw_hybrid_policy.h b/src/VecSim/algorithms/hnsw/hnsw_hybrid_policy.h
+new file mode 100644
+index 00000000..0d8fc31f
+--- /dev/null
++++ b/src/VecSim/algorithms/hnsw/hnsw_hybrid_policy.h
+@@ -0,0 +1,47 @@
++/*
++ * Copyright (c) 2006-Present, Redis Ltd.
++ * All rights reserved.
++ *
++ * Licensed under your choice of the Redis Source Available License 2.0
++ * (RSALv2); or (b) the Server Side Public License v1 (SSPLv1); or (c) the
++ * GNU Affero General Public License v3 (AGPLv3).
++ */
++
++#pragma once
++#include <cstddef>
++
++inline bool preferHnswAdhocMeasured(size_t k, size_t n, size_t dim, size_t m, float ratio,
++                                    size_t k_remaining = 0) {
++    // Keep the historical leaf outside the measured feature ranges.
++    if (k < 13 || k > 500 || n < 35000 || n > 300000 || dim < 76 || dim > 1536 || m < 11 ||
++        m > 64 || !(ratio > 0.0f && ratio <= 1.0f)) {
++        return true;
++    }
++    // Continuing only needs the missing hits; restarting BF still scans the whole filter.
++    if (k_remaining && k_remaining < k) {
++        k = k_remaining;
++    }
++    // Avoid restarting for a tiny final batch; falling estimates increase its cost and restore BF.
++    if (ratio < 0.07f) {
++        return !(k_remaining && k <= 31 * ratio);
++    }
++    if (ratio < 0.1f && !(k_remaining && k <= 31)) {
++        return true;
++    }
++    if (n <= 55000 && ((k > 350 && ratio <= 0.625f) || (k > 125 && ratio <= 0.375f))) {
++        return true;
++    }
++    if (ratio > 0.375f) {
++        return false;
++    }
++    if (ratio > 0.175f) {
++        return k > 350 && n <= 112500;
++    }
++    if (k <= 31) {
++        return false;
++    }
++    if (k <= 125) {
++        return n <= 112500;
++    }
++    return n <= 112500 || m <= 24;
++}
+diff --git a/src/VecSim/algorithms/hnsw/hnsw_single_tests_friends.h b/src/VecSim/algorithms/hnsw/hnsw_single_tests_friends.h
+index 9c27adea..f24b7fc2 100644
+--- a/src/VecSim/algorithms/hnsw/hnsw_single_tests_friends.h
++++ b/src/VecSim/algorithms/hnsw/hnsw_single_tests_friends.h
+@@ -9,6 +9,8 @@
+ #include "VecSim/friend_test_decl.h"
+ INDEX_TEST_FRIEND_CLASS(HNSWTest_test_dynamic_hnsw_info_iterator_Test)
+ INDEX_TEST_FRIEND_CLASS(HNSWTest_preferAdHocOptimization_Test)
++INDEX_TEST_FRIEND_CLASS(HNSWTest_broadFilterHybridPolicy_Test)
++INDEX_TEST_FRIEND_CLASS(HNSWTest_progressAwareHybridPolicy_Test)
+ INDEX_TEST_FRIEND_CLASS(HNSWTest_testSizeEstimation_Test)
+ INDEX_TEST_FRIEND_CLASS(IndexAllocatorTest_testIncomingEdgesSet_Test)
+ INDEX_TEST_FRIEND_CLASS(IndexAllocatorTest_test_hnsw_reclaim_memory_Test)
+diff --git a/src/VecSim/vec_sim.cpp b/src/VecSim/vec_sim.cpp
+index a9aeb6b7..1cb8076c 100644
+--- a/src/VecSim/vec_sim.cpp
++++ b/src/VecSim/vec_sim.cpp
+@@ -531,6 +531,11 @@ extern "C" bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetS
+     return index->preferAdHocSearch(subsetSize, k, initial_check);
+ }
+ 
++extern "C" bool VecSimIndex_PreferAdHocSearchAfterBatch(VecSimIndex *index, size_t subsetSize,
++                                                        size_t k, size_t k_remaining) {
++    return index->preferAdHocSearchAfterBatch(subsetSize, k, k_remaining);
++}
++
+ // Ad-hoc Brute Force Context API - delegates to virtual methods on the index/context
+ extern "C" VecSimAdhocBfCtx *VecSimIndex_AdhocBfCtx_New(VecSimIndex *index, const void *queryBlob) {
+     return index->newAdhocBfCtx(queryBlob);
+diff --git a/src/VecSim/vec_sim.h b/src/VecSim/vec_sim.h
+index b51442d0..647c2ddd 100644
+--- a/src/VecSim/vec_sim.h
++++ b/src/VecSim/vec_sim.h
+@@ -276,6 +276,15 @@ void VecSimTieredIndex_GC(VecSimIndex *index);
+ bool VecSimIndex_PreferAdHocSearch(VecSimIndex *index, size_t subsetSize, size_t k,
+                                    bool initial_check);
+ 
++/**
++ * @brief Review an ongoing hybrid search, accounting for results already retained.
++ * @param k total number of requested results.
++ * @param k_remaining number of results still needed; zero preserves the original heuristic.
++ * Other arguments have the same meaning as in VecSimIndex_PreferAdHocSearch.
++ */
++bool VecSimIndex_PreferAdHocSearchAfterBatch(VecSimIndex *index, size_t subsetSize, size_t k,
++                                             size_t k_remaining);
++
+ /**
+  * @brief Acquire/Release the required locks of the tiered index externally before executing an
+  * an unsafe *READ* operation (as the locks are acquired for shared ownership).
+diff --git a/src/VecSim/vec_sim_interface.h b/src/VecSim/vec_sim_interface.h
+index eb6ec5b4..00c13114 100644
+--- a/src/VecSim/vec_sim_interface.h
++++ b/src/VecSim/vec_sim_interface.h
+@@ -227,6 +227,11 @@ public:
+ 
+     virtual bool preferAdHocSearch(size_t subsetSize, size_t k, bool initial_check) const = 0;
+ 
++    // Indexes without a continuation cost model retain their existing policy.
++    virtual bool preferAdHocSearchAfterBatch(size_t subsetSize, size_t k, size_t) const {
++        return preferAdHocSearch(subsetSize, k, false);
++    }
++
+     /**
+      * @brief Set the latest search mode in the index data (for info/debugging).
+      * @param mode The search mode.
+diff --git a/src/VecSim/vec_sim_tiered_index.h b/src/VecSim/vec_sim_tiered_index.h
+index 9cf574dc..2fd53954 100644
+--- a/src/VecSim/vec_sim_tiered_index.h
++++ b/src/VecSim/vec_sim_tiered_index.h
+@@ -498,6 +498,13 @@ public:
+                    : this->frontendIndex->preferAdHocSearch(subsetSize, k, initial_check);
+     }
+ 
++    bool preferAdHocSearchAfterBatch(size_t subsetSize, size_t k,
++                                     size_t k_remaining) const override {
++        return this->backendIndex->indexSize() > this->frontendIndex->indexSize()
++                   ? this->backendIndex->preferAdHocSearchAfterBatch(subsetSize, k, k_remaining)
++                   : this->frontendIndex->preferAdHocSearchAfterBatch(subsetSize, k, k_remaining);
++    }
++
+     // Return the current state of the global write mode (async/in-place).
+     static VecSimWriteMode getWriteMode() { return VecSimIndexInterface::asyncWriteMode; }
+ 
+diff --git a/tests/unit/test_hnsw.cpp b/tests/unit/test_hnsw.cpp
+index cb687f03..12de3710 100644
+--- a/tests/unit/test_hnsw.cpp
++++ b/tests/unit/test_hnsw.cpp
+@@ -21,6 +21,7 @@
+ #include <random>
+ #include <thread>
+ #include <atomic>
++#include <tuple>
+ 
+ template <typename index_type_t>
+ class HNSWTest : public ::testing::Test {
+@@ -1636,6 +1637,9 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
+         ASSERT_EQ(VecSimIndex_IndexSize(index), index_size);
+         bool res = VecSimIndex_PreferAdHocSearch(index, (size_t)(r * (float)index_size), k, true);
+         ASSERT_EQ(res, comb.second);
++        EXPECT_EQ(
++            VecSimIndex_PreferAdHocSearchAfterBatch(index, (size_t)(r * (float)index_size), k, 1),
++            comb.second);
+         // Clean-up.
+         this->CastToHNSW(index)->curElementCount = 0;
+         VecSimIndex_Free(index);
+@@ -1656,6 +1660,107 @@ TYPED_TEST(HNSWTest, preferAdHocOptimization) {
+     VecSimIndex_Free(index);
+ }
+ 
++TEST(HnswHybridPolicy, MeasuredBoundaries) {
++    struct Case {
++        size_t n, k, m;
++        float ratio;
++        bool adhoc;
++    };
++    for (const auto &c : {
++             Case{35000, 200, 32, 0.26f, true},
++             Case{55000, 200, 16, 0.26f, true},
++             Case{55001, 200, 16, 0.26f, false},
++             Case{73187, 200, 16, 0.26f, false},
++             Case{73187, 200, 16, 0.124626f, true},
++             Case{35000, 500, 16, 0.5f, true},
++             Case{73187, 500, 16, 0.26f, true},
++             Case{73187, 31, 16, 0.125f, false},
++             Case{73187, 32, 16, 0.125f, true},
++             Case{112500, 50, 16, 0.125f, true},
++             Case{112501, 50, 16, 0.125f, false},
++             Case{161812, 125, 16, 0.125f, false},
++             Case{161812, 126, 16, 0.125f, true},
++             Case{161812, 200, 24, 0.125f, true},
++             Case{161812, 200, 25, 0.125f, false},
++         }) {
++        SCOPED_TRACE(::testing::Message()
++                     << "n=" << c.n << " k=" << c.k << " M=" << c.m << " ratio=" << c.ratio);
++        EXPECT_EQ(preferHnswAdhocMeasured(c.k, c.n, 768, c.m, c.ratio), c.adhoc);
++    }
++    EXPECT_TRUE(preferHnswAdhocMeasured(501, 73187, 768, 16, 1.0f));
++    EXPECT_TRUE(preferHnswAdhocMeasured(200, 34999, 768, 16, 1.0f));
++    EXPECT_TRUE(preferHnswAdhocMeasured(200, 300001, 768, 16, 1.0f));
++    EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 1537, 16, 1.0f));
++    EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 768, 65, 1.0f));
++}
++
++TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
++    for (auto [n, dim, m] : {std::tuple<size_t, size_t, size_t>{35000, 128, 16},
++                             {73187, 768, 16},
++                             {105126, 384, 16},
++                             {161812, 768, 16},
++                             {300000, 768, 32}}) {
++        HNSWParams params = {.dim = dim, .metric = VecSimMetric_Cosine, .M = m};
++        VecSimIndex *index = this->CreateNewIndex(params);
++        auto *hnsw = this->CastToHNSW(index);
++        // Policy selection needs cardinality, not graph construction or distance computations.
++        for (size_t id = 0; id < n; ++id) {
++            this->CastToHNSW_Single(index)->labelLookup[id] = id;
++        }
++        hnsw->curElementCount = n;
++        for (size_t k : {12, 13, 50, 200}) {
++            for (size_t subset : {n * 95 / 100, n, n * 2}) {
++                SCOPED_TRACE(::testing::Message() << "n=" << n << " dim=" << dim << " M=" << m
++                                                  << " k=" << k << " subset=" << subset);
++                EXPECT_FALSE(VecSimIndex_PreferAdHocSearch(index, subset, k, true));
++                EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES);
++            }
++            EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n / 1000, k, true));
++            EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_ADHOC_BF);
++            EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n / 1000, k, false));
++            EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES_TO_ADHOC_BF);
++        }
++        EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n, n, true));
++        hnsw->curElementCount = 0;
++        VecSimIndex_Free(index);
++    }
++}
++
++TYPED_TEST(HNSWTest, progressAwareHybridPolicy) {
++    const size_t n = 73187;
++    HNSWParams params = {.dim = 768, .metric = VecSimMetric_Cosine, .M = 16};
++    VecSimIndex *index = this->CreateNewIndex(params);
++    auto *hnsw = this->CastToHNSW(index);
++    for (size_t id = 0; id < n; ++id) {
++        this->CastToHNSW_Single(index)->labelLookup[id] = id;
++    }
++    hnsw->curElementCount = n;
++
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n / 8, 200, false));
++    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 1));
++    EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES);
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 142));
++    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n * 8 / 100, 200, 1));
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n * 6 / 100, 200, false));
++    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n * 6 / 100, 200, 1));
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 31, 200, 1));
++    EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES_TO_ADHOC_BF);
++    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 31 + 1, 200, 1));
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 0));
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 201));
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 501, 1));
++    size_t estimate = n * 69 / 1000;
++    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, estimate, 200, 1));
++    EXPECT_FALSE(VecSimIndex_PreferAdHocSearchAfterBatch(index, estimate / 2, 200, 1));
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, estimate / 4, 200, 1));
++
++    // Deleted labels keep the policy outside the calibrated single-vector domain.
++    this->CastToHNSW_Single(index)->labelLookup.erase(0);
++    EXPECT_TRUE(VecSimIndex_PreferAdHocSearchAfterBatch(index, n / 8, 200, 1));
++    hnsw->curElementCount = 0;
++    VecSimIndex_Free(index);
++}
++
+ TYPED_TEST(HNSWTest, testCosine) {
+     size_t dim = 4;
+     size_t n = 100;

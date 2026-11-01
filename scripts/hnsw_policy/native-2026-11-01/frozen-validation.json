@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-01",
+  "status": "candidate frozen before reserved query evaluation",
+  "query_offset": 1000,
+  "queries_per_shape": 10,
+  "shapes": [
+    {
+      "name": "heldout-customer",
+      "dataset": "dbpedia",
+      "n": 73186,
+      "dim": 768,
+      "m": 16,
+      "efc": 100,
+      "bytes": 8,
+      "seed": 48301
+    },
+    {
+      "name": "heldout-mid",
+      "dataset": "dbpedia",
+      "n": 105126,
+      "dim": 768,
+      "m": 32,
+      "efc": 200,
+      "bytes": 4,
+      "seed": 48302
+    },
+    {
+      "name": "heldout-large",
+      "dataset": "dbpedia",
+      "n": 300000,
+      "dim": 768,
+      "m": 16,
+      "efc": 100,
+      "bytes": 4,
+      "seed": 48303
+    },
+    {
+      "name": "heldout-dense",
+      "dataset": "dbpedia",
+      "n": 73187,
+      "dim": 768,
+      "m": 64,
+      "efc": 512,
+      "bytes": 4,
+      "seed": 48304
+    },
+    {
+      "name": "heldout-large-m32",
+      "dataset": "dbpedia",
+      "n": 180000,
+      "dim": 768,
+      "m": 32,
+      "efc": 100,
+      "bytes": 4,
+      "seed": 48305
+    },
+    {
+      "name": "heldout-fashion",
+      "dataset": "fashion",
+      "n": 80000,
+      "dim": 512,
+      "m": 16,
+      "efc": 100,
+      "bytes": 4,
+      "seed": 48306
+    }
+  ],
+  "scope": "Native same-graph comparison, not an AWS or RediSearch end-to-end replacement. Report every group; no candidate tuning on these query IDs. If changed after a finding, use a new reserved query slice for revalidation.",
+  "patch_sha256": {
+    "redisearch": "f15430be66d2dd3e5284ff848efa362f862779dfc1fa424e47538e96eee26e9b",
+    "vecsim": "a6329bd79bcfd30b35ef8260412eac707976ac073a069963c06ecb45ac494a45"
+  },
+  "data_notes": {
+    "dbpedia": "Shared shuffled vector prefix extracted with seed18264; real source query vectors.",
+    "fashion": "Vectors extracted from a multi-value source dataset, then rebuilt as one vector per label. This does not validate multi-value policy behavior.",
+    "graph_construction_seed": 100,
+    "manifest_seed": "Filter-membership shuffle seed."
+  }
+}
