@@ -1692,6 +1692,13 @@ TEST(HnswHybridPolicy, MeasuredBoundaries) {
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 300001, 768, 16, 1.0f));
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 1537, 16, 1.0f));
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 768, 65, 1.0f));
+    EXPECT_FALSE(preferHnswAdhocMeasured(350, 180000, 768, 32, 0.1f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(351, 180000, 768, 32, 0.1f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.1f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.175f));
+    EXPECT_FALSE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.176f));
+    EXPECT_FALSE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.1f, 200));
+    EXPECT_TRUE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.1f, 400));
 }
 
 TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
@@ -1721,6 +1728,7 @@ TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
             EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES_TO_ADHOC_BF);
         }
         EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n, n, true));
+        EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n / 10, 500, true));
         hnsw->curElementCount = 0;
         VecSimIndex_Free(index);
     }

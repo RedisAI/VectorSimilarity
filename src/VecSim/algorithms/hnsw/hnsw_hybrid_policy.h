@@ -43,5 +43,5 @@ inline bool preferHnswAdhocMeasured(size_t k, size_t n, size_t dim, size_t m, fl
     if (k <= 125) {
         return n <= 112500;
     }
-    return n <= 112500 || m <= 24;
+    return n <= 112500 || m <= 24 || k > 350;
 }
