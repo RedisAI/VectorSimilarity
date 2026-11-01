@@ -173,6 +173,8 @@ private:
     // a marker under this mutex before releasing its references outside it: the last release
     // calls a finalizer that acquires the main guard, whose holders can also take runningGuard.
     mutable std::mutex runningGuard;
+    // Head of the linked list of active RuntimeMarkers, one per tracked operation. Queries,
+    // inserts, and repairs can run concurrently; previous/next link their markers together.
     mutable RuntimeMarker *currentlyRunning = nullptr;
 
     // Counter for vectors inserted directly into HNSW by the main thread (bypassing flat buffer).
