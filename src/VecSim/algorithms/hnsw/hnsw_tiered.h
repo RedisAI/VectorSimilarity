@@ -43,6 +43,7 @@ struct HNSWSwapJob : public VecsimBaseObject {
     // Set by deletion finalization after clearing the slot and publishing it in `reusableSlots`.
     // The job stays in `idToSwapJob` so compaction can keep its id current.
     bool slotCleared = false;
+    bool isolated = false; // Guarded by idToRepairJobsGuard.
     HNSWSwapJob *nextFinalization = nullptr;
     HNSWSwapJob(std::shared_ptr<VecSimAllocator> allocator, idType deletedId)
         : VecsimBaseObject(allocator), deleted_id(deletedId), pending_repair_jobs_counter(0) {}
@@ -91,7 +92,7 @@ private:
     // vectors reached this limit, we apply swap jobs *only for vectors that has no more pending
     // repair jobs*, and are ready to be removed from the graph.
     size_t pendingSwapJobsThreshold;
-    std::atomic_size_t readySwapJobs; // Finalizing or cached slots awaiting reuse/compaction.
+    std::atomic_size_t readySwapJobs; // Cached slots awaiting reuse/compaction.
 
     // Cost of defrag(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
     std::atomic<uint64_t> defragRuns{0};
@@ -104,17 +105,72 @@ private:
     std::mutex idToRepairJobsGuard;
 
     // The cleared slots of deleted elements that an insert can take instead of appending a fresh
-    // id, oldest first. Filled by deletion finalization with the main index guard held
-    // exclusively, emptied by inserts (`takeReusableSlot`) with it held shared. Protected by
+    // id, oldest first. Filled by the last reader's shared_ptr deleter and emptied by inserts,
+    // both with the main index guard held shared. Protected by
     // `idToRepairJobsGuard`, like `idToSwapJob`, which keeps their swap jobs. Non-owning.
     // A vector read from `reusableSlotsHead`, rather than a deque: an empty one allocates nothing,
     // so the size of a fresh index does not depend on the standard library.
     vecsim_stl::vector<HNSWSwapJob *> reusableSlots;
     size_t reusableSlotsHead{0};
     // Jobs whose last repair completed, protected by `idToRepairJobsGuard`. Finalization drains
-    // this queue under the exclusive main guard before publishing cleared slots in the cache.
+    // this queue under the shared main guard to detach nodes before waiting for their readers.
     HNSWSwapJob *pendingFinalizationsHead{nullptr};
     HNSWSwapJob *pendingFinalizationsTail{nullptr};
+
+    // Like the disk index's currently_running/query markers: an operation retains the IDs
+    // detached while it was running, including candidates already copied out of adjacency lists.
+    class RuntimeMarker {
+        const TieredHNSWIndex *index;
+        RuntimeMarker *previous = nullptr;
+        RuntimeMarker *next = nullptr;
+        bool registered = false;
+        vecsim_stl::vector<std::shared_ptr<idType>> pendingIds;
+        friend class TieredHNSWIndex;
+
+    public:
+        explicit RuntimeMarker(const TieredHNSWIndex *index, bool start = true)
+            : index(index), pendingIds(index->allocator) {
+            if (start) {
+                activate();
+            }
+        }
+        RuntimeMarker(const RuntimeMarker &) = delete;
+        RuntimeMarker &operator=(const RuntimeMarker &) = delete;
+        void activate() {
+            assert(!registered);
+            std::lock_guard<std::mutex> lock(index->runningGuard);
+            next = index->currentlyRunning;
+            if (next) {
+                next->previous = this;
+            }
+            index->currentlyRunning = this;
+            registered = true;
+        }
+        void reset() {
+            if (!registered) {
+                return;
+            }
+            {
+                std::lock_guard<std::mutex> lock(index->runningGuard);
+                if (previous) {
+                    previous->next = next;
+                } else {
+                    index->currentlyRunning = next;
+                }
+                if (next) {
+                    next->previous = previous;
+                }
+                previous = next = nullptr;
+                registered = false;
+            }
+            // Deleters acquire shared main access, so release outside runningGuard and after
+            // this operation has released its own main guard.
+            pendingIds.clear();
+        }
+        ~RuntimeMarker() { reset(); }
+    };
+    mutable std::mutex runningGuard;
+    mutable RuntimeMarker *currentlyRunning = nullptr;
 
     // Counter for vectors inserted directly into HNSW by the main thread (bypassing flat buffer).
     // This happens in WriteInPlace mode or when the flat buffer is full.
@@ -192,9 +248,10 @@ private:
     // main index guard must be held shared, so no swap moves the slot until it is filled.
     idType takeReusableSlot();
 
-    // Drain completed deletions into the cache, including jobs released by invalidation.
-    // The caller holds the main index guard exclusively to wait out stale graph readers.
-    void finalizeDeletedSlots();
+    // Detach completed deletions while holding the main guard shared (or exclusive). Readers
+    // retain a shared_ptr to each detached ID; its last release clears and caches the slot.
+    void isolateRepairedSlots();
+    void finalizeDeletedSlot(HNSWSwapJob *swap_job);
 
     void executeSwapJob(vecsim_stl::vector<idType> &idsToRemove, HNSWSwapJob *swap_job);
 
@@ -258,6 +315,8 @@ public:
     class TieredHNSW_BatchIterator : public TieredIndex_BatchIterator {
     private:
         const TieredHNSWIndex<DataType, DistType> *index;
+        // Release the backend lock before destroying the marker: its deleters take shared access.
+        RuntimeMarker runtimeMarker;
         std::shared_lock<std::shared_mutex> backend_index_lock;
         VecSimQueryParams *queryParams;
 
@@ -314,6 +373,17 @@ public:
         afterBackendInsertBeforeFlatRemoval = std::move(hook);
     }
 #endif
+
+    VecSimQueryReply *topKQuery(const void *blob, size_t k,
+                                VecSimQueryParams *params) const override {
+        RuntimeMarker marker(this);
+        return VecSimTieredIndex<DataType, DistType>::topKQuery(blob, k, params);
+    }
+    VecSimQueryReply *rangeQuery(const void *blob, double radius, VecSimQueryParams *params,
+                                 VecSimQueryReply_Order order) const override {
+        RuntimeMarker marker(this);
+        return VecSimTieredIndex<DataType, DistType>::rangeQuery(blob, radius, params, order);
+    }
 
     int addVector(const void *blob, labelType label) override;
     // This will do nothing (and return 0) if this label doesn't exist. Otherwise, it may
@@ -472,21 +542,49 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(vecsim_stl::vector<idTy
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::finalizeDeletedSlots() {
-    while (pendingFinalizationsHead) {
-        auto *swap_job = pendingFinalizationsHead;
-        pendingFinalizationsHead = swap_job->nextFinalization;
-        if (!pendingFinalizationsHead) {
-            pendingFinalizationsTail = nullptr;
+void TieredHNSWIndex<DataType, DistType>::isolateRepairedSlots() {
+    while (true) {
+        HNSWSwapJob *swap_job;
+        {
+            std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
+            swap_job = pendingFinalizationsHead;
+            if (!swap_job) {
+                break;
+            }
+            pendingFinalizationsHead = swap_job->nextFinalization;
+            if (!pendingFinalizationsHead) {
+                pendingFinalizationsTail = nullptr;
+            }
+            swap_job->nextFinalization = nullptr;
         }
-        swap_job->nextFinalization = nullptr;
-        this->getHNSWIndex()->clearDeletedSlot(swap_job->deleted_id);
-        // Disposing this node can release other deletions. Finalize those in this same pass.
+        this->getHNSWIndex()->isolateDeletedElement(swap_job->deleted_id);
+        {
+            std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
+            swap_job->isolated = true;
+        }
         this->invalidateRepairJobs(swap_job->deleted_id);
-        swap_job->slotCleared = true;
-        std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        reusableSlots.push_back(swap_job);
+
+        auto retired_id = std::shared_ptr<idType>(
+            &swap_job->deleted_id, [this, swap_job](idType *) { finalizeDeletedSlot(swap_job); },
+            VecsimSTLAllocator<idType>(this->allocator));
+        // New operations cannot reach this detached node. Only operations already running can
+        // have a stale ID or graph pointer. Their markers release outside the main guard.
+        std::lock_guard<std::mutex> lock(this->runningGuard);
+        assert(currentlyRunning != nullptr);
+        for (auto *running = currentlyRunning; running; running = running->next) {
+            running->pendingIds.push_back(retired_id);
+        }
     }
+}
+
+template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::finalizeDeletedSlot(HNSWSwapJob *swap_job) {
+    std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
+    this->getHNSWIndex()->clearDeletedSlot(swap_job->deleted_id);
+    std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
+    swap_job->slotCleared = true;
+    reusableSlots.push_back(swap_job);
+    readySwapJobs++;
 }
 
 template <typename DataType, typename DistType>
@@ -533,13 +631,11 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
                "Tiered HNSW index GC: there are %zu ready swap jobs. Start executing %zu swap jobs",
                readySwapJobs.load(), std::min(readySwapJobs.load(), maxJobsToRun));
 
-    const bool reuse = this->reuseIdOnInsert.load(std::memory_order_relaxed);
-    // GC only consumes slots published by deletion finalization. Keep half for inserts when
-    // reuse is enabled; otherwise compact all cached slots, subject to the job limit.
+    // GC consumes finalized slots from the cache up to the job limit.
     vecsim_stl::vector<HNSWSwapJob *> to_compact(this->allocator);
     {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
-        size_t count = reuse ? reusableSlotsCount() / 2 : reusableSlotsCount();
+        size_t count = reusableSlotsCount();
         if (maxJobsToRun > 0) {
             count = std::min(count, maxJobsToRun);
         }
@@ -563,6 +659,7 @@ size_t TieredHNSWIndex<DataType, DistType>::executeReadySwapJobs(size_t maxJobsT
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
+    RuntimeMarker marker(this);
     auto *hnsw_index = getHNSWIndex();
     this->mainIndexGuard.lock_shared();
 
@@ -581,7 +678,15 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
 
         // Protect the id->repair_jobs lookup while we update it with the new jobs.
         this->idToRepairJobsGuard.lock();
+        size_t repair_count = 0;
         for (pair<idType, unsigned short> &node : incomingEdges) {
+            // A snapshot can outlive a neighbor's isolation. Its edges are already gone, so do
+            // not publish a new repair against a slot that is waiting for its last reader.
+            auto deleted_neighbor = idToSwapJob.find(node.first);
+            if (deleted_neighbor != idToSwapJob.end() && deleted_neighbor->second->isolated) {
+                continue;
+            }
+            ++repair_count;
             bool repair_job_exists = false;
             HNSWRepairJob *repair_job = nullptr;
             if (idToRepairJobs.find(node.first) != idToRepairJobs.end()) {
@@ -609,8 +714,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
                 idToRepairJobs.at(node.first).push_back(repair_job);
             }
         }
-        swap_job->setRepairJobsNum(incomingEdges.size());
-        if (incomingEdges.size() == 0) {
+        swap_job->setRepairJobsNum(repair_count);
+        if (repair_count == 0) {
             // No pending repair jobs, so swap jobs is ready from the beginning.
             this->onSwapJobRepaired(swap_job);
             needsFinalization = true;
@@ -628,11 +733,10 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
             idToSwapJob[id] = swap_job;
         }
     }
-    this->mainIndexGuard.unlock_shared();
     if (needsFinalization) {
-        const auto main_index_lock = this->acquireMainIndexGuard();
-        this->finalizeDeletedSlots();
+        this->isolateRepairedSlots();
     }
+    this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
 }
 
@@ -641,10 +745,8 @@ template <bool releaseFlatGuard>
 bool TieredHNSWIndex<DataType, DistType>::insertVectorToReusableSlot(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *storage_blob,
     const void *index_blob) {
-    // A cleared slot needs no resize, and nothing but the shared guard: deletion finalization
-    // cleared it while holding the main index guard exclusively, so no graph scan holds a stale
-    // link to it, and the shared guard keeps any swap from moving it until the new element is
-    // stored and linked.
+    // The last reader cleared this slot before publishing it. Shared main access keeps
+    // compaction from moving it while the replacement is stored and linked.
     const idType reused_id = this->takeReusableSlot();
     if (reused_id == INVALID_ID) {
         return false;
@@ -669,6 +771,7 @@ template <typename DataType, typename DistType>
 template <bool releaseFlatGuard>
 void TieredHNSWIndex<DataType, DistType>::insertVectorToHNSW(
     HNSWIndex<DataType, DistType> *hnsw_index, labelType label, const void *blob) {
+    RuntimeMarker marker(this);
 
     // Preprocess for storage and indexing in the hnsw index
     ProcessedBlobs processed_blobs = hnsw_index->preprocess(blob);
@@ -747,7 +850,6 @@ void TieredHNSWIndex<DataType, DistType>::onSwapJobRepaired(HNSWSwapJob *swap_jo
         pendingFinalizationsHead = swap_job;
     }
     pendingFinalizationsTail = swap_job;
-    readySwapJobs++;
 }
 
 template <typename DataType, typename DistType>
@@ -771,7 +873,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
         idToSwapJob.erase(id);
     }
     readySwapJobs -= idsToRemove.size();
-    this->finalizeDeletedSlots();
+    this->isolateRepairedSlots();
     return ids.size();
 }
 
@@ -813,6 +915,7 @@ void TieredHNSWIndex<DataType, DistType>::executeInsertJob(HNSWInsertJob *job) {
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
+    RuntimeMarker marker(this);
     // Lock the HNSW shared lock before accessing its internals.
     this->mainIndexGuard.lock_shared();
 
@@ -865,12 +968,10 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     }
     this->idToRepairJobsGuard.unlock();
 
-    this->mainIndexGuard.unlock_shared();
-    // Wait out graph readers before freeing element data and making the slots reusable.
     if (needsFinalization) {
-        const auto main_index_lock = this->acquireMainIndexGuard();
-        this->finalizeDeletedSlots();
+        this->isolateRepairedSlots();
     }
+    this->mainIndexGuard.unlock_shared();
 }
 
 /******************** Index API ****************************************/
@@ -1161,6 +1262,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         }
     } else {
         // delete in place.
+        RuntimeMarker marker(this);
         const auto main_index_lock = this->acquireMainIndexGuard();
         num_deleted_vectors += this->deleteLabelFromHNSWInplace(label);
     }
@@ -1340,8 +1442,9 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::TieredHNSW_BatchI
     // retrieves the blob from flat_iterator
     : TieredIndex_BatchIterator(nullptr, queryParams ? queryParams->timeoutCtx : nullptr,
                                 std::move(allocator)),
-      index(index), backend_index_lock(index->mainIndexGuard, std::defer_lock),
-      flat_iterator(UNINITIALIZED), hnsw_iterator(UNINITIALIZED) {
+      index(index), runtimeMarker(index, false),
+      backend_index_lock(index->mainIndexGuard, std::defer_lock), flat_iterator(UNINITIALIZED),
+      hnsw_iterator(UNINITIALIZED) {
     {
         std::shared_lock<std::shared_mutex> flat_index_lock(this->index->flatIndexGuard);
         this->flat_iterator =
@@ -1394,6 +1497,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->backend_index_lock.lock();
+        this->runtimeMarker.activate();
         this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
             this->flat_iterator->getQueryBlob(), queryParams);
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
@@ -1404,6 +1508,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             delete this->hnsw_iterator;
             this->hnsw_iterator = DEPLETED;
             this->backend_index_lock.unlock();
+            this->runtimeMarker.reset();
         }
     } else {
         while (this->flat_results.size() < n_res && !this->flat_iterator->isDepleted()) {
@@ -1443,6 +1548,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
                 this->backend_index_lock.unlock();
+                this->runtimeMarker.reset();
             }
         }
     }
@@ -1483,6 +1589,7 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
         this->backend_index_lock.unlock();
+        this->runtimeMarker.reset();
     }
     this->resetResultsCount();
     this->flat_iterator->reset();

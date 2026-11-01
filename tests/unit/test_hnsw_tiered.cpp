@@ -18,6 +18,7 @@
 #include <array>
 #include <cmath>
 #include <numeric>
+#include <latch>
 
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
@@ -5140,8 +5141,6 @@ TYPED_TEST(HNSWTieredIndexTestBasic, HNSWResize) {
 
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
-    // Finalization takes the exclusive guard to clear the deleted slot before GC compacts it.
-    resize_operations++;
     tiered_index->executeReadySwapJobs();
     resize_operations++;
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), resize_operations);
@@ -5810,9 +5809,108 @@ TYPED_TEST(HNSWTieredIndexTestBasic, finalizerCachesDeletionWithoutRepairJobs) {
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
-// The GC compacts the oldest half of the cleared slots, also when that relocates a slot that is
-// still in the cache.
-TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsHalfOfTheClearedSlots) {
+// The last reader's shared_ptr deleter publishes the slot, without an exclusive main lock.
+TYPED_TEST(HNSWTieredIndexTestBasic, finalizerWaitsForLastBatchReader) {
+    const size_t dim = 4;
+    const size_t n = 10;
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+    const idType deleted_id = hnsw_index->getElementIds(2).at(0);
+    const auto exclusive_locks = tiered_index->getMainIndexGuardWriteLockCount();
+    TEST_DATA_T query[dim];
+    GenerateVector<TEST_DATA_T>(query, dim, 0);
+
+    auto start_reader = [&]() {
+        auto reader =
+            std::unique_ptr<VecSimBatchIterator>(tiered_index->newBatchIterator(query, nullptr));
+        auto *reply = reader->getNextResults(1, BY_SCORE);
+        EXPECT_EQ(VecSimQueryReply_Len(reply), 1);
+        VecSimQueryReply_Free(reply);
+        EXPECT_FALSE(reader->isDepleted());
+        return reader;
+    };
+    auto first = start_reader();
+    auto second = start_reader();
+    DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2});
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
+
+    // A reader starting after isolation cannot hold a stale ID and must not delay this finalizer.
+    auto later = start_reader();
+    first->reset();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    second.reset();
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1);
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
+
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 100, 100);
+    RunAllJobs(mock_thread_pool);
+    ASSERT_EQ(hnsw_index->getElementIds(100).at(0), deleted_id);
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n);
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, sharedPtrFinalizersDuringConcurrentQueriesAndOverwrites) {
+    const size_t dim = 4;
+    const size_t n = 64;
+    auto mock_thread_pool = tieredIndexMock(2);
+    auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+    tiered_index->setReuseOnInsert(true);
+    auto *hnsw_index = this->CastToHNSW(tiered_index);
+    const auto exclusive_locks = tiered_index->getMainIndexGuardWriteLockCount();
+    std::atomic<bool> done{false};
+    std::atomic<size_t> invalid_results{0};
+    std::latch query_started(1);
+    mock_thread_pool.init_threads();
+    std::thread query_thread([&] {
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, n / 2);
+        bool first = true;
+        do {
+            auto check = [&](VecSimQueryReply *reply) {
+                if (reply->code != VecSim_QueryReply_OK) {
+                    ++invalid_results;
+                }
+                for (const auto &result : reply->results) {
+                    if (result.id >= n || !std::isfinite(result.score)) {
+                        ++invalid_results;
+                    }
+                }
+                VecSimQueryReply_Free(reply);
+            };
+            check(tiered_index->topKQuery(query, 10, nullptr));
+            check(tiered_index->rangeQuery(query, 100, nullptr, BY_SCORE));
+            if (first) {
+                query_started.count_down();
+                first = false;
+            }
+        } while (!done.load());
+    });
+    query_started.wait();
+    for (size_t round = 1; round <= 4; ++round) {
+        for (labelType label = 0; label < n; ++label) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, round * n + label);
+        }
+    }
+    mock_thread_pool.thread_pool_wait();
+    done = true;
+    query_thread.join();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(invalid_results.load(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), tiered_index->getReusableSlotsCount());
+    ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
+    ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+// Limited compaction can relocate slots that remain available for inserts.
+TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactionKeepsRelocatedCachedSlotsReusable) {
     size_t dim = 4;
     size_t n = 10;
     auto mock_thread_pool = tieredIndexMock();
@@ -5824,7 +5922,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsHalfOfTheClearedSlots) {
     std::vector<labelType> deleted = {1, 3, 6, 8, 9};
     DeleteLabelsAndRepair(tiered_index, mock_thread_pool, deleted);
     ASSERT_EQ(tiered_index->readySwapJobs, deleted.size());
-    tiered_index->runGC();
+    ASSERT_EQ(tiered_index->executeReadySwapJobs(2), 2);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 3);
     ASSERT_EQ(hnsw_index->indexSize(), n - 2);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 3);
@@ -5867,11 +5965,19 @@ TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsAtMostTheSwapJobLimit) {
     ASSERT_EQ(hnsw_index->indexSize(), n - 2);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 
+    ASSERT_EQ(tiered_index->executeReadySwapJobs(2), 2);
+    ASSERT_EQ(tiered_index->readySwapJobs, 1);
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 4);
+
+    // A GC consumes the last slot too, even with insert-time reuse enabled.
     tiered_index->runGC();
-    ASSERT_EQ(tiered_index->readySwapJobs, 2);
-    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 2);
-    ASSERT_EQ(hnsw_index->indexSize(), n - 3);
-    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 2);
+    ASSERT_EQ(tiered_index->readySwapJobs, 0);
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(hnsw_index->indexSize(), n - 5);
+    ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+    ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
+    ASSERT_EQ(tiered_index->executeReadySwapJobs(), 0);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 }
 
@@ -5886,8 +5992,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsClearedSlotsWhenReuseIsTurnedOff)
 
     DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2, 5, 7});
     ASSERT_EQ(tiered_index->readySwapJobs, 3);
-    tiered_index->runGC();
-    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 2);
+    ASSERT_EQ(tiered_index->getReusableSlotsCount(), 3);
 
     tiered_index->setReuseOnInsert(false);
     tiered_index->runGC();
@@ -5915,7 +6020,7 @@ TYPED_TEST(HNSWTieredIndexTestBasic, overwritesStopGrowingTheIndexWithReuse) {
         }
         RunAllJobs(mock_thread_pool);
         tiered_index->runGC();
-        // Finalization clears replaced ids; GC compacts half of the remaining cached slots.
+        // GC compacts every finalized slot that inserts have not already reused.
         ASSERT_LE(hnsw_index->indexSize(), 2 * n);
         if (round >= 2) {
             ASSERT_EQ(hnsw_index->indexSize(), n);

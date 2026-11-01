@@ -333,8 +333,9 @@ public:
     // new element instead of appending one - the counterpart of `swapDeletedElement` that keeps
     // the slot - takes two steps:
     // 1. `clearDeletedSlot` frees the element's graph data and leaves an empty one (level 0, no
-    //    links) in its place. No graph scan may be in flight, as one may still hold a stale link to
-    //    it. The slot stays marked deleted, and is safe to be moved by a swap like any other.
+    //    links) in its place. The caller must detach the node and wait for every reader that may
+    //    hold a stale ID or graph pointer. Other graph scans may continue. The slot stays marked
+    //    deleted, and is safe to be moved by a swap like any other.
     // 2. `storeNewElementInClearedSlot` then stores the new element there, like `storeNewElement`
     //    appends one - with the index data guard held exclusively, and graph scans allowed. Unlike
     //    an in-place overwrite, the label no longer maps to this id (it was dropped when marked
