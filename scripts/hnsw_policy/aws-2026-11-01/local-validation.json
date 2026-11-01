@@ -1,0 +1,36 @@
+{
+  "redisearch": "f8f3945d7fcf29097602dd0a33e5078e064ba449",
+  "vecsim": "3fbc21974bd0c0d73ac7205604b01900b4a73751",
+  "build": "passed",
+  "format": "passed",
+  "lint": "passed",
+  "c_cpp_unit": {
+    "passed": 1394,
+    "failed": 0
+  },
+  "rust": {
+    "passed": 3807,
+    "failed": 0,
+    "skipped": 0
+  },
+  "vecsim_policy": {
+    "passed": 11,
+    "failed": 0
+  },
+  "vector_hybrid_flows": {
+    "passed": 83,
+    "failed": 0,
+    "skipped": 2,
+    "skipped_tests": [
+      "test_vecsim:test_single_entry",
+      "test_hybrid:testHybridSearch.test_knn_wildcard_search"
+    ],
+    "note": "RLTest total85 includes two SKIP results.82 actual PASS in quick run;1 timeout passed on default-timeout rerun."
+  },
+  "independent_review": {
+    "blocking": 0,
+    "suggestions": 0,
+    "scope": "Complete final code ranges; read-only; no tests run by reviewer."
+  },
+  "ci": "Draft workflow checks pending at source push. Skipped non-draft lanes were not executed."
+}

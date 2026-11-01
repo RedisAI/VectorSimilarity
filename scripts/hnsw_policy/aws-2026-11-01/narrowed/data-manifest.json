@@ -1,0 +1,19 @@
+{
+  "dataset": "DBpedia, shuffled extraction seed18264, first146373 vectors; not customer data",
+  "dim": 768,
+  "type": "little-endianFLOAT32 input, converted toFLOAT64 inJSON",
+  "query_original_ids": [
+    4000,
+    4019
+  ],
+  "files": {
+    "vectors.f32": {
+      "bytes": 449657856,
+      "sha256": "e7386dfe9226cd08df378b05c526e68e379255a04d15e87adabef16287100ebe"
+    },
+    "queries.f32": {
+      "bytes": 61440,
+      "sha256": "f5a37213d6717a286cf608f47e3fda656307794fbd3918cc64a22be49a9cad3a"
+    }
+  }
+}

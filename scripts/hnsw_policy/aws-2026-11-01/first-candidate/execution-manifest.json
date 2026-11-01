@@ -1,0 +1,35 @@
+{
+  "baseline_redisearch": "1fbe5191c925c710945a7ed526293d552e8e346a",
+  "baseline_vecsim": "1db74bef518d58318d53bc930027d511edcc8e49",
+  "candidate_redisearch": "50b3cb6d667494982941dc09ae4fac65c2287174",
+  "candidate_vecsim": "2d27f83f0cdb23f060983c5ca7eb74139fb05a93",
+  "redisjson": "d2cad90ddbbc4dfc7cf692ddcb5a1a97596d72ac",
+  "redis": "2dfc1e4a990b6b1c85172d3aa65700ffad82d38c",
+  "instance_type": "c7i.4xlarge",
+  "region": "us-east-2",
+  "topology": "Two paired two-shard OSS clusters, four standalone Redis processes on one host; FT.SEARCH through each actual coordinator, one request at a time",
+  "build": "Same GCC13.3 and Rust1.94 toolchain; default RelWithDebInfo, ENABLE_ASSERT=OFF; sequential builds; non-ASAN Redis runtime",
+  "harness_sha256": {
+    "compare_current.py": "290fd98782b0a217fbafab60fdd45e45db39d9ab5e9da610780218a402cc971d",
+    "run_current.sh": "45425d6b9fa6839439f102008d87fab7df853e8490144c15ded5f0974cff9f3b",
+    "build_current.sh": "c14c108dc750884adb6c9530664826ce67d83d9e167c65462d9af1cd76cee180"
+  },
+  "first_attempt": "Aborted before timing: EF_RUNTIME is incompatible with forced ADHOC_BF. Corrected query builder and added option preflight; original logs preserved.",
+  "comparison_contract": "Main latency comparison is baseline AUTO vs candidate AUTO on identical unmodified predicates. Forced BATCHES uses the same predicate. Exact BF reference adds an all-doc TAG guard; this can change NOT traversal cost, so its timing is not the customer BF latency comparator.",
+  "verified_holes_state": {
+    "max_doc_ids": [
+      1152500,
+      1058100
+    ],
+    "vector_counts": [
+      73187,
+      73186
+    ],
+    "pending_vector_deletions": [
+      0,
+      0
+    ],
+    "both_builds_identical": true
+  },
+  "status": "Complete: 46080 timings, 192 groups, all exact/forced-batch controls equal across builds and histories."
+}

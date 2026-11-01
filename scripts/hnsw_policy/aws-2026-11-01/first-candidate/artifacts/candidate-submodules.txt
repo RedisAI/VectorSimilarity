@@ -1,0 +1,6 @@
+ 2d27f83f0cdb23f060983c5ca7eb74139fb05a93 deps/VectorSimilarity (v8.12.0-4-g2d27f83f)
+ 6edac2fc7f955af8bd8f1292bdd41280c27c0465 deps/VectorSimilarity/deps/ScalableVectorSearch (v0.5.0)
+ 6910c9d9165801d8827d628cb72eb7ea9dd538c5 deps/googletest (release-1.8.0-3518-g6910c9d9)
+ bd01f10daf773b622260ea3c7daf8a64df50acb1 deps/hiredis (v1.0.2-280-gbd01f10)
+ e9f29cb984231524e3931aa0ae2c5dae1a32884e deps/libuv (v1.48.0)
+ 4764395431c8f2a0b4fe18b816ab1fc966a45837 deps/snowball (v2.1.0)

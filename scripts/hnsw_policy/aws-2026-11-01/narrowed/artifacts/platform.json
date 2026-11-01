@@ -1,0 +1,9 @@
+{
+  "platform": "Linux-7.0.0-1012-aws-x86_64-with-glibc2.39",
+  "python": "3.12.3",
+  "numpy": "2.5.4",
+  "redis_py": "8.1.0",
+  "cpu_model": "Intel(R) Xeon(R) Platinum 8488C",
+  "logical_cpus": 16,
+  "memory": "MemTotal:       32306672 kB"
+}

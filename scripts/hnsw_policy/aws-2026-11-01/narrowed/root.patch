@@ -1,0 +1,14 @@
+diff --git a/src/redisearch_rs/vector_score_source/src/lib.rs b/src/redisearch_rs/vector_score_source/src/lib.rs
+index d8113adc74ba95e2fd1653e6d3a0e1d26e649cd4..70460882736e25bd48e8e097e0556afd6dc7d3b6 100644
+--- a/src/redisearch_rs/vector_score_source/src/lib.rs
++++ b/src/redisearch_rs/vector_score_source/src/lib.rs
+@@ -138,7 +138,8 @@ where
+     } else if requested == VecSearchMode_HYBRID_BATCHES {
+         TopKMode::ForcedBatches
+     } else {
+-        let child_est = child.num_estimated().min(source.index_size());
++        // Keep oversized estimates so HNSW can account for potentially expensive filter scans.
++        let child_est = child.num_estimated();
+         if source.prefer_adhoc(child_est, k.get(), true) {
+             TopKMode::AdhocBF
+         } else {

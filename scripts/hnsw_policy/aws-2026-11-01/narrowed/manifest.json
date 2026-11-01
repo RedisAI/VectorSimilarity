@@ -1,0 +1,58 @@
+{
+  "status": "Complete: 46,080 timings, 192 groups; full pairing; no errors or incomplete replies; exact/BATCHES controls equal across builds and histories.",
+  "baseline": {
+    "redisearch": "1fbe5191c925c710945a7ed526293d552e8e346a",
+    "vecsim": "1db74bef518d58318d53bc930027d511edcc8e49"
+  },
+  "candidate_base": {
+    "redisearch": "50b3cb6d667494982941dc09ae4fac65c2287174",
+    "vecsim": "2d27f83f0cdb23f060983c5ca7eb74139fb05a93"
+  },
+  "candidate": {
+    "redisearch": "f8f3945d7fcf29097602dd0a33e5078e064ba449",
+    "vecsim": "3fbc21974bd0c0d73ac7205604b01900b4a73751"
+  },
+  "query_original_ids": [
+    4000,
+    4019
+  ],
+  "max_doc_ids": [
+    1000000,
+    1000000
+  ],
+  "boundary_rationale": "Validate the new minimum full-filter scan estimate directly. Prior run tested ticket-scale1152500/1058100. Both use73187/73186livevectors andnoHNSWdeletions.",
+  "differences_from_prior_run": "Query slice changed2000..2019 to4000..4019; gap fixture targets1M exactly onbothshards. Same vectors, schema, insertionorder, membershipseed, strategies,EFs,repetitions andmachine.",
+  "comparison_contract": "Headline latency compares identical AUTO predicates. ForcedBF reference has an all-docTAG guard and is for exactgroundtruth; its timings can have different NOTtraversal costs.",
+  "sha256": {
+    "root.patch": "b7bc82d1cea0ea5e8e3e7ac4aca141e02138d222e9afe6feb87b2bc24bc35913",
+    "vecsim.patch": "f596168858be6e436c11e6f1e531f5c62bb9eb163ec16a3936c895cc8c28516e",
+    "compare_current.py": "13dfe224331f4e34e150e0af5e32a77384d0522f4cf80314e691be61468b9c4c",
+    "run_current.sh": "326c052be9b1b4423a1e04aae4a5d4721f2dd4de2707e0ae1c8f50e7495fd534",
+    "queries.f32": "f5a37213d6717a286cf608f47e3fda656307794fbd3918cc64a22be49a9cad3a"
+  },
+  "source_sha256": {
+    "src/redisearch_rs/vector_score_source/src/lib.rs": "8dea932a237fdae12132b3ad77a42e408f5eec82adf871e2c78a863aadb9c864",
+    "deps/VectorSimilarity/src/VecSim/algorithms/hnsw/hnsw.h": "a5a38854134e8f1a485bcfa02ada0a89a4fdc25974228b59fd1dd3ac68547ea6",
+    "deps/VectorSimilarity/src/VecSim/algorithms/hnsw/hnsw_hybrid_policy.h": "78b8acb5708c30df769f9b80dc2c71995791ef56287e15676afe895246db1c22"
+  },
+  "build_note": "Remote build passed; metadata comparison first failed only because local/remote Git use different abbreviated hash lengths. Patches normalized with --full-index and actual source hashes checked before execution.",
+  "commit_note": "Commits include the same production file bytes verified on AWS, plus local regression tests.",
+  "commit_source_hashes_verified": true,
+  "remote_compiled_patches_match": true,
+  "candidate_binary_sha256": "73fc3b2d3ae985af8bc9582601638fcdd5b66ee74ef750ae94f0075e6c13d841",
+  "baseline_binary_sha256": "b55b78644dbdb89822c3338c26e473ce4ceac1cfec084b5be8ea2516774a75e6",
+  "local_verification": "Full build, format, lint,1394 C/C++ unit,3807 Rust,83 vector/hybrid flows (two skipped),11 VecSim policy tests passed.",
+  "independent_review": "Complete final commit ranges: zero actionable findings; no builds/tests by reviewer.",
+  "verified_max_doc_ids": {
+    "fresh": [
+      73187,
+      73186
+    ],
+    "holes": [
+      1000000,
+      1000000
+    ]
+  },
+  "result_note": "Eight of 192 groups have >10% median regression; worst 13.9647%. Worst p95 regression 16.0940%. Customer-like 26% negative EF10: 20.1\u201320.8x median speedup, mean recall 99.375\u201399.425%, minimum 97\u201398%.",
+  "cleanup": "Benchmark Redis processes stopped; EC2 instance stopped; only the temporary SSH rule removed."
+}

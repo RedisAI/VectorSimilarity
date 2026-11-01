@@ -1,0 +1,1 @@
+Redis server v=99.99.99 sha=2dfc1e4a:0 malloc=jemalloc-5.3.0 bits=64 build=bc9bc7154a574010

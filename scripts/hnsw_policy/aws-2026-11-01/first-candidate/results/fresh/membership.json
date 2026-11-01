@@ -1,0 +1,98 @@
+[
+  {
+    "membership": "random",
+    "ratio": 1,
+    "count": 1462,
+    "ids_sha256": "cd571440f8f6e6625c73029a3c32711c6880b3db8dee912917cf7498dd27c44b"
+  },
+  {
+    "membership": "random",
+    "ratio": 5,
+    "count": 7318,
+    "ids_sha256": "05f282c7f2165ca5711f39753769afdf25492c28c7e633e1c7d051be69476152"
+  },
+  {
+    "membership": "random",
+    "ratio": 10,
+    "count": 14636,
+    "ids_sha256": "173f8ded6214e8662bcd2d38c7577663cc1198fc880a36e3b34e5042b8f2a2be"
+  },
+  {
+    "membership": "random",
+    "ratio": 17.5,
+    "count": 25614,
+    "ids_sha256": "d735bbe30780e53f98ae96a763349240049a2095b57fc827b664f9284be61394"
+  },
+  {
+    "membership": "random",
+    "ratio": 26,
+    "count": 38056,
+    "ids_sha256": "34f2d1a09052fdcc78da8286aa4099e30b2278e44a436ef95948d73dde42c182"
+  },
+  {
+    "membership": "random",
+    "ratio": 50,
+    "count": 73186,
+    "ids_sha256": "fb7585e13adbb048ff1dbf05c5823ae7ff494fdc961460121e2fb4f0e50e84e9"
+  },
+  {
+    "membership": "random",
+    "ratio": 95,
+    "count": 139053,
+    "ids_sha256": "d40489c8ef4e5044cc3c061bd7146390feeb7d64c0c663394a21f4a6b7e46c3a"
+  },
+  {
+    "membership": "random",
+    "ratio": 100,
+    "count": 146373,
+    "ids_sha256": "295f790b99b6b08e10a6c02a38a39c923d642e7507ae31f84e9fce6180ecd018"
+  },
+  {
+    "membership": "projection",
+    "ratio": 1,
+    "count": 1462,
+    "ids_sha256": "0e9c94e42721552b9cb7344c7b712025b25a8632deaee88e88ac09a7b37c08e9"
+  },
+  {
+    "membership": "projection",
+    "ratio": 5,
+    "count": 7318,
+    "ids_sha256": "9b3a221361e1c924fc3f47a2c1469bda85b263d83dcb1746953770864f19735f"
+  },
+  {
+    "membership": "projection",
+    "ratio": 10,
+    "count": 14636,
+    "ids_sha256": "a80004df53fb1da4352eda10c15715dd13e4be9af528f248dba7285909b0f3b2"
+  },
+  {
+    "membership": "projection",
+    "ratio": 17.5,
+    "count": 25614,
+    "ids_sha256": "2813d9608adad3080aa1d40a5a8dbc566f71287409f61c9d6bcfecfde11eb6c5"
+  },
+  {
+    "membership": "projection",
+    "ratio": 26,
+    "count": 38056,
+    "ids_sha256": "93cf246bdd037247e8dcb9ea8991b93502893a0334fd6d4a30de70002d6ab7b3"
+  },
+  {
+    "membership": "projection",
+    "ratio": 50,
+    "count": 73186,
+    "ids_sha256": "71be8c5d776f8cc8786bf66ab6c672f33faa31509c6aa18f28e89fe50d94daff"
+  },
+  {
+    "membership": "projection",
+    "ratio": 95,
+    "count": 139053,
+    "ids_sha256": "42ab6393362a80a2710e8af96b111353e2f2a8984c328c8d4df2fabb24f387e6"
+  },
+  {
+    "membership": "projection",
+    "ratio": 100,
+    "count": 146373,
+    "ids_sha256": "295f790b99b6b08e10a6c02a38a39c923d642e7507ae31f84e9fce6180ecd018"
+  }
+]

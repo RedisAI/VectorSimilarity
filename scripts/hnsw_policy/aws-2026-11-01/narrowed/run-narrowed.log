@@ -1,0 +1,111 @@
+OK
+OK
+OK
+OK
+OK
+rsv: cluster 'narrowed-fresh-baseline' up on ports 25516 25517 (module /home/ubuntu/mod18264/current/artifacts/baseline.so)
+doctor: ok   :25516 pid 25289 modules: name search ver 999999 path /home/ubuntu/mod18264/current/artifacts/baseline.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  
+doctor: ok   :25516 cluster_state:ok, coordinator sees 2 shards
+doctor: ok   :25517 pid 25308 modules: name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  name search ver 999999 path /home/ubuntu/mod18264/current/artifacts/baseline.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 
+doctor: ok   :25517 cluster_state:ok, coordinator sees 2 shards
+doctor: WARN sources newer than the module build (rebuild?): /home/ubuntu/mod18264/source/src/redisearch_rs/ffi/build.rs /home/ubuntu/mod18264/source/src/redisearch_rs/c_wrappers/vecsim/src/index.rs /home/ubuntu/mod18264/source/src/redisearch_rs/vector_score_source/src/source.rs 
+doctor: module file /home/ubuntu/mod18264/current/artifacts/baseline.so (2026-11-01 12:50:18); HEAD 50b3cb6d6 2026-11-01 13:24:15
+OK
+OK
+OK
+OK
+OK
+rsv: cluster 'narrowed-fresh-candidate' up on ports 31965 31966 (module /home/ubuntu/mod18264/narrowed/artifacts/candidate.so)
+doctor: ok   :31965 pid 25525 modules: name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  name search ver 999999 path /home/ubuntu/mod18264/narrowed/artifacts/candidate.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 
+doctor: ok   :31965 cluster_state:ok, coordinator sees 2 shards
+doctor: ok   :31966 pid 25544 modules: name search ver 999999 path /home/ubuntu/mod18264/narrowed/artifacts/candidate.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  
+doctor: ok   :31966 cluster_state:ok, coordinator sees 2 shards
+doctor: module file /home/ubuntu/mod18264/narrowed/artifacts/candidate.so (2026-11-01 14:06:33); HEAD 50b3cb6d6 2026-11-01 13:24:15
+fresh candidate: loaded 10000/146373
+fresh candidate: loaded 20000/146373
+fresh candidate: loaded 30000/146373
+fresh candidate: loaded 40000/146373
+fresh candidate: loaded 50000/146373
+fresh candidate: loaded 60000/146373
+fresh candidate: loaded 70000/146373
+fresh candidate: loaded 80000/146373
+fresh candidate: loaded 90000/146373
+fresh candidate: loaded 100000/146373
+fresh candidate: loaded 110000/146373
+fresh candidate: loaded 120000/146373
+fresh candidate: loaded 130000/146373
+fresh candidate: loaded 140000/146373
+fresh candidate: graph complete
+fresh: measured 4400/5760 query groups
+fresh: measured 4500/5760 query groups
+fresh: measured 4600/5760 query groups
+fresh: measured 4700/5760 query groups
+fresh: measured 4800/5760 query groups
+fresh: measured 4900/5760 query groups
+fresh: measured 5000/5760 query groups
+fresh: measured 5100/5760 query groups
+fresh: measured 5200/5760 query groups
+fresh: measured 5300/5760 query groups
+fresh: measured 5400/5760 query groups
+fresh: measured 5500/5760 query groups
+fresh: measured 5600/5760 query groups
+fresh: measured 5700/5760 query groups
+fresh: MEASURE_COMPLETE
+rsv: stopped 'narrowed-fresh-baseline'; evidence kept in /home/ubuntu/mod18264/narrowed/rsv/evidence/narrowed-fresh-baseline
+rsv: stopped 'narrowed-fresh-candidate'; evidence kept in /home/ubuntu/mod18264/narrowed/rsv/evidence/narrowed-fresh-candidate
+OK
+OK
+OK
+OK
+OK
+rsv: cluster 'narrowed-holes-baseline' up on ports 32007 32008 (module /home/ubuntu/mod18264/current/artifacts/baseline.so)
+doctor: ok   :32007 pid 26658 modules: name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  name search ver 999999 path /home/ubuntu/mod18264/current/artifacts/baseline.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 
+doctor: ok   :32007 cluster_state:ok, coordinator sees 2 shards
+doctor: ok   :32008 pid 26677 modules: name search ver 999999 path /home/ubuntu/mod18264/current/artifacts/baseline.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  
+doctor: ok   :32008 cluster_state:ok, coordinator sees 2 shards
+doctor: WARN sources newer than the module build (rebuild?): /home/ubuntu/mod18264/source/src/redisearch_rs/ffi/build.rs /home/ubuntu/mod18264/source/src/redisearch_rs/c_wrappers/vecsim/src/index.rs /home/ubuntu/mod18264/source/src/redisearch_rs/vector_score_source/src/source.rs 
+doctor: module file /home/ubuntu/mod18264/current/artifacts/baseline.so (2026-11-01 12:50:18); HEAD 50b3cb6d6 2026-11-01 13:24:15
+OK
+OK
+OK
+OK
+OK
+rsv: cluster 'narrowed-holes-candidate' up on ports 32300 32301 (module /home/ubuntu/mod18264/narrowed/artifacts/candidate.so)
+doctor: ok   :32300 pid 26894 modules: name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  name search ver 999999 path /home/ubuntu/mod18264/narrowed/artifacts/candidate.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 
+doctor: ok   :32300 cluster_state:ok, coordinator sees 2 shards
+doctor: ok   :32301 pid 26913 modules: name search ver 999999 path /home/ubuntu/mod18264/narrowed/artifacts/candidate.so args WORKERS 0 MIN_OPERATION_WORKERS 0 DEFAULT_DIALECT 2 name ReJSON ver 999999 path /home/ubuntu/mod18264/current/artifacts/rejson.so args  
+doctor: ok   :32301 cluster_state:ok, coordinator sees 2 shards
+doctor: module file /home/ubuntu/mod18264/narrowed/artifacts/candidate.so (2026-11-01 14:06:33); HEAD 50b3cb6d6 2026-11-01 13:24:15
+holes candidate: loaded 10000/146373
+holes candidate: loaded 20000/146373
+holes candidate: loaded 30000/146373
+holes candidate: loaded 40000/146373
+holes candidate: loaded 50000/146373
+holes candidate: loaded 60000/146373
+holes candidate: loaded 70000/146373
+holes candidate: loaded 80000/146373
+holes candidate: loaded 90000/146373
+holes candidate: loaded 100000/146373
+holes candidate: loaded 110000/146373
+holes candidate: loaded 120000/146373
+holes candidate: loaded 130000/146373
+holes candidate: loaded 140000/146373
+holes candidate: graph complete
+holes: measured 4400/5760 query groups
+holes: measured 4500/5760 query groups
+holes: measured 4600/5760 query groups
+holes: measured 4700/5760 query groups
+holes: measured 4800/5760 query groups
+holes: measured 4900/5760 query groups
+holes: measured 5000/5760 query groups
+holes: measured 5100/5760 query groups
+holes: measured 5200/5760 query groups
+holes: measured 5300/5760 query groups
+holes: measured 5400/5760 query groups
+holes: measured 5500/5760 query groups
+holes: measured 5600/5760 query groups
+holes: measured 5700/5760 query groups
+holes: MEASURE_COMPLETE
+rsv: stopped 'narrowed-holes-baseline'; evidence kept in /home/ubuntu/mod18264/narrowed/rsv/evidence/narrowed-holes-baseline
+rsv: stopped 'narrowed-holes-candidate'; evidence kept in /home/ubuntu/mod18264/narrowed/rsv/evidence/narrowed-holes-candidate
+AWS_COMPARISON_COMPLETE

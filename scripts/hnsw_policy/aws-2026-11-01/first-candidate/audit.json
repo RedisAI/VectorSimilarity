@@ -1,0 +1,34 @@
+{
+  "histories": {
+    "fresh": {
+      "timings": 23040,
+      "controls": 1920,
+      "max_doc_ids": [
+        73187,
+        73186
+      ],
+      "forced_timing_ids_match_controls": true,
+      "auto_ids_stable_across_repeats": true,
+      "complete_pairing": true,
+      "errors": 0,
+      "incomplete": 0,
+      "pending_vector_deletions": 0
+    },
+    "holes": {
+      "timings": 23040,
+      "controls": 1920,
+      "max_doc_ids": [
+        1152500,
+        1058100
+      ],
+      "forced_timing_ids_match_controls": true,
+      "auto_ids_stable_across_repeats": true,
+      "complete_pairing": true,
+      "errors": 0,
+      "incomplete": 0,
+      "pending_vector_deletions": 0
+    }
+  },
+  "exact_and_batch_keys_scores_equal_across_histories": true,
+  "limitations": "Cross-build control equality is asserted by the measurement harness before timing. This audit checks the retained common controls and all timed IDs; it does not reconstruct scores absent from the latency rows."
+}
