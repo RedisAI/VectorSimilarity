@@ -2038,9 +2038,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsAndEntryPoint(
 template <typename DataType, typename DistType>
 void HNSWIndex<DataType, DistType>::clearDeletedSlot(idType deletedId) {
     assert(isMarkedDeleted(deletedId) && "Only a marked-deleted element's slot may be reclaimed");
-    // Normally a no-op, since the last repair of a deleted element isolates it. Not when its
-    // repairs were invalidated instead of run (their node was disposed), which leaves its edges
-    // for whoever disposes of it - us, here.
+    // Deletion finalization isolates the element before releasing its graph data, including when
+    // its repairs were completed by invalidation because their node was disposed.
     isolateDeletedElement(deletedId);
     disposeElementData(deletedId);
     // Leave a valid, empty element rather than freed memory: the slot may still be read (or moved
