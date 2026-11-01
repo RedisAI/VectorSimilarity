@@ -1685,20 +1685,24 @@ TEST(HnswHybridPolicy, MeasuredBoundaries) {
          }) {
         SCOPED_TRACE(::testing::Message()
                      << "n=" << c.n << " k=" << c.k << " M=" << c.m << " ratio=" << c.ratio);
-        EXPECT_EQ(preferHnswAdhocMeasured(c.k, c.n, 768, c.m, c.ratio), c.adhoc);
+        EXPECT_EQ(preferHnswAdhocMeasured(c.k, c.n, 768, c.m, c.ratio, c.k), c.adhoc);
     }
     EXPECT_TRUE(preferHnswAdhocMeasured(501, 73187, 768, 16, 1.0f));
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 34999, 768, 16, 1.0f));
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 300001, 768, 16, 1.0f));
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 1537, 16, 1.0f));
     EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 768, 65, 1.0f));
-    EXPECT_FALSE(preferHnswAdhocMeasured(350, 180000, 768, 32, 0.1f));
+    EXPECT_FALSE(preferHnswAdhocMeasured(350, 180000, 768, 32, 0.1f, 350));
     EXPECT_TRUE(preferHnswAdhocMeasured(351, 180000, 768, 32, 0.1f));
     EXPECT_TRUE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.1f));
     EXPECT_TRUE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.175f));
     EXPECT_FALSE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.176f));
     EXPECT_FALSE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.1f, 200));
     EXPECT_TRUE(preferHnswAdhocMeasured(500, 180000, 768, 32, 0.1f, 400));
+    EXPECT_TRUE(preferHnswAdhocMeasured(200, 180000, 768, 32, 0.175f));
+    EXPECT_FALSE(preferHnswAdhocMeasured(200, 180000, 768, 32, 0.176f));
+    EXPECT_TRUE(preferHnswAdhocMeasured(200, 73187, 768, 16, 1.0f, 0, 999999));
+    EXPECT_FALSE(preferHnswAdhocMeasured(200, 73187, 768, 16, 1.0f, 0, 1000000));
 }
 
 TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
@@ -1716,11 +1720,14 @@ TYPED_TEST(HNSWTest, broadFilterHybridPolicy) {
         }
         hnsw->curElementCount = n;
         for (size_t k : {12, 13, 50, 200}) {
-            for (size_t subset : {n * 95 / 100, n, n * 2}) {
+            for (size_t subset : {n * 95 / 100, size_t(1000000)}) {
                 SCOPED_TRACE(::testing::Message() << "n=" << n << " dim=" << dim << " M=" << m
                                                   << " k=" << k << " subset=" << subset);
                 EXPECT_FALSE(VecSimIndex_PreferAdHocSearch(index, subset, k, true));
                 EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_BATCHES);
+            }
+            for (size_t subset : {n, n * 2, size_t(999999)}) {
+                EXPECT_EQ(VecSimIndex_PreferAdHocSearch(index, subset, k, true), k >= 13);
             }
             EXPECT_TRUE(VecSimIndex_PreferAdHocSearch(index, n / 1000, k, true));
             EXPECT_EQ(VecSimIndex_DebugInfo(index).commonInfo.lastMode, HYBRID_ADHOC_BF);

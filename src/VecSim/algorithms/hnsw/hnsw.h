@@ -2572,17 +2572,19 @@ bool HNSWIndex<DataType, DistType>::preferAdHocSearch(size_t subsetSize, size_t 
     // the measured policy in hnsw_hybrid_policy.h.
     size_t index_size = this->indexSize();
     // Referring to too large subset size as if it was the maximum possible size.
-    subsetSize = std::min(subsetSize, index_size);
+    size_t bounded_subset_size = std::min(subsetSize, index_size);
 
     size_t d = this->dim;
     size_t M = this->getM();
-    float r = (index_size == 0) ? 0.0f : (float)(subsetSize) / (float)this->indexLabelCount();
+    float r =
+        (index_size == 0) ? 0.0f : (float)(bounded_subset_size) / (float)this->indexLabelCount();
     bool res;
     auto measured_policy = [&]() {
         if (!this->usesQuantizedStorage() &&
             (this->getType() == VecSimType_FLOAT32 || this->getType() == VecSimType_FLOAT64) &&
             this->getMetric() == VecSimMetric_Cosine && this->indexLabelCount() == index_size) {
-            return preferHnswAdhocMeasured(k, index_size, d, M, r, initial_check ? 0 : k_remaining);
+            return preferHnswAdhocMeasured(k, index_size, d, M, r, initial_check ? 0 : k_remaining,
+                                           subsetSize);
         }
         return true;
     };

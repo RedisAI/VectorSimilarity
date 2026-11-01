@@ -11,10 +11,14 @@
 #include <cstddef>
 
 inline bool preferHnswAdhocMeasured(size_t k, size_t n, size_t dim, size_t m, float ratio,
-                                    size_t k_remaining = 0) {
+                                    size_t k_remaining = 0, size_t filter_estimate = 0) {
     // Keep the historical leaf outside the measured feature ranges.
     if (k < 13 || k > 500 || n < 35000 || n > 300000 || dim < 76 || dim > 1536 || m < 11 ||
         m > 64 || !(ratio > 0.0f && ratio <= 1.0f)) {
+        return true;
+    }
+    // A capped full estimate can hide a sparse filter. Probe only for large potential scans.
+    if (!k_remaining && (ratio <= 0.175f || (ratio == 1.0f && filter_estimate < 1000000))) {
         return true;
     }
     // Continuing only needs the missing hits; restarting BF still scans the whole filter.
