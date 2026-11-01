@@ -97,12 +97,10 @@ private:
     // Cost of defrag(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
     std::atomic<uint64_t> defragRuns{0};
     std::atomic<uint64_t> defragTimeNs{0};
-    // Inserts that took a cleared slot from `reusableSlots`. Statistics only.
-    std::atomic<uint64_t> reusedSlots{0};
 
     // Protect the both idToRepairJobs lookup and the pending_repair_jobs_counter for the
     // associated swap jobs.
-    std::mutex idToRepairJobsGuard;
+    mutable std::mutex idToRepairJobsGuard;
 
     // The cleared slots of deleted elements that an insert can take instead of appending a fresh
     // id, oldest first. Filled by the last reader's shared_ptr deleter and emptied by inserts,
@@ -117,8 +115,10 @@ private:
     HNSWSwapJob *pendingFinalizationsHead{nullptr};
     HNSWSwapJob *pendingFinalizationsTail{nullptr};
 
-    // Like the disk index's currently_running/query markers: an operation retains the IDs
-    // detached while it was running, including candidates already copied out of adjacency lists.
+    // Tracks an operation that may retain IDs or graph pointers copied before node isolation.
+    // Like the disk index's query markers, it holds shared_ptr references to IDs detached while
+    // registered. The last marker to release an ID triggers its finalizer. Markers must outlive
+    // the operation's main guard so their deleters can acquire shared access without nesting it.
     class RuntimeMarker {
         const TieredHNSWIndex *index;
         RuntimeMarker *previous = nullptr;
@@ -169,6 +169,9 @@ private:
         }
         ~RuntimeMarker() { reset(); }
     };
+    // Protects the currentlyRunning list, its marker links, and appends to pendingIds. Unregister
+    // a marker under this mutex before releasing its references outside it: the last release
+    // calls a finalizer that acquires the main guard, whose holders can also take runningGuard.
     mutable std::mutex runningGuard;
     mutable RuntimeMarker *currentlyRunning = nullptr;
 
@@ -355,7 +358,7 @@ public:
     // (see `reuseIdOnInsert`), or always appends a fresh one. Defaults to disabled.
     void setReuseOnInsert(bool reuse) { this->reuseIdOnInsert = reuse; }
     bool isReuseOnInsert() const { return this->reuseIdOnInsert; }
-    size_t getReusableSlotsCount() {
+    size_t getReusableSlotsCount() const {
         std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
         return this->reusableSlotsCount();
     }
@@ -618,7 +621,6 @@ idType TieredHNSWIndex<DataType, DistType>::takeReusableSlot() {
     assert(idToSwapJob.at(id) == swap_job);
     idToSwapJob.erase(id);
     delete swap_job;
-    reusedSlots.fetch_add(1, std::memory_order_relaxed);
     return id;
 }
 
@@ -1613,7 +1615,7 @@ VecSimIndexDebugInfo TieredHNSWIndex<DataType, DistType>::debugInfo() const {
     HnswTieredInfo hnswTieredInfo = {.pendingSwapJobsThreshold = this->pendingSwapJobsThreshold,
                                      .defragRuns = defragRuns.load(std::memory_order_relaxed),
                                      .defragTimeNs = defragTimeNs.load(std::memory_order_relaxed),
-                                     .reusedSlots = reusedSlots.load(std::memory_order_relaxed)};
+                                     .numIdHoles = this->getReusableSlotsCount()};
     info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo = hnswTieredInfo;
 
     info.tieredInfo.backgroundIndexing =
@@ -1645,9 +1647,9 @@ VecSimDebugInfoIterator *TieredHNSWIndex<DataType, DistType>::debugInfoIterator(
                          .fieldType = INFOFIELD_UINT64,
                          .fieldValue = {FieldValue{.uintegerValue = tieredInfo.defragTimeNs}}});
     infoIterator->addInfoField(
-        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_REUSED_SLOTS_STRING,
+        VecSim_InfoField{.fieldName = VecSimCommonStrings::TIERED_HNSW_NUM_ID_HOLES_STRING,
                          .fieldType = INFOFIELD_UINT64,
-                         .fieldValue = {FieldValue{.uintegerValue = tieredInfo.reusedSlots}}});
+                         .fieldValue = {FieldValue{.uintegerValue = tieredInfo.numIdHoles}}});
 
     return infoIterator;
 }

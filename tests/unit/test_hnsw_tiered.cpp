@@ -5753,9 +5753,21 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertTakesClearedSlotsFromFinalizer) {
     tiered_index->setReuseOnInsert(true);
     auto *hnsw_index = this->CastToHNSW(tiered_index);
 
+    auto expect_holes = [&](size_t expected) {
+        auto info = tiered_index->debugInfo();
+        EXPECT_EQ(info.tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles, expected);
+        auto frontend_info = tiered_index->frontendIndex->debugInfo();
+        auto backend_info = hnsw_index->debugInfo();
+        auto *info_iterator = VecSimIndex_DebugInfoIterator(tiered_index);
+        compareTieredIndexInfoToIterator(info, frontend_info, backend_info, info_iterator);
+        VecSimDebugInfoIterator_Free(info_iterator);
+    };
+    expect_holes(0);
+
     DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2, 5});
     ASSERT_EQ(tiered_index->readySwapJobs, 2);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 2);
+    expect_holes(2);
     ASSERT_EQ(hnsw_index->indexSize(), n);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 2);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 2);
@@ -5767,11 +5779,11 @@ TYPED_TEST(HNSWTieredIndexTestBasic, insertTakesClearedSlotsFromFinalizer) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, 100 + i);
         RunAllJobs(mock_thread_pool);
         ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1 - i);
+        expect_holes(1 - i);
         ASSERT_EQ(hnsw_index->indexSize(), n);
         ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 1 - i);
     }
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
-    ASSERT_EQ(tiered_index->reusedSlots.load(), 2);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 
     // With the cache empty, the next one is appended.
@@ -5835,6 +5847,9 @@ TYPED_TEST(HNSWTieredIndexTestBasic, finalizerWaitsForLastBatchReader) {
     auto second = start_reader();
     DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {2});
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        0);
     ASSERT_EQ(hnsw_index->indexSize(), n);
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
 
@@ -5842,14 +5857,23 @@ TYPED_TEST(HNSWTieredIndexTestBasic, finalizerWaitsForLastBatchReader) {
     auto later = start_reader();
     first->reset();
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        0);
     second.reset();
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        1);
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
 
     GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 100, 100);
     RunAllJobs(mock_thread_pool);
     ASSERT_EQ(hnsw_index->getElementIds(100).at(0), deleted_id);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        0);
     ASSERT_EQ(hnsw_index->indexSize(), n);
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
@@ -5959,8 +5983,14 @@ TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsAtMostTheSwapJobLimit) {
     DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {1, 3, 6, 8, 9});
     ASSERT_EQ(tiered_index->readySwapJobs, 5);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 5);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        5);
     ASSERT_EQ(tiered_index->executeReadySwapJobs(2), 2);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 3);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        3);
     ASSERT_EQ(tiered_index->readySwapJobs, 3);
     ASSERT_EQ(hnsw_index->indexSize(), n - 2);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
@@ -5968,12 +5998,18 @@ TYPED_TEST(HNSWTieredIndexTestBasic, gcCompactsAtMostTheSwapJobLimit) {
     ASSERT_EQ(tiered_index->executeReadySwapJobs(2), 2);
     ASSERT_EQ(tiered_index->readySwapJobs, 1);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 1);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        1);
     ASSERT_EQ(hnsw_index->indexSize(), n - 4);
 
     // A GC consumes the last slot too, even with insert-time reuse enabled.
     tiered_index->runGC();
     ASSERT_EQ(tiered_index->readySwapJobs, 0);
     ASSERT_EQ(tiered_index->getReusableSlotsCount(), 0);
+    ASSERT_EQ(
+        tiered_index->debugInfo().tieredInfo.specificTieredBackendInfo.hnswTieredInfo.numIdHoles,
+        0);
     ASSERT_EQ(hnsw_index->indexSize(), n - 5);
     ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
     ASSERT_EQ(tiered_index->idToSwapJob.size(), 0);
