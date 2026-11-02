@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "datasets": [
+    {
+      "name": "synthetic-smoke",
+      "role": "pipeline validation and semantic edge cases",
+      "documents": 10000,
+      "dimensions": 128,
+      "metric": "cosine",
+      "source": "prepare command; independent Gaussian FP32 vectors and queries",
+      "seed": 20221
+    },
+    {
+      "name": "dbpedia-1m",
+      "role": "primary POC selection; fixed 100K document prefix for quick iteration",
+      "format": "raw",
+      "dtype": "little-endian float32",
+      "documents": 1000000,
+      "queries": 10000,
+      "dimensions": 768,
+      "metric": "cosine",
+      "base_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-1M-vectors.raw",
+      "query_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-test_vectors.raw",
+      "development_query_rows": [0, 2000],
+      "held_out_query_rows": [2000, 10000],
+      "source_status": "Existing benchmark asset references; download checksums are recorded on import, not pre-verified here"
+    },
+    {
+      "name": "deep-10m",
+      "role": "secondary disk scale; fixed 1M document prefix then full 10M",
+      "format": "fbin",
+      "dtype": "little-endian float32",
+      "documents": 10000000,
+      "queries": 10000,
+      "dimensions": 96,
+      "metric": "l2",
+      "base_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep.base.10M.fbin",
+      "query_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep.query.public.10K.fbin",
+      "development_query_rows": [0, 2000],
+      "held_out_query_rows": [2000, 10000],
+      "source_status": "Existing benchmark asset references; download checksums are recorded on import, not pre-verified here"
+    }
+  ]
+}
