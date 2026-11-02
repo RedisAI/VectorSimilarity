@@ -33,6 +33,7 @@
 
 #include <deque>
 #include <memory>
+#include <functional>
 #include <cassert>
 #include <climits>
 #include <queue>
@@ -159,11 +160,17 @@ protected:
     mutable std::shared_mutex indexDataGuard;
 
 #ifdef BUILD_TESTS
+    // Runs after a graph pointer is saved, before its node links lock is acquired.
+    std::function<void(idType)> afterCandidateGraphDataRead;
 #include "VecSim/algorithms/hnsw/hnsw_base_tests_friends.h"
 
 #include "hnsw_serializer_declarations.h"
 
 public:
+    void setAfterCandidateGraphDataReadHook(std::function<void(idType)> hook) {
+        afterCandidateGraphDataRead = std::move(hook);
+    }
+
     // Serialization-only fields for V5 format (SQ8 support)
     VecSimQuantType quantType = VecSimQuant_NONE;
     std::vector<float> serializedMeanVector; // Mean vector for SQ8 indices (empty if not SQ8)
@@ -719,6 +726,11 @@ void HNSWIndex<DataType, DistType>::processCandidate(
     candidatesMaxHeap<DistType> &candidate_set, DistType &lowerBound) const {
 
     ElementGraphData *cur_element = getGraphDataByInternalId(curNodeId);
+#ifdef BUILD_TESTS
+    if (afterCandidateGraphDataRead) {
+        afterCandidateGraphDataRead(curNodeId);
+    }
+#endif
     lockNodeLinks(curNodeId);
     ElementLevelData &node_level = getElementLevelData(cur_element, layer);
     linkListSize num_links = node_level.getNumLinks();
@@ -803,6 +815,11 @@ void HNSWIndex<DataType, DistType>::processCandidate_RangeSearch(
     candidatesMaxHeap<DistType> &candidate_set, DistType dyn_range, DistType radius) const {
 
     auto *cur_element = getGraphDataByInternalId(curNodeId);
+#ifdef BUILD_TESTS
+    if (afterCandidateGraphDataRead) {
+        afterCandidateGraphDataRead(curNodeId);
+    }
+#endif
     lockNodeLinks(curNodeId);
     ElementLevelData &node_level = getElementLevelData(cur_element, layer);
     linkListSize num_links = node_level.getNumLinks();

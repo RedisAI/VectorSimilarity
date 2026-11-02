@@ -19,6 +19,7 @@
 #include <cmath>
 #include <numeric>
 #include <latch>
+#include <condition_variable>
 
 #include "unit_test_utils.h"
 #include "mock_thread_pool.h"
@@ -5877,6 +5878,119 @@ TYPED_TEST(HNSWTieredIndexTestBasic, finalizerWaitsForLastBatchReader) {
     ASSERT_EQ(hnsw_index->indexSize(), n);
     ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
     ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+}
+
+TYPED_TEST(HNSWTieredIndexTestBasic, finalizerWaitsForPausedQuery) {
+    for (bool range_query : {false, true}) {
+        SCOPED_TRACE(range_query ? "range" : "top-K");
+        const size_t dim = 4;
+        const size_t n = 32;
+        auto mock_thread_pool = tieredIndexMock();
+        auto *tiered_index = this->CreateIngestedAsyncIndex(mock_thread_pool, n, dim);
+        tiered_index->setReuseOnInsert(true);
+        auto *hnsw_index = this->CastToHNSW(tiered_index);
+        const idType deleted_id = hnsw_index->safeGetEntryPointState().first;
+        const labelType deleted_label = hnsw_index->getExternalLabel(deleted_id);
+        const auto *saved_graph = hnsw_index->getGraphDataByInternalId(deleted_id);
+        const auto exclusive_locks = tiered_index->getMainIndexGuardWriteLockCount();
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, deleted_label);
+
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool pointer_saved = false;
+        bool resume_scan = false;
+        bool scan_finished = false;
+        bool deletion_finished = false;
+        bool finish_query = false;
+        hnsw_index->setAfterCandidateGraphDataReadHook([&](idType id) {
+            std::unique_lock lock(mutex);
+            if (id != deleted_id || pointer_saved) {
+                return;
+            }
+            pointer_saved = true;
+            cv.notify_all();
+            cv.wait(lock, [&] { return resume_scan; });
+        });
+        tiered_index->setAfterBackendQueryBeforeMarkerReleaseHook([&] {
+            std::unique_lock lock(mutex);
+            scan_finished = true;
+            cv.notify_all();
+            cv.wait(lock, [&] { return finish_query; });
+        });
+        VecSimQueryReply *reply = nullptr;
+        std::thread reader([&] {
+            reply = range_query ? tiered_index->rangeQuery(query, 1, nullptr, BY_SCORE)
+                                : tiered_index->topKQuery(query, 1, nullptr);
+        });
+        bool paused;
+        {
+            std::unique_lock lock(mutex);
+            paused = cv.wait_for(lock, std::chrono::seconds(10), [&] { return pointer_saved; });
+        }
+        EXPECT_TRUE(paused);
+        std::thread deleter([&] {
+            DeleteLabelsAndRepair(tiered_index, mock_thread_pool, {deleted_label});
+            std::lock_guard lock(mutex);
+            deletion_finished = true;
+            cv.notify_all();
+        });
+        bool deleted_while_paused;
+        {
+            std::unique_lock lock(mutex);
+            deleted_while_paused =
+                cv.wait_for(lock, std::chrono::seconds(10), [&] { return deletion_finished; });
+        }
+        EXPECT_TRUE(deleted_while_paused);
+        if (paused && deleted_while_paused) {
+            // The query holds the exact graph pointer that deletion is about to retire.
+            EXPECT_TRUE(hnsw_index->getElementIds(deleted_label).empty());
+            EXPECT_EQ(hnsw_index->getGraphDataByInternalId(deleted_id), saved_graph);
+            EXPECT_EQ(tiered_index->getReusableHolesCount(), 0);
+            EXPECT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
+        }
+        {
+            std::lock_guard lock(mutex);
+            resume_scan = true;
+        }
+        cv.notify_all();
+        bool resumed;
+        {
+            std::unique_lock lock(mutex);
+            resumed = cv.wait_for(lock, std::chrono::seconds(10), [&] { return scan_finished; });
+        }
+        EXPECT_TRUE(resumed);
+        if (paused && deleted_while_paused && resumed) {
+            // Scanning has resumed and finished, but the query still owns its marker.
+            EXPECT_EQ(hnsw_index->getGraphDataByInternalId(deleted_id), saved_graph);
+            EXPECT_EQ(tiered_index->getReusableHolesCount(), 0);
+        }
+        {
+            std::lock_guard lock(mutex);
+            finish_query = true;
+        }
+        cv.notify_all();
+        reader.join();
+        deleter.join();
+        hnsw_index->setAfterCandidateGraphDataReadHook({});
+        tiered_index->setAfterBackendQueryBeforeMarkerReleaseHook({});
+        ASSERT_NE(reply, nullptr);
+        EXPECT_EQ(reply->code, VecSim_QueryReply_OK);
+        VecSimQueryReply_Free(reply);
+        ASSERT_TRUE(paused && deleted_while_paused && resumed);
+        ASSERT_EQ(tiered_index->getReusableHolesCount(), 1);
+        ASSERT_EQ(hnsw_index->getGraphDataByInternalId(deleted_id)->toplevel, 0);
+        ASSERT_EQ(tiered_index->getMainIndexGuardWriteLockCount(), exclusive_locks);
+
+        // The completed query's last reference has now made the hole available for reuse.
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, n, n);
+        RunAllJobs(mock_thread_pool);
+        ASSERT_EQ(hnsw_index->getElementIds(n).at(0), deleted_id);
+        ASSERT_EQ(tiered_index->getReusableHolesCount(), 0);
+        ASSERT_EQ(hnsw_index->indexSize(), n);
+        ASSERT_EQ(hnsw_index->getNumMarkedDeleted(), 0);
+        ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
+    }
 }
 
 TYPED_TEST(HNSWTieredIndexTestBasic, sharedPtrFinalizersDuringConcurrentQueriesAndOverwrites) {

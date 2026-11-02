@@ -196,6 +196,7 @@ private:
     std::function<void()> beforeQuantizationFinalization;
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
+    std::function<void()> afterBackendQueryBeforeMarkerRelease;
 #endif
 
     void addToSum(std::span<const DataType> vector) {
@@ -377,17 +378,34 @@ public:
     void setAfterBackendInsertBeforeFlatRemovalHook(std::function<void()> hook) {
         afterBackendInsertBeforeFlatRemoval = std::move(hook);
     }
+
+    void setAfterBackendQueryBeforeMarkerReleaseHook(std::function<void()> hook) {
+        afterBackendQueryBeforeMarkerRelease = std::move(hook);
+    }
 #endif
 
     VecSimQueryReply *topKQuery(const void *blob, size_t k,
                                 VecSimQueryParams *params) const override {
         RuntimeMarker marker(this);
-        return VecSimTieredIndex<DataType, DistType>::topKQuery(blob, k, params);
+        auto *reply = VecSimTieredIndex<DataType, DistType>::topKQuery(blob, k, params);
+#ifdef BUILD_TESTS
+        if (afterBackendQueryBeforeMarkerRelease) {
+            afterBackendQueryBeforeMarkerRelease();
+        }
+#endif
+        return reply;
     }
     VecSimQueryReply *rangeQuery(const void *blob, double radius, VecSimQueryParams *params,
                                  VecSimQueryReply_Order order) const override {
         RuntimeMarker marker(this);
-        return VecSimTieredIndex<DataType, DistType>::rangeQuery(blob, radius, params, order);
+        auto *reply =
+            VecSimTieredIndex<DataType, DistType>::rangeQuery(blob, radius, params, order);
+#ifdef BUILD_TESTS
+        if (afterBackendQueryBeforeMarkerRelease) {
+            afterBackendQueryBeforeMarkerRelease();
+        }
+#endif
+        return reply;
     }
 
     int addVector(const void *blob, labelType label) override;
