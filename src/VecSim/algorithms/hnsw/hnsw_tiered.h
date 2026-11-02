@@ -274,6 +274,8 @@ private:
     // Detach completed deletions while holding the main guard shared (or exclusive). Readers
     // retain a shared_ptr to each detached ID; its last release clears and caches the slot.
     void isolateRepairedIds();
+    // Caller has detached the node, holds the main guard, and has an attached marker.
+    void deferFinalizerToRunningMarkers(HNSWSwapJob *swap_job);
     void finalizeDeletedId(HNSWSwapJob *swap_job);
 
     void executeSwapJob(vecsim_stl::vector<idType> &idsToRemove, HNSWSwapJob *swap_job);
@@ -601,6 +603,20 @@ HNSWSwapJob *TieredHNSWIndex<DataType, DistType>::popPendingFinalizer() {
 }
 
 template <typename DataType, typename DistType>
+void TieredHNSWIndex<DataType, DistType>::deferFinalizerToRunningMarkers(HNSWSwapJob *swap_job) {
+    auto retired_id = std::shared_ptr<idType>(
+        &swap_job->deleted_id, [this, swap_job](idType *) { finalizeDeletedId(swap_job); },
+        VecsimSTLAllocator<idType>(this->allocator));
+    // New operations cannot reach this detached node. Only operations already running can
+    // have a stale ID or graph pointer. Their markers release outside the main guard.
+    std::lock_guard<std::mutex> lock(this->runningGuard);
+    assert(currentlyRunning != nullptr);
+    for (auto *running = currentlyRunning; running; running = running->next) {
+        running->pendingIds.push_back(retired_id);
+    }
+}
+
+template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::isolateRepairedIds() {
     while (auto *swap_job = this->popPendingFinalizer()) {
         this->getHNSWIndex()->isolateDeletedElement(swap_job->deleted_id);
@@ -610,16 +626,7 @@ void TieredHNSWIndex<DataType, DistType>::isolateRepairedIds() {
         }
         this->invalidateRepairJobs(swap_job->deleted_id);
 
-        auto retired_id = std::shared_ptr<idType>(
-            &swap_job->deleted_id, [this, swap_job](idType *) { finalizeDeletedId(swap_job); },
-            VecsimSTLAllocator<idType>(this->allocator));
-        // New operations cannot reach this detached node. Only operations already running can
-        // have a stale ID or graph pointer. Their markers release outside the main guard.
-        std::lock_guard<std::mutex> lock(this->runningGuard);
-        assert(currentlyRunning != nullptr);
-        for (auto *running = currentlyRunning; running; running = running->next) {
-            running->pendingIds.push_back(retired_id);
-        }
+        this->deferFinalizerToRunningMarkers(swap_job);
     }
 }
 
