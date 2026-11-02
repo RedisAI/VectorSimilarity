@@ -2305,7 +2305,7 @@ TYPED_TEST(HNSWTieredIndexTest, invalidRepairJobOnSwap) {
     EXPECT_EQ(state.valid_state, true);
     EXPECT_EQ(state.connections_to_repair, 0);
 
-    // Both GC rounds went through defrag(), which the info reports. Other callers of defrag() may
+    // Both GC rounds went through compact(), which the info reports. Other callers of compact() may
     // have run too, hence the lower bound on the count.
     EXPECT_GE(tiered_index->defragRuns.load(), 2);
     EXPECT_GT(tiered_index->defragTimeNs.load(), 0);

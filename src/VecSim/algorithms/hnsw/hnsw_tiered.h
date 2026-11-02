@@ -94,7 +94,7 @@ private:
     size_t pendingSwapJobsThreshold;
     std::atomic_size_t readySwapJobs; // Cached slots awaiting reuse/compaction.
 
-    // Cost of defrag(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
+    // Cost of compact(), for `debugInfo()`. Statistics only, so relaxed ordering is enough.
     std::atomic<uint64_t> defragRuns{0};
     std::atomic<uint64_t> defragTimeNs{0};
 
@@ -256,8 +256,8 @@ private:
 
     // Detach completed deletions while holding the main guard shared (or exclusive). Readers
     // retain a shared_ptr to each detached ID; its last release clears and caches the slot.
-    void isolateRepairedSlots();
-    void finalizeDeletedSlot(HNSWSwapJob *swap_job);
+    void isolateRepairedIds();
+    void finalizeDeletedId(HNSWSwapJob *swap_job);
 
     void executeSwapJob(vecsim_stl::vector<idType> &idsToRemove, HNSWSwapJob *swap_job);
 
@@ -416,7 +416,7 @@ public:
 
     VecSimUpdateCode updateVectors(labelType label, const void *new_blobs, size_t n) override;
     size_t getNumMarkedDeleted() const override { return getHNSWIndex()->getNumMarkedDeleted(); }
-    auto shouldDefrag();
+    auto shouldCompact();
     // Do nothing here, each tier (flat buffer and HNSW) should increase capacity for itself when
     // needed.
     VecSimIndexDebugInfo debugInfo() const override;
@@ -433,23 +433,23 @@ public:
         this->backendIndex->setLastSearchMode(mode);
     }
     // swap latest elements deleted slots
-    void defrag() {
+    void compact() {
         const auto start = std::chrono::steady_clock::now();
         const size_t executed = this->executeReadySwapJobs(this->pendingSwapJobsThreshold);
-        // Includes the wait for the main index guard, which is part of what defrag costs a caller.
+        // Includes the wait for the main index guard, which is part of what compact costs a caller.
         const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                    std::chrono::steady_clock::now() - start)
                                    .count();
         defragRuns.fetch_add(1, std::memory_order_relaxed);
         defragTimeNs.fetch_add(elapsedNs, std::memory_order_relaxed);
         TIERED_LOG(VecSimCommonStrings::LOG_DEBUG_STRING,
-                   "Tiered HNSW index defrag: executed %zu swap jobs in %lld ns", executed,
+                   "Tiered HNSW index compact: executed %zu swap jobs in %lld ns", executed,
                    static_cast<long long>(elapsedNs));
     }
     void runGC() override {
         TIERED_LOG(VecSimCommonStrings::LOG_VERBOSE_STRING,
                    "running asynchronous GC for tiered HNSW index");
-        this->defrag();
+        this->compact();
     }
     void acquireSharedLocks() override {
         this->flatIndexGuard.lock_shared();
@@ -565,7 +565,7 @@ void TieredHNSWIndex<DataType, DistType>::executeSwapJob(vecsim_stl::vector<idTy
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::isolateRepairedSlots() {
+void TieredHNSWIndex<DataType, DistType>::isolateRepairedIds() {
     while (true) {
         HNSWSwapJob *swap_job;
         {
@@ -588,7 +588,7 @@ void TieredHNSWIndex<DataType, DistType>::isolateRepairedSlots() {
         this->invalidateRepairJobs(swap_job->deleted_id);
 
         auto retired_id = std::shared_ptr<idType>(
-            &swap_job->deleted_id, [this, swap_job](idType *) { finalizeDeletedSlot(swap_job); },
+            &swap_job->deleted_id, [this, swap_job](idType *) { finalizeDeletedId(swap_job); },
             VecsimSTLAllocator<idType>(this->allocator));
         // New operations cannot reach this detached node. Only operations already running can
         // have a stale ID or graph pointer. Their markers release outside the main guard.
@@ -601,13 +601,13 @@ void TieredHNSWIndex<DataType, DistType>::isolateRepairedSlots() {
 }
 
 template <typename DataType, typename DistType>
-void TieredHNSWIndex<DataType, DistType>::finalizeDeletedSlot(HNSWSwapJob *swap_job) {
+void TieredHNSWIndex<DataType, DistType>::finalizeDeletedId(HNSWSwapJob *swap_job) {
     std::shared_lock<std::shared_mutex> main_lock(this->mainIndexGuard);
     this->getHNSWIndex()->clearDeletedSlot(swap_job->deleted_id);
     std::lock_guard<std::mutex> lock(this->idToRepairJobsGuard);
     swap_job->slotCleared = true;
     reusableHoles.push_back(swap_job);
-    readySwapJobs++;
+    ++readySwapJobs;
 }
 
 template <typename DataType, typename DistType>
@@ -615,7 +615,7 @@ HNSWSwapJob *TieredHNSWIndex<DataType, DistType>::popReusableHole() {
     assert(reusableHolesCount() > 0);
     auto *swap_job = reusableHoles[reusableHolesHead++];
     assert(swap_job->slotCleared);
-    readySwapJobs--;
+    --readySwapJobs;
     if (reusableHolesHead == reusableHoles.size()) {
         reusableHoles.clear();
         reusableHoles.shrink_to_fit();
@@ -756,7 +756,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSW(labelType label) {
         }
     }
     if (needsFinalization) {
-        this->isolateRepairedSlots();
+        this->isolateRepairedIds();
     }
     this->mainIndexGuard.unlock_shared();
     return internal_ids.size();
@@ -895,7 +895,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteLabelFromHNSWInplace(labelType la
         idToSwapJob.erase(id);
     }
     readySwapJobs -= idsToRemove.size();
-    this->isolateRepairedSlots();
+    this->isolateRepairedIds();
     return ids.size();
 }
 
@@ -991,7 +991,7 @@ void TieredHNSWIndex<DataType, DistType>::executeRepairJob(HNSWRepairJob *job) {
     this->idToRepairJobsGuard.unlock();
 
     if (needsFinalization) {
-        this->isolateRepairedSlots();
+        this->isolateRepairedIds();
     }
     this->mainIndexGuard.unlock_shared();
 }
@@ -1130,7 +1130,7 @@ void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size
 }
 
 template <typename DataType, typename DistType>
-auto TieredHNSWIndex<DataType, DistType>::shouldDefrag() {
+auto TieredHNSWIndex<DataType, DistType>::shouldCompact() {
     return readySwapJobs.load() >= this->pendingSwapJobsThreshold;
 }
 template <typename DataType, typename DistType>
@@ -1219,8 +1219,8 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
     }
     // Apply ready swap jobs if number of deleted vectors reached the threshold (under exclusive
     // lock of the main index guard).
-    if (shouldDefrag()) {
-        this->defrag();
+    if (shouldCompact()) {
+        this->compact();
     }
 
     // Insert job to the queue and signal the workers' updater.
@@ -1279,8 +1279,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
         num_deleted_vectors += this->deleteLabelFromHNSW(label);
         // Apply ready swap jobs if number of deleted vectors reached the threshold
         // (under exclusive lock of the main index guard).
-        if (shouldDefrag()) {
-            this->defrag();
+        if (shouldCompact()) {
+            this->compact();
         }
     } else {
         // delete in place.
