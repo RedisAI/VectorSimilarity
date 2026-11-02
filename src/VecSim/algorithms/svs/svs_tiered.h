@@ -245,6 +245,9 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
     size_t updateJobWaitTime;
+    // Maximum number of vectors one update job moves to the backend index. It bounds how long a
+    // job holds the index locks; a job that leaves vectors behind schedules the next one.
+    size_t updateJobMaxBatch;
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
@@ -525,6 +528,12 @@ public:
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
 
+    void setUpdateJobMaxBatch(size_t maxBatch) {
+        assert(maxBatch > 0);
+        updateJobMaxBatch = maxBatch;
+    }
+    size_t getUpdateJobMaxBatch() const { return updateJobMaxBatch; }
+
     // Tracing helpers can be used to trace/inject code in the index update process.
     std::map<std::string, std::function<void()>> tracingCallbacks;
     void registerTracingCallback(const std::string &name, std::function<void()> callback) {
@@ -566,12 +575,28 @@ private:
         assert(availableThreads > 0);
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
-        // prevent parallel updates
-        std::lock_guard<std::mutex> lock(index->updateJobMutex);
-        // Release the scheduled flag to allow scheduling again
-        index->indexUpdateScheduled.clear();
-        // Update the SVS index
-        index->updateSVSIndex(availableThreads);
+        index->runUpdateJob(availableThreads, index->updateJobMaxBatch);
+    }
+
+    /**
+     * @brief Run one update job that moves at most maxBatch vectors, and schedule the next job if
+     * this one left vectors behind.
+     */
+    void runUpdateJob(size_t availableThreads, size_t maxBatch) {
+        bool truncated;
+        {
+            // prevent parallel updates
+            std::lock_guard<std::mutex> lock(updateJobMutex);
+            // Release the scheduled flag to allow scheduling again
+            indexUpdateScheduled.clear();
+            // Update the SVS index
+            truncated = updateSVSIndex(availableThreads, maxBatch);
+        }
+        // Continue with the vectors this job left behind. Scheduled only after updateJobMutex is
+        // released: it is not recursive, and the next job takes it.
+        if (truncated) {
+            scheduleSVSIndexUpdate();
+        }
     }
 
     /**
@@ -670,21 +695,42 @@ private:
         }
     }
 
-    void updateSVSIndex(size_t availableThreads) {
+    /**
+     * @brief Move the first vectors of the frontend index to the backend index.
+     *
+     * At most maxBatch vectors are moved; when the backend index is empty, at least
+     * trainingTriggerThreshold vectors are moved, so the initialization trains on that many.
+     * The moved vectors are the prefix [0, batch_size) of the frontend ids. Concurrent deletes
+     * only move the last frontend vector into the freed id, so a vector outside the prefix that
+     * lands in it is reported by the swaps journal like a vector added after the snapshot.
+     *
+     * @return true if vectors were left in the frontend index for a later job.
+     */
+    bool updateSVSIndex(size_t availableThreads, size_t maxBatch) {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
         std::vector<labelType> deleted_labels_during_update;
+        bool truncated;
+        // Read before taking flatIndexGuard, so the two guards are never nested.
+        const size_t batch_limit = [&] {
+            std::shared_lock main_lock(this->mainIndexGuard);
+            return this->backendIndex->indexSize() == 0
+                       ? std::max(maxBatch, this->trainingTriggerThreshold)
+                       : maxBatch;
+        }();
 
         { // lock frontendIndex from modifications
             std::shared_lock flat_lock{this->flatIndexGuard};
 
             auto flat_index = this->GetFlatIndex();
             const auto frontend_index_size = this->frontendIndex->indexSize();
+            const size_t batch_size = std::min(frontend_index_size, batch_limit);
+            truncated = batch_size < frontend_index_size;
             const size_t dim = flat_index->getDim();
-            labels_to_move.reserve(frontend_index_size);
-            vectors_to_move.reserve(frontend_index_size * dim);
+            labels_to_move.reserve(batch_size);
+            vectors_to_move.reserve(batch_size * dim);
 
-            for (idType i = 0; i < frontend_index_size; i++) {
+            for (idType i = 0; i < batch_size; i++) {
                 labels_to_move.push_back(flat_index->getVectorLabel(i));
                 auto data = flat_index->getDataByInternalId(i);
                 vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
@@ -761,6 +807,7 @@ private:
             svs_index->deleteVectors(deleted_labels_during_update.data(),
                                      deleted_labels_during_update.size());
         }
+        return truncated;
     }
 
 public:
@@ -795,6 +842,8 @@ public:
                                       ? SVS_DEFAULT_UPDATE_JOB_WAIT_TIME
                                       : tiered_svs_params.updateJobWaitTime;
 
+        this->updateJobMaxBatch = SVS_VAMANA_DEFAULT_MAX_UPDATE_BATCH;
+
         // Reserve space for the journal to avoid reallocation.
         this->swaps_journal.reserve(this->trainingTriggerThreshold);
     }
@@ -825,10 +874,11 @@ public:
                 }
                 // ... move vectors to the backend index.
                 if (frontend_index_size >= this->trainingTriggerThreshold) {
-                    // updateSVSIndexWrapper() accures it's own locks
+                    // runUpdateJob() accures it's own locks
                     backend_shared_lock.unlock();
-                    // initialize the SVS index synchonously using current thread only
-                    updateSVSIndexWrapper(this, 1);
+                    // initialize the SVS index synchonously using current thread only, from the
+                    // whole buffer, so that no asynchronous job is scheduled in this mode
+                    runUpdateJob(1, std::numeric_limits<size_t>::max());
                 }
                 return ret;
             } else {

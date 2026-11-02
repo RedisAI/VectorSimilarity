@@ -4674,6 +4674,387 @@ TYPED_TEST(SVSTieredIndexTestBasic, testDeletedJournalMulti) {
     ASSERT_NEAR(flat_index->getDistanceFrom_Unsafe(1, expected_vector), 0, abs_err);
 }
 
+// Bounded update jobs: each job moves at most updateJobMaxBatch vectors and schedules the next
+// one while vectors are left behind.
+namespace {
+// Pauses the first update job at a tracing point until released, so a test can modify the index
+// in the middle of a job. Later jobs run without pausing.
+struct UpdateJobPause {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool paused = false;
+    bool released = false;
+    bool first = true;
+
+    std::function<void()> callback() {
+        return [this]() {
+            std::unique_lock lock(mtx);
+            if (!first) {
+                return;
+            }
+            first = false;
+            paused = true;
+            cv.notify_all();
+            cv.wait(lock, [this] { return released; });
+        };
+    }
+    bool waitPaused() {
+        std::unique_lock lock(mtx);
+        return cv.wait_for(lock, std::chrono::seconds(100), [this] { return paused; });
+    }
+    void release() {
+        {
+            std::unique_lock lock(mtx);
+            released = true;
+        }
+        cv.notify_all();
+    }
+};
+} // namespace
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobDrainsInBatches) {
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+    const size_t n = 10; // Vectors added after the backend index is initialized.
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // A high update threshold keeps addVector from scheduling; the test schedules explicitly.
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    // Initialize the backend index.
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+
+    tiered_index->setUpdateJobMaxBatch(batch);
+    for (size_t i = training_threshold; i < training_threshold + n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    // The frontend size each job sees before moving its batch: 10 -> 4, 6 -> 4, 2 -> 2.
+    std::vector<size_t> frontend_sizes;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        frontend_sizes.push_back(tiered_index->GetFlatIndex()->indexSize());
+    });
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(frontend_sizes, (std::vector<size_t>{10, 6, 2}));
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + n);
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    for (size_t i = 0; i < training_threshold + n; i++) {
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(i)) << "label " << i;
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, i);
+        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(i, expected_vector), 0, abs_err);
+    }
+
+    // A job that moves the whole frontend does not schedule another one.
+    frontend_sizes.clear();
+    for (size_t i = training_threshold + n; i < training_threshold + n + batch; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(frontend_sizes, (std::vector<size_t>{batch}));
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobInitTrainsOnThreshold) {
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+    const size_t n = 20;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+    tiered_index->setUpdateJobMaxBatch(batch);
+
+    // The training threshold schedules the init job; all n vectors are buffered before it runs.
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+
+    // Init moves max(batch, training threshold), then add jobs move batch each.
+    std::vector<size_t> backend_sizes;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        backend_sizes.push_back(tiered_index->GetBackendIndex()->indexSize());
+    });
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(backend_sizes, (std::vector<size_t>{0, 8, 12, 16}));
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobConcurrentChangesSingle) {
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+
+    // Labels 100..109 at frontend ids 0..9; the first job moves ids 0..3 (labels 100..103).
+    tiered_index->setUpdateJobMaxBatch(batch);
+    for (size_t label = 100; label < 110; label++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, label);
+    }
+
+    UpdateJobPause pause;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", pause.callback());
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    {
+        // IMPORTANT!: Use EXPECT here, so a failure still releases the paused job.
+        EXPECT_TRUE(pause.waitPaused());
+        // Inside the batch: delete 100 (id 0). The last vector (109, id 9) moves into id 0, a
+        // vector outside the batch that the job must not delete from the frontend.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 100), 1);
+        // Outside the batch: delete 106 (id 6); 108 moves into id 6.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 106), 1);
+        // Overwrite inside the batch (101) and outside it (107).
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 101, 1001), 0);
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 107, 1007), 0);
+        // A new vector while the job runs.
+        EXPECT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 110, 110), 1);
+        pause.release();
+    }
+    mock_thread_pool.thread_pool_join();
+
+    auto svs_index = tiered_index->GetSVSIndex();
+    auto flat_index = tiered_index->GetFlatIndex();
+    ASSERT_EQ(flat_index->indexSize(), 0);
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    for (size_t label : {size_t{100}, size_t{106}}) {
+        ASSERT_FALSE(svs_index->isLabelExists(label)) << "label " << label;
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, label);
+        ASSERT_TRUE(std::isnan(tiered_index->getDistanceFrom_Unsafe(label, expected_vector)));
+    }
+    const std::map<size_t, size_t> expected = {{101, 1001}, {102, 102}, {103, 103},
+                                               {104, 104},  {105, 105}, {107, 1007},
+                                               {108, 108},  {109, 109}, {110, 110}};
+    for (const auto &[label, value] : expected) {
+        ASSERT_TRUE(svs_index->isLabelExists(label)) << "label " << label;
+        GenerateVector<TEST_DATA_T>(expected_vector, dim, value);
+        ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(label, expected_vector), 0, abs_err)
+            << "label " << label;
+    }
+    ASSERT_EQ(tiered_index->indexLabelCount(), training_threshold + expected.size());
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobLabelAcrossBatchesMulti) {
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    // Frontend ids: 0:201, 1:202, 2..4:200, 5:203. The first batch takes two of label 200's three
+    // vectors, the second takes the third.
+    tiered_index->setUpdateJobMaxBatch(batch);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 201, 201);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 202, 202);
+    for (size_t value : {2000, 2001, 2002}) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 200, value);
+    }
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 203, 203);
+
+    // While the first batch is in the backend but not yet removed from the frontend, label 200
+    // has vectors in both tiers. A query returns each label once.
+    std::vector<size_t> labels_mid_job;
+    std::atomic_bool queried{false};
+    tiered_index->registerTracingCallback("UpdateJob::after_add_to_svs", [&]() {
+        if (queried.exchange(true)) {
+            return;
+        }
+        TEST_DATA_T query[dim];
+        GenerateVector<TEST_DATA_T>(query, dim, 2000);
+        auto res = VecSimIndex_TopKQuery(tiered_index, query, 100, nullptr, BY_ID);
+        auto it = VecSimQueryReply_GetIterator(res);
+        while (auto *r = VecSimQueryReply_IteratorNext(it)) {
+            labels_mid_job.push_back(VecSimQueryResult_GetId(r));
+        }
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(res);
+    });
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(queried);
+    std::set<size_t> unique_labels(labels_mid_job.begin(), labels_mid_job.end());
+    ASSERT_EQ(unique_labels.size(), labels_mid_job.size()) << "a label was returned twice";
+    ASSERT_EQ(unique_labels.size(), training_threshold + 4) << "a label is missing";
+
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + 6);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), training_threshold + 4);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobDeleteLabelAcrossBatchesMulti) {
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = true};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    tiered_index->setUpdateJobMaxBatch(batch);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 201, 201);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 202, 202);
+    for (size_t value : {2000, 2001, 2002}) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 200, value);
+    }
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 203, 203);
+
+    UpdateJobPause pause;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", pause.callback());
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    {
+        // IMPORTANT!: Use EXPECT here, so a failure still releases the paused job.
+        EXPECT_TRUE(pause.waitPaused());
+        // Delete label 200, whose vectors straddle the first batch's boundary.
+        EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, 200), 3);
+        pause.release();
+    }
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(200));
+    for (size_t label : {201, 202, 203}) {
+        ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(label)) << "label " << label;
+    }
+    ASSERT_EQ(tiered_index->indexLabelCount(), training_threshold + 3);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobWriteInPlaceInitIsSynchronous) {
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+    // Smaller than the training threshold: in-place init still moves the whole buffer.
+    tiered_index->setUpdateJobMaxBatch(2);
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
+    EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobShrinkDuringDrain) {
+    // A pool shrink requested during a multi-batch drain is deferred while jobs remain scheduled.
+    // The drain must still complete, and the shrink must apply once it is over.
+    const auto num_threads = std::min(4U, getAvailableCPUs());
+    if (num_threads < 2) {
+        GTEST_SKIP() << "No threads available";
+    }
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+    const size_t n = 12;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock(num_threads);
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    tiered_index->setUpdateJobMaxBatch(batch);
+    for (size_t i = training_threshold; i < training_threshold + n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    size_t jobs = 0;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        if (jobs++ == 0) {
+            VecSimSVSThreadPool::resize(1);
+        }
+    });
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_EQ(jobs, n / batch);
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + n);
+    ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), 1);
+}
+
 TEST(SVSTieredIndexTest, testThreadPool) {
     // Test VecSimSVSThreadPool with shared pool
     const size_t num_threads = 4;
