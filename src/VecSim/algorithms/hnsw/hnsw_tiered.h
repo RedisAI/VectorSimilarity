@@ -131,12 +131,12 @@ private:
         explicit RuntimeMarker(const TieredHNSWIndex *index, bool start = true)
             : index(index), pendingIds(index->allocator) {
             if (start) {
-                activate();
+                attach();
             }
         }
         RuntimeMarker(const RuntimeMarker &) = delete;
         RuntimeMarker &operator=(const RuntimeMarker &) = delete;
-        void activate() {
+        void attach() {
             assert(!registered);
             std::lock_guard<std::mutex> lock(index->runningGuard);
             next = index->currentlyRunning;
@@ -146,7 +146,7 @@ private:
             index->currentlyRunning = this;
             registered = true;
         }
-        void reset() {
+        void detach() {
             if (!registered) {
                 return;
             }
@@ -167,7 +167,7 @@ private:
             // this operation has released its own main guard.
             pendingIds.clear();
         }
-        ~RuntimeMarker() { reset(); }
+        ~RuntimeMarker() { detach(); }
     };
     // Protects the currentlyRunning list, its marker links, and appends to pendingIds. Unregister
     // a marker under this mutex before releasing its references outside it: the last release
@@ -1519,7 +1519,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
         // We also take the lock on the main index on the first call to getNextResults, and we hold
         // it until the iterator is depleted or freed.
         this->backend_index_lock.lock();
-        this->runtimeMarker.activate();
+        this->runtimeMarker.attach();
         this->hnsw_iterator = this->index->backendIndex->newBatchIterator(
             this->flat_iterator->getQueryBlob(), queryParams);
         auto cur_hnsw_results = this->hnsw_iterator->getNextResults(n_res, BY_SCORE_THEN_ID);
@@ -1530,7 +1530,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
             delete this->hnsw_iterator;
             this->hnsw_iterator = DEPLETED;
             this->backend_index_lock.unlock();
-            this->runtimeMarker.reset();
+            this->runtimeMarker.detach();
         }
     } else {
         while (this->flat_results.size() < n_res && !this->flat_iterator->isDepleted()) {
@@ -1570,7 +1570,7 @@ VecSimQueryReply *TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator:
                 delete this->hnsw_iterator;
                 this->hnsw_iterator = DEPLETED;
                 this->backend_index_lock.unlock();
-                this->runtimeMarker.reset();
+                this->runtimeMarker.detach();
             }
         }
     }
@@ -1611,7 +1611,7 @@ void TieredHNSWIndex<DataType, DistType>::TieredHNSW_BatchIterator::reset() {
     if (this->hnsw_iterator != UNINITIALIZED && this->hnsw_iterator != DEPLETED) {
         delete this->hnsw_iterator;
         this->backend_index_lock.unlock();
-        this->runtimeMarker.reset();
+        this->runtimeMarker.detach();
     }
     this->resetResultsCount();
     this->flat_iterator->reset();
