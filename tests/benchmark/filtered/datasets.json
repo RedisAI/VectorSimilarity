@@ -19,11 +19,11 @@
       "queries": 10000,
       "dimensions": 768,
       "metric": "cosine",
-      "base_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-1M-vectors.raw",
-      "query_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/dbpedia-cosine-dim768-test_vectors.raw",
+      "base_url": "https://s3.eu-west-1.amazonaws.com/dev.cto.redis/VectorSimilarity/dbpedia-cosine-dim768-1M-vectors.raw",
+      "query_url": "https://s3.eu-west-1.amazonaws.com/dev.cto.redis/VectorSimilarity/dbpedia-cosine-dim768-test_vectors.raw",
       "development_query_rows": [0, 2000],
       "held_out_query_rows": [2000, 10000],
-      "source_status": "Existing benchmark asset references; download checksums are recorded on import, not pre-verified here"
+      "source_status": "Shape verified via S3 HEAD; download_dbpedia.py conditionally reads fixed row ranges and records object versions, ETags, and subset checksums"
     },
     {
       "name": "deep-10m",
@@ -34,8 +34,8 @@
       "queries": 10000,
       "dimensions": 96,
       "metric": "l2",
-      "base_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep.base.10M.fbin",
-      "query_url": "https://dev.cto.redis.s3.amazonaws.com/VectorSimilarity/deep1b/deep.query.public.10K.fbin",
+      "base_url": "https://s3.eu-west-1.amazonaws.com/dev.cto.redis/VectorSimilarity/deep1b/deep.base.10M.fbin",
+      "query_url": "https://s3.eu-west-1.amazonaws.com/dev.cto.redis/VectorSimilarity/deep1b/deep.query.public.10K.fbin",
       "development_query_rows": [0, 2000],
       "held_out_query_rows": [2000, 10000],
       "source_status": "Existing benchmark asset references; download checksums are recorded on import, not pre-verified here"

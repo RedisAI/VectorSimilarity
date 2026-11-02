@@ -11,6 +11,11 @@ option(VECSIM_BUILD_TEST_HELPERS "Build test helper methods (fitMemory, serializ
 # When ON, test helpers are also built even if VECSIM_BUILD_TEST_HELPERS is OFF.
 option(VECSIM_BUILD_TESTS "Build VectorSimilarity test executables" ON)
 
+option(VECSIM_BUILD_FILTERED_BENCHMARK "Build the standalone filtered vector benchmark" OFF)
+if(VECSIM_BUILD_FILTERED_BENCHMARK)
+	set(VECSIM_BUILD_TEST_HELPERS ON)
+endif()
+
 get_filename_component(root ${CMAKE_CURRENT_LIST_DIR} ABSOLUTE)
 message("# VectorSimilarity root: " ${root})
 get_filename_component(binroot ${CMAKE_CURRENT_BINARY_DIR} ABSOLUTE)
@@ -88,6 +93,10 @@ if(VECSIM_BUILD_TESTS)
 endif()
 
 add_subdirectory(src/VecSim)
+
+if(VECSIM_BUILD_FILTERED_BENCHMARK)
+	add_subdirectory(tests/benchmark/filtered filtered_benchmark)
+endif()
 
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})

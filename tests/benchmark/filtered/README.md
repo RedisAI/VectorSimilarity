@@ -1,15 +1,19 @@
 # Filtered vector benchmark foundation
 
 This directory owns the dataset format, fixed filter bank, exact filtered oracle,
-and scorer shared by RAM and disk benchmark runners. It does not implement a
-search algorithm or emulate Redis's AUTO policy. Compare real query execution
-through the RediSearch runner; native VecSim timing is a separate follow-up.
+scorer, and native VecSim runner shared by algorithm POCs. The native baselines
+measure C++ search with precomputed eligibility. Use the RediSearch and Enterprise
+runners for actual Redis filtering and command execution. The
+[POC guide](POC-GUIDE.md) connects all four repositories and shows how to compare a
+new candidate.
 
 ## Quick start
 
+Use Python 3.12 or newer; the dependency versions and wheel hashes are pinned.
+
 ```sh
 python3 -m venv /tmp/filtered-bench-venv
-/tmp/filtered-bench-venv/bin/pip install -r tests/benchmark/filtered/requirements.txt
+/tmp/filtered-bench-venv/bin/pip install --only-binary=:all: --require-hashes -r tests/benchmark/filtered/requirements.txt
 PYTHON=/tmp/filtered-bench-venv/bin/python
 BENCH=tests/benchmark/filtered/filtered_bench.py
 $PYTHON "$BENCH" prepare --output /tmp/filtered-smoke \
@@ -18,26 +22,49 @@ $PYTHON "$BENCH" oracle /tmp/filtered-smoke
 $PYTHON -m unittest discover -s tests/benchmark/filtered -v
 ```
 
-Point a candidate runner at this bundle, then score the resulting JSONL:
+Build and run the native baselines against the frozen bundle:
 
 ```sh
-$PYTHON "$BENCH" score /tmp/filtered-smoke /tmp/candidate/results.jsonl \
-  --policies AUTO BATCHES ADHOC_BF --repeats 3 \
-  --target-recall 0.95 --fail-below-target --output /tmp/candidate/report.json
+cmake -S . -B /tmp/vecsim-filtered-build -DCMAKE_BUILD_TYPE=Release \
+  -DUSE_SVS=OFF -DVECSIM_BUILD_TESTS=OFF -DVECSIM_BUILD_FILTERED_BENCHMARK=ON
+cmake --build /tmp/vecsim-filtered-build --target native_filtered_bench -j 4
+BINARY=/tmp/vecsim-filtered-build/filtered_benchmark/native_filtered_bench
+NATIVE=tests/benchmark/filtered/native_run.py
+$PYTHON "$NATIVE" build --bundle /tmp/filtered-smoke --binary "$BINARY" \
+  --output /tmp/filtered-graph --m 16 --ef-construction 200
+$PYTHON "$NATIVE" run --bundle /tmp/filtered-smoke --binary "$BINARY" \
+  --graph /tmp/filtered-graph --output /tmp/native-ef200 \
+  --policies NATIVE_SCAN NATIVE_BATCHES --repeats 3 \
+  --ef-runtime 200 --batch-size 100 --timeout-ms 10000
+$PYTHON "$BENCH" score /tmp/filtered-smoke /tmp/native-ef200/results.jsonl \
+  --policies NATIVE_SCAN NATIVE_BATCHES --repeats 3 \
+  --target-recall 0.95 --output /tmp/native-ef200/report.json
+VECSIM_FILTERED_BINARY="$BINARY" $PYTHON -m unittest discover \
+  -s tests/benchmark/filtered -v
 ```
 
-Bundle, oracle, and report outputs refuse to overwrite existing files. Keep large
+The native runner builds without SVS, Google Test, or Google Benchmark downloads.
+Adding `--fail-below-target` to scoring requires every nonempty query to reach the
+target; the default still fails on missing, invalid, incomplete or failed results.
+The native tests exercise both L2 and cosine through actual graph save/reload and
+the shared oracle when `VECSIM_FILTERED_BINARY` is set. Without it, only native
+integration tests are skipped; artifact and wrapper tests still run.
+
+Bundle, graph, run, oracle, and report outputs refuse to overwrite existing files. Keep large
 arrays, generated oracles, and run outputs outside Git. Preparation depends on the
 NumPy version, which is recorded; distribute the frozen bundle rather than
 regenerating it on each candidate branch. Consumers verify every file checksum.
 
 ## Datasets
 
-`datasets.json` records existing raw dataset references, shapes, and intended
-roles. Asset URLs are discovery references, not verified immutable downloads.
-Import records SHA-256 hashes of both source files. Pin and distribute those
-hashes with the benchmark release before comparing candidates. Existing HNSW
-snapshots and unfiltered ground truth are not a filtered-search oracle.
+`datasets.json` records raw dataset references, shapes, and intended roles.
+`download_dbpedia.py` retrieves exact row ranges from the DBpedia assets and
+records source object identity, byte ranges, and downloaded-file SHA-256 hashes.
+The 100K-document/32-query development subset has been fetched for the initial
+native baseline; Deep and larger variants remain follow-up runs. Source URLs can
+change: pin and distribute the downloaded hashes and provenance with the
+benchmark release. Existing HNSW snapshots and unfiltered ground truth are not
+a filtered-search oracle.
 
 Use the synthetic 10K fixture for pipeline checks, DBpedia 100K/1M × 768 cosine
 for selection, and Deep 1M/10M × 96 squared L2 for disk scale. Start with 32–128
@@ -47,7 +74,21 @@ tune using that split. Source query arrays must contain genuine separate queries
 the importer checks file identity and shape, not the dataset publisher's split
 provenance or semantic independence.
 
-Example after downloading the DBpedia FP32 base and query arrays:
+Download the small development subset first:
+
+```sh
+$PYTHON tests/benchmark/filtered/download_dbpedia.py \
+  --output /data/dbpedia-100k-source --documents 100000 --query-count 32
+```
+
+The downloader prints the exact import command. Run that command, retain its
+`provenance.json` alongside the imported bundle, and calculate the oracle once.
+The files contain only the requested rows, so the import's source counts are
+100,000 documents and 32 queries. The provenance records their original source
+row ranges. The downloader reserves query rows `[2000, 10000)` for held-out use
+with `--query-start 2000`; it rejects a request that crosses the split boundary.
+
+Alternatively, after downloading the complete DBpedia base and query arrays:
 
 ```sh
 $PYTHON "$BENCH" import --output /tmp/dbpedia-100k-dev \
@@ -63,6 +104,56 @@ For Deep, use `--format fbin --documents 10000000 --query-count 10000
 variant. The importer requires an exact little-endian `(count, dimensions)` fbin
 header and exact payload length. For a held-out bundle, select
 `--query-start 2000 --limit-queries 8000`. The source row interval is recorded.
+
+## Native runner and candidate interface
+
+`NATIVE_SCAN` computes the distance to every eligible document in the loaded
+VecSim index and keeps the closest `k`. `NATIVE_BATCHES` consumes the actual HNSW
+batch iterator, intersects returned IDs with the eligible set, and stops when it
+has `k` eligible results or exhausts the iterator. It is an approximate baseline;
+its recall must be measured. Neither policy is Redis AUTO or Redis's ADHOC
+implementation.
+
+Both run in one process and use the same loaded graph. Policy order rotates by
+repeat. Search timing includes query preprocessing, iterator creation/destruction,
+distance computation, result selection and membership checks. Building an
+eligibility membership mask from the frozen IDs happens outside each query's timer. Input
+loading, graph construction/serialization, graph loading, checksum verification,
+and JSON output are also outside search timing and have separate metadata where
+applicable. These are serial native search timings, not service throughput or
+Redis filter-evaluation timings. No warmup or cache eviction is implicit.
+
+`build` writes `graph.hnsw`, its checksum/corpus/construction sidecar `graph.json`,
+and `build.json`. `run` verifies that sidecar before loading the graph and writes
+`results.jsonl`, `run.json`, native stdout/stderr, the raw native rows, and the
+translated `filters.u64`/`cases.tsv` inputs. The native graph is an existing
+test-helper serialization format: load only trusted snapshots and keep compatible
+VecSim versions. The checksum detects changes; it does not authenticate a file.
+The graph is bound to vector content, shape and metric, allowing held-out queries
+to reuse the same graph when their bundle contains identical corpus vectors.
+
+Each run records the executable SHA-256, graph SHA-256, corpus and bundle identity,
+construction/runtime parameters, native compiler/build information, host details,
+and wrapper checkout revision/dirty state. The binary's source revision is captured
+when CMake configures; reconfigure after changing the candidate. Its executable
+hash is the authoritative identity. Record external CPU affinity, frequency,
+memory constraints, and machine contention with the result set before interpreting
+small timing differences.
+
+Implement a new adapter using `CandidateAdapter`/`SearchFunction` in `native_candidates.h` and register it
+in `native_candidates.cpp`. The adapter receives the index, original query,
+eligible IDs/membership mask, `k`, runtime parameters and deadline; it returns IDs, distances,
+status and supported counters. `describe` exposes the registered labels, so the
+Python wrapper accepts a new label without changes. There is no `NAVIX` adapter
+until the algorithm is implemented and registered. Do not rename an existing
+baseline as a candidate.
+
+Per-query deadlines produce timeout rows that remain in the scoring matrix.
+`--process-timeout-seconds` is a separate watchdog (default 3,600 seconds) for a
+failed or stalled process. Fatal process/protocol failures retain logs and failed
+metadata but do not produce a complete `results.jsonl`; they are not successful
+benchmark runs. Counters are adapter-specific; unsupported counters remain null,
+and returned candidates are not a count of graph visits or distance evaluations.
 
 ## Fixed workload
 
@@ -155,6 +246,6 @@ RAM and disk need separate timing labels. Disk comparisons additionally record
 the total process/memory budget, block-cache size, warmup, and whether OS/device
 caches were actually controlled. A restarted process alone does not establish a
 cold disk cache. Benchmark timings are invalid when run alongside builds, tests,
-or other benchmark jobs. Native kernel adapters, concurrency/churn workloads,
+or other benchmark jobs. Additional algorithm adapters, concurrency/churn workloads,
 and application-level business ranking remain separate additions; this foundation
 provides static filtered-vector recall and a shared comparison format.
