@@ -5696,16 +5696,6 @@ static void RunAllJobs(tieredIndexMock &mock_thread_pool) {
     }
 }
 
-// Each of labels 0..n-1's (single) id.
-template <typename data_t, typename dist_t>
-static std::vector<idType> LabelIds(HNSWIndex<data_t, dist_t> *hnsw_index, size_t n) {
-    std::vector<idType> ids(n);
-    for (size_t i = 0; i < n; i++) {
-        ids[i] = hnsw_index->getElementIds(i).at(0);
-    }
-    return ids;
-}
-
 // Deletes the given labels asynchronously and runs their repairs, leaving a ready swap job each.
 template <typename data_t, typename dist_t>
 static void DeleteLabelsAndRepair(TieredHNSWIndex<data_t, dist_t> *tiered_index,
