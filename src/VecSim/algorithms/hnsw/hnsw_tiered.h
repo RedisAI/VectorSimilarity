@@ -117,13 +117,13 @@ private:
 
     // Tracks an operation that may retain IDs or graph pointers copied before node isolation.
     // Like the disk index's query markers, it holds shared_ptr references to IDs detached while
-    // registered. The last marker to release an ID triggers its finalizer. Markers must outlive
+    // attached. The last marker to release an ID triggers its finalizer. Markers must outlive
     // the operation's main guard so their deleters can acquire shared access without nesting it.
     class RuntimeMarker {
         const TieredHNSWIndex *index;
         RuntimeMarker *previous = nullptr;
         RuntimeMarker *next = nullptr;
-        bool registered = false;
+        bool attached = false;
         vecsim_stl::vector<std::shared_ptr<idType>> pendingIds;
         friend class TieredHNSWIndex;
 
@@ -137,17 +137,17 @@ private:
         RuntimeMarker(const RuntimeMarker &) = delete;
         RuntimeMarker &operator=(const RuntimeMarker &) = delete;
         void attach() {
-            assert(!registered);
+            assert(!attached);
             std::lock_guard<std::mutex> lock(index->runningGuard);
             next = index->currentlyRunning;
             if (next) {
                 next->previous = this;
             }
             index->currentlyRunning = this;
-            registered = true;
+            attached = true;
         }
         void detach() {
-            if (!registered) {
+            if (!attached) {
                 return;
             }
             {
@@ -161,7 +161,7 @@ private:
                     next->previous = previous;
                 }
                 previous = next = nullptr;
-                registered = false;
+                attached = false;
             }
             // Deleters acquire shared main access, so release outside runningGuard and after
             // this operation has released its own main guard.
