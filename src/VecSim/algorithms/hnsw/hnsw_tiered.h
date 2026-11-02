@@ -220,7 +220,7 @@ protected:
         return ScopedLocks(this->mainIndexLockable, labelLockable);
     }
 
-    ScopedLocks lockMainIndexForDebug() const override { return lockMainIndexForQuery(); }
+    ScopedLocks lockMainIndexForInfo() const override { return lockMainIndexForQuery(); }
 
     ScopedLocks lockIndexForSize() const override {
         return ScopedLocks(this->flatIndexLockable, hnswDataGuardLockable);

@@ -152,7 +152,7 @@ protected:
     // Locking behavior for topKQuery/rangeQuery
     virtual ScopedLocks lockMainIndexForQuery() const = 0;
 
-    virtual ScopedLocks lockMainIndexForDebug() const { return ScopedLocks(mainIndexLockable); }
+    virtual ScopedLocks lockMainIndexForInfo() const { return ScopedLocks(mainIndexLockable); }
 
     // Locking behavior for indexSize()
     virtual ScopedLocks lockIndexForSize() const = 0;
@@ -771,7 +771,7 @@ VecSimDebugInfoIterator *VecSimTieredIndex<DataType, DistType>::debugInfoIterato
     }
 
     {
-        auto main_lock = lockMainIndexForDebug();
+        auto main_lock = lockMainIndexForInfo();
         infoIterator->addInfoField(VecSim_InfoField{
             .fieldName = VecSimCommonStrings::BACKEND_INDEX_STRING,
             .fieldType = INFOFIELD_ITERATOR,
