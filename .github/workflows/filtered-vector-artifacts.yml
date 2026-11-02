@@ -39,7 +39,8 @@ jobs:
         run: |
           cmake -S . -B "$RUNNER_TEMP/vecsim-filtered-build" -DCMAKE_BUILD_TYPE=Release \
             -DUSE_SVS=OFF -DVECSIM_BUILD_TESTS=OFF -DVECSIM_BUILD_FILTERED_BENCHMARK=ON
-          cmake --build "$RUNNER_TEMP/vecsim-filtered-build" --target native_filtered_bench --parallel 2
+          cmake --build "$RUNNER_TEMP/vecsim-filtered-build" --target native_filtered_bench native_filtered_bench_tests --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/vecsim-filtered-build" -R native_filtered_bench_tests --output-on-failure
       - name: Artifact, wrapper, and native integration tests
         env:
           VECSIM_FILTERED_BINARY: ${{ runner.temp }}/vecsim-filtered-build/filtered_benchmark/native_filtered_bench

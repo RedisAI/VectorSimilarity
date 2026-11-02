@@ -1,6 +1,10 @@
 add_executable(native_filtered_bench native_main.cpp native_candidates.cpp)
 target_link_libraries(native_filtered_bench PRIVATE VectorSimilarity)
 
+add_executable(native_filtered_bench_tests native_test.cpp native_candidates.cpp)
+target_link_libraries(native_filtered_bench_tests PRIVATE VectorSimilarity)
+add_test(NAME native_filtered_bench_tests COMMAND native_filtered_bench_tests)
+
 execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${root}"
                 OUTPUT_VARIABLE FILTERED_SOURCE_REVISION OUTPUT_STRIP_TRAILING_WHITESPACE
                 ERROR_QUIET)

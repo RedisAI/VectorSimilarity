@@ -50,6 +50,12 @@ The native tests exercise both L2 and cosine through actual graph save/reload an
 the shared oracle when `VECSIM_FILTERED_BINARY` is set. Without it, only native
 integration tests are skipped; artifact and wrapper tests still run.
 
+Build the `native_filtered_bench_tests` target and run
+`ctest --test-dir /tmp/vecsim-filtered-build -R native_filtered_bench_tests --output-on-failure`
+for deterministic C++ deadline/callback and post-timeout reuse checks.
+The recorded [development baseline](baselines/README.md) includes a 10K smoke
+and DBpedia 100K EF sweep, with pinned input/graph/binary hashes and cohort results.
+
 Bundle, graph, run, oracle, and report outputs refuse to overwrite existing files. Keep large
 arrays, generated oracles, and run outputs outside Git. Preparation depends on the
 NumPy version, which is recorded; distribute the frozen bundle rather than
@@ -113,6 +119,10 @@ batch iterator, intersects returned IDs with the eligible set, and stops when it
 has `k` eligible results or exhausts the iterator. It is an approximate baseline;
 its recall must be measured. Neither policy is Redis AUTO or Redis's ADHOC
 implementation.
+
+HNSW batch search uses at least `max(ef_runtime, batch_size)` as its search width.
+For an EF_RUNTIME sweep of 10/50/100/200, use `--batch-size 10` throughout;
+with a batch size of 100, the first three requested settings share a floor of 100.
 
 Both run in one process and use the same loaded graph. Policy order rotates by
 repeat. Search timing includes query preprocessing, iterator creation/destruction,

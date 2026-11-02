@@ -66,7 +66,8 @@ bundle manifest, oracle and their checksums. Compute the oracle once, then build
 the baseline graph once. The generated files stay outside Git.
 
 Run EF_RUNTIME 10, 50, 100 and 200 in separate output directories, with three
-repetitions each. Keep batch size and construction parameters fixed unless that
+repetitions each and `--batch-size 10`. HNSW batch search uses a search-width floor
+of the batch size; a larger batch would hide the lower EF settings. Keep batch size and construction parameters fixed unless that
 parameter is the experiment. Compare latency at matched recall **within each
 selectivity/correlation/k cohort**; a faster run that loses recall is not a win.
 Record each repetition, including failures. These native runs are single-threaded

@@ -95,6 +95,7 @@ endif()
 add_subdirectory(src/VecSim)
 
 if(VECSIM_BUILD_FILTERED_BENCHMARK)
+	enable_testing()
 	add_subdirectory(tests/benchmark/filtered filtered_benchmark)
 endif()
 
