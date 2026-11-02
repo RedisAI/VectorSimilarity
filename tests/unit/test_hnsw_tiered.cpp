@@ -5696,15 +5696,6 @@ static void RunAllJobs(tieredIndexMock &mock_thread_pool) {
     }
 }
 
-static size_t CountQueuedInsertJobs(tieredIndexMock &mock_thread_pool) {
-    auto queue = mock_thread_pool.jobQ;
-    size_t count = 0;
-    for (; !queue.empty(); queue.pop()) {
-        count += queue.front().job->jobType == HNSW_INSERT_VECTOR_JOB;
-    }
-    return count;
-}
-
 // Each of labels 0..n-1's (single) id.
 template <typename data_t, typename dist_t>
 static std::vector<idType> LabelIds(HNSWIndex<data_t, dist_t> *hnsw_index, size_t n) {
