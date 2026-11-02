@@ -34,7 +34,8 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: tests/benchmark/filtered/requirements.txt
-      - run: python -m pip install --only-binary=:all: --require-hashes -r tests/benchmark/filtered/requirements.txt
+      - run: |
+          python -m pip install --only-binary=:all: --require-hashes -r tests/benchmark/filtered/requirements.txt
       - name: Build native filtered runner
         run: |
           cmake -S . -B "$RUNNER_TEMP/vecsim-filtered-build" -DCMAKE_BUILD_TYPE=Release \
