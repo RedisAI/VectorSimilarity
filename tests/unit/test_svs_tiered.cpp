@@ -5205,6 +5205,40 @@ TYPED_TEST(SVSTieredIndexTestBasic, updateJobDrainsWritesMadeWhileItHeldTheGuard
     EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + 2 + late_writes);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, addVectorOverwritesLabelOfWrappedBackend) {
+    // A tiered index wrapping a non-empty backend cannot prove any label new, so an overwrite of a
+    // backend label must still delete the old vector.
+    const size_t dim = 4;
+    const size_t n = 10;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    VecSim_UpdateThreadPoolSize(mock_thread_pool.thread_pool_size);
+    TieredIndexParams tiered_params = this->CreateTieredSVSParams(svs_params, mock_thread_pool);
+    auto *svs_index = static_cast<VecSimIndexAbstract<TEST_DATA_T, float> *>(
+        SVSFactory::NewIndex(tiered_params.primaryIndexParams, true));
+    ASSERT_INDEX(svs_index);
+    for (size_t i = 0; i < n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(svs_index, dim, i, i);
+    }
+    auto *tiered_index = reinterpret_cast<TieredSVSIndex<TEST_DATA_T> *>(
+        TieredFactory::TieredSVSFactory::NewIndex<TEST_DATA_T>(&tiered_params, svs_index));
+    ASSERT_INDEX(tiered_index);
+    mock_thread_pool.ctx->index_strong_ref.reset(tiered_index);
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(5));
+
+    ASSERT_EQ(GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 5, 500), 0);
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(5));
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(5));
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 500);
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(5, expected_vector), 0, abs_err);
+    ASSERT_EQ(tiered_index->indexLabelCount(), n);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, addVectorExistingLabelStillOverwritesBackend) {
     // Re-adding a label that is in the backend still takes mainIndexGuard to delete the old vector.
     const size_t dim = 4;

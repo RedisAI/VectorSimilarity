@@ -876,6 +876,11 @@ public:
                                       : tiered_svs_params.updateJobWaitTime;
 
         this->updateJobMaxBatch = SVS_VAMANA_DEFAULT_MAX_UPDATE_BATCH;
+        // A wrapped backend may already hold labels that the bound cannot prove absent, so every
+        // label then takes the backend lookup.
+        if (svs_index->indexSize() != 0) {
+            this->addedLabelsBound = std::numeric_limits<labelType>::max();
+        }
 
         // Reserve space for the journal to avoid reallocation.
         this->swaps_journal.reserve(this->trainingTriggerThreshold);
