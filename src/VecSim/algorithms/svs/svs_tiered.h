@@ -714,7 +714,21 @@ private:
      *
      * @return true if vectors were left in the frontend index for a later job.
      */
+    // MOD-17098 diagnostic instrumentation (temporary, not for merge).
+    using DiagClock = std::chrono::steady_clock;
+    static double diagMs(DiagClock::time_point from, DiagClock::time_point to) {
+        return std::chrono::duration<double, std::milli>(to - from).count();
+    }
+    // Main-thread lock waits in addVector longer than this are logged.
+    static constexpr double DIAG_MAIN_WAIT_LOG_MS = 20.0;
+
     bool updateSVSIndex(size_t availableThreads, size_t maxBatch) {
+        const auto diag_start = DiagClock::now();
+        const char *diag_phase = "none";
+        size_t diag_frontend = 0;
+        DiagClock::time_point diag_snap_acq{}, diag_snap_rel{}, diag_excl_req{}, diag_excl_acq{},
+            diag_excl_rel{}, diag_flat_req{}, diag_flat_acq{}, diag_flat_rel{}, diag_del_req{},
+            diag_del_acq{}, diag_del_rel{};
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
         std::vector<labelType> deleted_labels_during_update;
@@ -729,9 +743,11 @@ private:
 
         { // lock frontendIndex from modifications
             std::shared_lock flat_lock{this->flatIndexGuard};
+            diag_snap_acq = DiagClock::now();
 
             auto flat_index = this->GetFlatIndex();
             const auto frontend_index_size = this->frontendIndex->indexSize();
+            diag_frontend = frontend_index_size;
             const size_t batch_size = std::min(frontend_index_size, batch_limit);
             truncated = batch_size < frontend_index_size;
             const size_t dim = flat_index->getDim();
@@ -746,6 +762,7 @@ private:
             // reset journal to the current frontend index state
             swaps_journal.clear();
             deleted_labels_journal.clear();
+            diag_snap_rel = DiagClock::now();
         } // release frontend index
 
         executeTracingCallback("UpdateJob::before_add_to_svs");
@@ -769,22 +786,32 @@ private:
 
                 // Upgrade to unique lock to set the new impl
                 main_shared_lock.unlock();
+                diag_phase = "init";
+                diag_excl_req = DiagClock::now();
                 std::lock_guard lock(this->mainIndexGuard);
+                diag_excl_acq = DiagClock::now();
                 svs_index->setImpl(std::move(impl));
+                diag_excl_rel = DiagClock::now();
             } else {
                 // Backend index is initialized - just add the vectors.
                 main_shared_lock.unlock();
+                diag_phase = "add";
+                diag_excl_req = DiagClock::now();
                 std::lock_guard lock(this->mainIndexGuard);
+                diag_excl_acq = DiagClock::now();
                 // Upgrade to unique lock to add vectors
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
+                diag_excl_rel = DiagClock::now();
             }
         }
         executeTracingCallback("UpdateJob::after_add_to_svs");
         // clean-up frontend index
+        diag_flat_req = DiagClock::now();
         { // lock frontend index for writing and delete moved vectors
             std::lock_guard lock(this->flatIndexGuard);
+            diag_flat_acq = DiagClock::now();
 
             // swap deleted labels journal with the local variable to track deleted labels during
             // update
@@ -808,11 +835,14 @@ private:
             assert(deleted == std::count_if(labels_to_move.begin(), labels_to_move.end(),
                                             [](labelType label) { return label != SKIP_LABEL; }) &&
                    "Deleted vectors count does not match the number of labels to delete");
+            diag_flat_rel = DiagClock::now();
         }
         // delete vectors from backend index that were deleted from the frontend index during
         // the update process.
         {
+            diag_del_req = DiagClock::now();
             std::lock_guard main_lock(this->mainIndexGuard);
+            diag_del_acq = DiagClock::now();
 
             std::sort(deleted_labels_during_update.begin(), deleted_labels_during_update.end());
             auto it = std::unique(deleted_labels_during_update.begin(),
@@ -821,7 +851,21 @@ private:
             auto svs_index = GetSVSIndex();
             svs_index->deleteVectors(deleted_labels_during_update.data(),
                                      deleted_labels_during_update.size());
+            diag_del_rel = DiagClock::now();
         }
+        const bool diag_excl = diag_excl_req != DiagClock::time_point{};
+        this->backendIndex->log(
+            VecSimCommonStrings::LOG_WARNING_STRING,
+            "MOD17098 update_job phase=%s frontend=%zu batch=%zu truncated=%d threads=%zu "
+            "snapshot_hold_ms=%.1f excl_wait_ms=%.1f excl_hold_ms=%.1f flat_wait_ms=%.1f "
+            "flat_hold_ms=%.1f del_wait_ms=%.1f del_hold_ms=%.1f total_ms=%.1f",
+            diag_phase, diag_frontend, labels_to_move.size(), truncated ? 1 : 0, availableThreads,
+            diagMs(diag_snap_acq, diag_snap_rel),
+            diag_excl ? diagMs(diag_excl_req, diag_excl_acq) : 0.0,
+            diag_excl ? diagMs(diag_excl_acq, diag_excl_rel) : 0.0,
+            diagMs(diag_flat_req, diag_flat_acq), diagMs(diag_flat_acq, diag_flat_rel),
+            diagMs(diag_del_req, diag_del_acq), diagMs(diag_del_acq, diag_del_rel),
+            diagMs(diag_start, DiagClock::now()));
         return truncated;
     }
 
@@ -922,18 +966,29 @@ public:
                 }
             }
             // Remove vector from the backend index if it exists in case of non-MULTI.
+            double diag_wait = 0.0;
             auto label_exists = [&]() {
+                const auto diag_req = DiagClock::now();
                 std::shared_lock lock(this->mainIndexGuard);
+                diag_wait = diagMs(diag_req, DiagClock::now());
                 return svs_index->isLabelExists(label);
             }();
+            if (diag_wait > DIAG_MAIN_WAIT_LOG_MS) {
+                this->backendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                                        "MOD17098 main_wait site=label_exists wait_ms=%.1f",
+                                        diag_wait);
+            }
 
             if (label_exists) {
                 std::lock_guard lock(this->mainIndexGuard);
                 ret -= this->backendIndex->deleteVector(label);
             }
         }
+        double diag_flat_wait = 0.0;
         { // Add vector to the frontend index.
+            const auto diag_req = DiagClock::now();
             std::lock_guard lock(this->flatIndexGuard);
+            diag_flat_wait = diagMs(diag_req, DiagClock::now());
             const auto ft_ret = this->frontendIndex->addVector(blob, label);
 
             if (ft_ret == 0) { // Vector was overriden - add 'skiping' swap to the journal.
@@ -948,12 +1003,21 @@ public:
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
+        double diag_threshold_wait = 0.0;
         {
             // If main index is empty then update_threshold is trainingTriggerThreshold,
             // overwise it is updateTriggerThreshold.
+            const auto diag_req = DiagClock::now();
             std::shared_lock lock(this->mainIndexGuard);
+            diag_threshold_wait = diagMs(diag_req, DiagClock::now());
             update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
                                                                     : this->updateTriggerThreshold;
+        }
+        if (diag_flat_wait > DIAG_MAIN_WAIT_LOG_MS || diag_threshold_wait > DIAG_MAIN_WAIT_LOG_MS) {
+            this->backendIndex->log(VecSimCommonStrings::LOG_WARNING_STRING,
+                                    "MOD17098 main_wait site=add flat_wait_ms=%.1f "
+                                    "threshold_wait_ms=%.1f frontend=%zu",
+                                    diag_flat_wait, diag_threshold_wait, frontend_index_size);
         }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
