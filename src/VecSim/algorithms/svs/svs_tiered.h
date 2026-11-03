@@ -717,7 +717,8 @@ private:
      * only move the last frontend vector into the freed id, so a vector outside the prefix that
      * lands in it is reported by the swaps journal like a vector added after the snapshot.
      *
-     * @return true if vectors were left in the frontend index for a later job.
+     * @return true if the frontend index has vectors left for a later job: the batch was
+     * truncated, or writes during the job reached the update threshold.
      */
     bool updateSVSIndex(size_t availableThreads, size_t maxBatch) {
         std::vector<labelType> labels_to_move;
@@ -827,7 +828,19 @@ private:
             svs_index->deleteVectors(deleted_labels_during_update.data(),
                                      deleted_labels_during_update.size());
         }
-        return truncated;
+        if (truncated) {
+            return true;
+        }
+        // Writes that arrived while this job held mainIndexGuard did not schedule a job (addVector
+        // does not wait for a busy guard), so continue with them if they reach the threshold. The
+        // guards are read one at a time, never nested.
+        const size_t threshold = [&] {
+            std::shared_lock main_lock(this->mainIndexGuard);
+            return this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
+                                                        : this->updateTriggerThreshold;
+        }();
+        std::shared_lock flat_lock(this->flatIndexGuard);
+        return this->frontendIndex->indexSize() >= threshold;
     }
 
 public:
