@@ -165,7 +165,7 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 
 VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized) {
     VecSimParams vecSimParams = {.algoParams = {.hnswParams = HNSWParams{*params}}};
-    return NewIndex(&vecSimParams);
+    return NewIndex(&vecSimParams, is_normalized);
 }
 
 template <typename DataType, typename DistType = DataType>

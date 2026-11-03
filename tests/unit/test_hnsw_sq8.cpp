@@ -1131,6 +1131,28 @@ TEST(HNSWSQ8ParamsTest, RejectsOutOfRangeMetric) {
     EXPECT_EQ(EstimateInitialSize(hnsw_params), SIZE_MAX);
 }
 
+// The HNSWParams overload of NewIndex must forward is_normalized. A standalone SQ8 index accepts
+// Cosine only when the caller declares the input already normalized (it then resolves to IP).
+TEST(HNSWSQ8ParamsTest, HNSWParamsOverloadForwardsIsNormalized) {
+    HNSWParams params = {.type = VecSimType_FLOAT32,
+                         .dim = 16,
+                         .metric = VecSimMetric_Cosine,
+                         .quantType = VecSimQuant_SQ8};
+
+    // VecSimIndex_Free does not accept NULL, so free only what was created.
+    VecSimIndex *normalized = HNSWFactory::NewIndex(&params, true);
+    EXPECT_NE(normalized, nullptr);
+    if (normalized) {
+        VecSimIndex_Free(normalized);
+    }
+
+    VecSimIndex *unnormalized = HNSWFactory::NewIndex(&params, false);
+    EXPECT_EQ(unnormalized, nullptr);
+    if (unnormalized) {
+        VecSimIndex_Free(unnormalized);
+    }
+}
+
 // Exercise both endpoints, a mean not representable in FP16, and odd dimensions that
 // also cover SIMD residual handling.
 TEST(HNSWSQ8ParamsTest, MeanCenteredFP16L2BoundedValues) {
