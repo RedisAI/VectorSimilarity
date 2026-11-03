@@ -12,12 +12,47 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
 #include <iostream>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
+using sq4 = vecsim_types::sq4;
+
+float SQ4_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const float *>(pVect2v);
+    const auto *params = x + sq4::data_bytes_count(dimension);
+    const float min_val = load_unaligned<float>(params + sq4::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params + sq4::DELTA * sizeof(float));
+    float distance = 0.0f;
+    for (size_t i = 0; i < dimension; ++i) {
+        // Subtract offsets first so a large common offset cannot erase a small residual.
+        const float diff = delta * sq4::load_code(x, i) + (min_val - y[i]);
+        distance += diff * diff;
+    }
+    return distance;
+}
+
+float SQ4_SQ4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const uint8_t *>(pVect2v);
+    const auto *params_x = x + sq4::data_bytes_count(dimension);
+    const auto *params_y = y + sq4::data_bytes_count(dimension);
+    const float min_x = load_unaligned<float>(params_x + sq4::MIN_VAL * sizeof(float));
+    const float delta_x = load_unaligned<float>(params_x + sq4::DELTA * sizeof(float));
+    const float min_y = load_unaligned<float>(params_y + sq4::MIN_VAL * sizeof(float));
+    const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
+    float distance = 0.0f;
+    for (size_t i = 0; i < dimension; ++i) {
+        const float diff =
+            (min_x - min_y) + (delta_x * sq4::load_code(x, i) - delta_y * sq4::load_code(y, i));
+        distance += diff * diff;
+    }
+    return distance;
+}
 
 /*
  * Asymmetric SQ8-FP32 L2 squared distance, accumulated directly per component:

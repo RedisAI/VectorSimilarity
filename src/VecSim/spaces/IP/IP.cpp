@@ -11,11 +11,75 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
+#include <cmath>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
+using sq4 = vecsim_types::sq4;
+
+// Per-element reconstruction of the SQ4-FP32 inner product. Slower than the matched form, but it
+// never forms the unscaled code dot product, which can overflow float for large query values.
+static float SQ4_FP32_InnerProductReconstructed(const uint8_t *x, const float *y, size_t dimension,
+                                                float min_val, float delta) {
+    float dot = 0.0f;
+    for (size_t i = 0; i < dimension; ++i) {
+        dot += (min_val + delta * sq4::load_code(x, i)) * y[i];
+    }
+    return 1.0f - dot;
+}
+
+float SQ4_FP32_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const float *>(pVect2v);
+
+    // Same identity as SQ8_FP32_InnerProduct_Impl: IP = min * y_sum + delta * sum(code_i * y_i).
+    // Use 4 accumulators for instruction-level parallelism.
+    float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+    size_t i = 0;
+    const size_t dim4 = dimension & ~size_t(3);
+    for (; i < dim4; i += 4) {
+        sum0 += static_cast<float>(sq4::load_code(x, i + 0)) * y[i + 0];
+        sum1 += static_cast<float>(sq4::load_code(x, i + 1)) * y[i + 1];
+        sum2 += static_cast<float>(sq4::load_code(x, i + 2)) * y[i + 2];
+        sum3 += static_cast<float>(sq4::load_code(x, i + 3)) * y[i + 3];
+    }
+    for (; i < dimension; i++) {
+        sum0 += static_cast<float>(sq4::load_code(x, i)) * y[i];
+    }
+    const float code_dot = (sum0 + sum1) + (sum2 + sum3);
+
+    // Metadata follows the packed payload and is not necessarily float-aligned.
+    const auto *params = x + sq4::data_bytes_count(dimension);
+    const float min_val = load_unaligned<float>(params + sq4::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params + sq4::DELTA * sizeof(float));
+
+    const float dist = 1.0f - (min_val * y[dimension + sq4::SUM_QUERY] + delta * code_dot);
+    if (!std::isfinite(dist)) {
+        return SQ4_FP32_InnerProductReconstructed(x, y, dimension, min_val, delta);
+    }
+    return dist;
+}
+
+float SQ4_SQ4_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const uint8_t *>(pVect2v);
+    const auto *params_x = x + sq4::data_bytes_count(dimension);
+    const auto *params_y = y + sq4::data_bytes_count(dimension);
+    const float min_x = load_unaligned<float>(params_x + sq4::MIN_VAL * sizeof(float));
+    const float delta_x = load_unaligned<float>(params_x + sq4::DELTA * sizeof(float));
+    const float min_y = load_unaligned<float>(params_y + sq4::MIN_VAL * sizeof(float));
+    const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
+    float dot = 0.0f;
+    for (size_t i = 0; i < dimension; ++i) {
+        const float value_x = min_x + delta_x * sq4::load_code(x, i);
+        const float value_y = min_y + delta_y * sq4::load_code(y, i);
+        dot += value_x * value_y;
+    }
+    return 1.0f - dot;
+}
 
 /*
  * Optimized asymmetric SQ8-FP32 inner product using algebraic identity:
