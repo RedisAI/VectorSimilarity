@@ -786,7 +786,14 @@ private:
             } else {
                 // Backend index is initialized - just add the vectors.
                 main_shared_lock.unlock();
+                executeTracingCallback("UpdateJob::before_exclusive_add");
                 std::lock_guard lock(this->mainIndexGuard);
+                // A delete may have emptied the backend while no lock was held; then do not let
+                // addVectors initialize it from a batch too small to train on.
+                if (this->backendIndex->indexSize() == 0 && truncated &&
+                    labels_to_move.size() < this->trainingTriggerThreshold) {
+                    return true;
+                }
                 // Upgrade to unique lock to add vectors
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
