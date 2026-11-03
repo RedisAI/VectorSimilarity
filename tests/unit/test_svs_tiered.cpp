@@ -8,6 +8,7 @@
 #include "mock_thread_pool.h"
 
 #if HAVE_SVS
+#include <future>
 #include <thread>
 #include <chrono>
 // For getAvailableCPUs():
@@ -5064,6 +5065,87 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobShrinkDuringDrain) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + n);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), 1);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, addVectorNewLabelDoesNotWaitForUpdateJob) {
+    // An update job holds mainIndexGuard exclusively while it inserts into the backend. Adding a
+    // label above every label added so far must not wait for it, and must still schedule a job.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t update_threshold = 4;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                    training_threshold, update_threshold);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+
+    // Hold the lock as an update job does, and add new labels from another thread.
+    std::unique_lock job_lock(tiered_index->getMainIndexGuard());
+    auto adds = std::async(std::launch::async, [&]() {
+        for (size_t i = training_threshold; i < training_threshold + update_threshold; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+    });
+    const bool done = adds.wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+    job_lock.unlock();
+    adds.wait();
+    ASSERT_TRUE(done) << "adding new labels waited for mainIndexGuard";
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), update_threshold);
+    ASSERT_GT(mock_thread_pool.jobQ.size(), 0) << "reaching the update threshold scheduled no job";
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + update_threshold);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, addVectorExistingLabelStillOverwritesBackend) {
+    // Re-adding a label that is in the backend still takes mainIndexGuard to delete the old vector.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_TRUE(tiered_index->GetSVSIndex()->isLabelExists(3));
+
+    std::unique_lock job_lock(tiered_index->getMainIndexGuard());
+    auto overwrite = std::async(std::launch::async, [&]() {
+        return GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, 3, 300);
+    });
+    // The overwrite must wait for the lock rather than skip the backend delete.
+    const bool finished_early =
+        overwrite.wait_for(std::chrono::milliseconds(300)) == std::future_status::ready;
+    job_lock.unlock();
+    EXPECT_FALSE(finished_early) << "overwrite did not wait for mainIndexGuard";
+    ASSERT_EQ(overwrite.get(), 0); // An overwrite, not a new vector.
+
+    ASSERT_FALSE(tiered_index->GetSVSIndex()->isLabelExists(3));
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(3));
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 300);
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(3, expected_vector), 0, abs_err);
+    ASSERT_EQ(tiered_index->indexLabelCount(), training_threshold);
 }
 
 TEST(SVSTieredIndexTest, testThreadPool) {

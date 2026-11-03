@@ -248,6 +248,10 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     // Maximum number of vectors one update job moves to the backend index. It bounds how long a
     // job holds the index locks; a job that leaves vectors behind schedules the next one.
     size_t updateJobMaxBatch;
+    // Every label added so far is below this bound, so a label at or above it is not in the backend
+    // index. RediSearch adds each (re)indexed document under a new, increasing doc id, so its adds
+    // skip the backend lookup, and its lock, while an update job holds that lock.
+    std::atomic<labelType> addedLabelsBound{0};
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
@@ -533,6 +537,7 @@ public:
         updateJobMaxBatch = maxBatch;
     }
     size_t getUpdateJobMaxBatch() const { return updateJobMaxBatch; }
+    std::shared_mutex &getMainIndexGuard() { return this->mainIndexGuard; }
 
     // Tracing helpers can be used to trace/inject code in the index update process.
     std::map<std::string, std::function<void()>> tracingCallbacks;
@@ -868,6 +873,12 @@ public:
         auto svs_index = GetSVSIndex();
         size_t update_threshold = 0;
         size_t frontend_index_size = 0;
+        const bool new_label = label >= addedLabelsBound.load();
+        if (label != std::numeric_limits<labelType>::max()) {
+            labelType bound = addedLabelsBound.load();
+            while (bound <= label && !addedLabelsBound.compare_exchange_weak(bound, label + 1)) {
+            }
+        }
 
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
@@ -923,6 +934,9 @@ public:
             }
             // Remove vector from the backend index if it exists in case of non-MULTI.
             auto label_exists = [&]() {
+                if (new_label) {
+                    return false;
+                }
                 std::shared_lock lock(this->mainIndexGuard);
                 return svs_index->isLabelExists(label);
             }();
@@ -950,10 +964,12 @@ public:
         }
         {
             // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is updateTriggerThreshold.
-            std::shared_lock lock(this->mainIndexGuard);
-            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
-                                                                    : this->updateTriggerThreshold;
+            // overwise it is updateTriggerThreshold. Do not wait for an update job: one holding
+            // mainIndexGuard exclusively is building or extending the backend, so it is not empty.
+            std::shared_lock lock(this->mainIndexGuard, std::try_to_lock);
+            update_threshold = lock.owns_lock() && this->backendIndex->indexSize() == 0
+                                   ? this->trainingTriggerThreshold
+                                   : this->updateTriggerThreshold;
         }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
