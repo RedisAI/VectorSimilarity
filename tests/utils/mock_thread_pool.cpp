@@ -98,11 +98,12 @@ void tieredIndexMock::thread_main_loop(int thread_id, tieredIndexMock &mock_thre
 }
 
 void tieredIndexMock::thread_pool_join() {
-    // Check every 10 ms if queue is empty, and if so, terminate the threads loop.
+    // Check every 10 ms if queue is empty and no job is running, and if so, terminate the threads
+    // loop. A running job may still submit jobs (e.g. an SVS update job scheduling the next one).
     while (true) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         std::unique_lock<std::mutex> lock(queue_guard);
-        if (jobQ.empty()) {
+        if (jobQ.empty() && executions_status.AllDone()) {
             run_thread = false;
             queue_cond.notify_all();
             break;

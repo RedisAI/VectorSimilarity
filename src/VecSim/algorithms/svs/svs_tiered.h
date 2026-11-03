@@ -245,6 +245,15 @@ class TieredSVSIndex : public VecSimTieredIndex<DataType, float> {
     size_t trainingTriggerThreshold;
     size_t updateTriggerThreshold;
     size_t updateJobWaitTime;
+    // Maximum number of vectors one update job moves to the backend index. It bounds how long a
+    // job holds the index locks; a job that leaves vectors behind schedules the next one.
+    size_t updateJobMaxBatch;
+    // Every label added so far is below this bound, so a label at or above it is not in the backend
+    // index. RediSearch adds each (re)indexed document under a new, increasing doc id.
+    std::atomic<labelType> addedLabelsBound{0};
+    // Whether the backend index is empty, written under mainIndexGuard (exclusive) and read by
+    // addVector without it, to choose the job threshold.
+    std::atomic_bool backendEmpty{true};
     // Used to prevent scheduling multiple index update jobs at the same time.
     // As far as the update job does a batch update, job queue should have just 1 job at the moment.
     std::atomic_flag indexUpdateScheduled = ATOMIC_FLAG_INIT;
@@ -525,6 +534,12 @@ public:
     void submitSingleJob(AsyncJob *job) { Base::submitSingleJob(job); }
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) { Base::submitJobs(jobs); }
 
+    void setUpdateJobMaxBatch(size_t maxBatch) {
+        assert(maxBatch > 0);
+        updateJobMaxBatch = maxBatch;
+    }
+    std::shared_mutex &getMainIndexGuard() { return this->mainIndexGuard; }
+
     // Tracing helpers can be used to trace/inject code in the index update process.
     std::map<std::string, std::function<void()>> tracingCallbacks;
     void registerTracingCallback(const std::string &name, std::function<void()> callback) {
@@ -566,12 +581,31 @@ private:
         assert(availableThreads > 0);
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
-        // prevent parallel updates
-        std::lock_guard<std::mutex> lock(index->updateJobMutex);
-        // Release the scheduled flag to allow scheduling again
-        index->indexUpdateScheduled.clear();
-        // Update the SVS index
-        index->updateSVSIndex(availableThreads);
+        index->runUpdateJob(availableThreads, index->updateJobMaxBatch);
+    }
+
+    /**
+     * @brief Run one update job that moves at most maxBatch vectors, and schedule the next job if
+     * this one left vectors behind.
+     */
+    void runUpdateJob(size_t availableThreads, size_t maxBatch) {
+        bool submit_next;
+        {
+            // prevent parallel updates
+            std::lock_guard<std::mutex> lock(updateJobMutex);
+            // Release the scheduled flag to allow scheduling again
+            indexUpdateScheduled.clear();
+            // Update the SVS index. If vectors were left behind, claim the next job while still
+            // holding updateJobMutex, so background indexing never reads as done in between.
+            // Only in async mode: no jobs may be submitted once writes are in-place.
+            submit_next = updateSVSIndex(availableThreads, maxBatch) &&
+                          this->getWriteMode() == VecSim_WriteAsync &&
+                          !indexUpdateScheduled.test_and_set();
+        }
+        // Submitted after releasing updateJobMutex, which the next job takes.
+        if (submit_next) {
+            submitSVSIndexUpdateJobs();
+        }
     }
 
     /**
@@ -620,7 +654,11 @@ public:
         if (indexUpdateScheduled.test_and_set()) {
             return;
         }
+        submitSVSIndexUpdateJobs();
+    }
 
+    // Submit an update job; the caller has already set indexUpdateScheduled.
+    void submitSVSIndexUpdateJobs() {
         auto jobs = SVSMultiThreadJob::createScheduledJobs(
             this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
@@ -670,21 +708,39 @@ private:
         }
     }
 
-    void updateSVSIndex(size_t availableThreads) {
+    /**
+     * @brief Move the first (at most maxBatch) frontend vectors to the backend index; up to
+     * trainingTriggerThreshold of them when initializing it. Concurrent deletes only move the last
+     * frontend vector into the freed id, so the swaps journal covers the prefix as it covers
+     * vectors added after the snapshot.
+     *
+     * @return true if vectors were left in the frontend index for a later job.
+     */
+    bool updateSVSIndex(size_t availableThreads, size_t maxBatch) {
         std::vector<labelType> labels_to_move;
         std::vector<DataType> vectors_to_move;
         std::vector<labelType> deleted_labels_during_update;
+        bool truncated;
+        // Read before taking flatIndexGuard, so the two guards are never nested.
+        const size_t batch_limit = [&] {
+            std::shared_lock main_lock(this->mainIndexGuard);
+            return this->backendIndex->indexSize() == 0
+                       ? std::max(maxBatch, this->trainingTriggerThreshold)
+                       : maxBatch;
+        }();
 
         { // lock frontendIndex from modifications
             std::shared_lock flat_lock{this->flatIndexGuard};
 
             auto flat_index = this->GetFlatIndex();
             const auto frontend_index_size = this->frontendIndex->indexSize();
+            const size_t batch_size = std::min(frontend_index_size, batch_limit);
+            truncated = batch_size < frontend_index_size;
             const size_t dim = flat_index->getDim();
-            labels_to_move.reserve(frontend_index_size);
-            vectors_to_move.reserve(frontend_index_size * dim);
+            labels_to_move.reserve(batch_size);
+            vectors_to_move.reserve(batch_size * dim);
 
-            for (idType i = 0; i < frontend_index_size; i++) {
+            for (idType i = 0; i < batch_size; i++) {
                 labels_to_move.push_back(flat_index->getVectorLabel(i));
                 auto data = flat_index->getDataByInternalId(i);
                 vectors_to_move.insert(vectors_to_move.end(), data, data + dim);
@@ -700,6 +756,12 @@ private:
             std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+            if (this->backendIndex->indexSize() == 0 && truncated &&
+                labels_to_move.size() < this->trainingTriggerThreshold) {
+                // Deletes emptied the backend after batch_limit was read: this batch is too small
+                // to train on. Move nothing; the next job sizes its batch for the initialization.
+                return true;
+            }
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index is empty, we need to initialize it first.
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
@@ -710,14 +772,23 @@ private:
                 main_shared_lock.unlock();
                 std::lock_guard lock(this->mainIndexGuard);
                 svs_index->setImpl(std::move(impl));
+                updateBackendEmpty();
             } else {
                 // Backend index is initialized - just add the vectors.
                 main_shared_lock.unlock();
+                executeTracingCallback("UpdateJob::before_exclusive_add");
                 std::lock_guard lock(this->mainIndexGuard);
+                // A delete may have emptied the backend while no lock was held; then do not let
+                // addVectors initialize it from a batch too small to train on.
+                if (this->backendIndex->indexSize() == 0 && truncated &&
+                    labels_to_move.size() < this->trainingTriggerThreshold) {
+                    return true;
+                }
                 // Upgrade to unique lock to add vectors
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));
                 svs_index->addVectors(vectors_to_move.data(), labels_to_move.data(),
                                       labels_to_move.size());
+                updateBackendEmpty();
             }
         }
         executeTracingCallback("UpdateJob::after_add_to_svs");
@@ -760,8 +831,14 @@ private:
             auto svs_index = GetSVSIndex();
             svs_index->deleteVectors(deleted_labels_during_update.data(),
                                      deleted_labels_during_update.size());
+            updateBackendEmpty();
         }
+        return truncated;
     }
+
+    // Record whether the backend index is empty. Call while holding mainIndexGuard exclusively,
+    // after any change that can initialize or empty it.
+    void updateBackendEmpty() { backendEmpty = this->backendIndex->indexSize() == 0; }
 
 public:
     TieredSVSIndex(VecSimIndexAbstract<DataType, float> *svs_index, flat_index_t *bf_index,
@@ -795,6 +872,14 @@ public:
                                       ? SVS_DEFAULT_UPDATE_JOB_WAIT_TIME
                                       : tiered_svs_params.updateJobWaitTime;
 
+        this->updateJobMaxBatch = SVS_VAMANA_DEFAULT_MAX_UPDATE_BATCH;
+        // A wrapped backend may already hold labels that the bound cannot prove absent, so every
+        // label then takes the backend lookup.
+        if (svs_index->indexSize() != 0) {
+            this->addedLabelsBound = std::numeric_limits<labelType>::max();
+            this->backendEmpty = false;
+        }
+
         // Reserve space for the journal to avoid reallocation.
         this->swaps_journal.reserve(this->trainingTriggerThreshold);
     }
@@ -804,6 +889,12 @@ public:
         auto svs_index = GetSVSIndex();
         size_t update_threshold = 0;
         size_t frontend_index_size = 0;
+        labelType bound = addedLabelsBound.load();
+        const bool new_label = label != std::numeric_limits<labelType>::max() && label >= bound;
+        if (new_label) {
+            while (bound <= label && !addedLabelsBound.compare_exchange_weak(bound, label + 1)) {
+            }
+        }
 
         // In-Place mode - add vector syncronously to the backend index.
         if (this->getWriteMode() == VecSim_WriteInPlace) {
@@ -825,10 +916,11 @@ public:
                 }
                 // ... move vectors to the backend index.
                 if (frontend_index_size >= this->trainingTriggerThreshold) {
-                    // updateSVSIndexWrapper() accures it's own locks
+                    // runUpdateJob() accures it's own locks
                     backend_shared_lock.unlock();
-                    // initialize the SVS index synchonously using current thread only
-                    updateSVSIndexWrapper(this, 1);
+                    // initialize the SVS index synchonously using current thread only, from the
+                    // whole buffer, so that no asynchronous job is scheduled in this mode
+                    runUpdateJob(1, std::numeric_limits<size_t>::max());
                 }
                 return ret;
             } else {
@@ -841,7 +933,9 @@ public:
                 // Defensive: ensure single-threaded operation for write-in-place mode.
                 // parallelism_ defaults to 1, so this is a no-op in the normal case.
                 svs_index->setParallelism(1);
-                return this->backendIndex->addVector(storage_blob.get(), label);
+                ret = this->backendIndex->addVector(storage_blob.get(), label);
+                updateBackendEmpty();
+                return ret;
             }
         }
         assert(this->getWriteMode() != VecSim_WriteInPlace && "InPlace mode returns early");
@@ -858,6 +952,9 @@ public:
             }
             // Remove vector from the backend index if it exists in case of non-MULTI.
             auto label_exists = [&]() {
+                if (new_label) {
+                    return false;
+                }
                 std::shared_lock lock(this->mainIndexGuard);
                 return svs_index->isLabelExists(label);
             }();
@@ -865,6 +962,7 @@ public:
             if (label_exists) {
                 std::lock_guard lock(this->mainIndexGuard);
                 ret -= this->backendIndex->deleteVector(label);
+                updateBackendEmpty();
             }
         }
         { // Add vector to the frontend index.
@@ -883,13 +981,11 @@ public:
             // Check frontend index size to determine if an update job schedule is needed.
             frontend_index_size = this->frontendIndex->indexSize();
         }
-        {
-            // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is updateTriggerThreshold.
-            std::shared_lock lock(this->mainIndexGuard);
-            update_threshold = this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
-                                                                    : this->updateTriggerThreshold;
-        }
+        // If main index is empty then update_threshold is trainingTriggerThreshold,
+        // overwise it is updateTriggerThreshold. Read without mainIndexGuard, so the insert never
+        // waits for an update job holding it.
+        update_threshold =
+            backendEmpty ? this->trainingTriggerThreshold : this->updateTriggerThreshold;
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();
         }
@@ -961,6 +1057,7 @@ public:
         if (label_exists) {
             std::lock_guard lock(this->mainIndexGuard);
             ret += this->backendIndex->deleteVector(label);
+            updateBackendEmpty();
         }
         return ret;
     }
