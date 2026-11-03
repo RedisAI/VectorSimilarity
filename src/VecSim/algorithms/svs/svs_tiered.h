@@ -583,19 +583,23 @@ private:
      * this one left vectors behind.
      */
     void runUpdateJob(size_t availableThreads, size_t maxBatch) {
-        bool truncated;
+        bool submit_next;
         {
             // prevent parallel updates
             std::lock_guard<std::mutex> lock(updateJobMutex);
             // Release the scheduled flag to allow scheduling again
             indexUpdateScheduled.clear();
-            // Update the SVS index
-            truncated = updateSVSIndex(availableThreads, maxBatch);
+            // Update the SVS index. If vectors were left behind, claim the scheduled flag while
+            // still holding updateJobMutex, so background indexing is never reported as done
+            // between this job and the next.
+            submit_next =
+                updateSVSIndex(availableThreads, maxBatch) && !indexUpdateScheduled.test_and_set();
         }
-        // Continue with the vectors this job left behind. Scheduled only after updateJobMutex is
-        // released: it is not recursive, and the next job takes it.
-        if (truncated) {
-            scheduleSVSIndexUpdate();
+        // Submitted only after updateJobMutex is released: it is not recursive, and the next job
+        // takes it. While the next job is pending, a pool shrink stays deferred (see
+        // VecSimSVSThreadPoolImpl::endScheduledJob), so it applies once the drain is over.
+        if (submit_next) {
+            submitSVSIndexUpdateJobs();
         }
     }
 
@@ -645,7 +649,11 @@ public:
         if (indexUpdateScheduled.test_and_set()) {
             return;
         }
+        submitSVSIndexUpdateJobs();
+    }
 
+    // Submit an update job; the caller has already set indexUpdateScheduled.
+    void submitSVSIndexUpdateJobs() {
         auto jobs = SVSMultiThreadJob::createScheduledJobs(
             this->allocator, SVS_BATCH_UPDATE_JOB, updateSVSIndexWrapper, this,
             std::chrono::microseconds(updateJobWaitTime), &uncompletedJobs);
@@ -746,6 +754,13 @@ private:
             std::shared_lock main_shared_lock(this->mainIndexGuard);
             auto svs_index = GetSVSIndex();
             assert(labels_to_move.size() == vectors_to_move.size() / this->frontendIndex->getDim());
+            if (this->backendIndex->indexSize() == 0 && truncated &&
+                labels_to_move.size() < this->trainingTriggerThreshold) {
+                // The backend was emptied by deletes after batch_limit was read, so this batch is
+                // too small to train on. Move nothing; the next job sizes its batch for the
+                // initialization. Nothing was added, so the journals need no clean-up.
+                return true;
+            }
             if (this->backendIndex->indexSize() == 0) {
                 // If backend index is empty, we need to initialize it first.
                 svs_index->setParallelism(std::min(availableThreads, labels_to_move.size()));

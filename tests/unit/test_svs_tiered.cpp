@@ -4995,18 +4995,24 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobWriteInPlaceInitIsSynchronou
     auto *tiered_index =
         this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
     ASSERT_INDEX(tiered_index);
-    // Smaller than the training threshold: in-place init still moves the whole buffer.
     tiered_index->setUpdateJobMaxBatch(2);
 
-    VecSim_SetWriteMode(VecSim_WriteInPlace);
-    for (size_t i = 0; i < training_threshold; i++) {
+    // Buffer more than the training threshold in async mode, without running the queued init job,
+    // so a bounded in-place init would leave vectors behind.
+    const size_t buffered = training_threshold + 4;
+    for (size_t i = 0; i < buffered; i++) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
+    const size_t queued_jobs = mock_thread_pool.jobQ.size();
+
+    // The next in-place insert initializes the backend synchronously from the whole buffer.
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, buffered, buffered);
     VecSim_SetWriteMode(VecSim_WriteAsync);
 
-    EXPECT_EQ(mock_thread_pool.jobQ.size(), 0);
+    EXPECT_EQ(mock_thread_pool.jobQ.size(), queued_jobs) << "in-place init scheduled a job";
     EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
-    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), buffered + 1);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobShrinkDuringDrain) {
@@ -5040,9 +5046,12 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobShrinkDuringDrain) {
         GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
     }
     size_t jobs = 0;
+    std::vector<size_t> pool_sizes_after_shrink;
     tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
         if (jobs++ == 0) {
             VecSimSVSThreadPool::resize(1);
+        } else {
+            pool_sizes_after_shrink.push_back(tiered_index->GetSVSIndex()->getPoolSize());
         }
     });
     tiered_index->scheduleSVSIndexUpdate();
@@ -5050,6 +5059,8 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobShrinkDuringDrain) {
     mock_thread_pool.thread_pool_join();
 
     ASSERT_EQ(jobs, n / batch);
+    // The shrink stays deferred while the next job of the drain is pending.
+    ASSERT_EQ(pool_sizes_after_shrink, std::vector<size_t>(jobs - 1, num_threads));
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
     ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + n);
     ASSERT_EQ(tiered_index->GetSVSIndex()->getPoolSize(), 1);
