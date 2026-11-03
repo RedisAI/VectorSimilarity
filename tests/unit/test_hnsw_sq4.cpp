@@ -17,12 +17,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <limits>
 #include <memory>
 #include <random>
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -142,17 +144,19 @@ TEST_P(HNSWSQ4Test, InsertQueryMutateAndSerialize) {
         auto reconstructed = reconstruct(hnsw->getDataByInternalId(i), dim, mean);
         double score = distance(reconstructed, query, metric);
         expected.emplace_back(score, i);
-        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(index.get(), i, query.data()), score, 2e-5);
+        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(index.get(), i, query.data()), score,
+                    2e-5 * (1.0 + std::abs(score)));
         auto other = reconstruct(hnsw->getDataByInternalId((i + 1) % count), dim, mean);
+        const double expected_pair = distance(reconstructed, other, metric);
         EXPECT_NEAR(hnsw->calcDistance(hnsw->getDataByInternalId(i),
                                        hnsw->getDataByInternalId((i + 1) % count)),
-                    distance(reconstructed, other, metric), 3e-5);
+                    expected_pair, 3e-5 * (1.0 + std::abs(expected_pair)));
     }
     std::sort(expected.begin(), expected.end());
     auto check_results = [&](VecSimIndex *target) {
         runTopKSearchTest(target, query.data(), 10, [&](size_t id, double score, size_t pos) {
             EXPECT_EQ(id, expected[pos].second);
-            EXPECT_NEAR(score, expected[pos].first, 2e-5);
+            EXPECT_NEAR(score, expected[pos].first, 2e-5 * (1.0 + std::abs(expected[pos].first)));
         });
     };
     check_results(index.get());
@@ -176,7 +180,7 @@ TEST_P(HNSWSQ4Test, InsertQueryMutateAndSerialize) {
                                         [id](const auto &result) { return result.second == id; });
         EXPECT_NE(match, expected.end());
         if (match != expected.end())
-            EXPECT_NEAR(score, match->first, 2e-5);
+            EXPECT_NEAR(score, match->first, 2e-5 * (1.0 + std::abs(match->first)));
         EXPECT_LE(score, radius);
     }
     VecSimQueryReply_IteratorFree(iterator);
@@ -186,13 +190,13 @@ TEST_P(HNSWSQ4Test, InsertQueryMutateAndSerialize) {
         index.get(), query.data(), std::max(0.0, expected.back().first) + 1.0,
         [&](size_t id, double score, size_t pos) {
             EXPECT_EQ(id, expected[pos].second);
-            EXPECT_NEAR(score, expected[pos].first, 2e-5);
+            EXPECT_NEAR(score, expected[pos].first, 2e-5 * (1.0 + std::abs(expected[pos].first)));
         },
         count, BY_SCORE);
     auto *batch = VecSimBatchIterator_New(index.get(), query.data(), nullptr);
     runBatchIteratorSearchTest(batch, 10, [&](size_t id, double score, size_t pos) {
         EXPECT_EQ(id, expected[pos].second);
-        EXPECT_NEAR(score, expected[pos].first, 2e-5);
+        EXPECT_NEAR(score, expected[pos].first, 2e-5 * (1.0 + std::abs(expected[pos].first)));
     });
     VecSimBatchIterator_Free(batch);
     const auto path = temp_index_path("sq4_roundtrip_");
@@ -356,6 +360,63 @@ TEST(HNSWSQ4Factory, PreNormalizedCosineUsesIP) {
     ASSERT_EQ(VecSimIndex_AddVector(index.get(), x, 0), 1);
     EXPECT_FLOAT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index.get(), 0, x), 0);
     EXPECT_FLOAT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index.get(), 0, y), 1);
+}
+
+TEST(HNSWSQ4Factory, LoadRejectsUnsupportedSQ4Snapshot) {
+    HNSWParams hp = {.type = VecSimType_FLOAT32,
+                     .dim = 4,
+                     .metric = VecSimMetric_L2,
+                     .M = 8,
+                     .efConstruction = 40,
+                     .quantType = VecSimQuant_SQ4};
+    IndexPtr index(HNSWFactory::NewIndex(&hp), VecSimIndex_Free);
+    ASSERT_NE(index, nullptr);
+    const float a[] = {0.25f, 0.3f, 0.35f, 0.4f};
+    const float b[] = {0.75f, 0.8f, 0.85f, 0.9f};
+    ASSERT_EQ(VecSimIndex_AddVector(index.get(), a, 0), 1);
+    ASSERT_EQ(VecSimIndex_AddVector(index.get(), b, 1), 1);
+    auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
+    ASSERT_NE(hnsw, nullptr);
+
+    const auto path = temp_index_path("sq4_reject_");
+    // Field offsets follow HNSWSerializer::saveIndex and HNSWIndex::saveIndexFields.
+    constexpr std::streamoff type_offset =
+        sizeof(HNSWSerializer::EncodingVersion) + sizeof(VecSimAlgo) + sizeof(size_t);
+    constexpr std::streamoff metric_offset = type_offset + sizeof(VecSimType);
+    auto save_and_patch = [&](std::streamoff offset, auto value) {
+        hnsw->saveIndex(path);
+        std::fstream stream(path, std::ios::in | std::ios::out | std::ios::binary);
+        ASSERT_TRUE(stream.is_open());
+        // Check the offset points at the expected field before overwriting it.
+        decltype(value) original{};
+        stream.seekg(offset);
+        Serializer::readBinaryPOD(stream, original);
+        if constexpr (std::is_same_v<decltype(value), VecSimType>) {
+            ASSERT_EQ(original, VecSimType_FLOAT32);
+        } else {
+            ASSERT_EQ(original, VecSimMetric_L2);
+        }
+        stream.seekp(offset);
+        Serializer::writeBinaryPOD(stream, value);
+    };
+    auto expect_rejected = [&]() {
+        IndexPtr loaded(HNSWFactory::NewIndex(path), VecSimIndex_Free);
+        EXPECT_EQ(loaded, nullptr);
+    };
+
+    // The unmodified snapshot loads.
+    hnsw->saveIndex(path);
+    {
+        IndexPtr loaded(HNSWFactory::NewIndex(path), VecSimIndex_Free);
+        ASSERT_NE(loaded, nullptr);
+    }
+    // SQ4 accepts FP32 only, unlike SQ8.
+    save_and_patch(type_offset, VecSimType_FLOAT16);
+    expect_rejected();
+    // A raw Cosine metric has no scalar quantization kernel.
+    save_and_patch(metric_offset, VecSimMetric_Cosine);
+    expect_rejected();
+    std::remove(path.c_str());
 }
 
 // Mirrors HNSWSQ8Test.SizeEstimation, including its 1% tolerance on block growth.

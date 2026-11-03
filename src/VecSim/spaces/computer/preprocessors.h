@@ -144,8 +144,8 @@ private:
 
 /*
  * QuantPreprocessor is a preprocessor that quantizes storage vectors from DataType to a
- * lower precision representation defined by StorageType (SQ8, the current storage type,
- * stores one uint8_t code per coordinate).
+ * lower precision representation (SQ8 stores one uint8_t code per coordinate, SQ4 packs
+ * two 4-bit codes per byte).
  * Query vectors remain as DataType for asymmetric distance computation.
  *
  * The quantized storage blob contains the quantized values along with metadata (min value,
@@ -525,9 +525,9 @@ public:
     /**
      * Preprocesses the original blob into separate storage and query blobs.
      *
-     * Storage vectors are quantized to StorageType scalar codes (SQ8: one uint8_t per
-     * coordinate), with metadata (min, delta, sum, and sum_squares for L2) appended for
-     * distance reconstruction.
+     * Storage vectors are quantized to scalar codes (SQ8: one uint8_t per coordinate, SQ4: two
+     * 4-bit codes packed per byte), with metadata (min, delta, sum, and
+     * sum_squares for L2) appended for distance reconstruction.
      *
      * Query vectors use QueryType for asymmetric distance computation, with a precomputed
      * sum (for IP/Cosine) or sum of squares (for L2) appended for efficient distance calculation.
