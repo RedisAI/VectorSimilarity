@@ -873,9 +873,9 @@ public:
         auto svs_index = GetSVSIndex();
         size_t update_threshold = 0;
         size_t frontend_index_size = 0;
-        const bool new_label = label >= addedLabelsBound.load();
-        if (label != std::numeric_limits<labelType>::max()) {
-            labelType bound = addedLabelsBound.load();
+        labelType bound = addedLabelsBound.load();
+        const bool new_label = label != std::numeric_limits<labelType>::max() && label >= bound;
+        if (new_label) {
             while (bound <= label && !addedLabelsBound.compare_exchange_weak(bound, label + 1)) {
             }
         }
@@ -964,12 +964,18 @@ public:
         }
         {
             // If main index is empty then update_threshold is trainingTriggerThreshold,
-            // overwise it is updateTriggerThreshold. Do not wait for an update job: one holding
-            // mainIndexGuard exclusively is building or extending the backend, so it is not empty.
+            // overwise it is updateTriggerThreshold. Do not wait for an update job that holds
+            // mainIndexGuard: then use the larger threshold, which can only delay scheduling
+            // (the next add retries), never start training on too few vectors.
             std::shared_lock lock(this->mainIndexGuard, std::try_to_lock);
-            update_threshold = lock.owns_lock() && this->backendIndex->indexSize() == 0
-                                   ? this->trainingTriggerThreshold
-                                   : this->updateTriggerThreshold;
+            if (!lock.owns_lock()) {
+                update_threshold =
+                    std::max(this->trainingTriggerThreshold, this->updateTriggerThreshold);
+            } else {
+                update_threshold = this->backendIndex->indexSize() == 0
+                                       ? this->trainingTriggerThreshold
+                                       : this->updateTriggerThreshold;
+            }
         }
         if (frontend_index_size >= update_threshold) {
             scheduleSVSIndexUpdate();

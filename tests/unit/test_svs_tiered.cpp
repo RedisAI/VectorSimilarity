@@ -5069,7 +5069,7 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobShrinkDuringDrain) {
 
 TYPED_TEST(SVSTieredIndexTestBasic, addVectorNewLabelDoesNotWaitForUpdateJob) {
     // An update job holds mainIndexGuard exclusively while it inserts into the backend. Adding a
-    // label above every label added so far must not wait for it, and must still schedule a job.
+    // label above every label added so far must not wait for it.
     const size_t dim = 4;
     const size_t training_threshold = 8;
     const size_t update_threshold = 4;
@@ -5101,11 +5101,56 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorNewLabelDoesNotWaitForUpdateJob) {
     adds.wait();
     ASSERT_TRUE(done) << "adding new labels waited for mainIndexGuard";
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), update_threshold);
+
+    // Once the lock is free, the next add schedules the update job.
+    GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, training_threshold + update_threshold,
+                                      training_threshold + update_threshold);
     ASSERT_GT(mock_thread_pool.jobQ.size(), 0) << "reaching the update threshold scheduled no job";
 
     mock_thread_pool.init_threads();
     mock_thread_pool.thread_pool_join();
-    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + update_threshold);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(),
+              training_threshold + update_threshold + 1);
+}
+
+TYPED_TEST(SVSTieredIndexTestBasic, addVectorWithBusyGuardDoesNotTrainEarly) {
+    // While mainIndexGuard is held (e.g. by GC) and the backend is still empty, reaching the update
+    // threshold must not schedule the initialization; the training threshold still does.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t update_threshold = 4;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                    training_threshold, update_threshold);
+    ASSERT_INDEX(tiered_index);
+
+    // The adds run on another thread: the lock owner must not also try to lock it.
+    size_t queued_below_training = 0;
+    size_t queued_at_training = 0;
+    std::unique_lock gc_lock(tiered_index->getMainIndexGuard());
+    auto adds = std::async(std::launch::async, [&]() {
+        for (size_t i = 0; i < training_threshold - 1; i++) {
+            GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+        }
+        queued_below_training = mock_thread_pool.jobQ.size();
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, training_threshold - 1,
+                                          training_threshold - 1);
+        queued_at_training = mock_thread_pool.jobQ.size();
+    });
+    const bool done = adds.wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+    gc_lock.unlock();
+    adds.wait();
+    ASSERT_TRUE(done) << "adding vectors waited for mainIndexGuard";
+    ASSERT_EQ(queued_below_training, 0) << "initialization scheduled below the training threshold";
+    ASSERT_GT(queued_at_training, 0) << "reaching the training threshold scheduled no job";
+
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
 }
 
 TYPED_TEST(SVSTieredIndexTestBasic, addVectorExistingLabelStillOverwritesBackend) {
