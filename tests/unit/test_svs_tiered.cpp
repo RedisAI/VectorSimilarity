@@ -5239,6 +5239,49 @@ TYPED_TEST(SVSTieredIndexTestBasic, addVectorOverwritesLabelOfWrappedBackend) {
     ASSERT_EQ(tiered_index->indexLabelCount(), n);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, gcSchedulesUpdateForWritesMadeDuringGC) {
+    // Writes made while GC holds mainIndexGuard do not schedule an update job. GC must schedule it
+    // once it releases the guard, even if no more writes arrive.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t update_threshold = 4;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(svs_params, mock_thread_pool,
+                                                    training_threshold, update_threshold);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+
+    std::atomic_bool wrote{false};
+    tiered_index->registerTracingCallback("GCJob::before_run_gc", [&]() {
+        // GC holds mainIndexGuard here; write one update batch from another thread.
+        std::async(std::launch::async, [&]() {
+            for (size_t i = 0; i < update_threshold; i++) {
+                const size_t label = training_threshold + i;
+                GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, label);
+            }
+        }).wait();
+        wrote = true;
+    });
+    tiered_index->scheduleSVSIndexGC();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(wrote);
+    EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0)
+        << "writes during GC were left buffered";
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + update_threshold);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, addVectorExistingLabelStillOverwritesBackend) {
     // Re-adding a label that is in the backend still takes mainIndexGuard to delete the old vector.
     const size_t dim = 4;

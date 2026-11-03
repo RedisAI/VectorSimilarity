@@ -628,22 +628,28 @@ private:
         auto index = static_cast<TieredSVSIndex<DataType> *>(idx);
         assert(index);
 
-        std::lock_guard lock{index->mainIndexGuard};
-        // Release the scheduled flag to allow scheduling again
-        index->indexGCScheduled.clear();
+        {
+            std::lock_guard lock{index->mainIndexGuard};
+            // Release the scheduled flag to allow scheduling again
+            index->indexGCScheduled.clear();
 
-        // Do SVS index GC
-        index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
-                                 "running asynchronous GC for tiered SVS index");
-        auto svs_index = index->GetSVSIndex();
-        if (index->backendIndex->indexSize() == 0) {
+            // Do SVS index GC
+            index->backendIndex->log(VecSimCommonStrings::LOG_VERBOSE_STRING,
+                                     "running asynchronous GC for tiered SVS index");
+            auto svs_index = index->GetSVSIndex();
             // No need to run GC on an empty index.
-            return;
+            if (index->backendIndex->indexSize() != 0) {
+                index->executeTracingCallback("GCJob::before_run_gc");
+                svs_index->setParallelism(
+                    std::min(availableThreads, index->backendIndex->indexSize()));
+                // VecSimIndexAbstract::runGC() is protected
+                static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+            }
         }
-        index->executeTracingCallback("GCJob::before_run_gc");
-        svs_index->setParallelism(std::min(availableThreads, index->backendIndex->indexSize()));
-        // VecSimIndexAbstract::runGC() is protected
-        static_cast<VecSimIndexInterface *>(index->backendIndex)->runGC();
+        // Move the writes made while GC held mainIndexGuard.
+        if (index->frontendNeedsUpdate()) {
+            index->scheduleSVSIndexUpdate();
+        }
     }
 
 #ifdef BUILD_TESTS
@@ -831,9 +837,18 @@ private:
         if (truncated) {
             return true;
         }
-        // Writes that arrived while this job held mainIndexGuard did not schedule a job (addVector
-        // does not wait for a busy guard), so continue with them if they reach the threshold. The
-        // guards are read one at a time, never nested.
+        return frontendNeedsUpdate();
+    }
+
+    /**
+     * @brief Whether the frontend index holds enough vectors to schedule an update job.
+     *
+     * Writes made while mainIndexGuard is held exclusively (by an update job or by GC) do not
+     * schedule a job, since addVector does not wait for a busy guard. Holders call this after
+     * releasing the guard, so those writes are moved even if no more writes arrive. The guards
+     * are read one at a time, never nested.
+     */
+    bool frontendNeedsUpdate() const {
         const size_t threshold = [&] {
             std::shared_lock main_lock(this->mainIndexGuard);
             return this->backendIndex->indexSize() == 0 ? this->trainingTriggerThreshold
