@@ -82,7 +82,6 @@ float SQ4_SQ4_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t 
     float32x4_t sum3 = vdupq_n_f32(0.0f);
     const size_t complete = dimension - residual;
     size_t i = 0;
-    // One 8-byte load per operand covers 16 coordinates.
     const uint8x16_t widen0 = SQ4_NEON_WidenIndex(0), widen1 = SQ4_NEON_WidenIndex(4);
     const uint32x4_t low_mask = vdupq_n_u32(15);
     for (; i < complete; i += 16) {

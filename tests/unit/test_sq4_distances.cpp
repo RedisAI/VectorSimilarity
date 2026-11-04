@@ -26,6 +26,7 @@
 #include <limits>
 #include <random>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #ifdef __linux__
@@ -1077,14 +1078,21 @@ TEST(SQ4SIMD, SQ4L2ToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(V
 // offset up to 2^20 (float spacing 1/8 there) and residuals that are multiples of 1/32, any form
 // that rounds at the scale of the offset (reconstructing each coordinate first, or the
 // ||x||^2 + ||y||^2 - 2 * IP identity) loses them; subtracting the offsets first is exact here.
+// The last pair has unequal offsets (difference 1/2, exact by Sterbenz), so the offset difference
+// itself enters every coordinate's residual.
 TEST(SQ4SIMD, SQ4L2LargeCommonOffset) {
     const auto tiers = sq4SQ4Tiers();
     if (tiers.empty()) {
         GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
     }
     const float delta = 0.03125f;
-    for (float offset : {1024.0f, 32768.0f, 1048576.0f}) {
+    const std::pair<float, float> offsets[] = {{1024.0f, 1024.0f},
+                                               {32768.0f, 32768.0f},
+                                               {1048576.0f, 1048576.0f},
+                                               {1048576.0f, 1048575.5f}};
+    for (const auto &[offset, y_offset] : offsets) {
         SCOPED_TRACE(offset);
+        SCOPED_TRACE(y_offset);
         for (size_t dim : {3u, 16u, 17u, 31u, 32u, 45u, 64u, 129u, 768u, 769u}) {
             SCOPED_TRACE(dim);
             std::vector<uint8_t> x_codes(dim), y_codes(dim);
@@ -1093,9 +1101,10 @@ TEST(SQ4SIMD, SQ4L2LargeCommonOffset) {
             for (size_t i = 0; i < dim; ++i) {
                 x_codes[i] = (i * 7) % 16;
                 y_codes[i] = (i * 3 + 5) % 16;
-                const double residual = double(delta) * x_codes[i] - double(delta) * y_codes[i];
+                const double residual = (double(offset) - y_offset) +
+                                        (double(delta) * x_codes[i] - double(delta) * y_codes[i]);
                 expected += residual * residual;
-                const float diff = (offset + delta * x_codes[i]) - (offset + delta * y_codes[i]);
+                const float diff = (offset + delta * x_codes[i]) - (y_offset + delta * y_codes[i]);
                 reconstructed_first += diff * diff;
             }
             const double tolerance = 1e-5 * expected;
@@ -1104,7 +1113,7 @@ TEST(SQ4SIMD, SQ4L2LargeCommonOffset) {
                 ASSERT_GT(std::abs(reconstructed_first - expected), tolerance);
             }
             OffsetVector x(VecSimMetric_L2, x_codes, offset, delta, 1);
-            OffsetVector y(VecSimMetric_L2, y_codes, offset, delta, 3);
+            OffsetVector y(VecSimMetric_L2, y_codes, y_offset, delta, 3);
             EXPECT_NEAR(SQ4_SQ4_L2Sqr(x.data(), y.data(), dim), expected, tolerance);
             for (const auto &tier : tiers) {
                 SCOPED_TRACE(tier.name);
