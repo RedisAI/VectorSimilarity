@@ -4067,6 +4067,62 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobDrainsInBatches) {
     ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobDrainsInPlaceAfterModeSwitch) {
+    // If writes switch to in-place while a job drains the frontend, no further job may be
+    // submitted, so the running job must move the remaining batches itself.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+    const size_t n = 10; // Vectors added after the backend index is initialized.
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // A high update threshold keeps addVector from scheduling; the test schedules explicitly.
+    TieredIndexParams tiered_params =
+        this->CreateTieredSVSParams(svs_params, mock_thread_pool, training_threshold, 1000);
+    // Count submissions, since the mock pool runs every submitted job before join returns.
+    static std::atomic<size_t> submissions;
+    tiered_params.submitCb = [](void *job_queue, void *index_ctx, AsyncJob **jobs, JobCallback *CBs,
+                                size_t len) {
+        submissions++;
+        return tieredIndexMock::submit_callback(job_queue, index_ctx, jobs, CBs, len);
+    };
+    auto *tiered_index = this->CreateTieredSVSIndex(tiered_params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+
+    // Initialize the backend index.
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+
+    tiered_index->setUpdateJobMaxBatch(batch);
+    for (size_t i = training_threshold; i < training_threshold + n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    submissions = 0;
+
+    // Switch to in-place writes while the first batch is being moved.
+    std::vector<size_t> frontend_sizes;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        frontend_sizes.push_back(tiered_index->GetFlatIndex()->indexSize());
+        VecSim_SetWriteMode(VecSim_WriteInPlace);
+    });
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+
+    ASSERT_EQ(frontend_sizes, (std::vector<size_t>{10, 6, 2}));
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold + n);
+    ASSERT_EQ(submissions, 1) << "a job was submitted in in-place mode";
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobInitTrainsOnThreshold) {
     const size_t dim = 4;
     const size_t training_threshold = 8;

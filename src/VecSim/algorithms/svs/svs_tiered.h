@@ -572,25 +572,31 @@ private:
 
     /**
      * @brief Run one update job that moves at most maxBatch vectors, and schedule the next job if
-     * this one left vectors behind.
+     * this one left vectors behind. In in-place mode no job may be submitted, so the job moves the
+     * remaining vectors itself, one batch at a time.
      */
     void runUpdateJob(size_t availableThreads, size_t maxBatch) {
-        bool submit_next;
-        {
-            // prevent parallel updates
-            std::lock_guard<std::mutex> lock(updateJobMutex);
-            // Release the scheduled flag to allow scheduling again
+        // prevent parallel updates
+        std::unique_lock<std::mutex> lock(updateJobMutex);
+        // Release the scheduled flag to allow scheduling again
+        indexUpdateScheduled.clear();
+        while (updateSVSIndex(availableThreads, maxBatch)) {
+            // Vectors were left behind: claim the next job while still holding updateJobMutex, so
+            // background indexing never reads as done in between.
+            if (indexUpdateScheduled.test_and_set()) {
+                return; // Another job is already scheduled and moves the rest.
+            }
+            if (this->getWriteMode() == VecSim_WriteAsync) {
+                // Submitted after releasing updateJobMutex, which the next job takes.
+                lock.unlock();
+                submitSVSIndexUpdateJobs();
+                return;
+            }
+            // In-place writes: no job may be submitted, so move the next batch here, keeping the
+            // claim. Release updateJobMutex between batches to let in-place writes take it.
+            lock.unlock();
+            lock.lock();
             indexUpdateScheduled.clear();
-            // Update the SVS index. If vectors were left behind, claim the next job while still
-            // holding updateJobMutex, so background indexing never reads as done in between.
-            // Only in async mode: no jobs may be submitted once writes are in-place.
-            submit_next = updateSVSIndex(availableThreads, maxBatch) &&
-                          this->getWriteMode() == VecSim_WriteAsync &&
-                          !indexUpdateScheduled.test_and_set();
-        }
-        // Submitted after releasing updateJobMutex, which the next job takes.
-        if (submit_next) {
-            submitSVSIndexUpdateJobs();
         }
     }
 
