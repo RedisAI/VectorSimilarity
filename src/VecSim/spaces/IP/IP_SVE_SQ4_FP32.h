@@ -29,17 +29,6 @@ namespace {
  * odd i, followed by unaligned FP32 metadata. The query blob carries y_sum after its dim floats.
  */
 
-// Widen packed bytes into the u32 lanes selected by packed_pg. Interleaving their low and high
-// nibbles gives one FP32 vector in coordinate order. The byte predicate keeps every load inside
-// the code bytes, including a final odd coordinate.
-static inline svfloat32_t SQ4_SVE_Unpack(const uint8_t *data, svbool_t packed_pg) {
-    const svbool_t pg = svptrue_b32();
-    const svuint32_t packed = svld1ub_u32(packed_pg, data);
-    const svuint32_t low = svand_n_u32_x(pg, packed, 15);
-    const svuint32_t high = svlsr_n_u32_x(pg, packed, 4);
-    return svcvt_f32_u32_x(pg, svzip1_u32(low, high));
-}
-
 // Coordinates per step: one u32 lane per packed byte, two coordinates per lane.
 static inline size_t SQ4_FP32_SVE_CoordinatesPerStep() { return 2 * svcntw(); }
 
