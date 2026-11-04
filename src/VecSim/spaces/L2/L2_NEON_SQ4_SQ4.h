@@ -9,7 +9,8 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP/IP_NEON_SQ4_FP32.h" // SQ4_NEON_WidenIndex
-#include "VecSim/spaces/IP/IP_NEON_SQ4_SQ4.h"  // SQ4TailNibbleMask
+// SQ4TailNibbleMask, SQ4_SQ4_InnerProductSIMD16_NEON_IMP
+#include "VecSim/spaces/IP/IP_NEON_SQ4_SQ4.h"
 #include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
 #include <arm_neon.h>
@@ -116,6 +117,28 @@ float SQ4_SQ4_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t 
         }
     }
     return vaddvq_f32(vaddq_f32(vaddq_f32(sum0, sum1), vaddq_f32(sum2, sum3)));
+}
+
+/*
+ * Symmetric SQ4-SQ4 L2 squared distance with the same identity as SQ8-SQ8, for centered indexes:
+ *
+ *   ||x - y||^2 = ||x||^2 + ||y||^2 - 2 * IP(x, y)
+ *
+ * where ||x||^2 and ||y||^2 are the stored SUM_SQUARES metadata and IP(x, y) comes from the
+ * integer code dot of the inner product kernel. It rounds at the scale of the norms, so the index
+ * factory uses it only when the stored vectors are centered (a mean is set); plain indexes keep the
+ * per-element reconstruction above. Exact-dim bound and dispatch as the inner product kernel.
+ */
+template <unsigned char residual> // 0..15
+float SQ4_SQ4_L2SqrIdentitySIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    using vecsim_types::sq4;
+    const float ip = SQ4_SQ4_InnerProductSIMD16_NEON_IMP<residual>(pVect1v, pVect2v, dimension);
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const uint8_t *>(pVect2v);
+    const size_t data_bytes = sq4::data_bytes_count(dimension);
+    const float sum_sq_x = load_unaligned<float>(x + data_bytes + sq4::SUM_SQUARES * sizeof(float));
+    const float sum_sq_y = load_unaligned<float>(y + data_bytes + sq4::SUM_SQUARES * sizeof(float));
+    return sum_sq_x + sum_sq_y - 2.0f * ip;
 }
 
 } // namespace

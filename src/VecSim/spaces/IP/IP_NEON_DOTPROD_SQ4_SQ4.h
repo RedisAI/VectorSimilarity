@@ -19,9 +19,10 @@ namespace {
  * no lane reordering because both operands share the packing. The uint32 lanes are exact up to
  * spaces::SQ4_MAX_EXACT_SIMD_DIM, which the dispatcher enforces.
  */
+// Returns the raw inner product (not the distance); the L2 identity kernels share it.
 template <unsigned char residual> // 0..31
-float SQ4_SQ4_InnerProductSIMD32_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
-                                              size_t dimension) {
+float SQ4_SQ4_InnerProductSIMD32_NEON_DOTPROD_IMP(const void *pVect1v, const void *pVect2v,
+                                                  size_t dimension) {
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const uint8_t *>(pVect2v);
     const uint8x16_t nibble = vdupq_n_u8(15);
@@ -55,7 +56,14 @@ float SQ4_SQ4_InnerProductSIMD32_NEON_DOTPROD(const void *pVect1v, const void *p
         tail = vdot_u32(tail, x_high, vshr_n_u8(yb, 4));
     }
     const uint32_t code_dot = vaddvq_u32(vaddq_u32(sum0, sum1)) + vaddv_u32(tail);
-    return 1.0f - SQ4_SQ4_StoredIP(x, y, dimension, static_cast<float>(code_dot));
+    return SQ4_SQ4_StoredIP(x, y, dimension, static_cast<float>(code_dot));
+}
+
+template <unsigned char residual> // 0..31
+float SQ4_SQ4_InnerProductSIMD32_NEON_DOTPROD(const void *pVect1v, const void *pVect2v,
+                                              size_t dimension) {
+    return 1.0f -
+           SQ4_SQ4_InnerProductSIMD32_NEON_DOTPROD_IMP<residual>(pVect1v, pVect2v, dimension);
 }
 
 } // namespace

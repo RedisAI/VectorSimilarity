@@ -150,6 +150,13 @@ dist_func_t<float> Choose_SQ4_SQ4_L2_implementation_SVE2(size_t dim) {
     return ret_dist_func;
 }
 
+dist_func_t<float> Choose_SQ4_SQ4_L2_Identity_implementation_SVE2(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ4_SQ4_L2SqrIdentitySIMD_SVE, dim,
+                              SQ4_SQ4_SVE_CoordinatesPerVector);
+    return ret_dist_func;
+}
+
 dist_func_t<float> Choose_SQ8_FP16_IP_implementation_SVE2(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_SVE_IMPLEMENTATION(ret_dist_func, SQ8_FP16_InnerProductSIMD_SVE2, dim, svcnth);

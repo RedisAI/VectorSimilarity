@@ -124,6 +124,53 @@ dist_func_t<float> L2_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
+// SQ4-SQ4 by the stored-sum identity, which the index factory picks for centered L2 indexes. The
+// kernels share the inner product's integer code dot, so the tiers, dispatch minimums and exact-dim
+// bound are those of IP_SQ4_SQ4_GetDistFunc. No alignment requirement on any tier.
+dist_func_t<float> L2_SQ4_SQ4_Identity_GetDistFunc(size_t dim, unsigned char *alignment,
+                                                   const void *arch_opt) {
+    if (alignment) {
+        *alignment = 0;
+    }
+    dist_func_t<float> ret_dist_func = SQ4_SQ4_L2Sqr_Identity;
+    // Above this dimension the SIMD kernels' uint32 code dot could wrap. See spaces.h.
+    if (dim > spaces::SQ4_MAX_EXACT_SIMD_DIM) {
+        return ret_dist_func;
+    }
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ4_SQ4_L2_Identity_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ4_SQ4_L2_Identity_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_SQ4_SQ4_L2_Identity_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_SQ4_SQ4_L2_Identity_implementation_NEON(dim);
+    }
+#endif
+#endif
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni &&
+        dim >= 64) {
+        return Choose_SQ4_SQ4_L2_Identity_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif
+    return ret_dist_func;
+}
+
 // SQ8-FP32: asymmetric L2 distance between SQ8 storage and FP32 query
 dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {

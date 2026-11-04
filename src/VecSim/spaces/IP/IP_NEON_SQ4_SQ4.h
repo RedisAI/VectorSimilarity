@@ -69,8 +69,10 @@ static inline uint32x4_t SQ4_SQ4_DotStep_NEON(uint32x4_t sum, uint8x8_t x_low, u
     return vpadalq_u16(sum, vmlal_u8(low, x_high, vshr_n_u8(y, 4)));
 }
 
+// Returns the raw inner product (not the distance); the L2 identity kernels share it.
 template <unsigned char residual> // 0..15
-float SQ4_SQ4_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ4_SQ4_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect2v,
+                                          size_t dimension) {
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const uint8_t *>(pVect2v);
     const uint8x8_t nibble = vdup_n_u8(15);
@@ -108,7 +110,12 @@ float SQ4_SQ4_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, 
         sum1 = SQ4_SQ4_DotStep_NEON(sum1, x_low, x_high, vld1_u8(y + i / 2));
     }
     const uint32_t code_dot = vaddvq_u32(vaddq_u32(sum0, sum1));
-    return 1.0f - SQ4_SQ4_StoredIP(x, y, dimension, static_cast<float>(code_dot));
+    return SQ4_SQ4_StoredIP(x, y, dimension, static_cast<float>(code_dot));
+}
+
+template <unsigned char residual> // 0..15
+float SQ4_SQ4_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ4_SQ4_InnerProductSIMD16_NEON_IMP<residual>(pVect1v, pVect2v, dimension);
 }
 
 } // namespace

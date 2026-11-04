@@ -9,6 +9,7 @@
 #pragma once
 
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/L2_space.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/index_factories/components/preprocessors_factory.h"
@@ -50,7 +51,15 @@ CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator
 
     // Graph construction compares two stored quantized blobs; search compares a stored blob with a
     // QueryType query. Both dispatchers report alignment for the stored operand.
-    auto sym_func = spaces::GetDistFunc<StorageType, float>(Metric, dim, &storage_alignment);
+    spaces::dist_func_t<float> sym_func;
+    if constexpr (std::is_same_v<StorageType, vecsim_types::sq4> && Metric == VecSimMetric_L2 &&
+                  WithMean) {
+        // Centered SQ4 blobs are near zero, so the stored-sum identity (as SQ8) is as accurate as
+        // the per-element reconstruction plain SQ4 L2 needs, and much faster.
+        sym_func = spaces::L2_SQ4_SQ4_Identity_GetDistFunc(dim, &storage_alignment);
+    } else {
+        sym_func = spaces::GetDistFunc<StorageType, float>(Metric, dim, &storage_alignment);
+    }
     auto asym_func =
         spaces::GetDistFunc<StorageType, float, QueryType>(Metric, dim, &asym_storage_alignment);
     storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);

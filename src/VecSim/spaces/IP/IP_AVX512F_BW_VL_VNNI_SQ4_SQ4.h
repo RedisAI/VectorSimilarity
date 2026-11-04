@@ -69,9 +69,10 @@ static inline void SQ4_SQ4_DotStep_AVX512F_BW_VL_VNNI(__m512i &sum_low, __m512i 
                                    _mm512_and_si512(_mm512_srli_epi16(y, 4), nibble));
 }
 
+// Returns the raw inner product (not the distance); the L2 identity kernels share it.
 template <unsigned char residual> // 0..63
-float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
-                                                    size_t dimension) {
+float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI_IMP(const void *pVect1v, const void *pVect2v,
+                                                        size_t dimension) {
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const uint8_t *>(pVect2v);
     __m512i sum_low = _mm512_setzero_si512();
@@ -107,8 +108,14 @@ float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const v
     const __m512i wide = _mm512_add_epi64(_mm512_cvtepu32_epi64(_mm512_castsi512_si256(sum)),
                                           _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(sum, 1)));
     const auto code_dot = static_cast<uint64_t>(_mm512_reduce_add_epi64(wide));
+    return SQ4_SQ4_StoredIP_AVX512F_BW_VL_VNNI(x, y, dimension, static_cast<float>(code_dot));
+}
+
+template <unsigned char residual> // 0..63
+float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pVect2v,
+                                                    size_t dimension) {
     return 1.0f -
-           SQ4_SQ4_StoredIP_AVX512F_BW_VL_VNNI(x, y, dimension, static_cast<float>(code_dot));
+           SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI_IMP<residual>(pVect1v, pVect2v, dimension);
 }
 
 } // namespace

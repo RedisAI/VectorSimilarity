@@ -13,6 +13,8 @@
 // Packed SQ4 storage, compared with FP32 queries or another SQ4 vector.
 float SQ4_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
 float SQ4_SQ4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);
+// SQ4-SQ4 L2 by the stored-sum identity, as SQ8-SQ8. For centered indexes only (see L2.cpp).
+float SQ4_SQ4_L2Sqr_Identity(const void *pVect1v, const void *pVect2v, size_t dimension);
 
 // SQ8-FP32: pVect1v vector of type uint8 (SQ8) and pVect2v vector of type fp32
 float SQ8_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension);

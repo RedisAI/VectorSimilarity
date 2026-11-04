@@ -415,6 +415,22 @@ TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
             EXPECT_EQ(direct, stored);
             EXPECT_EQ(alignment, 0);
         }
+        // The SQ4-SQ4 L2 identity (centered L2 indexes) has the IP tiers and dispatch minimum.
+        unsigned char alignment = 255;
+        [[maybe_unused]] const auto identity =
+            spaces::L2_SQ4_SQ4_Identity_GetDistFunc(dim, &alignment);
+        EXPECT_EQ(alignment, 0);
+#if defined(CPU_FEATURES_ARCH_X86_64)
+        if (dim < 64) {
+            EXPECT_EQ(identity, SQ4_SQ4_L2Sqr_Identity);
+        }
+        auto no_vnni = spaces::getCpuOptimizationFeatures();
+        no_vnni.avx512vnni = 0;
+        EXPECT_EQ(spaces::L2_SQ4_SQ4_Identity_GetDistFunc(dim, nullptr, &no_vnni),
+                  SQ4_SQ4_L2Sqr_Identity);
+#elif !defined(CPU_FEATURES_ARCH_AARCH64)
+        EXPECT_EQ(identity, SQ4_SQ4_L2Sqr_Identity);
+#endif
     }
 }
 
@@ -848,22 +864,32 @@ TEST(SQ4SIMD, ExactBuffersBeforeGuard) {
 // above each, and through their choosers directly. Inner product has a NEON dot product tier; L2 is
 // float work and has none, so at that tier's features L2 dispatches to its NEON kernel. On x86 the
 // one tier is AVX512F_BW_VL_VNNI; with any of its features cleared both metrics are scalar.
+// The L2 identity kernels (centered L2 indexes) reuse the integer code dot, so they have the same
+// tiers and dispatch minimum as IP.
 namespace {
+// Stored-to-stored forms: IP, L2 reconstructed per element (plain L2 indexes), and the L2 identity
+// ||x||^2 + ||y||^2 - 2 * IP(x, y) over the stored metadata (centered L2 indexes).
+enum class SQ4Form { IP, L2, L2Identity };
+
+VecSimMetric metricOf(SQ4Form form) {
+    return form == SQ4Form::IP ? VecSimMetric_IP : VecSimMetric_L2;
+}
+
 struct SQ4Tier {
     const char *name;
     Features features;
     Chooser chooseIP;
     Chooser chooseL2;
-    // The dispatcher hands out this tier's kernels from these dims up.
+    Chooser chooseL2Identity;
+    // The dispatcher hands out this tier's kernels from these dims up (IP and the L2 identity
+    // share the first).
     size_t min_dim_ip;
     size_t min_dim_l2;
 
-    Chooser choose(VecSimMetric metric) const {
-        return metric == VecSimMetric_IP ? chooseIP : chooseL2;
+    Chooser choose(SQ4Form form) const {
+        return form == SQ4Form::IP ? chooseIP : form == SQ4Form::L2 ? chooseL2 : chooseL2Identity;
     }
-    size_t minDim(VecSimMetric metric) const {
-        return metric == VecSimMetric_IP ? min_dim_ip : min_dim_l2;
-    }
+    size_t minDim(SQ4Form form) const { return form == SQ4Form::L2 ? min_dim_l2 : min_dim_ip; }
 };
 
 std::vector<SQ4Tier> sq4SQ4Tiers() {
@@ -873,14 +899,16 @@ std::vector<SQ4Tier> sq4SQ4Tiers() {
 #ifdef OPT_SVE2
     if (features.sve2) {
         tiers.push_back({"SVE2", features, spaces::Choose_SQ4_SQ4_IP_implementation_SVE2,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE2, 0, 0});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE2,
+                         spaces::Choose_SQ4_SQ4_L2_Identity_implementation_SVE2, 0, 0});
     }
 #endif
     features.sve2 = 0;
 #ifdef OPT_SVE
     if (features.sve) {
         tiers.push_back({"SVE", features, spaces::Choose_SQ4_SQ4_IP_implementation_SVE,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE, 0, 0});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE,
+                         spaces::Choose_SQ4_SQ4_L2_Identity_implementation_SVE, 0, 0});
     }
 #endif
     features.sve = 0;
@@ -888,14 +916,16 @@ std::vector<SQ4Tier> sq4SQ4Tiers() {
     if (features.asimddp) {
         tiers.push_back({"NEON_DOTPROD", features,
                          spaces::Choose_SQ4_SQ4_IP_implementation_NEON_DOTPROD,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16, 16});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON,
+                         spaces::Choose_SQ4_SQ4_L2_Identity_implementation_NEON_DOTPROD, 16, 16});
     }
 #endif
     features.asimddp = 0;
 #ifdef OPT_NEON
     if (features.asimd) {
         tiers.push_back({"NEON", features, spaces::Choose_SQ4_SQ4_IP_implementation_NEON,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16, 16});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON,
+                         spaces::Choose_SQ4_SQ4_L2_Identity_implementation_NEON, 16, 16});
     }
 #endif
 #endif
@@ -904,42 +934,65 @@ std::vector<SQ4Tier> sq4SQ4Tiers() {
     if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
         tiers.push_back({"AVX512F_BW_VL_VNNI", features,
                          spaces::Choose_SQ4_SQ4_IP_implementation_AVX512F_BW_VL_VNNI,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI, 64, 16});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI,
+                         spaces::Choose_SQ4_SQ4_L2_Identity_implementation_AVX512F_BW_VL_VNNI, 64,
+                         16});
     }
 #endif
 #endif
     return tiers;
 }
 
-spaces::dist_func_t<float> scalarSQ4(VecSimMetric metric) {
-    return metric == VecSimMetric_IP ? SQ4_SQ4_InnerProduct : SQ4_SQ4_L2Sqr;
+spaces::dist_func_t<float> scalarSQ4(SQ4Form form) {
+    return form == SQ4Form::IP   ? SQ4_SQ4_InnerProduct
+           : form == SQ4Form::L2 ? SQ4_SQ4_L2Sqr
+                                 : SQ4_SQ4_L2Sqr_Identity;
 }
 
-spaces::dist_func_t<float> dispatchSQ4(VecSimMetric metric, size_t dim, unsigned char *alignment,
+spaces::dist_func_t<float> dispatchSQ4(SQ4Form form, size_t dim, unsigned char *alignment,
                                        const Features *features) {
-    return metric == VecSimMetric_IP ? spaces::IP_SQ4_SQ4_GetDistFunc(dim, alignment, features)
-                                     : spaces::L2_SQ4_SQ4_GetDistFunc(dim, alignment, features);
+    switch (form) {
+    case SQ4Form::IP:
+        return spaces::IP_SQ4_SQ4_GetDistFunc(dim, alignment, features);
+    case SQ4Form::L2:
+        return spaces::L2_SQ4_SQ4_GetDistFunc(dim, alignment, features);
+    case SQ4Form::L2Identity:
+        return spaces::L2_SQ4_SQ4_Identity_GetDistFunc(dim, alignment, features);
+    }
+    return nullptr;
+}
+
+// Magnitude of the summed terms of the stored-to-stored IP identity:
+//   |min_x| * sum|y_i| + |min_y| * sum|x_i| + dim * |min_x * min_y| + |dx * dy| * sum(qx * qy)
+double sq4IPMagnitude(const uint8_t *x, const uint8_t *y, size_t dim) {
+    const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
+    const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
+    double abs_x = 0.0, abs_y = 0.0, code_dot = 0.0;
+    for (size_t i = 0; i < dim; ++i) {
+        const double qx = sq4::load_code(x, i), qy = sq4::load_code(y, i);
+        abs_x += std::abs(min_x + dx * qx);
+        abs_y += std::abs(min_y + dy * qy);
+        code_dot += qx * qy;
+    }
+    return std::abs(min_x) * abs_y + std::abs(min_y) * abs_x +
+           double(dim) * std::abs(min_x * min_y) + std::abs(dx * dy) * code_dot;
 }
 
 // SIMD-versus-scalar bound for two stored vectors: 1e-5 of the magnitude of the summed terms.
-//   IP: |min_x| * sum|y_i| + |min_y| * sum|x_i| + dim * |min_x * min_y| + |dx * dy| * sum(qx * qy)
+//   IP: sq4IPMagnitude
 //   L2: sum((|min_x - min_y| + |dx * qx_i| + |dy * qy_i|)^2)
+//   L2 identity: |sum_sq_x| + |sum_sq_y| + 2 * sq4IPMagnitude
 // where x_i = min_x + dx * qx_i and y_i = min_y + dy * qy_i are the reconstructed coordinates.
-double sq4Tolerance(VecSimMetric metric, const uint8_t *x, const uint8_t *y, size_t dim) {
-    const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
-    const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
+double sq4Tolerance(SQ4Form form, const uint8_t *x, const uint8_t *y, size_t dim) {
     double magnitude = 0.0;
-    if (metric == VecSimMetric_IP) {
-        double abs_x = 0.0, abs_y = 0.0, code_dot = 0.0;
-        for (size_t i = 0; i < dim; ++i) {
-            const double qx = sq4::load_code(x, i), qy = sq4::load_code(y, i);
-            abs_x += std::abs(min_x + dx * qx);
-            abs_y += std::abs(min_y + dy * qy);
-            code_dot += qx * qy;
-        }
-        magnitude = std::abs(min_x) * abs_y + std::abs(min_y) * abs_x +
-                    double(dim) * std::abs(min_x * min_y) + std::abs(dx * dy) * code_dot;
+    if (form == SQ4Form::IP) {
+        magnitude = sq4IPMagnitude(x, y, dim);
+    } else if (form == SQ4Form::L2Identity) {
+        magnitude = std::abs(storedMeta(x, dim, sq4::SUM_SQUARES)) +
+                    std::abs(storedMeta(y, dim, sq4::SUM_SQUARES)) + 2 * sq4IPMagnitude(x, y, dim);
     } else {
+        const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
+        const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
         for (size_t i = 0; i < dim; ++i) {
             const double term = std::abs(min_x - min_y) + std::abs(dx * sq4::load_code(x, i)) +
                                 std::abs(dy * sq4::load_code(y, i));
@@ -949,11 +1002,15 @@ double sq4Tolerance(VecSimMetric metric, const uint8_t *x, const uint8_t *y, siz
     return 1e-5 * std::max(1.0, magnitude);
 }
 
-// Double-precision stored-to-stored reference: the IP identity over the stored metadata (what the
-// scalar kernel computes), and L2 over the reconstructed coordinates.
-double sq4Reference(VecSimMetric metric, const uint8_t *x, const uint8_t *y, size_t dim) {
-    if (metric == VecSimMetric_IP) {
+// Double-precision stored-to-stored reference: the IP and L2 identities over the stored metadata
+// (what the scalar kernels compute), and L2 over the reconstructed coordinates.
+double sq4Reference(SQ4Form form, const uint8_t *x, const uint8_t *y, size_t dim) {
+    if (form == SQ4Form::IP) {
         return 1.0 - identityIP(x, y, dim);
+    }
+    if (form == SQ4Form::L2Identity) {
+        return storedMeta(x, dim, sq4::SUM_SQUARES) + storedMeta(y, dim, sq4::SUM_SQUARES) -
+               2 * identityIP(x, y, dim);
     }
     const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
     const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
@@ -968,7 +1025,8 @@ double sq4Reference(VecSimMetric metric, const uint8_t *x, const uint8_t *y, siz
 
 // Per tier: dims 1..130 and 767..769, offsets 0..7 for each operand. Checks the dispatched function
 // and alignment, then the chooser kernel (also below the dispatch minimum) against scalar.
-void sq4MatchesScalar(VecSimMetric metric) {
+void sq4MatchesScalar(SQ4Form form) {
+    const VecSimMetric metric = metricOf(form);
     const auto tiers = sq4SQ4Tiers();
     if (tiers.empty()) {
         GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
@@ -986,9 +1044,9 @@ void sq4MatchesScalar(VecSimMetric metric) {
         for (size_t dim : dims) {
             SCOPED_TRACE(dim);
             unsigned char alignment = 255;
-            const auto dispatched = dispatchSQ4(metric, dim, &alignment, &tier.features);
-            const auto kernel = tier.choose(metric)(dim);
-            EXPECT_EQ(dispatched, dim >= tier.minDim(metric) ? kernel : scalarSQ4(metric));
+            const auto dispatched = dispatchSQ4(form, dim, &alignment, &tier.features);
+            const auto kernel = tier.choose(form)(dim);
+            EXPECT_EQ(dispatched, dim >= tier.minDim(form) ? kernel : scalarSQ4(form));
             EXPECT_EQ(alignment, 0);
             std::vector<uint8_t> x_codes(dim), y_codes(dim);
             for (size_t i = 0; i < dim; ++i) {
@@ -1006,10 +1064,10 @@ void sq4MatchesScalar(VecSimMetric metric) {
                 OffsetVector x(metric, x_codes, min_x, dx, x_offset);
                 for (auto &y : ys) {
                     SCOPED_TRACE(y.offset);
-                    const float scalar = scalarSQ4(metric)(x.data(), y.data(), dim);
+                    const float scalar = scalarSQ4(form)(x.data(), y.data(), dim);
                     const float simd = kernel(x.data(), y.data(), dim);
                     EXPECT_LE(std::abs(double(simd) - scalar),
-                              sq4Tolerance(metric, x.data(), y.data(), dim));
+                              sq4Tolerance(form, x.data(), y.data(), dim));
                 }
             }
         }
@@ -1019,7 +1077,8 @@ void sq4MatchesScalar(VecSimMetric metric) {
 // Negative control for sq4MatchesScalar's bound: a kernel that reads the nibbles in swapped order
 // or the metadata one float late must miss it by more than 100 times. y is x's codes moved by at
 // most one level, so both corruptions change the distance systematically rather than by chance.
-void sq4ToleranceRejectsCorruption(VecSimMetric metric) {
+void sq4ToleranceRejectsCorruption(SQ4Form form) {
+    const VecSimMetric metric = metricOf(form);
     const auto tiers = sq4SQ4Tiers();
     if (tiers.empty()) {
         GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
@@ -1044,9 +1103,9 @@ void sq4ToleranceRejectsCorruption(VecSimMetric metric) {
                         dy = dx * (1.0f + 0.1f * val_dist(rng));
             OffsetVector x(metric, x_codes, min_x, dx, 0);
             OffsetVector y(metric, y_codes, min_y, dy, 0);
-            const auto kernel = tier.choose(metric)(dim);
-            const double tolerance = sq4Tolerance(metric, x.data(), y.data(), dim);
-            const float scalar = scalarSQ4(metric)(x.data(), y.data(), dim);
+            const auto kernel = tier.choose(form)(dim);
+            const double tolerance = sq4Tolerance(form, x.data(), y.data(), dim);
+            const float scalar = scalarSQ4(form)(x.data(), y.data(), dim);
             EXPECT_LE(std::abs(double(kernel(x.data(), y.data(), dim)) - scalar), tolerance);
 
             OffsetVector swapped = x;
@@ -1068,11 +1127,15 @@ void sq4ToleranceRejectsCorruption(VecSimMetric metric) {
 }
 } // namespace
 
-TEST(SQ4SIMD, SQ4IPMatchesScalar) { sq4MatchesScalar(VecSimMetric_IP); }
-TEST(SQ4SIMD, SQ4L2MatchesScalar) { sq4MatchesScalar(VecSimMetric_L2); }
+TEST(SQ4SIMD, SQ4IPMatchesScalar) { sq4MatchesScalar(SQ4Form::IP); }
+TEST(SQ4SIMD, SQ4L2MatchesScalar) { sq4MatchesScalar(SQ4Form::L2); }
+TEST(SQ4SIMD, SQ4L2IdentityMatchesScalar) { sq4MatchesScalar(SQ4Form::L2Identity); }
 
-TEST(SQ4SIMD, SQ4IPToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(VecSimMetric_IP); }
-TEST(SQ4SIMD, SQ4L2ToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(VecSimMetric_L2); }
+TEST(SQ4SIMD, SQ4IPToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(SQ4Form::IP); }
+TEST(SQ4SIMD, SQ4L2ToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(SQ4Form::L2); }
+TEST(SQ4SIMD, SQ4L2IdentityToleranceRejectsCorruption) {
+    sq4ToleranceRejectsCorruption(SQ4Form::L2Identity);
+}
 
 // StoredL2PreservesResidualsAtLargeCommonOffset for every tier and past one chunk: with a common
 // offset up to 2^20 (float spacing 1/8 there) and residuals that are multiples of 1/32, any form
@@ -1143,6 +1206,9 @@ TEST(SQ4_SQ4, DispatchFallsBackAboveExactDim) {
     EXPECT_EQ(alignment, 0);
     EXPECT_EQ((spaces::GetDistFunc<sq4, float>(VecSimMetric_IP, cap + 1, nullptr)),
               SQ4_SQ4_InnerProduct);
+    alignment = 255;
+    EXPECT_EQ(spaces::L2_SQ4_SQ4_Identity_GetDistFunc(cap + 1, &alignment), SQ4_SQ4_L2Sqr_Identity);
+    EXPECT_EQ(alignment, 0);
 
     const auto tiers = sq4SQ4Tiers();
     if (tiers.empty()) {
@@ -1165,6 +1231,20 @@ TEST(SQ4_SQ4, DispatchFallsBackAboveExactDim) {
         EXPECT_EQ(spaces::IP_SQ4_SQ4_GetDistFunc(cap, nullptr, &tier.features), kernel);
         EXPECT_EQ(kernel(blob.data(), blob.data(), cap), expected);
     }
+
+    // The L2 identity shares the code dot: with sum_squares 0 as well, it is -2 * float(225 * cap).
+    blob.resize(sq4::storage_bytes_count<VecSimMetric_L2>(cap), 0);
+    const float expected_l2 = -2.0f * static_cast<float>(uint32_t(max_term * cap));
+    for (const auto &tier : tiers) {
+        SCOPED_TRACE(tier.name);
+        alignment = 255;
+        EXPECT_EQ(spaces::L2_SQ4_SQ4_Identity_GetDistFunc(cap + 1, &alignment, &tier.features),
+                  SQ4_SQ4_L2Sqr_Identity);
+        EXPECT_EQ(alignment, 0);
+        const auto kernel = tier.chooseL2Identity(cap);
+        EXPECT_EQ(spaces::L2_SQ4_SQ4_Identity_GetDistFunc(cap, nullptr, &tier.features), kernel);
+        EXPECT_EQ(kernel(blob.data(), blob.data(), cap), expected_l2);
+    }
 }
 
 #ifdef __linux__
@@ -1181,8 +1261,9 @@ TEST(SQ4SIMD, SQ4ExactBuffersBeforeGuard) {
         dims.push_back(dim);
     }
     dims.insert(dims.end(), {127u, 128u, 129u, 767u, 768u, 769u, 1536u, 65536u});
-    for (auto metric : {VecSimMetric_IP, VecSimMetric_L2}) {
-        SCOPED_TRACE(metric);
+    for (auto form : {SQ4Form::IP, SQ4Form::L2, SQ4Form::L2Identity}) {
+        SCOPED_TRACE(int(form));
+        const VecSimMetric metric = metricOf(form);
         for (size_t dim : dims) {
             SCOPED_TRACE(dim);
             std::vector<uint8_t> x_codes(dim), y_codes(dim);
@@ -1198,11 +1279,11 @@ TEST(SQ4SIMD, SQ4ExactBuffersBeforeGuard) {
             std::memcpy(guarded_x.data(), x.data(), x.size());
             std::memcpy(guarded_y.data(), y.data(), y.size());
             const uint8_t *gx = guarded_x.data(), *gy = guarded_y.data();
-            const double expected = sq4Reference(metric, gx, gy, dim);
-            const double tolerance = sq4Tolerance(metric, gx, gy, dim);
+            const double expected = sq4Reference(form, gx, gy, dim);
+            const double tolerance = sq4Tolerance(form, gx, gy, dim);
             for (const auto &tier : tiers) {
                 SCOPED_TRACE(tier.name);
-                const auto kernel = tier.choose(metric)(dim);
+                const auto kernel = tier.choose(form)(dim);
                 EXPECT_NEAR(kernel(gx, gy, dim), expected, tolerance);
                 EXPECT_NEAR(kernel(gy, gx, dim), expected, tolerance);
             }

@@ -129,6 +129,12 @@ dist_func_t<float> Choose_SQ4_SQ4_L2_implementation_NEON(size_t dim) {
     return ret_dist_func;
 }
 
+dist_func_t<float> Choose_SQ4_SQ4_L2_Identity_implementation_NEON(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ4_SQ4_L2SqrIdentitySIMD16_NEON);
+    return ret_dist_func;
+}
+
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 // Uses 64-element chunking to leverage efficient UINT8_InnerProductImp
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON(size_t dim) {

@@ -29,9 +29,10 @@ float SQ4_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension)
  * Symmetric SQ4-SQ4 L2 squared distance, reconstructed per element:
  *   ||x - y||^2 = sum(((min_x - min_y) + (delta_x * qx_i - delta_y * qy_i))^2)
  *
- * Unlike SQ8, SQ4 does not use the ||x||^2 + ||y||^2 - 2*IP identity here: that rounds at the scale
- * of the norms, and with 16 levels the HNSW graph built from it loses recall on data with a large
- * common offset. Subtracting the offsets first keeps rounding at the scale of the residual.
+ * Unlike SQ8, plain (uncentered) SQ4 indexes do not use the ||x||^2 + ||y||^2 - 2*IP identity: that
+ * rounds at the scale of the norms, and with 16 levels the HNSW graph built from it loses recall on
+ * data with a large common offset. Subtracting the offsets first keeps rounding at the scale of the
+ * residual. Centered indexes use SQ4_SQ4_L2Sqr_Identity below.
  * Uses 4 accumulators for instruction-level parallelism.
  */
 float SQ4_SQ4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
@@ -64,6 +65,17 @@ float SQ4_SQ4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) 
         sum0 += d * d;
     }
     return (sum0 + sum1) + (sum2 + sum3);
+}
+
+/*
+ * Symmetric SQ4-SQ4 L2 squared distance with the same identity as SQ8-SQ8:
+ *   ||x - y||^2 = ||x||^2 + ||y||^2 - 2*IP(x, y)
+ * from the stored SUM_SQUARES metadata and the stored-to-stored inner product. It rounds at the
+ * scale of the norms, so the index factory uses it only for centered indexes (a mean is set), whose
+ * stored vectors are near zero; there it is as accurate as SQ4_SQ4_L2Sqr and much faster.
+ */
+float SQ4_SQ4_L2Sqr_Identity(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return spaces::quantized::Stored_L2Sqr<sq4>(pVect1v, pVect2v, dimension);
 }
 
 /*

@@ -16,6 +16,7 @@
 
 #include "gtest/gtest.h"
 #include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/sq4.h"
 
 namespace {
@@ -297,4 +298,39 @@ TEST(SQ4Components, SQ4ComponentsAreNotSQ8Types) {
     EXPECT_NE((dynamic_cast<DistanceCalculatorWithNorm<float, float, VecSimMetric_IP, sq4> *>(
                   calculator.get())),
               nullptr);
+}
+
+// Centered SQ4 L2 indexes compare stored vectors with the stored-sum identity
+// ||x||^2 + ||y||^2 - 2 * IP(x, y): their blobs describe centered vectors, so the norms stay small.
+// Plain ones reconstruct per element, which keeps small residuals under a large common offset. A
+// pair sharing a 2^14 offset tells the two formulas apart; a zero mean leaves it uncentered.
+TEST(SQ4Components, CenteredL2UsesStoredSumIdentity) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 64;
+    std::vector<float> x(dim), y(dim), zero_mean(dim, 0.0f);
+    for (size_t i = 0; i < dim; ++i) {
+        x[i] = 16384.0f + 0.03125f * ((i * 7) % 16);
+        y[i] = 16384.0f + 0.03125f * ((i * 3 + 5) % 16);
+    }
+    const auto identity_func = spaces::L2_SQ4_SQ4_Identity_GetDistFunc(dim);
+    const auto reconstruction_func = spaces::L2_SQ4_SQ4_GetDistFunc(dim);
+    for (bool centered : {true, false}) {
+        SCOPED_TRACE(centered);
+        auto components = CreateSQ4IndexComponents<float, VecSimMetric_L2>(
+            allocator, dim, centered ? zero_mean.data() : nullptr);
+        std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
+        std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+        const auto dispatch = calculator->getDistanceDispatch(DistanceMode::StoredToStored);
+        EXPECT_EQ(dispatch.stateless_func, centered ? identity_func : reconstruction_func);
+
+        auto x_blob = preprocessors->preprocessForStorage(x.data(), dim * sizeof(float));
+        auto y_blob = preprocessors->preprocessForStorage(y.data(), dim * sizeof(float));
+        const float identity = identity_func(x_blob.get(), y_blob.get(), dim);
+        const float reconstruction = reconstruction_func(x_blob.get(), y_blob.get(), dim);
+        // The pair discriminates: at this offset the identity rounds at the scale of the norms.
+        ASSERT_GT(std::abs(identity - reconstruction), 0.5f * reconstruction);
+        EXPECT_EQ(calculator->calcDistance(x_blob.get(), y_blob.get(), dim),
+                  centered ? identity : reconstruction);
+        EXPECT_EQ(dispatch(x_blob.get(), y_blob.get(), dim), centered ? identity : reconstruction);
+    }
 }

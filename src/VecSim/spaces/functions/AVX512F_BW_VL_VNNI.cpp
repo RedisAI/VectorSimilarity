@@ -102,6 +102,11 @@ dist_func_t<float> Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI(size_t di
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 32, SQ4_SQ4_L2SqrSIMD32_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
+dist_func_t<float> Choose_SQ4_SQ4_L2_Identity_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ4_SQ4_L2SqrIdentitySIMD64_AVX512F_BW_VL_VNNI);
+    return ret_dist_func;
+}
 // SQ8-to-SQ8 distance functions (both vectors are uint8 quantized with precomputed sum)
 dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;

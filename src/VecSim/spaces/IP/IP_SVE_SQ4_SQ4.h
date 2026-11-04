@@ -42,8 +42,9 @@ static inline void InnerProductStepSQ4_SQ4_SVE(const uint8_t *x, const uint8_t *
     sum = svdot_u32(sum, svlsr_n_u8_x(pg, xb, 4), svlsr_n_u8_x(pg, yb, 4));
 }
 
+// Returns the raw inner product (not the distance); the L2 identity kernels share it.
 template <bool partial_chunk, unsigned char additional_steps>
-float SQ4_SQ4_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+float SQ4_SQ4_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
     using vecsim_types::sq4;
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const uint8_t *>(pVect2v);
@@ -100,8 +101,14 @@ float SQ4_SQ4_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, siz
     const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
     const float sum_y = load_unaligned<float>(params_y + sq4::SUM * sizeof(float));
     // Same operation order as the scalar SQ4_SQ4_InnerProduct.
-    return 1.0f - (min_x * sum_y + min_y * sum_x - static_cast<float>(dimension) * min_x * min_y +
-                   delta_x * delta_y * code_dot);
+    return min_x * sum_y + min_y * sum_x - static_cast<float>(dimension) * min_x * min_y +
+           delta_x * delta_y * code_dot;
+}
+
+template <bool partial_chunk, unsigned char additional_steps>
+float SQ4_SQ4_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - SQ4_SQ4_InnerProductSIMD_SVE_IMP<partial_chunk, additional_steps>(
+                      pVect1v, pVect2v, dimension);
 }
 
 } // namespace
