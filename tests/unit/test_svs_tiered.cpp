@@ -1988,6 +1988,44 @@ TYPED_TEST(SVSTieredIndexTest, BatchIteratorSize1) {
     }
 }
 
+// While an update job moves a label, the label is in both indexes, and SVS may score its copy
+// better than the flat buffer does. The iterator must not return the flat copy in a later batch.
+TYPED_TEST(SVSTieredIndexTest, BatchIteratorLabelInBothIndexes) {
+    if (TypeParam::isMulti() || this->isFallbackToSQ()) {
+        GTEST_SKIP();
+    }
+    size_t d = 4;
+    SVSParams svs_params = {
+        .type = TypeParam::get_index_type(), .dim = d, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams params = CreateParams(svs_params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index = this->CreateTieredSVSIndex(params, mock_thread_pool);
+    ASSERT_INDEX(tiered_index);
+
+    auto *svs = tiered_index->GetBackendIndex();
+    auto *flat = tiered_index->GetFlatIndex();
+    GenerateAndAddVector<TEST_DATA_T>(svs, d, 1, 1);
+    GenerateAndAddVector<TEST_DATA_T>(svs, d, 10, 10);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 2, 2);
+    GenerateAndAddVector<TEST_DATA_T>(flat, d, 1, 3);
+
+    TEST_DATA_T query[d];
+    GenerateVector<TEST_DATA_T>(query, d, 0);
+    VecSimBatchIterator *batchIterator = VecSimBatchIterator_New(tiered_index, query, nullptr);
+    std::vector<size_t> labels;
+    while (VecSimBatchIterator_HasNext(batchIterator)) {
+        VecSimQueryReply *res = VecSimBatchIterator_Next(batchIterator, 1, BY_SCORE);
+        auto *it = VecSimQueryReply_GetIterator(res);
+        while (VecSimQueryReply_IteratorHasNext(it)) {
+            labels.push_back(VecSimQueryResult_GetId(VecSimQueryReply_IteratorNext(it)));
+        }
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(res);
+    }
+    VecSimBatchIterator_Free(batchIterator);
+    ASSERT_EQ(labels, (std::vector<size_t>{1, 2, 10}));
+}
+
 TYPED_TEST(SVSTieredIndexTest, BatchIteratorAdvanced) {
     // Scalar quantization accuracy is insufficient for this test.
     if (this->isFallbackToSQ()) {
