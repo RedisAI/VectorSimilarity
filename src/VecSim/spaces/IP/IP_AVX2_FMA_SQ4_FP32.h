@@ -58,32 +58,45 @@ static inline __m256i SQ4_LaneMask_AVX2_FMA() {
     return _mm256_cmpgt_epi32(_mm256_set1_epi32(lanes), _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
 }
 
+// Accumulate Σ(q_i * y_i) for 32 coordinates: one 16-byte load of packed codes.
+static inline void SQ4_FP32_IPStep32_AVX2_FMA(const uint8_t *x, const float *y, __m256 &sum0,
+                                              __m256 &sum1, __m256 &sum2, __m256 &sum3) {
+    __m128i ordered0, ordered1;
+    SQ4_Unpack_AVX2_FMA(_mm_loadu_si128(reinterpret_cast<const __m128i *>(x)), ordered0, ordered1);
+    __m256 codes0, codes1, codes2, codes3;
+    SQ4_ToFloats_AVX2_FMA(ordered0, codes0, codes1);
+    SQ4_ToFloats_AVX2_FMA(ordered1, codes2, codes3);
+    sum0 = _mm256_fmadd_ps(codes0, _mm256_loadu_ps(y), sum0);
+    sum1 = _mm256_fmadd_ps(codes1, _mm256_loadu_ps(y + 8), sum1);
+    sum2 = _mm256_fmadd_ps(codes2, _mm256_loadu_ps(y + 16), sum2);
+    sum3 = _mm256_fmadd_ps(codes3, _mm256_loadu_ps(y + 24), sum3);
+}
+
 template <unsigned char residual> // 0..31
 float SQ4_FP32_InnerProductSIMD32_AVX2_FMA(const void *pVect1v, const void *pVect2v,
                                            size_t dimension) {
     using vecsim_types::sq4;
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const float *>(pVect2v);
-    // Four accumulators break the FMA dependency chain.
-    __m256 sum0 = _mm256_setzero_ps();
-    __m256 sum1 = _mm256_setzero_ps();
-    __m256 sum2 = _mm256_setzero_ps();
-    __m256 sum3 = _mm256_setzero_ps();
+    // Eight accumulators break the FMA dependency chain: two 32-coordinate steps per iteration.
+    __m256 sum0 = _mm256_setzero_ps(), sum1 = _mm256_setzero_ps();
+    __m256 sum2 = _mm256_setzero_ps(), sum3 = _mm256_setzero_ps();
+    __m256 sum4 = _mm256_setzero_ps(), sum5 = _mm256_setzero_ps();
+    __m256 sum6 = _mm256_setzero_ps(), sum7 = _mm256_setzero_ps();
     const size_t complete = dimension - residual;
-    for (size_t i = 0; i < complete; i += 32) {
-        // One 16-byte load covers exactly 32 coordinates.
-        __m128i ordered0, ordered1;
-        SQ4_Unpack_AVX2_FMA(_mm_loadu_si128(reinterpret_cast<const __m128i *>(x + i / 2)), ordered0,
-                            ordered1);
-        __m256 codes0, codes1, codes2, codes3;
-        SQ4_ToFloats_AVX2_FMA(ordered0, codes0, codes1);
-        SQ4_ToFloats_AVX2_FMA(ordered1, codes2, codes3);
-        sum0 = _mm256_fmadd_ps(codes0, _mm256_loadu_ps(y + i), sum0);
-        sum1 = _mm256_fmadd_ps(codes1, _mm256_loadu_ps(y + i + 8), sum1);
-        sum2 = _mm256_fmadd_ps(codes2, _mm256_loadu_ps(y + i + 16), sum2);
-        sum3 = _mm256_fmadd_ps(codes3, _mm256_loadu_ps(y + i + 24), sum3);
+    size_t i = 0;
+    for (; i + 64 <= complete; i += 64) {
+        SQ4_FP32_IPStep32_AVX2_FMA(x + i / 2, y + i, sum0, sum1, sum2, sum3);
+        SQ4_FP32_IPStep32_AVX2_FMA(x + i / 2 + 16, y + i + 32, sum4, sum5, sum6, sum7);
     }
-    size_t i = complete;
+    if (i < complete) {
+        SQ4_FP32_IPStep32_AVX2_FMA(x + i / 2, y + i, sum0, sum1, sum2, sum3);
+    }
+    sum0 = _mm256_add_ps(sum0, sum4);
+    sum1 = _mm256_add_ps(sum1, sum5);
+    sum2 = _mm256_add_ps(sum2, sum6);
+    sum3 = _mm256_add_ps(sum3, sum7);
+    i = complete;
     if constexpr (residual >= 16) {
         // One 8-byte load covers exactly 16 coordinates.
         __m128i ordered, unused;
