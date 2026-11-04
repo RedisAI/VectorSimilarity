@@ -14,7 +14,8 @@
 float SQ4_FP32_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
 float SQ4_SQ4_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
 // Per-element reconstruction of the SQ4-FP32 inner product distance (1 - IP). SQ4_FP32_InnerProduct
-// falls back to it when the matched form is not finite; vectorized SQ4-FP32 kernels can do the same.
+// falls back to it when the matched form is not finite; SIMD SQ4-FP32 kernels can do the same.
+// Returns a distance; callers return it as is (no 1 - x).
 float SQ4_FP32_InnerProductReconstructed(const void *pVect1v, const void *pVect2v,
                                          size_t dimension);
 

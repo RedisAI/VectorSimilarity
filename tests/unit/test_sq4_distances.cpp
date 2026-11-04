@@ -153,7 +153,7 @@ TEST(SQ4Distances, ConstantVectorsAndOddPadding) {
     }
 }
 
-TEST(SQ4Distances, L2PreservesResidualsAtLargeCommonOffset) {
+TEST(SQ4Distances, FP32L2PreservesResidualsAtLargeCommonOffset) {
     PackedVector x({0, 1, 2}, 1048576.0f, 0.03125f);
     PackedVector y({0, 0, 0}, 1048576.0f, 0.0f);
     std::vector<float> query(3 + sq4::query_metadata_count<VecSimMetric_L2>(), 1048576.0f);
@@ -163,6 +163,27 @@ TEST(SQ4Distances, L2PreservesResidualsAtLargeCommonOffset) {
     // Only the FP32-query path accumulates residuals. Stored-to-stored L2 uses the same
     // sum-of-squares identity as SQ8, which rounds at the scale of the norms.
     EXPECT_FLOAT_EQ(SQ4_FP32_L2Sqr(x.data(), query.data(), 3), expected);
+}
+
+// Pins the stored-to-stored L2 identity (sum_sq_x + sum_sq_y - 2 * IP), shared with SQ8, at a large
+// common offset. It rounds at the scale of the norms (offset^2 per coordinate), so the small
+// residual is lost. Observed on aarch64: 0 at offsets 2^10, 2^15 and 2^20, versus the double
+// reconstruction reference 5 * 0.03125^2 = 0.0048828125. The identity has no clamp, so in general
+// it can return a small negative value (a few ulps of the norms); this input happens to give
+// exactly 0. A change in these values must be deliberate.
+TEST(SQ4Distances, StoredL2IdentityAtLargeCommonOffset) {
+    const double residual = 5.0 * 0.03125 * 0.03125; // double reconstruction reference
+    for (float offset : {1024.0f, 32768.0f, 1048576.0f}) {
+        SCOPED_TRACE(offset);
+        PackedVector x({0, 1, 2}, offset, 0.03125f);
+        PackedVector y({0, 0, 0}, offset, 0.0f);
+        const double scale = double(offset) * offset; // magnitude of each per-coordinate square
+        const float actual = SQ4_SQ4_L2Sqr(x.data(), y.data(), 3);
+        EXPECT_TRUE(std::isfinite(actual));
+        EXPECT_GE(actual, -1e-3 * scale);
+        EXPECT_NEAR(actual, residual, 1e-6 * scale);
+        EXPECT_EQ(actual, 0.0f); // observed value: the residual is lost entirely
+    }
 }
 
 TEST(SQ4Distances, RejectsUnsupportedMetric) {
