@@ -26,4 +26,7 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(size_t dim);
 
+// SQ4-to-SQ4 inner product (L2 is float work and has no DOTPROD kernel)
+dist_func_t<float> Choose_SQ4_SQ4_IP_implementation_NEON_DOTPROD(size_t dim);
+
 } // namespace spaces

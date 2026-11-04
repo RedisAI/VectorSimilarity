@@ -25,6 +25,9 @@ dist_func_t<float> L2_UINT8_GetDistFunc(size_t dim, unsigned char *alignment = n
 // SQ4-FP32: packed storage has no alignment requirement, including its metadata.
 dist_func_t<float> L2_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                            const void *arch_opt = nullptr);
+// SQ4-SQ4: packed storage has no alignment requirement, including its metadata.
+dist_func_t<float> L2_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
+                                          const void *arch_opt = nullptr);
 // SQ8-FP32: asymmetric L2 distance between FP32 query and SQ8 storage
 dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                            const void *arch_opt = nullptr);

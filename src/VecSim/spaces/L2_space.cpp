@@ -71,6 +71,35 @@ dist_func_t<float> L2_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
+// SQ4-SQ4: packed storage and unaligned metadata, so no alignment requirement on any tier. The
+// kernels reconstruct per element in floats, so no dimension bound applies.
+dist_func_t<float> L2_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment,
+                                          const void *arch_opt) {
+    if (alignment) {
+        *alignment = 0;
+    }
+    dist_func_t<float> ret_dist_func = SQ4_SQ4_L2Sqr;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ4_SQ4_L2_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ4_SQ4_L2_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_SQ4_SQ4_L2_implementation_NEON(dim);
+    }
+#endif
+#endif
+    return ret_dist_func;
+}
+
 // SQ8-FP32: asymmetric L2 distance between SQ8 storage and FP32 query
 dist_func_t<float> L2_SQ8_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {

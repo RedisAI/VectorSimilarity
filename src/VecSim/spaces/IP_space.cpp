@@ -71,13 +71,42 @@ dist_func_t<float> IP_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
     return ret_dist_func;
 }
 
-// SQ4-SQ4: scalar kernel only, no alignment requirement.
+// SQ4-SQ4: packed storage and unaligned metadata, so no alignment requirement on any tier.
 dist_func_t<float> IP_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment,
                                           const void *arch_opt) {
     if (alignment) {
         *alignment = 0;
     }
-    return SQ4_SQ4_InnerProduct;
+    dist_func_t<float> ret_dist_func = SQ4_SQ4_InnerProduct;
+    // Above this dimension the SIMD kernels' uint32 code dot could wrap, so hand back the scalar
+    // kernel. Decided here, once per index. See spaces.h for how the bound is derived.
+    if (dim > spaces::SQ4_MAX_EXACT_SIMD_DIM) {
+        return ret_dist_func;
+    }
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ4_SQ4_IP_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ4_SQ4_IP_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp && dim >= 16) {
+        return Choose_SQ4_SQ4_IP_implementation_NEON_DOTPROD(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd && dim >= 16) {
+        return Choose_SQ4_SQ4_IP_implementation_NEON(dim);
+    }
+#endif
+#endif
+    return ret_dist_func;
 }
 
 // SQ8-FP32: asymmetric distance between SQ8 storage and FP32 query

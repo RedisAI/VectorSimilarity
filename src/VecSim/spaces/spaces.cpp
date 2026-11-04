@@ -157,7 +157,7 @@ dist_func_t<float> GetDistFunc<vecsim_types::sq4, float>(VecSimMetric metric, si
     case VecSimMetric_IP:
         return IP_SQ4_SQ4_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
-        return SQ4_SQ4_L2Sqr;
+        return L2_SQ4_SQ4_GetDistFunc(dim, alignment);
     default:
         throw std::invalid_argument("SQ4 supports only IP and L2 metrics");
     }

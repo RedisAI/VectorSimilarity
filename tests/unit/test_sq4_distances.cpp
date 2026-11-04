@@ -14,6 +14,7 @@
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/sq4.h"
 #include "VecSim/spaces/functions/NEON.h"
+#include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
 
@@ -371,13 +372,22 @@ TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
             EXPECT_EQ(direct, fp32);
             EXPECT_EQ(alignment, 0);
         }
-        unsigned char alignment = 255;
-        EXPECT_EQ((spaces::GetDistFunc<sq4, float>(VecSimMetric_IP, dim, &alignment)),
-                  SQ4_SQ4_InnerProduct);
-        EXPECT_EQ(alignment, 0);
-        alignment = 255;
-        EXPECT_EQ(spaces::IP_SQ4_SQ4_GetDistFunc(dim, &alignment), SQ4_SQ4_InnerProduct);
-        EXPECT_EQ(alignment, 0);
+        // SQ4-SQ4 has SIMD kernels only on AArch64 (see the SQ4SIMD tests), elsewhere scalar.
+        for (auto metric : {VecSimMetric_IP, VecSimMetric_L2}) {
+            SCOPED_TRACE(metric);
+            unsigned char alignment = 255;
+            const auto stored = spaces::GetDistFunc<sq4, float>(metric, dim, &alignment);
+            EXPECT_EQ(alignment, 0);
+#ifndef CPU_FEATURES_ARCH_AARCH64
+            EXPECT_EQ(stored, metric == VecSimMetric_IP ? SQ4_SQ4_InnerProduct : SQ4_SQ4_L2Sqr);
+#endif
+            alignment = 255;
+            const auto direct = metric == VecSimMetric_IP
+                                    ? spaces::IP_SQ4_SQ4_GetDistFunc(dim, &alignment)
+                                    : spaces::L2_SQ4_SQ4_GetDistFunc(dim, &alignment);
+            EXPECT_EQ(direct, stored);
+            EXPECT_EQ(alignment, 0);
+        }
     }
 }
 
@@ -628,8 +638,10 @@ void fp32MatchesScalar(VecSimMetric metric) {
     }
 }
 
-// Negative control for fp32MatchesScalar's bound: it must reject a kernel that reads the nibbles
-// in swapped order or the metadata one float late.
+// Negative control for fp32MatchesScalar's bound: a kernel that reads the nibbles in swapped order
+// or the metadata one float late must miss it by more than 100 times. The query is the stored
+// vector plus small noise, so swapping the nibbles changes the distance systematically rather than
+// by chance.
 void fp32ToleranceRejectsCorruption(VecSimMetric metric) {
     const auto tiers = sq4FP32Tiers();
     if (tiers.empty()) {
@@ -642,16 +654,16 @@ void fp32ToleranceRejectsCorruption(VecSimMetric metric) {
         SCOPED_TRACE(tier.name);
         for (size_t dim : {16u, 45u, 768u}) {
             SCOPED_TRACE(dim);
+            // A minimum away from zero keeps the stored sum (the late-read delta) away from zero.
+            const float min_val = 0.75f + 0.25f * val_dist(rng);
+            const float delta = (1.5f + 0.5f * val_dist(rng)) / 15;
             std::vector<uint8_t> codes(dim);
             std::vector<float> values(dim);
             for (size_t i = 0; i < dim; ++i) {
                 codes[i] = code_dist(rng);
-                values[i] = val_dist(rng);
+                values[i] = min_val + delta * codes[i] + 0.05f * val_dist(rng);
             }
             const auto query = makeQuery(values);
-            // A minimum away from zero keeps the stored sum (the late-read delta) away from zero.
-            const float min_val = 0.75f + 0.25f * val_dist(rng);
-            const float delta = (1.0f + val_dist(rng)) / 15;
             OffsetVector x(metric, codes, min_val, delta, 0);
             const auto kernel = tier.choose(metric)(dim);
             const double tolerance = fp32Tolerance(metric, x.data(), query.data(), dim);
@@ -664,14 +676,14 @@ void fp32ToleranceRejectsCorruption(VecSimMetric metric) {
                 swapped.data()[b] = uint8_t(byte >> 4) | uint8_t(byte << 4);
             }
             EXPECT_GT(std::abs(double(kernel(swapped.data(), query.data(), dim)) - scalar),
-                      tolerance);
+                      100 * tolerance);
 
             OffsetVector shifted = x;
             uint8_t *metadata = shifted.data() + sq4::data_bytes_count(dim);
             const size_t metadata_bytes = shifted.size() - sq4::data_bytes_count(dim);
             std::memmove(metadata, metadata + sizeof(float), metadata_bytes - sizeof(float));
             EXPECT_GT(std::abs(double(kernel(shifted.data(), query.data(), dim)) - scalar),
-                      tolerance);
+                      100 * tolerance);
         }
     }
 }
@@ -778,6 +790,348 @@ TEST(SQ4SIMD, ExactBuffersBeforeGuard) {
                 SCOPED_TRACE(tier.name);
                 EXPECT_NEAR(tier.choose(metric)(dim)(guarded_x.data(), y, dim), expected,
                             tolerance);
+            }
+        }
+    }
+}
+#endif
+
+// SIMD SQ4-SQ4 tiers, reached through the dispatcher by clearing the feature flags of the tiers
+// above each, and through their choosers directly. Inner product has a NEON dot product tier; L2 is
+// float work and has none, so at that tier's features L2 dispatches to its NEON kernel.
+namespace {
+struct SQ4Tier {
+    const char *name;
+    Features features;
+    Chooser chooseIP;
+    Chooser chooseL2;
+    size_t min_dim; // the dispatcher hands out this tier's kernels from this dim up
+
+    Chooser choose(VecSimMetric metric) const {
+        return metric == VecSimMetric_IP ? chooseIP : chooseL2;
+    }
+};
+
+std::vector<SQ4Tier> sq4SQ4Tiers() {
+    std::vector<SQ4Tier> tiers;
+    [[maybe_unused]] Features features = spaces::getCpuOptimizationFeatures();
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        tiers.push_back({"SVE2", features, spaces::Choose_SQ4_SQ4_IP_implementation_SVE2,
+                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE2, 0});
+    }
+#endif
+    features.sve2 = 0;
+#ifdef OPT_SVE
+    if (features.sve) {
+        tiers.push_back({"SVE", features, spaces::Choose_SQ4_SQ4_IP_implementation_SVE,
+                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE, 0});
+    }
+#endif
+    features.sve = 0;
+#ifdef OPT_NEON_DOTPROD
+    if (features.asimddp) {
+        tiers.push_back({"NEON_DOTPROD", features,
+                         spaces::Choose_SQ4_SQ4_IP_implementation_NEON_DOTPROD,
+                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16});
+    }
+#endif
+    features.asimddp = 0;
+#ifdef OPT_NEON
+    if (features.asimd) {
+        tiers.push_back({"NEON", features, spaces::Choose_SQ4_SQ4_IP_implementation_NEON,
+                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16});
+    }
+#endif
+#endif
+    return tiers;
+}
+
+spaces::dist_func_t<float> scalarSQ4(VecSimMetric metric) {
+    return metric == VecSimMetric_IP ? SQ4_SQ4_InnerProduct : SQ4_SQ4_L2Sqr;
+}
+
+spaces::dist_func_t<float> dispatchSQ4(VecSimMetric metric, size_t dim, unsigned char *alignment,
+                                       const Features *features) {
+    return metric == VecSimMetric_IP ? spaces::IP_SQ4_SQ4_GetDistFunc(dim, alignment, features)
+                                     : spaces::L2_SQ4_SQ4_GetDistFunc(dim, alignment, features);
+}
+
+// SIMD-versus-scalar bound for two stored vectors: 1e-5 of the magnitude of the summed terms.
+//   IP: |min_x| * sum|y_i| + |min_y| * sum|x_i| + dim * |min_x * min_y| + |dx * dy| * sum(qx * qy)
+//   L2: sum((|min_x - min_y| + |dx * qx_i| + |dy * qy_i|)^2)
+// where x_i = min_x + dx * qx_i and y_i = min_y + dy * qy_i are the reconstructed coordinates.
+double sq4Tolerance(VecSimMetric metric, const uint8_t *x, const uint8_t *y, size_t dim) {
+    const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
+    const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
+    double magnitude = 0.0;
+    if (metric == VecSimMetric_IP) {
+        double abs_x = 0.0, abs_y = 0.0, code_dot = 0.0;
+        for (size_t i = 0; i < dim; ++i) {
+            const double qx = sq4::load_code(x, i), qy = sq4::load_code(y, i);
+            abs_x += std::abs(min_x + dx * qx);
+            abs_y += std::abs(min_y + dy * qy);
+            code_dot += qx * qy;
+        }
+        magnitude = std::abs(min_x) * abs_y + std::abs(min_y) * abs_x +
+                    double(dim) * std::abs(min_x * min_y) + std::abs(dx * dy) * code_dot;
+    } else {
+        for (size_t i = 0; i < dim; ++i) {
+            const double term = std::abs(min_x - min_y) + std::abs(dx * sq4::load_code(x, i)) +
+                                std::abs(dy * sq4::load_code(y, i));
+            magnitude += term * term;
+        }
+    }
+    return 1e-5 * std::max(1.0, magnitude);
+}
+
+// Double-precision stored-to-stored reference: the IP identity over the stored metadata (what the
+// scalar kernel computes), and L2 over the reconstructed coordinates.
+double sq4Reference(VecSimMetric metric, const uint8_t *x, const uint8_t *y, size_t dim) {
+    if (metric == VecSimMetric_IP) {
+        return 1.0 - identityIP(x, y, dim);
+    }
+    const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
+    const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
+    double l2 = 0.0;
+    for (size_t i = 0; i < dim; ++i) {
+        const double diff =
+            (min_x + dx * sq4::load_code(x, i)) - (min_y + dy * sq4::load_code(y, i));
+        l2 += diff * diff;
+    }
+    return l2;
+}
+
+// Per tier: dims 1..130 and 767..769, offsets 0..7 for each operand. Checks the dispatched function
+// and alignment, then the chooser kernel (also below the dispatch minimum) against scalar.
+void sq4MatchesScalar(VecSimMetric metric) {
+    const auto tiers = sq4SQ4Tiers();
+    if (tiers.empty()) {
+        GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
+    }
+    std::vector<size_t> dims;
+    for (size_t dim = 1; dim <= 130; ++dim) {
+        dims.push_back(dim);
+    }
+    dims.insert(dims.end(), {767u, 768u, 769u});
+    std::mt19937 rng(0x5144);
+    std::uniform_int_distribution<int> code_dist(0, 15);
+    std::uniform_real_distribution<float> val_dist(-1.0f, 1.0f);
+    for (const auto &tier : tiers) {
+        SCOPED_TRACE(tier.name);
+        for (size_t dim : dims) {
+            SCOPED_TRACE(dim);
+            unsigned char alignment = 255;
+            const auto dispatched = dispatchSQ4(metric, dim, &alignment, &tier.features);
+            const auto kernel = tier.choose(metric)(dim);
+            EXPECT_EQ(dispatched, dim >= tier.min_dim ? kernel : scalarSQ4(metric));
+            EXPECT_EQ(alignment, 0);
+            std::vector<uint8_t> x_codes(dim), y_codes(dim);
+            for (size_t i = 0; i < dim; ++i) {
+                x_codes[i] = code_dist(rng);
+                y_codes[i] = code_dist(rng);
+            }
+            const float min_x = val_dist(rng), dx = (1.0f + val_dist(rng)) / 15;
+            const float min_y = val_dist(rng), dy = (1.0f + val_dist(rng)) / 15;
+            std::vector<OffsetVector> ys;
+            for (size_t offset = 0; offset < 8; ++offset) {
+                ys.emplace_back(metric, y_codes, min_y, dy, offset);
+            }
+            for (size_t x_offset = 0; x_offset < 8; ++x_offset) {
+                SCOPED_TRACE(x_offset);
+                OffsetVector x(metric, x_codes, min_x, dx, x_offset);
+                for (auto &y : ys) {
+                    SCOPED_TRACE(y.offset);
+                    const float scalar = scalarSQ4(metric)(x.data(), y.data(), dim);
+                    const float simd = kernel(x.data(), y.data(), dim);
+                    EXPECT_LE(std::abs(double(simd) - scalar),
+                              sq4Tolerance(metric, x.data(), y.data(), dim));
+                }
+            }
+        }
+    }
+}
+
+// Negative control for sq4MatchesScalar's bound: a kernel that reads the nibbles in swapped order
+// or the metadata one float late must miss it by more than 100 times. y is x's codes moved by at
+// most one level, so both corruptions change the distance systematically rather than by chance.
+void sq4ToleranceRejectsCorruption(VecSimMetric metric) {
+    const auto tiers = sq4SQ4Tiers();
+    if (tiers.empty()) {
+        GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
+    }
+    std::mt19937 rng(0x5145);
+    std::uniform_int_distribution<int> code_dist(0, 15);
+    std::uniform_int_distribution<int> step_dist(-1, 1);
+    std::uniform_real_distribution<float> val_dist(-1.0f, 1.0f);
+    for (const auto &tier : tiers) {
+        SCOPED_TRACE(tier.name);
+        for (size_t dim : {16u, 45u, 768u}) {
+            SCOPED_TRACE(dim);
+            std::vector<uint8_t> x_codes(dim), y_codes(dim);
+            for (size_t i = 0; i < dim; ++i) {
+                x_codes[i] = code_dist(rng);
+                y_codes[i] = std::clamp(x_codes[i] + step_dist(rng), 0, 15);
+            }
+            // Positive minimums keep the stored sum (the late-read delta) away from zero.
+            const float min_x = 0.1f + 0.05f * val_dist(rng),
+                        dx = (1.5f + 0.5f * val_dist(rng)) / 15;
+            const float min_y = 0.1f + 0.05f * val_dist(rng),
+                        dy = dx * (1.0f + 0.1f * val_dist(rng));
+            OffsetVector x(metric, x_codes, min_x, dx, 0);
+            OffsetVector y(metric, y_codes, min_y, dy, 0);
+            const auto kernel = tier.choose(metric)(dim);
+            const double tolerance = sq4Tolerance(metric, x.data(), y.data(), dim);
+            const float scalar = scalarSQ4(metric)(x.data(), y.data(), dim);
+            EXPECT_LE(std::abs(double(kernel(x.data(), y.data(), dim)) - scalar), tolerance);
+
+            OffsetVector swapped = x;
+            for (size_t b = 0; b < sq4::data_bytes_count(dim); ++b) {
+                const uint8_t byte = swapped.data()[b];
+                swapped.data()[b] = uint8_t(byte >> 4) | uint8_t(byte << 4);
+            }
+            EXPECT_GT(std::abs(double(kernel(swapped.data(), y.data(), dim)) - scalar),
+                      100 * tolerance);
+
+            OffsetVector shifted = x;
+            uint8_t *metadata = shifted.data() + sq4::data_bytes_count(dim);
+            const size_t metadata_bytes = shifted.size() - sq4::data_bytes_count(dim);
+            std::memmove(metadata, metadata + sizeof(float), metadata_bytes - sizeof(float));
+            EXPECT_GT(std::abs(double(kernel(shifted.data(), y.data(), dim)) - scalar),
+                      100 * tolerance);
+        }
+    }
+}
+} // namespace
+
+TEST(SQ4SIMD, SQ4IPMatchesScalar) { sq4MatchesScalar(VecSimMetric_IP); }
+TEST(SQ4SIMD, SQ4L2MatchesScalar) { sq4MatchesScalar(VecSimMetric_L2); }
+
+TEST(SQ4SIMD, SQ4IPToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(VecSimMetric_IP); }
+TEST(SQ4SIMD, SQ4L2ToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(VecSimMetric_L2); }
+
+// StoredL2PreservesResidualsAtLargeCommonOffset for every tier and past one chunk: with a common
+// offset up to 2^20 (float spacing 1/8 there) and residuals that are multiples of 1/32, any form
+// that rounds at the scale of the offset (reconstructing each coordinate first, or the
+// ||x||^2 + ||y||^2 - 2 * IP identity) loses them; subtracting the offsets first is exact here.
+TEST(SQ4SIMD, SQ4L2LargeCommonOffset) {
+    const auto tiers = sq4SQ4Tiers();
+    if (tiers.empty()) {
+        GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
+    }
+    const float delta = 0.03125f;
+    for (float offset : {1024.0f, 32768.0f, 1048576.0f}) {
+        SCOPED_TRACE(offset);
+        for (size_t dim : {3u, 16u, 17u, 31u, 32u, 45u, 64u, 129u, 768u, 769u}) {
+            SCOPED_TRACE(dim);
+            std::vector<uint8_t> x_codes(dim), y_codes(dim);
+            double expected = 0.0;
+            float reconstructed_first = 0.0f;
+            for (size_t i = 0; i < dim; ++i) {
+                x_codes[i] = (i * 7) % 16;
+                y_codes[i] = (i * 3 + 5) % 16;
+                const double residual = double(delta) * x_codes[i] - double(delta) * y_codes[i];
+                expected += residual * residual;
+                const float diff = (offset + delta * x_codes[i]) - (offset + delta * y_codes[i]);
+                reconstructed_first += diff * diff;
+            }
+            const double tolerance = 1e-5 * expected;
+            if (offset == 1048576.0f) {
+                // The bound discriminates: reconstructing first misses it.
+                ASSERT_GT(std::abs(reconstructed_first - expected), tolerance);
+            }
+            OffsetVector x(VecSimMetric_L2, x_codes, offset, delta, 1);
+            OffsetVector y(VecSimMetric_L2, y_codes, offset, delta, 3);
+            EXPECT_NEAR(SQ4_SQ4_L2Sqr(x.data(), y.data(), dim), expected, tolerance);
+            for (const auto &tier : tiers) {
+                SCOPED_TRACE(tier.name);
+                EXPECT_NEAR(tier.chooseL2(dim)(x.data(), y.data(), dim), expected, tolerance);
+                EXPECT_NEAR(spaces::L2_SQ4_SQ4_GetDistFunc(dim, nullptr,
+                                                           &tier.features)(x.data(), y.data(), dim),
+                            expected, tolerance);
+            }
+        }
+    }
+}
+
+// The integer code dot is exact while 225 * dim fits a uint32. Above SQ4_MAX_EXACT_SIMD_DIM the
+// dispatcher hands back the scalar kernel on every tier; at it, the SIMD kernels are still handed
+// out and are exact for all-15 codes, whose total is the largest a uint32 holds.
+TEST(SQ4_SQ4, DispatchFallsBackAboveExactDim) {
+    constexpr size_t cap = spaces::SQ4_MAX_EXACT_SIMD_DIM;
+    constexpr uint64_t max_term = 15 * 15;
+    constexpr uint64_t uint32_max = std::numeric_limits<uint32_t>::max();
+    ASSERT_LE(max_term * cap, uint32_max);
+    ASSERT_GT(max_term * (cap + 1), uint32_max);
+
+    unsigned char alignment = 255;
+    EXPECT_EQ(spaces::IP_SQ4_SQ4_GetDistFunc(cap + 1, &alignment), SQ4_SQ4_InnerProduct);
+    EXPECT_EQ(alignment, 0);
+    EXPECT_EQ((spaces::GetDistFunc<sq4, float>(VecSimMetric_IP, cap + 1, nullptr)),
+              SQ4_SQ4_InnerProduct);
+
+    const auto tiers = sq4SQ4Tiers();
+    if (tiers.empty()) {
+        return;
+    }
+    // All codes 15 with min 0, delta 1 and sum 0: the distance is 1 - float(225 * cap).
+    std::vector<uint8_t> blob(sq4::storage_bytes_count<VecSimMetric_IP>(cap), 0);
+    std::memset(blob.data(), 0xff, sq4::data_bytes_count(cap));
+    blob[sq4::data_bytes_count(cap) - 1] = cap % 2 ? 0x0f : 0xff;
+    const float metadata[3] = {0.0f, 1.0f, 0.0f};
+    std::memcpy(blob.data() + sq4::data_bytes_count(cap), metadata, sizeof(metadata));
+    const float expected = 1.0f - static_cast<float>(uint32_t(max_term * cap));
+    for (const auto &tier : tiers) {
+        SCOPED_TRACE(tier.name);
+        alignment = 255;
+        EXPECT_EQ(spaces::IP_SQ4_SQ4_GetDistFunc(cap + 1, &alignment, &tier.features),
+                  SQ4_SQ4_InnerProduct);
+        EXPECT_EQ(alignment, 0);
+        const auto kernel = tier.chooseIP(cap);
+        EXPECT_EQ(spaces::IP_SQ4_SQ4_GetDistFunc(cap, nullptr, &tier.features), kernel);
+        EXPECT_EQ(kernel(blob.data(), blob.data(), cap), expected);
+    }
+}
+
+#ifdef __linux__
+// Both stored operands end exactly at a PROT_NONE page, for both metrics and every tier, with the
+// odd-dim padding nibble set: a kernel that reads past the packed codes plus metadata faults, and
+// one that lets the padding nibble in misses the double reference.
+TEST(SQ4SIMD, SQ4ExactBuffersBeforeGuard) {
+    const auto tiers = sq4SQ4Tiers();
+    if (tiers.empty()) {
+        GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
+    }
+    std::vector<size_t> dims;
+    for (size_t dim = 0; dim < 32; ++dim) {
+        dims.push_back(dim);
+    }
+    dims.insert(dims.end(), {127u, 128u, 129u, 767u, 768u, 769u, 1536u, 65536u});
+    for (auto metric : {VecSimMetric_IP, VecSimMetric_L2}) {
+        SCOPED_TRACE(metric);
+        for (size_t dim : dims) {
+            SCOPED_TRACE(dim);
+            std::vector<uint8_t> x_codes(dim), y_codes(dim);
+            for (size_t i = 0; i < dim; ++i) {
+                x_codes[i] = (i * 7) % 16;
+                y_codes[i] = (i * 5 + 3) % 16;
+            }
+            OffsetVector x(metric, x_codes, -1.25f, 0.125f, 0);
+            OffsetVector y(metric, y_codes, 0.5f, 0.0625f, 0);
+            GuardedBuffer guarded_x(x.size()), guarded_y(y.size());
+            ASSERT_NE(guarded_x.data(), nullptr);
+            ASSERT_NE(guarded_y.data(), nullptr);
+            std::memcpy(guarded_x.data(), x.data(), x.size());
+            std::memcpy(guarded_y.data(), y.data(), y.size());
+            const uint8_t *gx = guarded_x.data(), *gy = guarded_y.data();
+            const double expected = sq4Reference(metric, gx, gy, dim);
+            const double tolerance = sq4Tolerance(metric, gx, gy, dim);
+            for (const auto &tier : tiers) {
+                SCOPED_TRACE(tier.name);
+                const auto kernel = tier.choose(metric)(dim);
+                EXPECT_NEAR(kernel(gx, gy, dim), expected, tolerance);
+                EXPECT_NEAR(kernel(gy, gx, dim), expected, tolerance);
             }
         }
     }
