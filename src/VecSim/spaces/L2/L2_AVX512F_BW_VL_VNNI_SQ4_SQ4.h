@@ -25,10 +25,19 @@ namespace {
  *
  * Subtracting the offsets first keeps rounding at the scale of the residual, not of the norms,
  * when the data has a large common offset (the ||x||^2 + ||y||^2 - 2 * IP identity loses HNSW
- * recall there). Both operands are unpacked into coordinate order. Each difference is evaluated
+ * recall there). Full blocks pair matching even and odd coordinates in separate vectors; tails
+ * retain coordinate order. Each difference is evaluated
  * with two fused multiply-adds as ((min_x - min_y) + delta_x * qx_i) - delta_y * qy_i, so the
  * offsets are still subtracted first.
  */
+
+// Both operands use the same lane order, so full blocks need no byte interleaving.
+static inline void SQ4_UnpackEvenOdd_AVX512F_BW_VL_VNNI(__m128i packed, __m512 &even,
+                                                      __m512 &odd) {
+    const __m512i widened = _mm512_cvtepu8_epi32(packed);
+    even = _mm512_cvtepi32_ps(_mm512_and_si512(widened, _mm512_set1_epi32(15)));
+    odd = _mm512_cvtepi32_ps(_mm512_srli_epi32(widened, 4));
+}
 
 static inline __m512 SQ4_SQ4_L2Diff_AVX512F_BW_VL_VNNI(__m512 qx, __m512 qy, __m512 min_diff,
                                                        __m512 delta_x, __m512 delta_y) {
@@ -55,9 +64,9 @@ float SQ4_SQ4_L2SqrSIMD32_AVX512F_BW_VL_VNNI(const void *pVect1v, const void *pV
     const size_t complete = dimension - residual;
     for (size_t i = 0; i < complete; i += 32) {
         __m512 x0, x1, y0, y1;
-        SQ4_Unpack32_AVX512F_BW_VL_VNNI(
+        SQ4_UnpackEvenOdd_AVX512F_BW_VL_VNNI(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(x + i / 2)), x0, x1);
-        SQ4_Unpack32_AVX512F_BW_VL_VNNI(
+        SQ4_UnpackEvenOdd_AVX512F_BW_VL_VNNI(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(y + i / 2)), y0, y1);
         const __m512 d0 =
             SQ4_SQ4_L2Diff_AVX512F_BW_VL_VNNI(x0, y0, min_diff, delta_x_vec, delta_y_vec);
