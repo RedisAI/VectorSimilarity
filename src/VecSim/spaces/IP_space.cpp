@@ -39,13 +39,36 @@ using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 
 namespace spaces {
-// SQ4-FP32: scalar kernel only, no alignment requirement.
+// SQ4-FP32: packed storage and unaligned metadata, so no alignment requirement on any tier.
 dist_func_t<float> IP_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
                                            const void *arch_opt) {
     if (alignment) {
         *alignment = 0;
     }
-    return SQ4_FP32_InnerProduct;
+    dist_func_t<float> ret_dist_func = SQ4_FP32_InnerProduct;
+    // The kernels handle any dim, but below one 16-coordinate chunk scalar is at least as fast.
+    if (dim < 16) {
+        return ret_dist_func;
+    }
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
+#ifdef OPT_SVE2
+    if (features.sve2) {
+        return Choose_SQ4_FP32_IP_implementation_SVE2(dim);
+    }
+#endif
+#ifdef OPT_SVE
+    if (features.sve) {
+        return Choose_SQ4_FP32_IP_implementation_SVE(dim);
+    }
+#endif
+#ifdef OPT_NEON
+    if (features.asimd) {
+        return Choose_SQ4_FP32_IP_implementation_NEON(dim);
+    }
+#endif
+#endif
+    return ret_dist_func;
 }
 
 // SQ4-SQ4: scalar kernel only, no alignment requirement.
