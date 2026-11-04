@@ -50,26 +50,26 @@ float SQ4_FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v,
         const uint8x8x2_t ordered = vzip_u8(vand_u8(packed, vdup_n_u8(15)), vshr_n_u8(packed, 4));
         const uint16x8_t first = vmovl_u8(ordered.val[0]);
         const uint16x8_t second = vmovl_u8(ordered.val[1]);
-        sum0 = vmlaq_f32(sum0, vcvtq_f32_u32(vmovl_u16(vget_low_u16(first))), vld1q_f32(y + i));
+        sum0 = vfmaq_f32(sum0, vcvtq_f32_u32(vmovl_u16(vget_low_u16(first))), vld1q_f32(y + i));
         sum1 =
-            vmlaq_f32(sum1, vcvtq_f32_u32(vmovl_u16(vget_high_u16(first))), vld1q_f32(y + i + 4));
+            vfmaq_f32(sum1, vcvtq_f32_u32(vmovl_u16(vget_high_u16(first))), vld1q_f32(y + i + 4));
         sum2 =
-            vmlaq_f32(sum2, vcvtq_f32_u32(vmovl_u16(vget_low_u16(second))), vld1q_f32(y + i + 8));
+            vfmaq_f32(sum2, vcvtq_f32_u32(vmovl_u16(vget_low_u16(second))), vld1q_f32(y + i + 8));
         sum3 =
-            vmlaq_f32(sum3, vcvtq_f32_u32(vmovl_u16(vget_high_u16(second))), vld1q_f32(y + i + 12));
+            vfmaq_f32(sum3, vcvtq_f32_u32(vmovl_u16(vget_high_u16(second))), vld1q_f32(y + i + 12));
     }
     // Packed tail: groups of four read two whole bytes, the last 1..3 coordinates read nibbles,
     // so no load passes the code bytes (an odd dim's unused high nibble is never read).
     if constexpr (residual >= 4) {
-        sum0 = vmlaq_f32(sum0, SQ4_NEON_Unpack4(x + i / 2), vld1q_f32(y + i));
+        sum0 = vfmaq_f32(sum0, SQ4_NEON_Unpack4(x + i / 2), vld1q_f32(y + i));
         i += 4;
     }
     if constexpr (residual >= 8) {
-        sum1 = vmlaq_f32(sum1, SQ4_NEON_Unpack4(x + i / 2), vld1q_f32(y + i));
+        sum1 = vfmaq_f32(sum1, SQ4_NEON_Unpack4(x + i / 2), vld1q_f32(y + i));
         i += 4;
     }
     if constexpr (residual >= 12) {
-        sum2 = vmlaq_f32(sum2, SQ4_NEON_Unpack4(x + i / 2), vld1q_f32(y + i));
+        sum2 = vfmaq_f32(sum2, SQ4_NEON_Unpack4(x + i / 2), vld1q_f32(y + i));
         i += 4;
     }
     if constexpr (residual % 4 > 0) {
@@ -88,7 +88,7 @@ float SQ4_FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v,
             codes = vld1q_lane_f32(&q2, codes, 2);
             query = vld1q_lane_f32(y + i + 2, query, 2);
         }
-        sum3 = vmlaq_f32(sum3, codes, query);
+        sum3 = vfmaq_f32(sum3, codes, query);
     }
     const float dot = vaddvq_f32(vaddq_f32(vaddq_f32(sum0, sum1), vaddq_f32(sum2, sum3)));
     const auto *params = x + sq4::data_bytes_count(dimension);
