@@ -17,6 +17,8 @@
 #include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
+#include "VecSim/spaces/functions/AVX2_FMA.h"
+#include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 
 #include <algorithm>
 #include <cmath>
@@ -353,15 +355,26 @@ TEST(SQ4Distances, MatchedIPOverflowFallsBack) {
     EXPECT_FLOAT_EQ(dispatched(x.data(), query.data(), dim), expected);
 }
 
+namespace {
+// The dispatcher hands out SQ4-FP32 SIMD kernels from this dim up: one 16-coordinate chunk on
+// AArch64, eight coordinates on x86 (as SQ8).
+#ifdef CPU_FEATURES_ARCH_X86_64
+constexpr size_t SQ4_FP32_SIMD_MIN_DIM = 8;
+#else
+constexpr size_t SQ4_FP32_SIMD_MIN_DIM = 16;
+#endif
+} // namespace
+
 TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
-    for (size_t dim : {8u, 768u}) {
+    for (size_t dim : {7u, 8u, 15u, 16u, 768u}) {
         SCOPED_TRACE(dim);
-        // SQ4-FP32 has SIMD kernels from dim 16 (see the SQ4SIMD tests), below that scalar.
+        // SQ4-FP32 has SIMD kernels from SQ4_FP32_SIMD_MIN_DIM (see the SQ4SIMD tests), below
+        // that scalar.
         for (auto metric : {VecSimMetric_IP, VecSimMetric_L2}) {
             SCOPED_TRACE(metric);
             unsigned char alignment = 255;
             const auto fp32 = spaces::GetDistFunc<sq4, float, float>(metric, dim, &alignment);
-            if (dim < 16) {
+            if (dim < SQ4_FP32_SIMD_MIN_DIM) {
                 EXPECT_EQ(fp32, metric == VecSimMetric_IP ? SQ4_FP32_InnerProduct : SQ4_FP32_L2Sqr);
             }
             EXPECT_EQ(alignment, 0);
@@ -430,6 +443,22 @@ std::vector<SimdTier> sq4FP32Tiers() {
     if (features.asimd) {
         tiers.push_back({"NEON", features, spaces::Choose_SQ4_FP32_IP_implementation_NEON,
                          spaces::Choose_SQ4_FP32_L2_implementation_NEON});
+    }
+#endif
+#endif
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        tiers.push_back({"AVX512F_BW_VL_VNNI", features,
+                         spaces::Choose_SQ4_FP32_IP_implementation_AVX512F_BW_VL_VNNI,
+                         spaces::Choose_SQ4_FP32_L2_implementation_AVX512F_BW_VL_VNNI});
+    }
+#endif
+    features.avx512f = 0;
+#ifdef OPT_AVX2_FMA
+    if (features.avx2 && features.fma3) {
+        tiers.push_back({"AVX2_FMA", features, spaces::Choose_SQ4_FP32_IP_implementation_AVX2_FMA,
+                         spaces::Choose_SQ4_FP32_L2_implementation_AVX2_FMA});
     }
 #endif
 #endif
@@ -588,7 +617,8 @@ void overflowFallsBack(const char *tier_name) {
 }
 
 // Per tier: dims 1..130 and 767..769, blob offsets 0..7, query offsets 0 and 4 bytes. Checks the
-// dispatched function and alignment, then the chooser kernel (also below dim 16) against scalar.
+// dispatched function and alignment, then the chooser kernel (also below the dispatch minimum)
+// against scalar.
 void fp32MatchesScalar(VecSimMetric metric) {
     const auto tiers = sq4FP32Tiers();
     if (tiers.empty()) {
@@ -610,7 +640,7 @@ void fp32MatchesScalar(VecSimMetric metric) {
             const auto dispatched = dispatchFP32(metric, dim, &alignment, &tier.features);
             const auto chosen = tier.choose(metric);
             const auto kernel = chosen(dim);
-            EXPECT_EQ(dispatched, dim >= 16 ? kernel : scalarFP32(metric));
+            EXPECT_EQ(dispatched, dim >= SQ4_FP32_SIMD_MIN_DIM ? kernel : scalarFP32(metric));
             EXPECT_EQ(alignment, 0);
             std::vector<uint8_t> codes(dim);
             std::vector<float> values(dim);
@@ -698,6 +728,10 @@ TEST(SQ4SIMD, FP32L2ToleranceRejectsCorruption) { fp32ToleranceRejectsCorruption
 TEST(SQ4SIMD, FP32IPOverflowFallsBackNEON) { overflowFallsBack("NEON"); }
 TEST(SQ4SIMD, FP32IPOverflowFallsBackSVE) { overflowFallsBack("SVE"); }
 TEST(SQ4SIMD, FP32IPOverflowFallsBackSVE2) { overflowFallsBack("SVE2"); }
+TEST(SQ4SIMD, FP32IPOverflowFallsBackAVX2_FMA) { overflowFallsBack("AVX2_FMA"); }
+TEST(SQ4SIMD, FP32IPOverflowFallsBackAVX512F_BW_VL_VNNI) {
+    overflowFallsBack("AVX512F_BW_VL_VNNI");
+}
 
 // FP32L2PreservesResidualsAtLargeCommonOffset for every tier: with a common offset of 1e4 (float
 // spacing 2^-10 there) and residuals up to 1e-2, forming min + delta * q before subtracting y

@@ -46,12 +46,12 @@ dist_func_t<float> IP_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
         *alignment = 0;
     }
     dist_func_t<float> ret_dist_func = SQ4_FP32_InnerProduct;
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+#ifdef CPU_FEATURES_ARCH_AARCH64
     // The kernels handle any dim, but below one 16-coordinate chunk scalar is at least as fast.
     if (dim < 16) {
         return ret_dist_func;
     }
-    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
-#ifdef CPU_FEATURES_ARCH_AARCH64
 #ifdef OPT_SVE2
     if (features.sve2) {
         return Choose_SQ4_FP32_IP_implementation_SVE2(dim);
@@ -65,6 +65,22 @@ dist_func_t<float> IP_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
 #ifdef OPT_NEON
     if (features.asimd) {
         return Choose_SQ4_FP32_IP_implementation_NEON(dim);
+    }
+#endif
+#endif
+#ifdef CPU_FEATURES_ARCH_X86_64
+    // As SQ8: below eight coordinates scalar is at least as fast.
+    if (dim < 8) {
+        return ret_dist_func;
+    }
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        return Choose_SQ4_FP32_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#ifdef OPT_AVX2_FMA
+    if (features.avx2 && features.fma3) {
+        return Choose_SQ4_FP32_IP_implementation_AVX2_FMA(dim);
     }
 #endif
 #endif

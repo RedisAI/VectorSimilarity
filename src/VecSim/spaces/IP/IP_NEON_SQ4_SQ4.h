@@ -39,6 +39,11 @@ constexpr uint64_t SQ4TailNibbleMask(unsigned residual, bool high) {
     return mask;
 }
 
+// The masked tails here and in L2_NEON_SQ4_SQ4.h / IP_NEON_DOTPROD_SQ4_SQ4.h read up to 7 bytes of
+// the metadata after the codes, so it must stay at least 8 bytes for both metrics.
+static_assert(vecsim_types::sq4::storage_metadata_count<VecSimMetric_IP>() * sizeof(float) >= 8);
+static_assert(vecsim_types::sq4::storage_metadata_count<VecSimMetric_L2>() * sizeof(float) >= 8);
+
 // The identity above, from the code dot and both operands' stored metadata. Same operation order as
 // the scalar SQ4_SQ4_InnerProduct.
 static inline float SQ4_SQ4_StoredIP(const uint8_t *x, const uint8_t *y, size_t dimension,
