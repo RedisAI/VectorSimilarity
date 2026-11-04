@@ -160,7 +160,8 @@ TEST(SQ4Distances, L2PreservesResidualsAtLargeCommonOffset) {
     query[3 + sq4::SUM_QUERY] = 3.0f * 1048576.0f;
     query[3 + sq4::SUM_SQUARES_QUERY] = 3.0f * 1048576.0f * 1048576.0f;
     const float expected = 5.0f * 0.03125f * 0.03125f;
-    EXPECT_FLOAT_EQ(SQ4_SQ4_L2Sqr(x.data(), y.data(), 3), expected);
+    // Only the FP32-query path accumulates residuals. Stored-to-stored L2 uses the same
+    // sum-of-squares identity as SQ8, which rounds at the scale of the norms.
     EXPECT_FLOAT_EQ(SQ4_FP32_L2Sqr(x.data(), query.data(), 3), expected);
 }
 
@@ -191,6 +192,32 @@ std::vector<float> makeQuery(const std::vector<float> &values) {
         query[dim + sq4::SUM_SQUARES_QUERY] += values[i] * values[i];
     }
     return query;
+}
+
+// Stored metadata slot of a packed vector, as the distance kernels read it.
+double storedMeta(const uint8_t *blob, size_t dim, size_t slot) {
+    float value;
+    std::memcpy(&value, blob + sq4::data_bytes_count(dim) + slot * sizeof(float), sizeof(value));
+    return value;
+}
+
+// Stored-to-stored identity formulas over the stored metadata, evaluated in double:
+//   IP = min_x * sum_y + min_y * sum_x - dim * min_x * min_y + delta_x * delta_y * sum(qx * qy)
+//   L2 = sum_sq_x + sum_sq_y - 2 * IP
+double identityIP(const uint8_t *x, const uint8_t *y, size_t dim) {
+    double code_dot = 0.0;
+    for (size_t i = 0; i < dim; ++i) {
+        code_dot += double(sq4::load_code(x, i)) * sq4::load_code(y, i);
+    }
+    const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
+    const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
+    return min_x * storedMeta(y, dim, sq4::SUM) + min_y * storedMeta(x, dim, sq4::SUM) -
+           double(dim) * min_x * min_y + dx * dy * code_dot;
+}
+
+double identityL2(const uint8_t *x, const uint8_t *y, size_t dim) {
+    return storedMeta(x, dim, sq4::SUM_SQUARES) + storedMeta(y, dim, sq4::SUM_SQUARES) -
+           2.0 * identityIP(x, y, dim);
 }
 
 // Per-element reconstruction of the SQ4-FP32 inner product distance.
@@ -232,8 +259,9 @@ TEST(SQ4Distances, OddDimMatchesReference) {
         auto check = [](float actual, double ref) {
             EXPECT_NEAR(actual, ref, 1e-4 * std::max(1.0, std::abs(ref)));
         };
-        check(SQ4_SQ4_InnerProduct(x.data(), y.data(), dim), refDistance(VecSimMetric_IP, xd, yd));
-        check(SQ4_SQ4_L2Sqr(x.data(), y.data(), dim), refDistance(VecSimMetric_L2, xd, yd));
+        check(SQ4_SQ4_InnerProduct(x.data(), y.data(), dim),
+              1.0 - identityIP(x.data(), y.data(), dim));
+        check(SQ4_SQ4_L2Sqr(x.data(), y.data(), dim), identityL2(x.data(), y.data(), dim));
         check(SQ4_FP32_InnerProduct(x.data(), query.data(), dim),
               refDistance(VecSimMetric_IP, xd, qd));
         check(SQ4_FP32_L2Sqr(x.data(), query.data(), dim), refDistance(VecSimMetric_L2, xd, qd));
@@ -257,6 +285,31 @@ TEST(SQ4Distances, MatchedIPEqualsReconstruction) {
     const float ref = reconstructedIP(x.data(), query.data(), dim, min_val, delta);
     EXPECT_NEAR(SQ4_FP32_InnerProduct(x.data(), query.data(), dim), ref,
                 1e-5 * std::max(1.0f, std::abs(ref)));
+}
+
+TEST(SQ4Distances, ReconstructedFallbackIsExported) {
+    for (size_t dim : {1u, 17u, 768u}) {
+        SCOPED_TRACE(dim);
+        std::mt19937 rng(7);
+        std::uniform_int_distribution<int> code_dist(0, 15);
+        std::uniform_real_distribution<float> val_dist(-1.0f, 1.0f);
+        std::vector<uint8_t> codes(dim);
+        std::vector<float> values(dim);
+        for (size_t i = 0; i < dim; ++i) {
+            codes[i] = code_dist(rng);
+            values[i] = val_dist(rng);
+        }
+        const float min_val = -0.75f, delta = 0.1f;
+        PackedVector x(codes, min_val, delta);
+        auto query = makeQuery(values);
+        double dot = 0.0;
+        for (size_t i = 0; i < dim; ++i) {
+            dot += (double(min_val) + double(delta) * codes[i]) * values[i];
+        }
+        const double ref = 1.0 - dot;
+        EXPECT_NEAR(SQ4_FP32_InnerProductReconstructed(x.data(), query.data(), dim), ref,
+                    1e-5 * std::max(1.0, std::abs(ref)));
+    }
 }
 
 TEST(SQ4Distances, MatchedIPOverflowFallsBack) {

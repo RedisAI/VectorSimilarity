@@ -13,6 +13,10 @@
 // Packed SQ4 storage, compared with FP32 queries or another SQ4 vector.
 float SQ4_FP32_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
 float SQ4_SQ4_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
+// Per-element reconstruction of the SQ4-FP32 inner product distance (1 - IP). SQ4_FP32_InnerProduct
+// falls back to it when the matched form is not finite; vectorized SQ4-FP32 kernels can do the same.
+float SQ4_FP32_InnerProductReconstructed(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension);
 
 // SQ8-FP32: Common inner product implementation that returns the raw inner product value
 // (not distance). Used by SQ8_FP32_InnerProduct, SQ8_FP32_Cosine, and SQ8_FP32_L2Sqr.
