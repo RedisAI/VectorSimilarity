@@ -51,7 +51,35 @@ float SQ4_FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t
     size_t i = 0;
     const uint8x16_t widen0 = SQ4_NEON_WidenIndex(0), widen1 = SQ4_NEON_WidenIndex(4);
     const uint32x4_t low_mask = vdupq_n_u32(15);
-    for (; i < complete; i += 16) {
+    const uint8x16_t widen2 = SQ4_NEON_WidenIndex(8), widen3 = SQ4_NEON_WidenIndex(12);
+    // One 16-byte load covers 32 coordinates; a remaining 16-coordinate chunk takes one 8-byte
+    // load below.
+    for (; i + 32 <= complete; i += 32) {
+        const uint8x16_t packed = vld1q_u8(x + i / 2);
+        const uint32x4_t bytes0 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen0));
+        const uint32x4_t bytes1 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen1));
+        const uint32x4_t bytes2 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen2));
+        const uint32x4_t bytes3 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen3));
+        const float32x4x2_t query0 = vld2q_f32(y + i), query1 = vld2q_f32(y + i + 8);
+        const float32x4x2_t query2 = vld2q_f32(y + i + 16), query3 = vld2q_f32(y + i + 24);
+        sum0 = L2StepSQ4_FP32_NEON(sum0, vcvtq_f32_u32(vandq_u32(bytes0, low_mask)), query0.val[0],
+                                   min_val_vec, delta_vec);
+        sum1 = L2StepSQ4_FP32_NEON(sum1, vcvtq_f32_u32(vshrq_n_u32(bytes0, 4)), query0.val[1],
+                                   min_val_vec, delta_vec);
+        sum2 = L2StepSQ4_FP32_NEON(sum2, vcvtq_f32_u32(vandq_u32(bytes1, low_mask)), query1.val[0],
+                                   min_val_vec, delta_vec);
+        sum3 = L2StepSQ4_FP32_NEON(sum3, vcvtq_f32_u32(vshrq_n_u32(bytes1, 4)), query1.val[1],
+                                   min_val_vec, delta_vec);
+        sum0 = L2StepSQ4_FP32_NEON(sum0, vcvtq_f32_u32(vandq_u32(bytes2, low_mask)), query2.val[0],
+                                   min_val_vec, delta_vec);
+        sum1 = L2StepSQ4_FP32_NEON(sum1, vcvtq_f32_u32(vshrq_n_u32(bytes2, 4)), query2.val[1],
+                                   min_val_vec, delta_vec);
+        sum2 = L2StepSQ4_FP32_NEON(sum2, vcvtq_f32_u32(vandq_u32(bytes3, low_mask)), query3.val[0],
+                                   min_val_vec, delta_vec);
+        sum3 = L2StepSQ4_FP32_NEON(sum3, vcvtq_f32_u32(vshrq_n_u32(bytes3, 4)), query3.val[1],
+                                   min_val_vec, delta_vec);
+    }
+    if (i < complete) {
         // As the IP kernel: TBL puts one packed byte in each u32 lane (an even coordinate in its
         // low nibble, the next odd one in its high nibble) and LD2 splits the query the same way.
         const uint8x16_t packed = vcombine_u8(vld1_u8(x + i / 2), vdup_n_u8(0));
@@ -66,6 +94,7 @@ float SQ4_FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t
                                    min_val_vec, delta_vec);
         sum3 = L2StepSQ4_FP32_NEON(sum3, vcvtq_f32_u32(vshrq_n_u32(bytes1, 4)), query1.val[1],
                                    min_val_vec, delta_vec);
+        i += 16;
     }
     // Packed tail: groups of four read two whole bytes, the last 1..3 coordinates read nibbles,
     // so no load passes the code bytes (an odd dim's unused high nibble is never read).
