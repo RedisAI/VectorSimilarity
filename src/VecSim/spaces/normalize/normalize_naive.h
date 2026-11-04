@@ -23,9 +23,7 @@ namespace spaces {
 template <typename DataType>
 static inline void normalizeVector_imp(void *vec, const size_t dim) {
     DataType *input_vector = (DataType *)vec;
-    // Work in double so squaring neither overflows large floats nor flushes subnormal ones to
-    // zero. The norm stays double too: rounding it to float collapses sqrt(2) * t back to t when
-    // t is subnormal, which would leave the vector with a norm well above 1.
+    // Stay in double: squaring overflows large floats, and a float norm loses subnormal precision.
     double sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
@@ -44,8 +42,7 @@ static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
 
     std::vector<float> f32_tmp(dim);
 
-    // bfloat16 shares float's exponent range, so its squares need double for the same reasons as
-    // in normalizeVector_imp.
+    // Squares of small bfloat16 values underflow in float.
     double sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
