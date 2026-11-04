@@ -51,6 +51,25 @@ static inline void L2StepSQ4_SQ4_NEON(float32x4_t &sum_a, float32x4_t &sum_b, ui
     sum_b = vfmaq_f32(sum_b, db, db);
 }
 
+// diff^2 for four coordinates held as codes in u32 lanes.
+static inline float32x4_t L2StepSQ4_SQ4_NEON_U32(float32x4_t sum, uint32x4_t qx, uint32x4_t qy,
+                                                 float32x4_t min_diff, float32x4_t delta_x,
+                                                 float32x4_t delta_y) {
+    const float32x4_t d = vaddq_f32(
+        min_diff, vfmsq_f32(vmulq_f32(delta_x, vcvtq_f32_u32(qx)), delta_y, vcvtq_f32_u32(qy)));
+    return vfmaq_f32(sum, d, d);
+}
+
+// Byte-to-u32 widening indices for TBL: lane j of the result is byte `first + j` of the table,
+// zero-extended (out-of-range indices yield zero).
+static inline uint8x16_t SQ4_SQ4_NEON_WidenIndex(uint8_t first) {
+    const uint8_t z = 0xff;
+    const uint8_t f = first;
+    const uint8_t idx[16] = {
+        f, z, z, z, uint8_t(f + 1), z, z, z, uint8_t(f + 2), z, z, z, uint8_t(f + 3), z, z, z};
+    return vld1q_u8(idx);
+}
+
 template <unsigned char residual> // 0..15
 float SQ4_SQ4_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     using vecsim_types::sq4;
@@ -73,12 +92,26 @@ float SQ4_SQ4_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t 
     const size_t complete = dimension - residual;
     size_t i = 0;
     // One 8-byte load per operand covers 16 coordinates.
+    const uint8x16_t widen0 = SQ4_SQ4_NEON_WidenIndex(0), widen1 = SQ4_SQ4_NEON_WidenIndex(4);
+    const uint32x4_t low_mask = vdupq_n_u32(15);
     for (; i < complete; i += 16) {
-        const uint8x8_t xb = vld1_u8(x + i / 2), yb = vld1_u8(y + i / 2);
-        L2StepSQ4_SQ4_NEON(sum0, sum1, vand_u8(xb, nibble), vand_u8(yb, nibble), min_diff,
-                           delta_x_vec, delta_y_vec);
-        L2StepSQ4_SQ4_NEON(sum2, sum3, vshr_n_u8(xb, 4), vshr_n_u8(yb, 4), min_diff, delta_x_vec,
-                           delta_y_vec);
+        // One 8-byte load per operand covers 16 coordinates. TBL puts one packed byte in each u32
+        // lane; the low nibbles (even coordinates) and high nibbles (odd ones) of both operands
+        // pair up without reordering.
+        const uint8x16_t xb = vcombine_u8(vld1_u8(x + i / 2), vdup_n_u8(0));
+        const uint8x16_t yb = vcombine_u8(vld1_u8(y + i / 2), vdup_n_u8(0));
+        const uint32x4_t x0 = vreinterpretq_u32_u8(vqtbl1q_u8(xb, widen0));
+        const uint32x4_t x1 = vreinterpretq_u32_u8(vqtbl1q_u8(xb, widen1));
+        const uint32x4_t y0 = vreinterpretq_u32_u8(vqtbl1q_u8(yb, widen0));
+        const uint32x4_t y1 = vreinterpretq_u32_u8(vqtbl1q_u8(yb, widen1));
+        sum0 = L2StepSQ4_SQ4_NEON_U32(sum0, vandq_u32(x0, low_mask), vandq_u32(y0, low_mask),
+                                      min_diff, delta_x_vec, delta_y_vec);
+        sum1 = L2StepSQ4_SQ4_NEON_U32(sum1, vandq_u32(x1, low_mask), vandq_u32(y1, low_mask),
+                                      min_diff, delta_x_vec, delta_y_vec);
+        sum2 = L2StepSQ4_SQ4_NEON_U32(sum2, vshrq_n_u32(x0, 4), vshrq_n_u32(y0, 4), min_diff,
+                                      delta_x_vec, delta_y_vec);
+        sum3 = L2StepSQ4_SQ4_NEON_U32(sum3, vshrq_n_u32(x1, 4), vshrq_n_u32(y1, 4), min_diff,
+                                      delta_x_vec, delta_y_vec);
     }
     if constexpr (residual > 0) {
         // One 8-byte load per operand from an even coordinate. The bytes past the last code are the
