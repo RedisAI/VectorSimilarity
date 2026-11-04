@@ -106,7 +106,7 @@ float SQ4_FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v,
     const float delta = load_unaligned<float>(params + sq4::DELTA * sizeof(float));
     const float distance = 1.0f - (min_val * y[dimension + sq4::SUM_QUERY] + delta * dot);
     // The unscaled code dot can overflow even when the reconstructed products stay finite.
-    if (!std::isfinite(distance)) {
+    if (!__builtin_isfinite(distance)) {
         return SQ4_FP32_InnerProductReconstructed(pVect1v, pVect2v, dimension);
     }
     return distance;
