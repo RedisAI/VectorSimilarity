@@ -23,12 +23,14 @@ namespace {
  *
  * Subtracting the offsets first keeps rounding at the scale of the residual, not of the norms,
  * when the data has a large common offset (the ||x||^2 + ||y||^2 - 2 * IP identity loses HNSW
- * recall there). Both operands are unpacked into coordinate order.
+ * recall there). Both operands are unpacked into coordinate order. Each difference is evaluated
+ * with two fused multiply-adds as ((min_x - min_y) + delta_x * qx_i) - delta_y * qy_i, so the
+ * offsets are still subtracted first.
  */
 
 static inline __m512 SQ4_SQ4_L2Diff_AVX512F_BW_VL_VNNI(__m512 qx, __m512 qy, __m512 min_diff,
                                                        __m512 delta_x, __m512 delta_y) {
-    return _mm512_add_ps(min_diff, _mm512_fnmadd_ps(delta_y, qy, _mm512_mul_ps(delta_x, qx)));
+    return _mm512_fnmadd_ps(delta_y, qy, _mm512_fmadd_ps(delta_x, qx, min_diff));
 }
 
 template <unsigned char residual> // 0..31
