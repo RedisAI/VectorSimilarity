@@ -160,29 +160,21 @@ TEST(SQ4Distances, FP32L2PreservesResidualsAtLargeCommonOffset) {
     query[3 + sq4::SUM_QUERY] = 3.0f * 1048576.0f;
     query[3 + sq4::SUM_SQUARES_QUERY] = 3.0f * 1048576.0f * 1048576.0f;
     const float expected = 5.0f * 0.03125f * 0.03125f;
-    // Only the FP32-query path accumulates residuals. Stored-to-stored L2 uses the same
-    // sum-of-squares identity as SQ8, which rounds at the scale of the norms.
     EXPECT_FLOAT_EQ(SQ4_FP32_L2Sqr(x.data(), query.data(), 3), expected);
 }
 
-// Pins the stored-to-stored L2 identity (sum_sq_x + sum_sq_y - 2 * IP), shared with SQ8, at a large
-// common offset. It rounds at the scale of the norms (offset^2 per coordinate), so the small
-// residual is lost. Observed on aarch64: 0 at offsets 2^10, 2^15 and 2^20, versus the double
-// reconstruction reference 5 * 0.03125^2 = 0.0048828125. The identity has no clamp, so in general
-// it can return a small negative value (a few ulps of the norms); this input happens to give
-// exactly 0. A change in these values must be deliberate.
-TEST(SQ4Distances, StoredL2IdentityAtLargeCommonOffset) {
-    const double residual = 5.0 * 0.03125 * 0.03125; // double reconstruction reference
+// Stored-to-stored L2 reconstructs per element and subtracts the offsets first, so a large common
+// offset cannot erase a small residual.
+TEST(SQ4Distances, StoredL2PreservesResidualsAtLargeCommonOffset) {
+    const double ref = 5.0 * 0.03125 * 0.03125; // double reconstruction reference: 0.0048828125
     for (float offset : {1024.0f, 32768.0f, 1048576.0f}) {
         SCOPED_TRACE(offset);
         PackedVector x({0, 1, 2}, offset, 0.03125f);
         PackedVector y({0, 0, 0}, offset, 0.0f);
-        const double scale = double(offset) * offset; // magnitude of each per-coordinate square
         const float actual = SQ4_SQ4_L2Sqr(x.data(), y.data(), 3);
-        EXPECT_TRUE(std::isfinite(actual));
-        EXPECT_GE(actual, -1e-3 * scale);
-        EXPECT_NEAR(actual, residual, 1e-6 * scale);
-        EXPECT_EQ(actual, 0.0f); // observed value: the residual is lost entirely
+        EXPECT_GE(actual, 0.0f);
+        EXPECT_NEAR(actual, ref, 1e-6 * std::max(1.0, std::abs(ref)));
+        EXPECT_FLOAT_EQ(SQ4_SQ4_L2Sqr(y.data(), x.data(), 3), actual);
     }
 }
 
@@ -222,9 +214,8 @@ double storedMeta(const uint8_t *blob, size_t dim, size_t slot) {
     return value;
 }
 
-// Stored-to-stored identity formulas over the stored metadata, evaluated in double:
+// Stored-to-stored IP identity over the stored metadata, evaluated in double:
 //   IP = min_x * sum_y + min_y * sum_x - dim * min_x * min_y + delta_x * delta_y * sum(qx * qy)
-//   L2 = sum_sq_x + sum_sq_y - 2 * IP
 double identityIP(const uint8_t *x, const uint8_t *y, size_t dim) {
     double code_dot = 0.0;
     for (size_t i = 0; i < dim; ++i) {
@@ -234,11 +225,6 @@ double identityIP(const uint8_t *x, const uint8_t *y, size_t dim) {
     const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
     return min_x * storedMeta(y, dim, sq4::SUM) + min_y * storedMeta(x, dim, sq4::SUM) -
            double(dim) * min_x * min_y + dx * dy * code_dot;
-}
-
-double identityL2(const uint8_t *x, const uint8_t *y, size_t dim) {
-    return storedMeta(x, dim, sq4::SUM_SQUARES) + storedMeta(y, dim, sq4::SUM_SQUARES) -
-           2.0 * identityIP(x, y, dim);
 }
 
 // Per-element reconstruction of the SQ4-FP32 inner product distance.
@@ -282,7 +268,7 @@ TEST(SQ4Distances, OddDimMatchesReference) {
         };
         check(SQ4_SQ4_InnerProduct(x.data(), y.data(), dim),
               1.0 - identityIP(x.data(), y.data(), dim));
-        check(SQ4_SQ4_L2Sqr(x.data(), y.data(), dim), identityL2(x.data(), y.data(), dim));
+        check(SQ4_SQ4_L2Sqr(x.data(), y.data(), dim), refDistance(VecSimMetric_L2, xd, yd));
         check(SQ4_FP32_InnerProduct(x.data(), query.data(), dim),
               refDistance(VecSimMetric_IP, xd, qd));
         check(SQ4_FP32_L2Sqr(x.data(), query.data(), dim), refDistance(VecSimMetric_L2, xd, qd));
