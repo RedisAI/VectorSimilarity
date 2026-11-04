@@ -834,6 +834,62 @@ TEST(CommonAPITest, Uint8CosineSelfDistanceAtLargeDimension) {
     VecSimIndex_Free(index);
 }
 
+// [t, t] with t the smallest subnormal float: its norm sqrt(2) * t is not representable as a float
+// and rounds back to t, yet the normalized vector must still be [1/sqrt(2), 1/sqrt(2)].
+TEST(CommonAPITest, NormalizeFloat32Subnormal) {
+    const float t = std::numeric_limits<float>::denorm_min();
+    float v[] = {t, t};
+
+    VecSim_Normalize(v, 2, VecSimType_FLOAT32);
+
+    EXPECT_FLOAT_EQ(v[0], M_SQRT1_2);
+    EXPECT_FLOAT_EQ(v[1], M_SQRT1_2);
+}
+
+// The smallest subnormal bfloat16 squares to zero in float arithmetic, so a float accumulator
+// would see a zero norm and turn the vector into infinities.
+TEST(CommonAPITest, NormalizeBfloat16Subnormal) {
+    const bfloat16 t(0x0001);
+    bfloat16 v[] = {t, t};
+
+    VecSim_Normalize(v, 2, VecSimType_BFLOAT16);
+
+    for (const bfloat16 &elem : v) {
+        const float val = vecsim_types::bfloat16_to_float32(elem);
+        ASSERT_TRUE(std::isfinite(val));
+        EXPECT_NEAR(val, M_SQRT1_2, 0.005);
+    }
+}
+
+// Cosine distances against a stored subnormal vector must match the exact geometry: zero against
+// itself, and 1 - 1/sqrt(2) against a vector at 45 degrees.
+TEST(CommonAPITest, Float32CosineDistanceOfSubnormalVector) {
+    constexpr size_t dim = 2;
+    BFParams params = {.dim = dim, .metric = VecSimMetric_Cosine};
+    VecSimIndex *index = test_utils::CreateNewIndex(params, VecSimType_FLOAT32);
+    ASSERT_NE(index, nullptr);
+
+    const float t = std::numeric_limits<float>::denorm_min();
+    const float stored[] = {t, t};
+    VecSimIndex_AddVector(index, stored, 0);
+
+    auto expect_distance = [&](const float *query, double expected) {
+        auto *res = VecSimIndex_TopKQuery(index, query, 1, nullptr, BY_SCORE);
+        ASSERT_EQ(VecSimQueryReply_Len(res), 1);
+        auto *it = VecSimQueryReply_GetIterator(res);
+        EXPECT_NEAR(VecSimQueryResult_GetScore(VecSimQueryReply_IteratorNext(it)), expected, 1e-6);
+        VecSimQueryReply_IteratorFree(it);
+        VecSimQueryReply_Free(res);
+    };
+
+    const float same[] = {t, t};
+    expect_distance(same, 0.0);
+    const float axis[] = {1, 0};
+    expect_distance(axis, 1.0 - M_SQRT1_2);
+
+    VecSimIndex_Free(index);
+}
+
 /**
  * This test verifies that a tiered index correctly returns the closest vectors when querying data
  * distributed across both the flat and the backend indices, specifically when duplicate labels
