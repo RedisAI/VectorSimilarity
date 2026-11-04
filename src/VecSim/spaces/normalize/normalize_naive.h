@@ -27,12 +27,12 @@ static inline void normalizeVector_imp(void *vec, const size_t dim) {
     double sum = 0;
 
     for (size_t i = 0; i < dim; i++) {
-        sum += (double)input_vector[i] * (double)input_vector[i];
+        sum += static_cast<double>(input_vector[i]) * static_cast<double>(input_vector[i]);
     }
     double norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
-        input_vector[i] = (DataType)(input_vector[i] / norm);
+        input_vector[i] = static_cast<DataType>(input_vector[i] / norm);
     }
 }
 
@@ -48,13 +48,13 @@ static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
     for (size_t i = 0; i < dim; i++) {
         float val = vecsim_types::bfloat16_to_float32<is_little>(input_vector[i]);
         f32_tmp[i] = val;
-        sum += (double)val * (double)val;
+        sum += static_cast<double>(val) * static_cast<double>(val);
     }
 
     double norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
-        input_vector[i] = vecsim_types::float_to_bf16((float)(f32_tmp[i] / norm));
+        input_vector[i] = vecsim_types::float_to_bf16(static_cast<float>(f32_tmp[i] / norm));
     }
 }
 
