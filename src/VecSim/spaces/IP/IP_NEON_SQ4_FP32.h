@@ -25,6 +25,16 @@ namespace {
  * odd i, followed by unaligned FP32 metadata. The query blob carries y_sum after its dim floats.
  */
 
+// Byte-to-u32 widening indices for TBL: lane j of the result is byte `first + j` of the table,
+// zero-extended (out-of-range indices yield zero).
+static inline uint8x16_t SQ4_NEON_WidenIndex(uint8_t first) {
+    const uint8_t z = 0xff;
+    const uint8_t f = first;
+    const uint8_t idx[16] = {
+        f, z, z, z, uint8_t(f + 1), z, z, z, uint8_t(f + 2), z, z, z, uint8_t(f + 3), z, z, z};
+    return vld1q_u8(idx);
+}
+
 // Load exactly two packed bytes, yielding four coordinates in order without touching metadata.
 static inline float32x4_t SQ4_NEON_Unpack4(const uint8_t *data) {
     const uint8x8_t packed = vcreate_u8(load_unaligned<uint16_t>(data));

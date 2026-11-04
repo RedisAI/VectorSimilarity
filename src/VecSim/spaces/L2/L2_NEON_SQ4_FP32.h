@@ -8,7 +8,7 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/IP/IP_NEON_SQ4_FP32.h" // SQ4_NEON_Unpack4
+#include "VecSim/spaces/IP/IP_NEON_SQ4_FP32.h" // SQ4_NEON_Unpack4, SQ4_NEON_WidenIndex
 #include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
 #include <arm_neon.h>
@@ -49,21 +49,23 @@ float SQ4_FP32_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t
     float32x4_t sum3 = vdupq_n_f32(0.0f);
     const size_t complete = dimension - residual;
     size_t i = 0;
+    const uint8x16_t widen0 = SQ4_NEON_WidenIndex(0), widen1 = SQ4_NEON_WidenIndex(4);
+    const uint32x4_t low_mask = vdupq_n_u32(15);
     for (; i < complete; i += 16) {
-        // One eight-byte load covers exactly sixteen coordinates. Zipping the low and high
-        // nibbles before widening keeps each four-lane vector in coordinate order.
-        const uint8x8_t packed = vld1_u8(x + i / 2);
-        const uint8x8x2_t ordered = vzip_u8(vand_u8(packed, vdup_n_u8(15)), vshr_n_u8(packed, 4));
-        const uint16x8_t first = vmovl_u8(ordered.val[0]);
-        const uint16x8_t second = vmovl_u8(ordered.val[1]);
-        sum0 = L2StepSQ4_FP32_NEON(sum0, vcvtq_f32_u32(vmovl_u16(vget_low_u16(first))),
-                                   vld1q_f32(y + i), min_val_vec, delta_vec);
-        sum1 = L2StepSQ4_FP32_NEON(sum1, vcvtq_f32_u32(vmovl_u16(vget_high_u16(first))),
-                                   vld1q_f32(y + i + 4), min_val_vec, delta_vec);
-        sum2 = L2StepSQ4_FP32_NEON(sum2, vcvtq_f32_u32(vmovl_u16(vget_low_u16(second))),
-                                   vld1q_f32(y + i + 8), min_val_vec, delta_vec);
-        sum3 = L2StepSQ4_FP32_NEON(sum3, vcvtq_f32_u32(vmovl_u16(vget_high_u16(second))),
-                                   vld1q_f32(y + i + 12), min_val_vec, delta_vec);
+        // As the IP kernel: TBL puts one packed byte in each u32 lane (an even coordinate in its
+        // low nibble, the next odd one in its high nibble) and LD2 splits the query the same way.
+        const uint8x16_t packed = vcombine_u8(vld1_u8(x + i / 2), vdup_n_u8(0));
+        const uint32x4_t bytes0 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen0));
+        const uint32x4_t bytes1 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen1));
+        const float32x4x2_t query0 = vld2q_f32(y + i), query1 = vld2q_f32(y + i + 8);
+        sum0 = L2StepSQ4_FP32_NEON(sum0, vcvtq_f32_u32(vandq_u32(bytes0, low_mask)), query0.val[0],
+                                   min_val_vec, delta_vec);
+        sum1 = L2StepSQ4_FP32_NEON(sum1, vcvtq_f32_u32(vshrq_n_u32(bytes0, 4)), query0.val[1],
+                                   min_val_vec, delta_vec);
+        sum2 = L2StepSQ4_FP32_NEON(sum2, vcvtq_f32_u32(vandq_u32(bytes1, low_mask)), query1.val[0],
+                                   min_val_vec, delta_vec);
+        sum3 = L2StepSQ4_FP32_NEON(sum3, vcvtq_f32_u32(vshrq_n_u32(bytes1, 4)), query1.val[1],
+                                   min_val_vec, delta_vec);
     }
     // Packed tail: groups of four read two whole bytes, the last 1..3 coordinates read nibbles,
     // so no load passes the code bytes (an odd dim's unused high nibble is never read).

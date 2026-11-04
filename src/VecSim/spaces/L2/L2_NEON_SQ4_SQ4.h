@@ -8,7 +8,8 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/IP/IP_NEON_SQ4_SQ4.h" // SQ4TailNibbleMask
+#include "VecSim/spaces/IP/IP_NEON_SQ4_FP32.h" // SQ4_NEON_WidenIndex
+#include "VecSim/spaces/IP/IP_NEON_SQ4_SQ4.h"  // SQ4TailNibbleMask
 #include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
 #include <arm_neon.h>
@@ -60,16 +61,6 @@ static inline float32x4_t L2StepSQ4_SQ4_NEON_U32(float32x4_t sum, uint32x4_t qx,
     return vfmaq_f32(sum, d, d);
 }
 
-// Byte-to-u32 widening indices for TBL: lane j of the result is byte `first + j` of the table,
-// zero-extended (out-of-range indices yield zero).
-static inline uint8x16_t SQ4_SQ4_NEON_WidenIndex(uint8_t first) {
-    const uint8_t z = 0xff;
-    const uint8_t f = first;
-    const uint8_t idx[16] = {
-        f, z, z, z, uint8_t(f + 1), z, z, z, uint8_t(f + 2), z, z, z, uint8_t(f + 3), z, z, z};
-    return vld1q_u8(idx);
-}
-
 template <unsigned char residual> // 0..15
 float SQ4_SQ4_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t dimension) {
     using vecsim_types::sq4;
@@ -92,7 +83,7 @@ float SQ4_SQ4_L2SqrSIMD16_NEON(const void *pVect1v, const void *pVect2v, size_t 
     const size_t complete = dimension - residual;
     size_t i = 0;
     // One 8-byte load per operand covers 16 coordinates.
-    const uint8x16_t widen0 = SQ4_SQ4_NEON_WidenIndex(0), widen1 = SQ4_SQ4_NEON_WidenIndex(4);
+    const uint8x16_t widen0 = SQ4_NEON_WidenIndex(0), widen1 = SQ4_NEON_WidenIndex(4);
     const uint32x4_t low_mask = vdupq_n_u32(15);
     for (; i < complete; i += 16) {
         // One 8-byte load per operand covers 16 coordinates. TBL puts one packed byte in each u32
