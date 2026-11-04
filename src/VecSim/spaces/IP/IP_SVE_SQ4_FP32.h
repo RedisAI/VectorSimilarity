@@ -40,54 +40,70 @@ static inline svfloat32_t SQ4_SVE_Unpack(const uint8_t *data, svbool_t packed_pg
     return svcvt_f32_u32_x(pg, svzip1_u32(low, high));
 }
 
-// Helper: accumulate Σ(q_i * y_i) for one SVE vector of coordinates (no dequantization).
-static inline void InnerProductStepSQ4_FP32(const uint8_t *x, const float *y, size_t &offset,
-                                            svfloat32_t &sum, const size_t chunk,
-                                            svbool_t packed_pg) {
+// Coordinates per step: one u32 lane per packed byte, two coordinates per lane.
+static inline size_t SQ4_FP32_SVE_CoordinatesPerStep() { return 2 * svcntw(); }
+
+// Helper: accumulate Σ(q_i * y_i) for the 2 * svcntw() coordinates held in svcntw() packed bytes
+// (no dequantization). The low nibbles are the even coordinates and the high nibbles the odd ones;
+// a de-interleaving load splits the query the same way, so no lane reordering is needed.
+static inline void InnerProductStepSQ4_FP32(const uint8_t *x, const float *y, svfloat32_t &sum_even,
+                                            svfloat32_t &sum_odd) {
     const svbool_t pg = svptrue_b32();
-    const svfloat32_t codes = SQ4_SVE_Unpack(x + offset / 2, packed_pg);
-    sum = svmla_f32_x(pg, sum, codes, svld1_f32(pg, y + offset));
-    offset += chunk;
+    const svuint32_t packed = svld1ub_u32(pg, x);
+    const svfloat32x2_t query = svld2_f32(pg, y);
+    sum_even = svmla_f32_x(pg, sum_even, svcvt_f32_u32_x(pg, svand_n_u32_x(pg, packed, 15)),
+                           svget2_f32(query, 0));
+    sum_odd = svmla_f32_x(pg, sum_odd, svcvt_f32_u32_x(pg, svlsr_n_u32_x(pg, packed, 4)),
+                          svget2_f32(query, 1));
 }
 
-// Four accumulators and one final affine correction, as in SQ8. Full chunks precede the tail, so
+// Four accumulators and one final affine correction, as in SQ8. Full steps precede the tail, so
 // every packed load starts at an even coordinate (a whole byte).
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ4_FP32_InnerProductSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t dimension) {
     using vecsim_types::sq4;
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const float *>(pVect2v);
-    const size_t chunk = svcntw();
+    const size_t vl = svcntw(); // packed bytes per step
     const svbool_t pg = svptrue_b32();
-    const svbool_t packed_pg = svwhilelt_b32(uint64_t(0), uint64_t(chunk / 2));
     svfloat32_t sum0 = svdup_f32(0.0f);
     svfloat32_t sum1 = svdup_f32(0.0f);
     svfloat32_t sum2 = svdup_f32(0.0f);
     svfloat32_t sum3 = svdup_f32(0.0f);
-    size_t offset = 0;
-    const size_t blocks = dimension / (4 * chunk);
-    for (size_t i = 0; i < blocks; ++i) {
-        InnerProductStepSQ4_FP32(x, y, offset, sum0, chunk, packed_pg);
-        InnerProductStepSQ4_FP32(x, y, offset, sum1, chunk, packed_pg);
-        InnerProductStepSQ4_FP32(x, y, offset, sum2, chunk, packed_pg);
-        InnerProductStepSQ4_FP32(x, y, offset, sum3, chunk, packed_pg);
+    size_t offset = 0; // in packed bytes; the step's first coordinate is 2 * offset
+    const size_t main_bytes = (dimension / (8 * vl)) * 4 * vl;
+    for (; offset < main_bytes; offset += 4 * vl) {
+        InnerProductStepSQ4_FP32(x + offset, y + 2 * offset, sum0, sum1);
+        InnerProductStepSQ4_FP32(x + offset + vl, y + 2 * (offset + vl), sum2, sum3);
+        InnerProductStepSQ4_FP32(x + offset + 2 * vl, y + 2 * (offset + 2 * vl), sum0, sum1);
+        InnerProductStepSQ4_FP32(x + offset + 3 * vl, y + 2 * (offset + 3 * vl), sum2, sum3);
     }
     if constexpr (additional_steps > 0) {
-        InnerProductStepSQ4_FP32(x, y, offset, sum0, chunk, packed_pg);
+        InnerProductStepSQ4_FP32(x + offset, y + 2 * offset, sum0, sum1);
+        offset += vl;
     }
     if constexpr (additional_steps > 1) {
-        InnerProductStepSQ4_FP32(x, y, offset, sum1, chunk, packed_pg);
+        InnerProductStepSQ4_FP32(x + offset, y + 2 * offset, sum2, sum3);
+        offset += vl;
     }
     if constexpr (additional_steps > 2) {
-        InnerProductStepSQ4_FP32(x, y, offset, sum2, chunk, packed_pg);
+        InnerProductStepSQ4_FP32(x + offset, y + 2 * offset, sum0, sum1);
+        offset += vl;
     }
     if constexpr (partial_chunk) {
-        const size_t remaining = dimension - offset;
-        const svbool_t tail_pg = svwhilelt_b32(uint64_t(0), uint64_t(remaining));
-        const svbool_t tail_packed_pg = svwhilelt_b32(uint64_t(0), uint64_t((remaining + 1) / 2));
-        const svfloat32_t codes = SQ4_SVE_Unpack(x + offset / 2, tail_packed_pg);
-        // tail_pg drops the unused high nibble of an odd dim.
-        sum0 = svmla_f32_m(tail_pg, sum0, codes, svld1_f32(tail_pg, y + offset));
+        // (remaining + 1) / 2 bytes hold the tail. Their even coordinates are all in it, their odd
+        // ones only for the first remaining / 2 bytes (an odd dim's last high nibble is padding).
+        // The structure load reads y in pairs, so an odd tail's last pair reads the first query
+        // metadata float, which odd_pg then drops.
+        const size_t remaining = dimension - 2 * offset;
+        const svbool_t even_pg = svwhilelt_b32(uint64_t(0), uint64_t((remaining + 1) / 2));
+        const svbool_t odd_pg = svwhilelt_b32(uint64_t(0), uint64_t(remaining / 2));
+        const svuint32_t packed = svld1ub_u32(even_pg, x + offset);
+        const svfloat32x2_t query = svld2_f32(even_pg, y + 2 * offset);
+        sum0 = svmla_f32_m(even_pg, sum0, svcvt_f32_u32_x(pg, svand_n_u32_x(pg, packed, 15)),
+                           svget2_f32(query, 0));
+        sum1 = svmla_f32_m(odd_pg, sum1, svcvt_f32_u32_x(pg, svlsr_n_u32_x(pg, packed, 4)),
+                           svget2_f32(query, 1));
     }
     svfloat32_t sum = svadd_f32_x(pg, sum0, sum1);
     sum = svadd_f32_x(pg, sum, sum2);
