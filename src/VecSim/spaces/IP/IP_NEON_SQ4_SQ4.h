@@ -78,12 +78,18 @@ float SQ4_SQ4_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v, 
     uint32x4_t sum1 = vdupq_n_u32(0);
     const size_t complete = dimension - residual;
     size_t i = 0;
+    const uint8x16_t nibble16 = vdupq_n_u8(15);
     for (; i + 32 <= complete; i += 32) {
-        const uint8x8_t x0 = vld1_u8(x + i / 2), x1 = vld1_u8(x + i / 2 + 8);
-        sum0 =
-            SQ4_SQ4_DotStep_NEON(sum0, vand_u8(x0, nibble), vshr_n_u8(x0, 4), vld1_u8(y + i / 2));
-        sum1 = SQ4_SQ4_DotStep_NEON(sum1, vand_u8(x1, nibble), vshr_n_u8(x1, 4),
-                                    vld1_u8(y + i / 2 + 8));
+        // One 16-byte load per operand covers 32 coordinates; the nibble split runs on whole
+        // registers and the widening multiplies take the low and high halves.
+        const uint8x16_t xb = vld1q_u8(x + i / 2), yb = vld1q_u8(y + i / 2);
+        const uint8x16_t xl = vandq_u8(xb, nibble16), xh = vshrq_n_u8(xb, 4);
+        const uint8x16_t yl = vandq_u8(yb, nibble16), yh = vshrq_n_u8(yb, 4);
+        const uint16x8_t lo =
+            vmlal_u8(vmull_u8(vget_low_u8(xl), vget_low_u8(yl)), vget_low_u8(xh), vget_low_u8(yh));
+        const uint16x8_t hi = vmlal_high_u8(vmull_high_u8(xl, yl), xh, yh);
+        sum0 = vpadalq_u16(sum0, lo);
+        sum1 = vpadalq_u16(sum1, hi);
     }
     if (i < complete) {
         const uint8x8_t x0 = vld1_u8(x + i / 2);
