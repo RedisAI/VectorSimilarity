@@ -28,7 +28,9 @@ namespace {
  * recall there). Storage packs coordinate i into byte i / 2, the low nibble for even i and the
  * high nibble for odd i, followed by unaligned FP32 metadata. Both operands share the packing and
  * L2 is a plain sum, so the low nibbles (even coordinates) and the high nibbles (odd coordinates)
- * are processed in separate vectors without reordering.
+ * are processed in separate vectors without reordering. Each difference is evaluated with two
+ * fused multiply-adds as ((min_x - min_y) + delta_x * qx_i) - delta_y * qy_i, so the offsets are
+ * still subtracted first.
  */
 
 // Coordinates per step: one u32 lane per packed byte, two coordinates per lane.
@@ -39,8 +41,7 @@ static inline svfloat32_t SQ4_SQ4_L2Diff_SVE(svbool_t pg, svuint32_t qx, svuint3
                                              svfloat32_t delta_y) {
     const svfloat32_t fx = svcvt_f32_u32_x(pg, qx);
     const svfloat32_t fy = svcvt_f32_u32_x(pg, qy);
-    const svfloat32_t scaled = svmls_f32_x(pg, svmul_f32_x(pg, delta_x, fx), delta_y, fy);
-    return svadd_f32_x(pg, min_diff, scaled);
+    return svmls_f32_x(pg, svmla_f32_x(pg, min_diff, delta_x, fx), delta_y, fy);
 }
 
 // Accumulate diff^2 for the 2 * svcntw() coordinates held in svcntw() packed bytes: the even
