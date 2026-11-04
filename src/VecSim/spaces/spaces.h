@@ -70,7 +70,10 @@ static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
 // reduces those lanes with vaddvq_u32, whose result is also a uint32. The narrowest accumulator is
 // therefore a uint32 holding the whole total, so the kernels are exact while 225 * dim fits
 // UINT32_MAX: 225 * 19,088,743 is 4,294,967,175, and one dimension more wraps. Above it the chooser
-// hands back the scalar kernel, which cannot wrap.
+// hands back the scalar kernel, which cannot wrap. The x86 AVX512F_BW_VL_VNNI kernel accumulates
+// with vpdpbusd into signed int32 lanes, but each lane holds only a small share of the total (at
+// most about 268 million at this bound) and the lanes are summed in 64 bits, so this uint32 bound
+// is also the tighter one there.
 static constexpr size_t SQ4_MAX_EXACT_SIMD_DIM = std::numeric_limits<uint32_t>::max() / (15 * 15);
 
 // Native-fp16 accumulation is a throughput optimization and may overflow for sufficiently large

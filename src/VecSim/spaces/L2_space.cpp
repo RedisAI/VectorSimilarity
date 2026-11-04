@@ -113,6 +113,14 @@ dist_func_t<float> L2_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni &&
+        dim >= 16) {
+        return Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif
     return ret_dist_func;
 }
 

@@ -122,6 +122,15 @@ dist_func_t<float> IP_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment,
     }
 #endif
 #endif
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    // The kernel handles any dim, but below one 64-coordinate chunk scalar is at least as fast.
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni &&
+        dim >= 64) {
+        return Choose_SQ4_SQ4_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif
     return ret_dist_func;
 }
 

@@ -366,7 +366,7 @@ constexpr size_t SQ4_FP32_SIMD_MIN_DIM = 16;
 } // namespace
 
 TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
-    for (size_t dim : {7u, 8u, 15u, 16u, 768u}) {
+    for (size_t dim : {7u, 8u, 15u, 16u, 63u, 64u, 768u}) {
         SCOPED_TRACE(dim);
         // SQ4-FP32 has SIMD kernels from SQ4_FP32_SIMD_MIN_DIM (see the SQ4SIMD tests), below
         // that scalar.
@@ -385,14 +385,27 @@ TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
             EXPECT_EQ(direct, fp32);
             EXPECT_EQ(alignment, 0);
         }
-        // SQ4-SQ4 has SIMD kernels only on AArch64 (see the SQ4SIMD tests), elsewhere scalar.
+        // SQ4-SQ4 has SIMD kernels on AArch64 and on x86 with AVX512F_BW_VL_VNNI from dim 64
+        // (IP) and 16 (L2) (see the SQ4SIMD tests), elsewhere scalar.
         for (auto metric : {VecSimMetric_IP, VecSimMetric_L2}) {
             SCOPED_TRACE(metric);
             unsigned char alignment = 255;
             const auto stored = spaces::GetDistFunc<sq4, float>(metric, dim, &alignment);
             EXPECT_EQ(alignment, 0);
-#ifndef CPU_FEATURES_ARCH_AARCH64
-            EXPECT_EQ(stored, metric == VecSimMetric_IP ? SQ4_SQ4_InnerProduct : SQ4_SQ4_L2Sqr);
+            const auto scalar = metric == VecSimMetric_IP ? SQ4_SQ4_InnerProduct : SQ4_SQ4_L2Sqr;
+#if defined(CPU_FEATURES_ARCH_X86_64)
+            if (dim < (metric == VecSimMetric_IP ? 64u : 16u)) {
+                EXPECT_EQ(stored, scalar);
+            }
+            // No x86 tier below AVX512F_BW_VL_VNNI: without VNNI both metrics are scalar.
+            auto no_vnni = spaces::getCpuOptimizationFeatures();
+            no_vnni.avx512vnni = 0;
+            EXPECT_EQ(metric == VecSimMetric_IP
+                          ? spaces::IP_SQ4_SQ4_GetDistFunc(dim, nullptr, &no_vnni)
+                          : spaces::L2_SQ4_SQ4_GetDistFunc(dim, nullptr, &no_vnni),
+                      scalar);
+#elif !defined(CPU_FEATURES_ARCH_AARCH64)
+            EXPECT_EQ(stored, scalar);
 #endif
             alignment = 255;
             const auto direct = metric == VecSimMetric_IP
@@ -832,17 +845,23 @@ TEST(SQ4SIMD, ExactBuffersBeforeGuard) {
 
 // SIMD SQ4-SQ4 tiers, reached through the dispatcher by clearing the feature flags of the tiers
 // above each, and through their choosers directly. Inner product has a NEON dot product tier; L2 is
-// float work and has none, so at that tier's features L2 dispatches to its NEON kernel.
+// float work and has none, so at that tier's features L2 dispatches to its NEON kernel. On x86 the
+// one tier is AVX512F_BW_VL_VNNI; with any of its features cleared both metrics are scalar.
 namespace {
 struct SQ4Tier {
     const char *name;
     Features features;
     Chooser chooseIP;
     Chooser chooseL2;
-    size_t min_dim; // the dispatcher hands out this tier's kernels from this dim up
+    // The dispatcher hands out this tier's kernels from these dims up.
+    size_t min_dim_ip;
+    size_t min_dim_l2;
 
     Chooser choose(VecSimMetric metric) const {
         return metric == VecSimMetric_IP ? chooseIP : chooseL2;
+    }
+    size_t minDim(VecSimMetric metric) const {
+        return metric == VecSimMetric_IP ? min_dim_ip : min_dim_l2;
     }
 };
 
@@ -853,14 +872,14 @@ std::vector<SQ4Tier> sq4SQ4Tiers() {
 #ifdef OPT_SVE2
     if (features.sve2) {
         tiers.push_back({"SVE2", features, spaces::Choose_SQ4_SQ4_IP_implementation_SVE2,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE2, 0});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE2, 0, 0});
     }
 #endif
     features.sve2 = 0;
 #ifdef OPT_SVE
     if (features.sve) {
         tiers.push_back({"SVE", features, spaces::Choose_SQ4_SQ4_IP_implementation_SVE,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE, 0});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_SVE, 0, 0});
     }
 #endif
     features.sve = 0;
@@ -868,14 +887,23 @@ std::vector<SQ4Tier> sq4SQ4Tiers() {
     if (features.asimddp) {
         tiers.push_back({"NEON_DOTPROD", features,
                          spaces::Choose_SQ4_SQ4_IP_implementation_NEON_DOTPROD,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16, 16});
     }
 #endif
     features.asimddp = 0;
 #ifdef OPT_NEON
     if (features.asimd) {
         tiers.push_back({"NEON", features, spaces::Choose_SQ4_SQ4_IP_implementation_NEON,
-                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16});
+                         spaces::Choose_SQ4_SQ4_L2_implementation_NEON, 16, 16});
+    }
+#endif
+#endif
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        tiers.push_back({"AVX512F_BW_VL_VNNI", features,
+                         spaces::Choose_SQ4_SQ4_IP_implementation_AVX512F_BW_VL_VNNI,
+                         spaces::Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI, 64, 16});
     }
 #endif
 #endif
@@ -959,7 +987,7 @@ void sq4MatchesScalar(VecSimMetric metric) {
             unsigned char alignment = 255;
             const auto dispatched = dispatchSQ4(metric, dim, &alignment, &tier.features);
             const auto kernel = tier.choose(metric)(dim);
-            EXPECT_EQ(dispatched, dim >= tier.min_dim ? kernel : scalarSQ4(metric));
+            EXPECT_EQ(dispatched, dim >= tier.minDim(metric) ? kernel : scalarSQ4(metric));
             EXPECT_EQ(alignment, 0);
             std::vector<uint8_t> x_codes(dim), y_codes(dim);
             for (size_t i = 0; i < dim; ++i) {
@@ -1092,6 +1120,8 @@ TEST(SQ4SIMD, SQ4L2LargeCommonOffset) {
 // The integer code dot is exact while 225 * dim fits a uint32. Above SQ4_MAX_EXACT_SIMD_DIM the
 // dispatcher hands back the scalar kernel on every tier; at it, the SIMD kernels are still handed
 // out and are exact for all-15 codes, whose total is the largest a uint32 holds.
+// On x86 that total also exceeds INT32_MAX, so it checks that the signed int32 VNNI lanes are
+// reduced without signed wrap.
 TEST(SQ4_SQ4, DispatchFallsBackAboveExactDim) {
     constexpr size_t cap = spaces::SQ4_MAX_EXACT_SIMD_DIM;
     constexpr uint64_t max_term = 15 * 15;
