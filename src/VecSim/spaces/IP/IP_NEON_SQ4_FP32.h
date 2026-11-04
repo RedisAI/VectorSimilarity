@@ -53,20 +53,20 @@ float SQ4_FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v,
     float32x4_t sum3 = vdupq_n_f32(0.0f);
     const size_t complete = dimension - residual;
     size_t i = 0;
+    const uint8x16_t widen0 = SQ4_NEON_WidenIndex(0), widen1 = SQ4_NEON_WidenIndex(4);
+    const uint32x4_t low_mask = vdupq_n_u32(15);
     for (; i < complete; i += 16) {
-        // One eight-byte load covers exactly sixteen coordinates. Zipping the low and high
-        // nibbles before widening keeps each four-lane vector in coordinate order.
-        const uint8x8_t packed = vld1_u8(x + i / 2);
-        const uint8x8x2_t ordered = vzip_u8(vand_u8(packed, vdup_n_u8(15)), vshr_n_u8(packed, 4));
-        const uint16x8_t first = vmovl_u8(ordered.val[0]);
-        const uint16x8_t second = vmovl_u8(ordered.val[1]);
-        sum0 = vfmaq_f32(sum0, vcvtq_f32_u32(vmovl_u16(vget_low_u16(first))), vld1q_f32(y + i));
-        sum1 =
-            vfmaq_f32(sum1, vcvtq_f32_u32(vmovl_u16(vget_high_u16(first))), vld1q_f32(y + i + 4));
-        sum2 =
-            vfmaq_f32(sum2, vcvtq_f32_u32(vmovl_u16(vget_low_u16(second))), vld1q_f32(y + i + 8));
-        sum3 =
-            vfmaq_f32(sum3, vcvtq_f32_u32(vmovl_u16(vget_high_u16(second))), vld1q_f32(y + i + 12));
+        // One eight-byte load covers sixteen coordinates. TBL puts one packed byte in each u32
+        // lane; its low nibble is an even coordinate and its high nibble the next odd one, and a
+        // structure load (LD2) splits the query into the same even and odd lanes.
+        const uint8x16_t packed = vcombine_u8(vld1_u8(x + i / 2), vdup_n_u8(0));
+        const uint32x4_t bytes0 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen0));
+        const uint32x4_t bytes1 = vreinterpretq_u32_u8(vqtbl1q_u8(packed, widen1));
+        const float32x4x2_t query0 = vld2q_f32(y + i), query1 = vld2q_f32(y + i + 8);
+        sum0 = vfmaq_f32(sum0, vcvtq_f32_u32(vandq_u32(bytes0, low_mask)), query0.val[0]);
+        sum1 = vfmaq_f32(sum1, vcvtq_f32_u32(vshrq_n_u32(bytes0, 4)), query0.val[1]);
+        sum2 = vfmaq_f32(sum2, vcvtq_f32_u32(vandq_u32(bytes1, low_mask)), query1.val[0]);
+        sum3 = vfmaq_f32(sum3, vcvtq_f32_u32(vshrq_n_u32(bytes1, 4)), query1.val[1]);
     }
     // Packed tail: groups of four read two whole bytes, the last 1..3 coordinates read nibbles,
     // so no load passes the code bytes (an odd dim's unused high nibble is never read).
