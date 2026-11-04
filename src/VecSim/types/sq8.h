@@ -17,6 +17,13 @@ namespace vecsim_types {
 // Represents a scalar-quantized 8-bit blob with reconstruction metadata
 struct sq8 {
     using value_type = uint8_t;
+    static constexpr uint8_t max_code = 255;
+
+    static constexpr size_t data_bytes_count(size_t dim) { return dim; }
+
+    static uint8_t load_code(const uint8_t *data, size_t index) { return data[index]; }
+
+    static void store_code(uint8_t *data, size_t index, uint8_t code) { data[index] = code; }
 
     // Metadata layout indices (stored after quantized values)
     enum MetadataIndex : size_t {
@@ -50,8 +57,7 @@ struct sq8 {
     // Stored layout: one quantized byte per dimension, followed by metric-specific FP32 metadata.
     template <VecSimMetric Metric, bool WithNorm = false>
     static constexpr size_t storage_bytes_count(size_t dim) {
-        return dim * sizeof(value_type) +
-               storage_metadata_count<Metric, WithNorm>() * sizeof(float);
+        return data_bytes_count(dim) + storage_metadata_count<Metric, WithNorm>() * sizeof(float);
     }
 
     // Index of x_mean_ip / y_mean_ip in the last slot in metadata array
