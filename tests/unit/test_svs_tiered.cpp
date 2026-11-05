@@ -4464,6 +4464,62 @@ TYPED_TEST(SVSTieredIndexTestBasic, updateJobDoesNotTrainOnBatchWhenBackendEmpti
     EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, updateJobDoesNotTrainOnBatchWhenBackendEmptiedAfterSnapshot) {
+    // Deleting the last backend vector after the job sized its batch, before it takes the shared
+    // lock, must not let it initialize the backend from a batch smaller than the training
+    // threshold.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t batch = 4;
+    const size_t n = 20;
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    // Leave one label in the backend (deleted ones stay stored, marked, until GC).
+    for (size_t i = 0; i < training_threshold - 1; i++) {
+        ASSERT_EQ(VecSimIndex_DeleteVector(tiered_index, i), 1);
+    }
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexLabelCount(), 1);
+
+    tiered_index->setUpdateJobMaxBatch(batch);
+    for (size_t i = 100; i < 100 + n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    std::atomic_bool deleted{false};
+    // Backend size when each job starts moving its batch.
+    std::vector<size_t> backend_sizes;
+    tiered_index->registerTracingCallback("UpdateJob::before_add_to_svs", [&]() {
+        backend_sizes.push_back(tiered_index->GetBackendIndex()->indexSize());
+        if (!deleted.exchange(true)) {
+            EXPECT_EQ(VecSimIndex_DeleteVector(tiered_index, training_threshold - 1), 1);
+        }
+    });
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+
+    ASSERT_TRUE(deleted);
+    // First job: backend not yet empty, moved nothing. Next: empty backend, initialized from a
+    // training-sized batch, so the job after it sees the full training threshold.
+    ASSERT_GE(backend_sizes.size(), 3u);
+    EXPECT_GT(backend_sizes[0], 0);
+    EXPECT_EQ(backend_sizes[1], 0);
+    EXPECT_EQ(backend_sizes[2], training_threshold);
+    EXPECT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    EXPECT_EQ(tiered_index->GetBackendIndex()->indexSize(), n);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, addVectorExistingLabelStillOverwritesBackend) {
     // Re-adding a label that is in the backend still takes mainIndexGuard to delete the old vector.
     const size_t dim = 4;
