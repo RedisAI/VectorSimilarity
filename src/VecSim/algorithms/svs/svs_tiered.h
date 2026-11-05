@@ -583,17 +583,18 @@ private:
         while (updateSVSIndex(availableThreads, maxBatch)) {
             // Vectors were left behind: claim the next job while still holding updateJobMutex, so
             // background indexing never reads as done in between.
-            if (indexUpdateScheduled.test_and_set()) {
-                return; // Another job is already scheduled and moves the rest.
-            }
+            const bool claimed = !indexUpdateScheduled.test_and_set();
             if (this->getWriteMode() == VecSim_WriteAsync) {
-                // Submitted after releasing updateJobMutex, which the next job takes.
-                lock.unlock();
-                submitSVSIndexUpdateJobs();
-                return;
+                if (claimed) {
+                    // Submitted after releasing updateJobMutex, which the next job takes.
+                    lock.unlock();
+                    submitSVSIndexUpdateJobs();
+                }
+                return; // Otherwise another job is already scheduled and moves the rest.
             }
-            // In-place writes: no job may be submitted, so move the next batch here, keeping the
-            // claim. Release updateJobMutex between batches to let in-place writes take it.
+            // In-place writes: no job may be submitted, and a job queued earlier may not run, so
+            // move the next batch here even if one is queued. Release updateJobMutex between
+            // batches to let in-place writes take it; the set flag keeps background indexing on.
             lock.unlock();
             lock.lock();
             indexUpdateScheduled.clear();
