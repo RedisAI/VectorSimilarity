@@ -32,8 +32,7 @@ namespace {
  */
 
 // Both operands use the same lane order, so full blocks need no byte interleaving.
-static inline void SQ4_UnpackEvenOdd_AVX512F_BW_VL_VNNI(__m128i packed, __m512 &even,
-                                                      __m512 &odd) {
+static inline void SQ4_UnpackEvenOdd_AVX512F_BW_VL_VNNI(__m128i packed, __m512 &even, __m512 &odd) {
     const __m512i widened = _mm512_cvtepu8_epi32(packed);
     even = _mm512_cvtepi32_ps(_mm512_and_si512(widened, _mm512_set1_epi32(15)));
     odd = _mm512_cvtepi32_ps(_mm512_srli_epi32(widened, 4));
