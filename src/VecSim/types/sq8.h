@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <limits>
 #include "VecSim/vec_sim_common.h"
 
 namespace vecsim_types {
@@ -17,7 +18,7 @@ namespace vecsim_types {
 // Represents a scalar-quantized 8-bit blob with reconstruction metadata
 struct sq8 {
     using value_type = uint8_t;
-    static constexpr uint8_t max_code = 255;
+    static constexpr uint8_t max_code = std::numeric_limits<uint8_t>::max();
 
     static constexpr size_t data_bytes_count(size_t dim) { return dim; }
 
