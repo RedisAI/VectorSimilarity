@@ -572,25 +572,32 @@ private:
 
     /**
      * @brief Run one update job that moves at most maxBatch vectors, and schedule the next job if
-     * this one left vectors behind.
+     * this one left vectors behind. In in-place mode no job may be submitted, so the job moves the
+     * remaining vectors itself, one batch at a time.
      */
     void runUpdateJob(size_t availableThreads, size_t maxBatch) {
-        bool submit_next;
-        {
-            // prevent parallel updates
-            std::lock_guard<std::mutex> lock(updateJobMutex);
-            // Release the scheduled flag to allow scheduling again
+        // prevent parallel updates
+        std::unique_lock<std::mutex> lock(updateJobMutex);
+        // Release the scheduled flag to allow scheduling again
+        indexUpdateScheduled.clear();
+        while (updateSVSIndex(availableThreads, maxBatch)) {
+            // Vectors were left behind: claim the next job while still holding updateJobMutex, so
+            // background indexing never reads as done in between.
+            const bool claimed = !indexUpdateScheduled.test_and_set();
+            if (this->getWriteMode() == VecSim_WriteAsync) {
+                if (claimed) {
+                    // Submitted after releasing updateJobMutex, which the next job takes.
+                    lock.unlock();
+                    submitSVSIndexUpdateJobs();
+                }
+                return; // Otherwise another job is already scheduled and moves the rest.
+            }
+            // In-place writes: no job may be submitted, and a job queued earlier may not run, so
+            // move the next batch here even if one is queued. Release updateJobMutex between
+            // batches to let in-place writes take it; the set flag keeps background indexing on.
+            lock.unlock();
+            lock.lock();
             indexUpdateScheduled.clear();
-            // Update the SVS index. If vectors were left behind, claim the next job while still
-            // holding updateJobMutex, so background indexing never reads as done in between.
-            // Only in async mode: no jobs may be submitted once writes are in-place.
-            submit_next = updateSVSIndex(availableThreads, maxBatch) &&
-                          this->getWriteMode() == VecSim_WriteAsync &&
-                          !indexUpdateScheduled.test_and_set();
-        }
-        // Submitted after releasing updateJobMutex, which the next job takes.
-        if (submit_next) {
-            submitSVSIndexUpdateJobs();
         }
     }
 
@@ -957,14 +964,26 @@ public:
                 // backend index is initialized - we can add the vector directly
                 backend_shared_lock.unlock();
                 auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-                // prevent update job from running in parallel and lock any access to the backend
-                // index
-                std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
-                // Defensive: ensure single-threaded operation for write-in-place mode.
-                // parallelism_ defaults to 1, so this is a no-op in the normal case.
-                svs_index->setParallelism(1);
-                ret = this->backendIndex->addVector(storage_blob.get(), label);
-                updateBackendEmpty();
+                // prevent update job from running in parallel
+                std::lock_guard job_lock(this->updateJobMutex);
+                {
+                    // lock any access to the backend index
+                    std::lock_guard lock(this->mainIndexGuard);
+                    // Defensive: ensure single-threaded operation for write-in-place mode.
+                    // parallelism_ defaults to 1, so this is a no-op in the normal case.
+                    svs_index->setParallelism(1);
+                    ret = this->backendIndex->addVector(storage_blob.get(), label);
+                    updateBackendEmpty();
+                }
+                // An update job may still move a frontend copy of this label later and overwrite
+                // the new vector with it, so remove that copy. It is removed after the add, as an
+                // update job does, so the label stays visible to queries.
+                if (!this->backendIndex->isMultiValue()) {
+                    std::lock_guard flat_lock(this->flatIndexGuard);
+                    if (this->frontendIndex->isLabelExists(label)) {
+                        ret -= this->deleteAndRecordSwaps_Unsafe(label);
+                    }
+                }
                 return ret;
             }
         }
