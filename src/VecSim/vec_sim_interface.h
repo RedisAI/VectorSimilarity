@@ -273,7 +273,7 @@ public:
 
     /**
      * @brief Allow a 3rd party stop callback to end a query early (see stopCallbackFunction).
-     * Searches that hit it return VecSim_QueryReply_TimedOut, as on timeout. NULL disables it.
+     * Searches that hit it return VecSim_QueryReply_Stopped, as on timeout. NULL disables it.
      */
     static std::atomic<stopCallbackFunction> stopCallback;
     inline static void setStopCallbackFunction(stopCallbackFunction callback) {

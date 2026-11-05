@@ -345,7 +345,7 @@ void VecSim_SetTimeoutCallbackFunction(timeoutCallbackFunction callback);
  * force scans), once per batch (brute force and HNSW batch iterators) and once every
  * VECSIM_STOP_CHECK_INTERVAL (vec_sim_interface.h) candidate pops or SVS cancel checks (graph
  * searches, so a graph loop shorter than that never calls it). A search it stops returns
- * VecSim_QueryReply_TimedOut. NULL (the default) disables it; it may be changed while queries run.
+ * VecSim_QueryReply_Stopped. NULL (the default) disables it; it may be changed while queries run.
  *
  * @param callback stopCallbackFunction function. should get void* and return int.
  */

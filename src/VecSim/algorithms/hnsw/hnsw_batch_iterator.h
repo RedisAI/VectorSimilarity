@@ -106,7 +106,7 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
             break;
         }
         if (VECSIM_TIMEOUT(this->getTimeoutCtx()) || stop.due()) {
-            return VecSim_QueryReply_TimedOut;
+            return VecSim_QueryReply_Stopped;
         }
         // Checks if we need to add the current id to the top_candidates heap,
         // and updates the extras heap accordingly.
@@ -186,7 +186,7 @@ HNSW_BatchIterator<DataType, DistType>::scanGraph(VecSimQueryReply_Code *rc) {
     }
     // Checks that we didn't got timeout between iterations.
     if (VECSIM_TIMEOUT(this->getTimeoutCtx()) || VECSIM_STOP(this->getTimeoutCtx())) {
-        *rc = VecSim_QueryReply_TimedOut;
+        *rc = VecSim_QueryReply_Stopped;
         return top_candidates;
     }
 

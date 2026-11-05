@@ -326,7 +326,7 @@ BruteForceIndex<DataType, DistType>::topKQuery(const void *queryBlob, size_t k,
         }
     });
     if (!completed) {
-        rep->code = VecSim_QueryReply_TimedOut;
+        rep->code = VecSim_QueryReply_Stopped;
         delete TopCandidates;
         return rep;
     }
@@ -362,7 +362,7 @@ BruteForceIndex<DataType, DistType>::rangeQuery(const void *queryBlob, double ra
         }
     });
     if (!completed) {
-        rep->code = VecSim_QueryReply_TimedOut;
+        rep->code = VecSim_QueryReply_Stopped;
     }
     rep->results = res_container->get_results();
     return rep;

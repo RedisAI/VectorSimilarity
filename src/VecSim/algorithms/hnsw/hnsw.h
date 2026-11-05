@@ -1404,7 +1404,7 @@ void HNSWIndex<DataType, DistType>::greedySearchLevel(const void *vector_data, s
 
     do {
         if (running_query && (VECSIM_TIMEOUT(timeoutCtx) || stop.due())) {
-            *rc = VecSim_QueryReply_TimedOut;
+            *rc = VecSim_QueryReply_Stopped;
             bestCand = INVALID_ID;
             return;
         }
@@ -2289,7 +2289,7 @@ HNSWIndex<DataType, DistType>::searchBottomLayer_WithTimeout(idType ep_id, const
         }
         if (VECSIM_TIMEOUT(timeoutCtx) || stop.due()) {
             returnVisitedList(visited_nodes_handler);
-            *rc = VecSim_QueryReply_TimedOut;
+            *rc = VecSim_QueryReply_Stopped;
             return top_candidates;
         }
         candidate_set.pop();
@@ -2399,7 +2399,7 @@ VecSimQueryResultContainer HNSWIndex<DataType, DistType>::searchRangeBottomLayer
             break;
         }
         if (VECSIM_TIMEOUT(timeoutCtx) || stop.due()) {
-            *rc = VecSim_QueryReply_TimedOut;
+            *rc = VecSim_QueryReply_Stopped;
             break;
         }
         candidate_set.pop();

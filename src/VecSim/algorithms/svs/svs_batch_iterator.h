@@ -41,7 +41,7 @@ private:
         auto cancel = [timeoutCtx, &stop]() { return VECSIM_TIMEOUT(timeoutCtx) || stop.due(); };
 
         if (cancel()) {
-            rep->code = VecSim_QueryReply_TimedOut;
+            rep->code = VecSim_QueryReply_Stopped;
             return rep;
         }
 
@@ -51,7 +51,7 @@ private:
             if (curr_it == impl_.end()) {
                 impl_.next(bs, cancel);
                 if (VECSIM_TIMEOUT(timeoutCtx) || stop.hasStopped()) {
-                    rep->code = VecSim_QueryReply_TimedOut;
+                    rep->code = VecSim_QueryReply_Stopped;
                     rep->results.clear();
                     return rep;
                 }

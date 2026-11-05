@@ -31,7 +31,7 @@ private:
                 this->scores.emplace_back(score, this->index->getVectorLabel(curr_id));
             });
         if (!completed) {
-            return VecSim_QueryReply_TimedOut;
+            return VecSim_QueryReply_Stopped;
         }
         return VecSim_QueryReply_OK;
     }

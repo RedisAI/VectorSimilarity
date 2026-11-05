@@ -40,7 +40,7 @@ private:
                 }
             });
         if (!completed) {
-            return VecSim_QueryReply_TimedOut;
+            return VecSim_QueryReply_Stopped;
         }
         for (auto p : tmp_scores) {
             this->scores.emplace_back(p.second, p.first);
