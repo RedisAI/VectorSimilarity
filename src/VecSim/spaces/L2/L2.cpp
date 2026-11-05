@@ -12,12 +12,71 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
 #include <iostream>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
+using sq4 = vecsim_types::sq4;
+
+float SQ4_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return spaces::quantized::FP32_L2Sqr<sq4>(pVect1v, pVect2v, dimension);
+}
+
+/*
+ * Symmetric SQ4-SQ4 L2 squared distance, reconstructed per element:
+ *   ||x - y||^2 = sum(((min_x - min_y) + (delta_x * qx_i - delta_y * qy_i))^2)
+ *
+ * Unlike SQ8, plain (uncentered) SQ4 indexes do not use the ||x||^2 + ||y||^2 - 2*IP identity: that
+ * rounds at the scale of the norms, and with 16 levels the HNSW graph built from it loses recall on
+ * data with a large common offset. Subtracting the offsets first keeps rounding at the scale of the
+ * residual. Centered indexes use SQ4_SQ4_L2Sqr_Identity below.
+ * Uses 4 accumulators for instruction-level parallelism.
+ */
+float SQ4_SQ4_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const uint8_t *>(pVect2v);
+    // Metadata follows the packed payloads and is not necessarily float-aligned.
+    const auto *params_x = x + sq4::data_bytes_count(dimension);
+    const auto *params_y = y + sq4::data_bytes_count(dimension);
+    const float min_x = load_unaligned<float>(params_x + sq4::MIN_VAL * sizeof(float));
+    const float delta_x = load_unaligned<float>(params_x + sq4::DELTA * sizeof(float));
+    const float min_y = load_unaligned<float>(params_y + sq4::MIN_VAL * sizeof(float));
+    const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
+    const float min_diff = min_x - min_y;
+
+    auto diff = [&](size_t i) {
+        return min_diff + (delta_x * sq4::load_code(x, i) - delta_y * sq4::load_code(y, i));
+    };
+    float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+    size_t i = 0;
+    const size_t dim4 = dimension & ~size_t(3);
+    for (; i < dim4; i += 4) {
+        const float d0 = diff(i + 0), d1 = diff(i + 1), d2 = diff(i + 2), d3 = diff(i + 3);
+        sum0 += d0 * d0;
+        sum1 += d1 * d1;
+        sum2 += d2 * d2;
+        sum3 += d3 * d3;
+    }
+    for (; i < dimension; i++) {
+        const float d = diff(i);
+        sum0 += d * d;
+    }
+    return (sum0 + sum1) + (sum2 + sum3);
+}
+
+/*
+ * Symmetric SQ4-SQ4 L2 squared distance with the same identity as SQ8-SQ8:
+ *   ||x - y||^2 = ||x||^2 + ||y||^2 - 2*IP(x, y)
+ * from the stored SUM_SQUARES metadata and the stored-to-stored inner product. It rounds at the
+ * scale of the norms, so the index factory uses it only for centered indexes (a mean is set), whose
+ * stored vectors are near zero; there it is as accurate as SQ4_SQ4_L2Sqr and much faster.
+ */
+float SQ4_SQ4_L2Sqr_Identity(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return spaces::quantized::Stored_L2Sqr<sq4>(pVect1v, pVect2v, dimension);
+}
 
 /*
  * Asymmetric SQ8-FP32 L2 squared distance, accumulated directly per component:

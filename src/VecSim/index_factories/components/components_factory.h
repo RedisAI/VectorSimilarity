@@ -9,6 +9,7 @@
 #pragma once
 
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/L2_space.h"
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/index_factories/components/preprocessors_factory.h"
@@ -50,7 +51,15 @@ CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator
 
     // Graph construction compares two stored quantized blobs; search compares a stored blob with a
     // QueryType query. Both dispatchers report alignment for the stored operand.
-    auto sym_func = spaces::GetDistFunc<StorageType, float>(Metric, dim, &storage_alignment);
+    spaces::dist_func_t<float> sym_func;
+    if constexpr (std::is_same_v<StorageType, vecsim_types::sq4> && Metric == VecSimMetric_L2 &&
+                  WithMean) {
+        // Centered SQ4 blobs are near zero, so the stored-sum identity (as SQ8) is as accurate as
+        // the per-element reconstruction plain SQ4 L2 needs, and much faster.
+        sym_func = spaces::L2_SQ4_SQ4_Identity_GetDistFunc(dim, &storage_alignment);
+    } else {
+        sym_func = spaces::GetDistFunc<StorageType, float>(Metric, dim, &storage_alignment);
+    }
     auto asym_func =
         spaces::GetDistFunc<StorageType, float, QueryType>(Metric, dim, &asym_storage_alignment);
     storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
@@ -100,6 +109,27 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
         return CreateSQ8IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr);
     }
     return CreateSQ8IndexComponents<DataType, Metric, false>(allocator, dim, mean_ptr);
+}
+
+template <typename DataType, VecSimMetric Metric, bool WithMean>
+IndexComponents<DataType, float>
+CreateSQ4IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                         const void *mean_ptr) {
+    static_assert(std::is_same_v<DataType, float>, "SQ4 supports FP32 input only");
+    static_assert(Metric == VecSimMetric_IP || Metric == VecSimMetric_L2,
+                  "SQ4 supports IP and L2 only");
+    return CreateQuantizedIndexComponents<DataType, Metric, WithMean, vecsim_types::sq4>(
+        allocator, dim, static_cast<const float *>(mean_ptr));
+}
+
+template <typename DataType, VecSimMetric Metric>
+IndexComponents<DataType, float>
+CreateSQ4IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                         const void *mean_ptr) {
+    if (mean_ptr) {
+        return CreateSQ4IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr);
+    }
+    return CreateSQ4IndexComponents<DataType, Metric, false>(allocator, dim, mean_ptr);
 }
 
 template <typename DataType, typename DistType>

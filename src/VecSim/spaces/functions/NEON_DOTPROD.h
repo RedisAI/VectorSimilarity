@@ -26,4 +26,9 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_NEON_DOTPROD(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_NEON_DOTPROD(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_NEON_DOTPROD(size_t dim);
 
+// SQ4-to-SQ4 inner product, and L2 by the stored-sum identity for centered indexes (see
+// L2_SQ4_SQ4_Identity_GetDistFunc). The reconstructed L2 is float work and has no DOTPROD kernel.
+dist_func_t<float> Choose_SQ4_SQ4_IP_implementation_NEON_DOTPROD(size_t dim);
+dist_func_t<float> Choose_SQ4_SQ4_L2_Identity_implementation_NEON_DOTPROD(size_t dim);
+
 } // namespace spaces
