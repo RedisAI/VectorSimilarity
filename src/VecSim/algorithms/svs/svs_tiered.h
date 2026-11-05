@@ -919,13 +919,23 @@ public:
                 // backend index is initialized - we can add the vector directly
                 backend_shared_lock.unlock();
                 auto storage_blob = this->frontendIndex->preprocessForStorage(blob);
-                // prevent update job from running in parallel and lock any access to the backend
-                // index
-                std::scoped_lock lock(this->updateJobMutex, this->mainIndexGuard);
+                // prevent update job from running in parallel
+                std::lock_guard job_lock(this->updateJobMutex);
+                // An update job may still move a frontend copy of this label later and overwrite
+                // the new vector with it, so remove that copy. flatIndexGuard is released before
+                // mainIndexGuard is taken.
+                if (!this->backendIndex->isMultiValue()) {
+                    std::lock_guard flat_lock(this->flatIndexGuard);
+                    if (this->frontendIndex->isLabelExists(label)) {
+                        ret = -this->deleteAndRecordSwaps_Unsafe(label);
+                    }
+                }
+                // lock any access to the backend index
+                std::lock_guard lock(this->mainIndexGuard);
                 // Defensive: ensure single-threaded operation for write-in-place mode.
                 // parallelism_ defaults to 1, so this is a no-op in the normal case.
                 svs_index->setParallelism(1);
-                ret = this->backendIndex->addVector(storage_blob.get(), label);
+                ret += this->backendIndex->addVector(storage_blob.get(), label);
                 updateBackendEmpty();
                 return ret;
             }

@@ -4123,6 +4123,52 @@ TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobDrainsInPlaceAfterModeSwitch
     ASSERT_EQ(submissions, 1) << "a job was submitted in in-place mode";
 }
 
+TYPED_TEST(SVSTieredIndexTestBasic, inPlaceOverwriteRemovesFrontendCopy) {
+    // An in-place overwrite of a label still in the frontend must remove that copy, so a later
+    // update job does not move it into the backend over the new vector.
+    const size_t dim = 4;
+    const size_t training_threshold = 8;
+    const size_t n = 4; // Vectors left in the frontend after the backend index is initialized.
+
+    SVSParams params = {
+        .type = TypeParam::get_index_type(), .dim = dim, .metric = VecSimMetric_L2, .multi = false};
+    VecSimParams svs_params = CreateParams(params);
+    auto mock_thread_pool = tieredIndexMock();
+    // A high update threshold keeps addVector from scheduling; the test schedules explicitly.
+    auto *tiered_index =
+        this->CreateTieredSVSIndex(svs_params, mock_thread_pool, training_threshold, 1000);
+    ASSERT_INDEX(tiered_index);
+
+    for (size_t i = 0; i < training_threshold; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetBackendIndex()->indexSize(), training_threshold);
+    for (size_t i = training_threshold; i < training_threshold + n; i++) {
+        GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, i, i);
+    }
+    const labelType label = training_threshold + 1;
+    ASSERT_TRUE(tiered_index->GetFlatIndex()->isLabelExists(label));
+
+    VecSim_SetWriteMode(VecSim_WriteInPlace);
+    const int ret = GenerateAndAddVector<TEST_DATA_T>(tiered_index, dim, label, 500);
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    ASSERT_EQ(ret, 0) << "an overwrite does not add a label";
+    ASSERT_FALSE(tiered_index->GetFlatIndex()->isLabelExists(label));
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), n - 1);
+
+    tiered_index->scheduleSVSIndexUpdate();
+    mock_thread_pool.init_threads();
+    mock_thread_pool.thread_pool_join();
+    ASSERT_EQ(tiered_index->GetFlatIndex()->indexSize(), 0);
+    ASSERT_EQ(tiered_index->indexLabelCount(), training_threshold + n);
+    double abs_err = 1e-2; // Allow a larger relative error for quantization.
+    TEST_DATA_T expected_vector[dim];
+    GenerateVector<TEST_DATA_T>(expected_vector, dim, 500);
+    ASSERT_NEAR(tiered_index->getDistanceFrom_Unsafe(label, expected_vector), 0, abs_err);
+}
+
 TYPED_TEST(SVSTieredIndexTestBasic, boundedUpdateJobInitTrainsOnThreshold) {
     const size_t dim = 4;
     const size_t training_threshold = 8;
