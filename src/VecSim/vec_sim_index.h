@@ -186,7 +186,12 @@ public:
      * @return the distance between the candidate and the query.
      */
     DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector) const {
-        return queryDistanceDispatch(candidate_vector, query_vector, this->dim);
+        // DO NOT MERGE: perf fixture. Every query-time distance is computed 3x, keeping the last.
+        // The calls go through runtime function pointers, so the compiler cannot fold them.
+        DistType dist = queryDistanceDispatch(candidate_vector, query_vector, this->dim);
+        dist = queryDistanceDispatch(candidate_vector, query_vector, this->dim);
+        dist = queryDistanceDispatch(candidate_vector, query_vector, this->dim);
+        return dist;
     }
 
     /**
