@@ -21,6 +21,11 @@
 #include "containers/raw_data_container_interface.h"
 
 #include <cassert>
+#include <atomic>
+#include <cstdint>
+
+// DO NOT MERGE: perf fixture. Global count of query-time distance computations.
+inline std::atomic<uint64_t> g_perfFixtureQueryDistanceCalls{0};
 #include <functional>
 
 /**
@@ -186,6 +191,8 @@ public:
      * @return the distance between the candidate and the query.
      */
     DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector) const {
+        // DO NOT MERGE: perf fixture. One relaxed atomic increment per query-time distance.
+        g_perfFixtureQueryDistanceCalls.fetch_add(1, std::memory_order_relaxed);
         return queryDistanceDispatch(candidate_vector, query_vector, this->dim);
     }
 
