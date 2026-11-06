@@ -186,7 +186,14 @@ public:
      * @return the distance between the candidate and the query.
      */
     DistType calcDistanceForQuery(const void *candidate_vector, const void *query_vector) const {
-        return queryDistanceDispatch(candidate_vector, query_vector, this->dim);
+        return dispatchQueryDistance(candidate_vector, query_vector);
+    }
+
+    // DO NOT MERGE: perf fixture. Cosmetic reshape of calcDistanceForQuery, same work.
+    inline DistType dispatchQueryDistance(const void *candidate, const void *query) const {
+        const size_t dimension = this->dim;
+        const DistType distance = queryDistanceDispatch(candidate, query, dimension);
+        return distance;
     }
 
     /**
