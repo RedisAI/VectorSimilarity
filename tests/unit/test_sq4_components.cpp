@@ -88,6 +88,16 @@ void checkComponents(size_t dim, bool constant) {
         input_size + sq4::query_metadata_count<Metric, WithMean>() * sizeof(float);
     EXPECT_EQ(std::memcmp(combined.getStorageBlob(), y_blob.get(), storage_size), 0);
     EXPECT_EQ(std::memcmp(combined.getQueryBlob(), query.get(), query_size), 0);
+    if constexpr (Metric == VecSimMetric_L2) {
+        // Direct residual kernels need no query sums, but SIMD odd tails may read padding.
+        EXPECT_FLOAT_EQ(metadata(query.get(), input_size, sq4::SUM_QUERY), 0.0f);
+        EXPECT_FLOAT_EQ(metadata(query.get(), input_size, sq4::SUM_SQUARES_QUERY), 0.0f);
+        const auto *query_values = static_cast<const float *>(query.get());
+        for (size_t i = 0; i < dim; ++i) {
+            const float expected = WithMean ? y[i] - mean[i] : y[i];
+            EXPECT_FLOAT_EQ(query_values[i], expected);
+        }
+    }
     const auto rx = reconstruct(x_blob.get(), dim, mean);
     const auto ry = reconstruct(y_blob.get(), dim, mean);
     const double symmetric = referenceDistance<Metric>(rx, ry);
