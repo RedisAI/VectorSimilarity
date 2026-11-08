@@ -147,7 +147,16 @@ TEST_P(HNSWSQ4Test, InsertQueryMutateAndSerialize) {
         EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(index.get(), i, query.data()), score,
                     2e-5 * (1.0 + std::abs(score)));
         auto other = reconstruct(hnsw->getDataByInternalId((i + 1) % count), dim, mean);
-        const double expected_pair = distance(reconstructed, other, metric);
+        double expected_pair = distance(reconstructed, other, metric);
+        if (centered && metric == VecSimMetric_IP) {
+            expected_pair = 1.0;
+            for (size_t j = 0; j < dim; ++j) {
+                expected_pair -=
+                    (double(reconstructed[j]) - mean[j]) * (double(other[j]) - mean[j]) +
+                    double(inputs[i][j]) * mean[j] + double(inputs[(i + 1) % count][j]) * mean[j] -
+                    double(mean[j]) * mean[j];
+            }
+        }
         EXPECT_NEAR(hnsw->calcDistance(hnsw->getDataByInternalId(i),
                                        hnsw->getDataByInternalId((i + 1) % count)),
                     expected_pair, 3e-5 * (1.0 + std::abs(expected_pair)));

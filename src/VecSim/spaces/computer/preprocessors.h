@@ -179,11 +179,13 @@ private:
  * store metric-specific FP32 values from the query body to accelerate asymmetric distance
  * computation:
  * - For IP/Cosine: y_sum = Σy_i (sum of query values)
- * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query values)
+ * - For SQ8 L2: y_sum = Σy_i, y_sum_squares = Σy_i²
+ * - For SQ4 L2: two zero-initialized reserved FP32 slots; direct residual kernels need no sums.
  *
  * Query blob layout:
  * - For IP/Cosine: | query_values[dim] | y_sum |
  * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
+ *   SQ4 L2 keeps the same layout, with both trailing slots reserved and zero-initialized.
  *
  * Query metadata is always FP32. The query blob size is:
  * - For IP/Cosine: dim * sizeof(DataType) + 1 * sizeof(float)
@@ -202,6 +204,7 @@ private:
  *   where y_sum = Σy_i is precomputed and stored in the query blob.
  *
  * For L2:
+ *   The identity below explains the metadata; direct residual query kernels do not consume it.
  *   ||x_r - y||² = Σx_r[i]² - 2*Σ(x_r[i] * y_i) + Σy_i²
  *                = x_sum_squares - 2 * IP(x_r, y) + y_sum_squares
  *   where:
@@ -269,11 +272,6 @@ private:
     using OUTPUT_TYPE = uint8_t;
     using MetadataType = float; // Quantized storage metadata is always FP32.
 
-    // SQ4's centered IP correction x_mean_ip describes the reconstructed vector, like the other
-    // stored sums, so it is accumulated from the generated codes instead of the input values.
-    static constexpr bool kMeanIpFromCodes =
-        WithNorm && Metric == VecSimMetric_IP && std::is_same_v<StorageType, vecsim_types::sq4>;
-
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
                   "QuantPreprocessor only supports L2, IP and Cosine metrics");
@@ -327,17 +325,6 @@ private:
         // the metadata rather than round it. This is the write path, once per vector.
         uint64_t q0{}, q1{}, q2{}, q3{}; // only used for L2
 
-        // For centered SQ4 IP, the mean correction is accumulated from the codes as they are
-        // generated (see kMeanIpFromCodes), in coordinate order with one accumulator.
-        const double d_min = min_val, d_delta = delta;
-        [[maybe_unused]] double reconstructed_mean_ip = 0.0;
-        [[maybe_unused]] const auto add_mean_ip = [&](size_t idx, OUTPUT_TYPE code) {
-            if constexpr (kMeanIpFromCodes) {
-                const double centered = d_min + d_delta * code;
-                reconstructed_mean_ip += (centered + mean[idx]) * mean[idx];
-            }
-        };
-
         size_t i = 0;
         // round dim down to the nearest multiple of 4
         size_t dim_round_down = this->dim & ~size_t(3);
@@ -360,10 +347,6 @@ private:
             StorageType::store_code(quantized, i + 1, a1);
             StorageType::store_code(quantized, i + 2, a2);
             StorageType::store_code(quantized, i + 3, a3);
-            add_mean_ip(i, a0);
-            add_mean_ip(i + 1, a1);
-            add_mean_ip(i + 2, a2);
-            add_mean_ip(i + 3, a3);
 
             s0 += a0;
             s1 += a1;
@@ -389,7 +372,6 @@ private:
             const float x = transformed_value(input, i);
             const OUTPUT_TYPE a = to_byte((x - min_val) * inv_delta);
             StorageType::store_code(quantized, i, a);
-            add_mean_ip(i, a);
             q_sum += a;
             if constexpr (Metric == VecSimMetric_L2) {
                 q_sum_squares += uint64_t{a} * a;
@@ -401,17 +383,13 @@ private:
         // unchanged; only what the numbers describe changes.
         //   sum         = sum(x_r[i])   = dim*min + delta*q_sum
         //   sum_squares = sum(x_r[i]^2) = dim*min^2 + 2*min*delta*q_sum + delta^2*q_sum_squares
-        const double d_dim = static_cast<double>(this->dim);
+        const double d_min = min_val, d_delta = delta, d_dim = static_cast<double>(this->dim);
         const MetadataType sum = static_cast<MetadataType>(d_dim * d_min + d_delta * q_sum);
         MetadataType sum_squares{};
         if constexpr (Metric == VecSimMetric_L2) {
             sum_squares =
                 static_cast<MetadataType>(d_dim * d_min * d_min + 2.0 * d_min * d_delta * q_sum +
                                           d_delta * d_delta * q_sum_squares);
-        }
-
-        if constexpr (kMeanIpFromCodes) {
-            x_mean_ip = static_cast<MetadataType>(reconstructed_mean_ip);
         }
 
         // Metadata uses MetadataType. Use memcpy because the metadata offset (after the
@@ -601,12 +579,13 @@ public:
      * the original query values.
      *
      * - For IP/Cosine: y_sum = Σy_i (sum of query values)
-     * - For L2: y_sum = Σy_i (sum of query values), y_sum_squares = Σy_i² (sum of squared query
-     *                                                                      values)
+     * - For SQ8 L2: y_sum = Σy_i, y_sum_squares = Σy_i²
+     * - For SQ4 L2: two zero-initialized reserved FP32 slots; no query reductions are needed.
      *
      * Query blob layout:
      * - For IP/Cosine: | query_values[dim] | y_sum |
      * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
+     *   SQ4 L2 reserves and zero-initializes both trailing slots instead of computing sums.
      *
      * Query blob size:
      * - For IP/Cosine: dim * sizeof(QueryType) + 1 * sizeof(float)
@@ -632,7 +611,14 @@ public:
         // Compute and write FP32 query metadata after the query body. The metadata offset is
         // body_bytes, which is not guaranteed to be 4-byte aligned for FP16 query bodies.
         void *metadata_dst = static_cast<uint8_t *>(blob) + body_bytes;
-        assign_query_metadata(query_values, input, metadata_dst);
+        if constexpr (std::is_same_v<StorageType, vecsim_types::sq4> && Metric == VecSimMetric_L2) {
+            // SQ4 L2 computes residuals directly, so query sums are unused. Keep initialized
+            // padding for SIMD tails that load a final query pair when dim is odd.
+            const MetadataType padding[2] = {};
+            memcpy(metadata_dst, padding, sizeof(padding));
+        } else {
+            assign_query_metadata(query_values, input, metadata_dst);
+        }
 
         query_blob_size = this->query_bytes_count;
     }
@@ -664,9 +650,9 @@ private:
             float value = first_input_value - mean[0];
             float min_val = value;
             float max_val = value;
-            // x_mean_ip only feeds the IP correction term (see DistanceCalculatorWithNorm); the
-            // normalized L2 correction cancels the mean terms exactly, so skip the extra work.
-            if constexpr (Metric == VecSimMetric_IP && !kMeanIpFromCodes)
+            // Use the original input for the IP correction: a correction from reconstructed
+            // values would also multiply quantization error by the mean. L2 needs no correction.
+            if constexpr (Metric == VecSimMetric_IP)
                 x_mean_ip = first_input_value * mean[0];
 
             for (size_t i = 1; i < dim; ++i) {
@@ -674,7 +660,7 @@ private:
                 value = input_value - mean[i];
                 min_val = std::min(min_val, value);
                 max_val = std::max(max_val, value);
-                if constexpr (Metric == VecSimMetric_IP && !kMeanIpFromCodes)
+                if constexpr (Metric == VecSimMetric_IP)
                     x_mean_ip += input_value * mean[i];
             }
             return {min_val, max_val};
