@@ -263,7 +263,7 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->maxElements); // This will be used to restore the index initial
                                                // capacity
 
-    // V5 fields: SQ8/SQ4 quantization support (between factory params and index build params)
+    // V5 fields: scalar quantization support (between factory params and index build params)
     if (this->quantType != VecSimQuant_NONE) {
         writeBinaryPOD(output, this->quantType);
         // Write mean vector (dim floats). Empty vector means no mean (zero-mean quantization).

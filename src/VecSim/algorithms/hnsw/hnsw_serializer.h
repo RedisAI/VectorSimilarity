@@ -24,7 +24,7 @@ public:
         DEPRECATED = 2, // Last deprecated version
         V3,
         V4,
-        V5, // scalar quantization fields: SQ8/SQ4 (quantType + mean vector)
+        V5, // scalar quantization fields (quantType + mean vector)
         INVALID
     };
 
