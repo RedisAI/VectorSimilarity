@@ -140,6 +140,8 @@ double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, cons
 
 /**
  * @brief normalize the vector blob in place.
+ * Zero vectors remain zero, with an integer norm payload of 1 instead of 0, so cosine
+ * distance involving a zero vector is 1 rather than NaN.
  * @param blob binary representation of a vector. Blob size should match the specified type and
  * dimension.
  * @param dim vector dimension.

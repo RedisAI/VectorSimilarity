@@ -40,6 +40,9 @@
 #include <cstdarg>
 #include <filesystem>
 #include <timeout_guard.h>
+#include <array>
+#include <memory>
+#include <type_traits>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
@@ -50,6 +53,124 @@ class CommonIndexTest : public ::testing::Test {};
 // DataTypeSet are defined in unit_test_utils.h
 
 TYPED_TEST_SUITE(CommonIndexTest, DataTypeSet);
+
+template <typename index_type_t>
+class ZeroCosineTest : public ::testing::Test {
+protected:
+    using data_t = typename index_type_t::data_t;
+    static constexpr size_t dim = 33;
+    std::array<data_t, dim> zero{}, aligned{}, orthogonal{};
+    VecSimWriteMode original_mode;
+
+    void SetUp() override {
+        original_mode = VecSimIndexInterface::asyncWriteMode;
+        VecSim_SetWriteMode(VecSim_WriteAsync);
+        if constexpr (std::is_same_v<data_t, bfloat16>) {
+            aligned[0] = orthogonal[1] = vecsim_types::float_to_bf16(1.0f);
+        } else if constexpr (std::is_same_v<data_t, float16>) {
+            aligned[0] = orthogonal[1] = vecsim_types::FP32_to_FP16(1.0f);
+        } else {
+            aligned[0] = orthogonal[1] = 1;
+        }
+    }
+
+    void TearDown() override { VecSimIndexInterface::asyncWriteMode = original_mode; }
+
+    void populate(VecSimIndex *index, bool multi) {
+        VecSimIndex_AddVector(index, zero.data(), 0);
+        VecSimIndex_AddVector(index, aligned.data(), 1);
+        VecSimIndex_AddVector(index, zero.data(), 2);
+        VecSimIndex_AddVector(index, orthogonal.data(), 3);
+        if (multi) {
+            VecSimIndex_AddVector(index, zero.data(), 0);
+        }
+    }
+
+    void checkResults(VecSimIndex *index) {
+        for (bool zero_query : {false, true}) {
+            const auto &query = zero_query ? zero : aligned;
+            const std::array<size_t, 4> ids =
+                zero_query ? std::array<size_t, 4>{0, 1, 2, 3} : std::array<size_t, 4>{1, 0, 2, 3};
+            for (size_t k : {2, 4}) {
+                SCOPED_TRACE(testing::Message() << "zero_query=" << zero_query << ", k=" << k);
+                std::unique_ptr<VecSimQueryReply, decltype(&VecSimQueryReply_Free)> reply(
+                    VecSimIndex_TopKQuery(index, query.data(), k, nullptr, BY_SCORE),
+                    VecSimQueryReply_Free);
+                ASSERT_EQ(reply->code, VecSim_QueryReply_OK);
+                ASSERT_EQ(reply->results.size(), k);
+                for (size_t i = 0; i < k; ++i) {
+                    EXPECT_EQ(reply->results[i].id, ids[i]);
+                    EXPECT_TRUE(std::isfinite(reply->results[i].score));
+                    EXPECT_DOUBLE_EQ(reply->results[i].score, !zero_query && i == 0 ? 0.0 : 1.0);
+                }
+            }
+        }
+    }
+};
+
+using ZeroCosineTypes = testing::Types<
+    IndexType<VecSimType_FLOAT32, float>, IndexType<VecSimType_FLOAT64, double>,
+    IndexType<VecSimType_BFLOAT16, bfloat16, float>, IndexType<VecSimType_FLOAT16, float16, float>,
+    IndexType<VecSimType_INT8, int8_t, float>, IndexType<VecSimType_UINT8, uint8_t, float>>;
+TYPED_TEST_SUITE(ZeroCosineTest, ZeroCosineTypes);
+
+TYPED_TEST(ZeroCosineTest, NormalizeZero) {
+    std::array<TEST_DATA_T, TestFixture::dim + sizeof(float)> normalized{};
+    VecSim_Normalize(normalized.data(), TestFixture::dim, TypeParam::get_index_type());
+    for (size_t i = 0; i < TestFixture::dim; ++i) {
+        EXPECT_EQ(normalized[i], TEST_DATA_T{});
+    }
+    if constexpr (std::is_integral_v<TEST_DATA_T>) {
+        float norm;
+        std::memcpy(&norm, normalized.data() + TestFixture::dim, sizeof(norm));
+        EXPECT_FLOAT_EQ(norm, 1.0f);
+    }
+}
+
+TYPED_TEST(ZeroCosineTest, FlatAndHNSW) {
+    for (bool multi : {false, true}) {
+        for (auto algo : {VecSimAlgo_BF, VecSimAlgo_HNSWLIB}) {
+            SCOPED_TRACE(testing::Message() << "multi=" << multi << ", algo=" << algo);
+            BFParams bf = {.dim = TestFixture::dim, .metric = VecSimMetric_Cosine};
+            HNSWParams hnsw = {.dim = TestFixture::dim, .metric = VecSimMetric_Cosine};
+            std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> index(
+                algo == VecSimAlgo_BF
+                    ? test_utils::CreateNewIndex(bf, TypeParam::get_index_type(), multi)
+                    : test_utils::CreateNewIndex(hnsw, TypeParam::get_index_type(), multi),
+                VecSimIndex_Free);
+            ASSERT_NE(index, nullptr);
+            this->populate(index.get(), multi);
+            this->checkResults(index.get());
+        }
+    }
+}
+
+TYPED_TEST(ZeroCosineTest, TieredMigration) {
+    for (bool multi : {false, true}) {
+        SCOPED_TRACE(testing::Message() << "multi=" << multi);
+        HNSWParams params = {.type = TypeParam::get_index_type(),
+                             .dim = TestFixture::dim,
+                             .metric = VecSimMetric_Cosine,
+                             .multi = multi};
+        tieredIndexMock pool;
+        auto *index = test_utils::CreateNewTieredVecSimIndex(params, pool);
+        ASSERT_NE(index, nullptr);
+        this->populate(index, multi);
+        const size_t count = multi ? 5 : 4;
+        for (size_t migrated = 0; migrated <= count; ++migrated) {
+            SCOPED_TRACE(testing::Message() << "migrated=" << migrated);
+            auto info = index->debugInfo().tieredInfo;
+            ASSERT_EQ(info.backendCommonInfo.indexSize, migrated);
+            ASSERT_EQ(info.frontendCommonInfo.indexSize, count - migrated);
+            this->checkResults(index);
+            if (migrated < count) {
+                ASSERT_FALSE(pool.jobQ.empty());
+                pool.thread_iteration();
+            }
+        }
+        ASSERT_TRUE(pool.jobQ.empty());
+    }
+}
 
 TYPED_TEST(CommonIndexTest, ResolveQueryRuntimeParams) {
     size_t dim = 4;
