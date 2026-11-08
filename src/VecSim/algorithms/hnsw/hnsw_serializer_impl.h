@@ -43,9 +43,8 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 
 template <typename DataType, typename DistType>
 HNSWSerializer::EncodingVersion HNSWIndex<DataType, DistType>::getWriteVersion() const {
-    const auto *context = this->getQuantizationRuntime();
-    return context ? static_cast<HNSWSerializer::EncodingVersion>(context->encodingVersion())
-                   : HNSWSerializer::EncodingVersion::V4;
+    return this->isQuantized ? HNSWSerializer::EncodingVersion::V5
+                             : HNSWSerializer::EncodingVersion::V4;
 }
 
 template <typename DataType, typename DistType>
@@ -264,10 +263,16 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
     writeBinaryPOD(output, this->maxElements); // This will be used to restore the index initial
                                                // capacity
 
-    // The graph owns framing; the storage context owns its fitted-state payload.
-    if (const auto *context = this->getQuantizationRuntime()) {
+    // V5 fields: scalar quantization support (between factory params and index build params)
+    if (this->quantType != VecSimQuant_NONE) {
         writeBinaryPOD(output, this->quantType);
-        context->saveState(output);
+        // Write mean vector (dim floats). Empty vector means no mean (zero-mean quantization).
+        bool hasMean = !this->serializedMeanVector.empty();
+        writeBinaryPOD(output, hasMean);
+        if (hasMean) {
+            output.write(reinterpret_cast<const char *>(this->serializedMeanVector.data()),
+                         this->dim * sizeof(float));
+        }
     }
 
     // Save index build parameters

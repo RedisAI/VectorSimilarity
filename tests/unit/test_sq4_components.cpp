@@ -290,7 +290,8 @@ TEST(SQ4Components, CenteredIPBlobSize768) {
     allocator->free_allocation(storage);
 }
 
-// SQ4 components are distinct types from the SQ8 ones, so no SQ8-specific cast can match them.
+// SQ4 components are distinct types from the SQ8 ones that applySQ8Mean and
+// HNSWIndex::setQuantizationMean dynamic_cast to, so the SQ8 mean path cannot apply to SQ4.
 TEST(SQ4Components, SQ4ComponentsAreNotSQ8Types) {
     auto allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t dim = 8;

@@ -430,12 +430,7 @@ typedef struct {
     size_t max_level;      // Number of graph levels.
     size_t entrypoint;     // Entrypoint vector label.
     size_t visitedNodesPoolSize;       // The max number of parallel graph scans so far.
-    size_t numberOfMarkedDeletedNodes;
-    VecSimQuantType quantizationType;
-    size_t quantizedVectorBytes;
-    size_t quantizerSharedBytes;
-    const char *quantizerQueryKernel;
-    const char *quantizerGraphKernel;
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
 } hnswInfoStruct;
 
 typedef struct {
@@ -454,7 +449,7 @@ typedef struct {
     size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
     size_t lastReservedThreads;    // Number of threads that were successfully reserved by the last
                                    // ingestion operation.
-    size_t numberOfMarkedDeletedNodes;
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
     size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
     size_t searchBufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.
     size_t leanvecDim;           // Leanvec dimension to use when LeanVec is enabled.
