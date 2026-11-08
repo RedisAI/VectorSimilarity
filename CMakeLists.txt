@@ -89,6 +89,22 @@ endif()
 
 add_subdirectory(src/VecSim)
 
+# TurboQuant's inline runtime selector must have the same definition in the
+# library and internal consumers. Individual SVE2 functions use target attributes;
+# generic objects retain the baseline ISA and dispatch checks the running CPU.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$" AND
+   CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "10")
+	include(CheckIncludeFileCXX)
+	check_include_file_cxx(arm_sve.h VECSIM_HAS_ARM_SVE_H)
+	if(VECSIM_HAS_ARM_SVE_H)
+		target_compile_definitions(VectorSimilarity PUBLIC OPT_SVE2)
+		if(TARGET VectorSimilaritySerializer)
+			target_compile_definitions(VectorSimilaritySerializer PRIVATE OPT_SVE2)
+		endif()
+	endif()
+endif()
+
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(TARGETS VectorSimilaritySpaces DESTINATION ${CMAKE_INSTALL_PREFIX})

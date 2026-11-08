@@ -119,12 +119,13 @@ private:
 
     bool isQuantized;
 
-    // Writer-owned state exists only while SQ8 vectors are accumulating in FLAT.
+    // Writer-owned state exists only while quantized vectors are accumulating in FLAT.
     // Reads and maintenance always use the real, initially empty backend.
     std::optional<SQ8TrainingState> sqAccumulationState;
 
 #ifdef BUILD_TESTS
     std::function<void()> beforeQuantizationFinalization;
+    std::function<void()> beforeQuantizationCallbacksPreparation;
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
 #endif
@@ -275,6 +276,10 @@ public:
     virtual ~TieredHNSWIndex();
 
 #ifdef BUILD_TESTS
+    HNSWIndex<DataType, DistType> *getBackendForTests() const { return getHNSWIndex(); }
+    void setBeforeQuantizationCallbacksPreparationHook(std::function<void()> hook) {
+        beforeQuantizationCallbacksPreparation = std::move(hook);
+    }
     void setBeforeQuantizationFinalizationHook(std::function<void()> hook) {
         beforeQuantizationFinalization = std::move(hook);
     }
@@ -857,6 +862,8 @@ int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringAccumulation(labelTyp
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size_t count) {
+    // Preparation may allocate or fail. Until it succeeds, retain all training rows/jobs
+    // and the previous quantizer state; a later writer operation can retry finalization.
     const auto mean = sqAccumulationState->calculateMean();
     // Allocate the snapshot before finishing accumulation. Synchronous execution removes jobs
     // from labelToInsertJobs, so iterating the map while dispatching would invalidate iterators.
@@ -867,6 +874,15 @@ void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size
         for (const auto &[label, pending] : this->labelToInsertJobs) {
             jobs.insert(jobs.end(), pending.begin(), pending.end());
         }
+    }
+    const bool in_place = this->getWriteMode() == VecSim_WriteInPlace;
+    vecsim_stl::vector<JobCallback> callbacks(this->allocator);
+    if (!in_place) {
+#ifdef BUILD_TESTS
+        if (beforeQuantizationCallbacksPreparation) beforeQuantizationCallbacksPreparation();
+#endif
+        callbacks.resize(jobs.size());
+        for (size_t i = 0; i < jobs.size(); ++i) callbacks[i] = jobs[i]->Execute;
     }
 #ifdef BUILD_TESTS
     if (beforeQuantizationFinalization) {
@@ -885,12 +901,12 @@ void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size
         afterQuantizationFinalization();
     }
 #endif
-    if (this->getWriteMode() == VecSim_WriteInPlace) {
+    if (in_place) {
         for (auto *job : jobs) {
             executeInsertJobWrapper(job);
         }
     } else {
-        this->submitJobs(jobs);
+        this->submitJobs(jobs, callbacks);
     }
 }
 

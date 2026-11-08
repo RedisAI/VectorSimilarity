@@ -183,13 +183,22 @@ protected:
         this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, &job, &job->Execute, 1);
     }
 
+    // A caller that publishes state before enqueueing can prepare callbacks first, so
+    // this overload performs no internal allocation after that publication. Queue callback
+    // failures retain the existing submission contract; submission is not transactional.
+    void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs,
+                    vecsim_stl::vector<JobCallback> &callbacks) {
+        assert(jobs.size() == callbacks.size());
+        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
+                                jobs.size());
+    }
+
     void submitJobs(vecsim_stl::vector<AsyncJob *> &jobs) {
         vecsim_stl::vector<JobCallback> callbacks(jobs.size(), this->allocator);
         for (size_t i = 0; i < jobs.size(); i++) {
             callbacks[i] = jobs[i]->Execute;
         }
-        this->SubmitJobsToQueue(this->jobQueue, this->jobQueueCtx, jobs.data(), callbacks.data(),
-                                jobs.size());
+        submitJobs(jobs, callbacks);
     }
 
     /**

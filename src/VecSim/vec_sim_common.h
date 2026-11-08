@@ -73,7 +73,22 @@ typedef enum {
     VecSimQuant_NONE = 0, // No quantization (default).
     // 8-bit scalar quantization with optional mean centering.
     VecSimQuant_SQ8 = 1,
+    // Value 2 is reserved for another quantization format.
+    VecSimQuant_TQ2 = 3, // FP32 MSE TurboQuant, 2-bit codes.
+    VecSimQuant_TQ3 = 4, // FP32 MSE TurboQuant, 3-bit codes.
 } VecSimQuantType;
+
+// Optional configuration for TQ2/TQ3. The factory copies the mean during construction.
+// NULL quantParams selects seed 42 and a fixed zero mean. A supplied config uses its seed
+// exactly (including 0). Standalone indexes never train implicitly. Tiered indexes with a
+// positive QuantNormalizationSetSize train their mean from live, preprocessed FLAT vectors.
+// Both modes fix MSE projection-match scaling and mean-error correction. Raw cosine
+// rows must have positive norm; zero vectors remain supported for inner product.
+typedef struct {
+    const float *mean; // Optional float[dim]; NULL selects a zero mean.
+    uint64_t seed;
+} VecSimTurboQuantParams;
+#define VECSIM_TURBOQUANT_DEFAULT_SEED UINT64_C(42)
 
 // Algorithm type/library.
 typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
@@ -190,7 +205,8 @@ typedef struct {
     size_t efRuntime;
     double epsilon;
     VecSimQuantType quantType; // Defaults to VecSimQuant_NONE.
-    // SQ8 mean vector (float[dim]); NULL disables mean centering. Copied during construction.
+    // SQ8: mean vector (float[dim]); NULL disables mean centering.
+    // TQ2/TQ3: VecSimTurboQuantParams*; NULL uses zero mean and seed 42. Copied at construction.
     // L2 centering keeps queries in FLOAT32, including when the input type is FLOAT16.
     const void *quantParams;
 } HNSWParams;
@@ -244,7 +260,7 @@ typedef struct {
 typedef struct {
     size_t swapJobThreshold; // The minimum number of swap jobs to accumulate before applying
                              // all the ready swap jobs in a batch.
-    size_t QuantNormalizationSetSize; // Number of vectors to accumulate before SQ initialization.
+    size_t QuantNormalizationSetSize; // Live vectors to accumulate before SQ8/TQ initialization.
                                       // 0 = skip training; use quantParams as the mean if supplied.
                                       // Max: 100 * DEFAULT_BLOCK_SIZE (102400).
                                       // During accumulation, this threshold takes precedence over
@@ -428,7 +444,8 @@ typedef struct {
     size_t max_level;      // Number of graph levels.
     size_t entrypoint;     // Entrypoint vector label.
     size_t visitedNodesPoolSize;       // The max number of parallel graph scans so far.
-    size_t numberOfMarkedDeletedNodes;
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
+    // Storage contexts supply their own metadata and optional detailed iterator fields.
     VecSimQuantType quantizationType;
     size_t quantizedVectorBytes;
     size_t quantizerSharedBytes;
@@ -452,7 +469,7 @@ typedef struct {
     size_t numThreads;             // Maximum number of threads to be used by svs for ingestion.
     size_t lastReservedThreads;    // Number of threads that were successfully reserved by the last
                                    // ingestion operation.
-    size_t numberOfMarkedDeletedNodes;
+    size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
     size_t searchWindowSize;           // Search window size for Vamana graph accuracy/latency tune.
     size_t searchBufferCapacity; // Search buffer capacity for Vamana graph accuracy/latency tune.
     size_t leanvecDim;           // Leanvec dimension to use when LeanVec is enabled.

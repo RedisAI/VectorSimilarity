@@ -582,6 +582,13 @@ TEST_F(SerializerTest, SVSSerializer) {
 }
 #endif
 
+namespace {
+struct ScopedLogCallback {
+    logCallbackFunction previous = VecSimIndexInterface::logCallback;
+    ~ScopedLogCallback() { VecSim_SetLogCallbackFunction(previous); }
+};
+} // namespace
+
 struct logCtx {
 public:
     std::vector<std::string> logBuffer;
@@ -595,6 +602,7 @@ void test_log_impl(void *ctx, const char *level, const char *message) {
 }
 
 TEST(CommonAPITest, testlogBasic) {
+    ScopedLogCallback restore_log_callback;
     logCtx log;
     log.prefix = "test log prefix: ";
 
@@ -616,6 +624,7 @@ TEST(CommonAPITest, testlogBasic) {
 }
 
 TEST(CommonAPITest, testlogTieredIndex) {
+    ScopedLogCallback restore_log_callback;
     logCtx log;
     log.prefix = "tiered prefix: ";
     VecSim_SetLogCallbackFunction(test_log_impl);

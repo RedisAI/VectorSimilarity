@@ -16,7 +16,7 @@ exec_program(${root}/tests/benchmark/benchmarks.sh OUTPUT_VARIABLE BENCHMARKS)
 string(REPLACE "\n" ";" BENCHMARKS ${BENCHMARKS})
 
 foreach(benchmark IN ITEMS ${BENCHMARKS})
-	if(${benchmark} MATCHES "spaces*")
+	if("${benchmark}" MATCHES "spaces*" OR "${benchmark}" STREQUAL "selected_modes")
 		continue()
 	endif()
 	# NOTE: mock_thread_pool.cpp should appear *before* the benchmark files, so we can ensure that the thread pool
@@ -24,6 +24,11 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	add_executable(bm_${benchmark} ../utils/mock_thread_pool.cpp bm_vecsim_general.cpp run_files/bm_${benchmark}.cpp)
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark gtest)
 endforeach()
+
+add_executable(bm_selected_modes ../utils/mock_thread_pool.cpp run_files/bm_selected_modes.cpp)
+target_link_libraries(bm_selected_modes PRIVATE VectorSimilarity gtest)
+# Match the library's Release assertion policy for shared inline/template code.
+target_compile_definitions(bm_selected_modes PRIVATE $<$<CONFIG:Release>:NDEBUG>)
 
 include(GoogleTest)
 

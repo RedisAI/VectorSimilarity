@@ -2536,10 +2536,8 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
     if (const auto *context = this->getQuantizationRuntime(); context && context->info().name) {
         const auto quant = context->info();
         auto integer = [&](const char *name, uint64_t value) {
-            infoIterator->addInfoField(
-                VecSim_InfoField{.fieldName = name,
-                                 .fieldType = INFOFIELD_UINT64,
-                                 .fieldValue = {FieldValue{.uintegerValue = value}}});
+            infoIterator->addInfoField(VecSim_InfoField{.fieldName = name,
+                .fieldType = INFOFIELD_UINT64, .fieldValue = {FieldValue{.uintegerValue = value}}});
         };
         auto string = [&](const char *name, const char *value) {
             if (value)
