@@ -15,6 +15,7 @@
 #include "VecSim/types/sq4.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <random>
@@ -162,6 +163,33 @@ TEST(SQ4Distances, FP32L2PreservesResidualsAtLargeCommonOffset) {
     query[3 + sq4::SUM_SQUARES_QUERY] = 3.0f * 1048576.0f * 1048576.0f;
     const float expected = 5.0f * 0.03125f * 0.03125f;
     EXPECT_FLOAT_EQ(SQ4_FP32_L2Sqr(x.data(), query.data(), 3), expected);
+}
+
+TEST(SQ4Distances, FP32L2PackedPairsPreserveCoordinateOrder) {
+    for (size_t dim : {0u, 1u, 2u, 3u, 7u, 16u, 31u, 32u, 33u, 65u, 767u, 768u, 769u}) {
+        for (const auto &[minimum, delta] :
+             {std::pair{-0.75f, 0.1f}, std::pair{1048576.0f, 0.03125f}}) {
+            SCOPED_TRACE(::testing::Message() << "dim=" << dim << " min=" << minimum);
+            std::vector<uint8_t> codes(dim);
+            std::vector<float> query(dim);
+            float expected = 0.0f;
+            for (size_t i = 0; i < dim; ++i) {
+                codes[i] = (i * 7 + 3) % 16;
+                query[i] = minimum + 0.13f * (int(i % 17) - 8);
+                // Use the original codes, independently of the packed blob, and the previous
+                // scalar kernel's operand and reduction order.
+                const float diff = delta * float(codes[i]) + (minimum - query[i]);
+                expected += diff * diff;
+            }
+            PackedVector stored(codes, minimum, delta);
+            if (dim % 2) {
+                // A foreign writer's nonzero padding must not become another coordinate.
+                stored.data()[dim / 2] |= 0xf0;
+            }
+            const float actual = SQ4_FP32_L2Sqr(stored.data(), query.data(), dim);
+            EXPECT_EQ(std::bit_cast<uint32_t>(actual), std::bit_cast<uint32_t>(expected));
+        }
+    }
 }
 
 TEST(SQ4Distances, RejectsUnsupportedMetric) {

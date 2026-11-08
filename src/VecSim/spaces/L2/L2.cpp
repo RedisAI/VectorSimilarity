@@ -22,7 +22,30 @@ using sq8 = vecsim_types::sq8;
 using sq4 = vecsim_types::sq4;
 
 float SQ4_FP32_L2Sqr(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    return spaces::quantized::FP32_L2Sqr<sq4>(pVect1v, pVect2v, dimension);
+    const auto *codes = static_cast<const uint8_t *>(pVect1v);
+    const auto *query = static_cast<const float *>(pVect2v);
+    const auto *params = codes + sq4::data_bytes_count(dimension);
+    const float min_val = load_unaligned<float>(params + sq4::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params + sq4::DELTA * sizeof(float));
+
+    float result = 0.0f;
+    const size_t full_bytes = dimension / 2;
+    for (size_t j = 0; j < full_bytes; ++j) {
+        // Load once and use both nibbles. Keep min - query before adding delta * code so
+        // rounding stays at the residual's scale, and accumulate in coordinate order.
+        const uint8_t byte = codes[j];
+        const float even = delta * float(byte & sq4::max_code) + (min_val - query[2 * j]);
+        const float odd = delta * float(byte >> sq4::bits_per_code) + (min_val - query[2 * j + 1]);
+        result += even * even;
+        result += odd * odd;
+    }
+    if (dimension % 2) {
+        // Only the low nibble is a coordinate; never read a query value for the padding.
+        const float last =
+            delta * float(codes[full_bytes] & sq4::max_code) + (min_val - query[dimension - 1]);
+        result += last * last;
+    }
+    return result;
 }
 
 // SQ4-SQ4 L2 squared distance with the same identity as SQ8-SQ8:
