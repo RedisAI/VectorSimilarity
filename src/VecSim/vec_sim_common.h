@@ -49,7 +49,10 @@ extern "C" {
 // DEFAULT_BLOCK_SIZE is used to round the training threshold to FLAT index blocks
 #define SVS_VAMANA_DEFAULT_TRAINING_THRESHOLD (10 * DEFAULT_BLOCK_SIZE) // 10 * 1024 vectors
 // Default batch update threshold for SVS index.
-#define SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD   (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
+#define SVS_VAMANA_DEFAULT_UPDATE_THRESHOLD (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
+// Default maximum number of vectors one SVS update job moves, bounding how long it holds the
+// index locks. Larger buffers are moved by consecutive jobs.
+#define SVS_VAMANA_DEFAULT_MAX_UPDATE_BATCH   (1 * DEFAULT_BLOCK_SIZE) // 1 * 1024 vectors
 #define SVS_VAMANA_DEFAULT_SEARCH_WINDOW_SIZE 10
 // NOTE: No need to have SVS_VAMANA_DEFAULT_SEARCH_BUFFER_CAPACITY
 // as the default is determined by the search_window_size
