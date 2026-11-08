@@ -9,7 +9,8 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/AVX_utils.h"
-// SQ4_Unpack_AVX2_FMA, SQ4_ToFloats_AVX2_FMA, SQ4_LoadBytes_AVX2_FMA, SQ4_LaneMask_AVX2_FMA
+// SQ4_Unpack_AVX2_FMA, SQ4_ToFloats_AVX2_FMA, SQ4_LoadBytes_AVX2_FMA, SQ4_TailLanes_AVX2_FMA,
+// SQ4_TailQuery_AVX2_FMA, SQ4_TailCodes_AVX2_FMA
 #include "VecSim/spaces/IP/IP_AVX2_FMA_SQ4_FP32.h"
 #include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
@@ -35,16 +36,14 @@ static inline __m256 SQ4_FP32_L2Step_AVX2_FMA(__m256 sum, __m256 codes, __m256 q
     return _mm256_fmadd_ps(diff, diff, sum);
 }
 
-// As SQ4_FP32_L2Step_AVX2_FMA for the first `lanes` coordinates only: the query is read through
-// maskload, and the other lanes' diff (including an odd dim's padding nibble) is zeroed.
-template <unsigned lanes> // 1..8
-static inline __m256 SQ4_FP32_L2MaskedStep_AVX2_FMA(__m256 sum, __m256 codes, const float *query,
-                                                    __m256 min_val_vec, __m256 delta_vec) {
-    const __m256i mask = SQ4_LaneMask_AVX2_FMA<lanes>();
-    const __m256 diff =
-        _mm256_and_ps(_mm256_fmadd_ps(delta_vec, codes,
-                                      _mm256_sub_ps(min_val_vec, _mm256_maskload_ps(query, mask))),
-                      _mm256_castsi256_ps(mask));
+// As SQ4_FP32_L2Step_AVX2_FMA for a tail of `lanes` (1..8) coordinates held in the top lanes (see
+// SQ4_TailQuery_AVX2_FMA); the other lanes' diff is zeroed.
+template <unsigned lanes>
+static inline __m256 SQ4_FP32_L2TailStep_AVX2_FMA(__m256 sum, __m256 codes, __m256 query,
+                                                  __m256 min_val_vec, __m256 delta_vec) {
+    const __m256 diff = _mm256_blend_ps(
+        _mm256_setzero_ps(), _mm256_fmadd_ps(delta_vec, codes, _mm256_sub_ps(min_val_vec, query)),
+        SQ4_TailLanes_AVX2_FMA<lanes>);
     return _mm256_fmadd_ps(diff, diff, sum);
 }
 
@@ -97,16 +96,22 @@ float SQ4_FP32_L2SqrSIMD32_AVX2_FMA(const void *pVect1v, const void *pVect2v, si
     }
     constexpr unsigned rest = residual % 16;
     if constexpr (rest > 0) {
-        // Exactly the tail's code bytes and, through maskload, exactly its query floats.
+        // Exactly the tail's code bytes. The last query window ends at the last coordinate (see
+        // SQ4_TailQuery_AVX2_FMA).
         __m128i ordered, unused;
         SQ4_Unpack_AVX2_FMA(SQ4_LoadBytes_AVX2_FMA<(rest + 1) / 2>(x + i / 2), ordered, unused);
-        __m256 codes0, codes1;
-        SQ4_ToFloats_AVX2_FMA(ordered, codes0, codes1);
-        constexpr unsigned first = rest < 8 ? rest : 8;
-        sum2 = SQ4_FP32_L2MaskedStep_AVX2_FMA<first>(sum2, codes0, y + i, min_val_vec, delta_vec);
+        const float *end = y + dimension;
         if constexpr (rest > 8) {
-            sum3 = SQ4_FP32_L2MaskedStep_AVX2_FMA<rest - 8>(sum3, codes1, y + i + 8, min_val_vec,
-                                                            delta_vec);
+            const __m256 codes0 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(ordered));
+            sum2 = SQ4_FP32_L2Step_AVX2_FMA(sum2, codes0, _mm256_loadu_ps(y + i), min_val_vec,
+                                            delta_vec);
+            sum3 = SQ4_FP32_L2TailStep_AVX2_FMA<rest - 8>(
+                sum3, SQ4_TailCodes_AVX2_FMA<rest - 8>(_mm_unpackhi_epi64(ordered, ordered)),
+                SQ4_TailQuery_AVX2_FMA<rest - 8>(end, dimension), min_val_vec, delta_vec);
+        } else {
+            sum2 = SQ4_FP32_L2TailStep_AVX2_FMA<rest>(sum2, SQ4_TailCodes_AVX2_FMA<rest>(ordered),
+                                                      SQ4_TailQuery_AVX2_FMA<rest>(end, dimension),
+                                                      min_val_vec, delta_vec);
         }
     }
     return my_mm256_reduce_add_ps_tree(

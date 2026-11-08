@@ -52,10 +52,32 @@ static inline __m128i SQ4_LoadBytes_AVX2_FMA(const uint8_t *data) {
     return _mm_cvtsi64_si128(static_cast<long long>(bits));
 }
 
-// All ones in lanes 0..lanes-1, zero above: a maskload mask that reads exactly `lanes` floats.
-template <unsigned lanes> // 1..8
-static inline __m256i SQ4_LaneMask_AVX2_FMA() {
-    return _mm256_cmpgt_epi32(_mm256_set1_epi32(lanes), _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7));
+// Blend control selecting the top `lanes` (1..8) of eight float lanes.
+template <unsigned lanes>
+constexpr int SQ4_TailLanes_AVX2_FMA = (0xFF << (8 - lanes)) & 0xFF;
+
+// The `lanes` (1..8) query floats that end at `end`, in the top lanes with zero below. The tail is
+// read with a full 8-float load ending at `end`, which stays inside the query whenever dim >= 8
+// (the dispatcher's minimum); a smaller dim copies the floats instead. Masked AVX2 loads are not
+// used because some processors may fault on their masked-out lanes.
+template <unsigned lanes>
+static inline __m256 SQ4_TailQuery_AVX2_FMA(const float *end, size_t dimension) {
+    static_assert(lanes >= 1 && lanes <= 8);
+    if (dimension >= 8) {
+        return _mm256_blend_ps(_mm256_setzero_ps(), _mm256_loadu_ps(end - 8),
+                               SQ4_TailLanes_AVX2_FMA<lanes>);
+    }
+    float window[8] = {};
+    std::memcpy(window + 8 - lanes, end - lanes, lanes * sizeof(float));
+    return _mm256_loadu_ps(window);
+}
+
+// The first `lanes` (1..8) byte codes of `codes` as floats in the top lanes, zero below, to line up
+// with SQ4_TailQuery_AVX2_FMA. Later bytes, such as an odd dim's padding nibble, are shifted out.
+template <unsigned lanes>
+static inline __m256 SQ4_TailCodes_AVX2_FMA(__m128i codes) {
+    static_assert(lanes >= 1 && lanes <= 8);
+    return _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(_mm_slli_si128(codes, 8 - lanes)));
 }
 
 // Accumulate Σ(q_i * y_i) for 32 coordinates: one 16-byte load of packed codes.
@@ -110,19 +132,20 @@ float SQ4_FP32_InnerProductSIMD32_AVX2_FMA(const void *pVect1v, const void *pVec
     }
     constexpr unsigned rest = residual % 16;
     if constexpr (rest > 0) {
-        // Exactly the tail's code bytes and, through maskload (which does not touch masked-out
-        // lanes), exactly its query floats. Masked-out query lanes are zero, so the padding nibble
-        // of an odd dim adds nothing.
+        // Exactly the tail's code bytes. The last query window ends at the last coordinate (see
+        // SQ4_TailQuery_AVX2_FMA).
         __m128i ordered, unused;
         SQ4_Unpack_AVX2_FMA(SQ4_LoadBytes_AVX2_FMA<(rest + 1) / 2>(x + i / 2), ordered, unused);
-        __m256 codes0, codes1;
-        SQ4_ToFloats_AVX2_FMA(ordered, codes0, codes1);
-        constexpr unsigned first = rest < 8 ? rest : 8;
-        sum2 = _mm256_fmadd_ps(codes0, _mm256_maskload_ps(y + i, SQ4_LaneMask_AVX2_FMA<first>()),
-                               sum2);
+        const float *end = y + dimension;
         if constexpr (rest > 8) {
+            const __m256 codes0 = _mm256_cvtepi32_ps(_mm256_cvtepu8_epi32(ordered));
+            sum2 = _mm256_fmadd_ps(codes0, _mm256_loadu_ps(y + i), sum2);
             sum3 = _mm256_fmadd_ps(
-                codes1, _mm256_maskload_ps(y + i + 8, SQ4_LaneMask_AVX2_FMA<rest - 8>()), sum3);
+                SQ4_TailCodes_AVX2_FMA<rest - 8>(_mm_unpackhi_epi64(ordered, ordered)),
+                SQ4_TailQuery_AVX2_FMA<rest - 8>(end, dimension), sum3);
+        } else {
+            sum2 = _mm256_fmadd_ps(SQ4_TailCodes_AVX2_FMA<rest>(ordered),
+                                   SQ4_TailQuery_AVX2_FMA<rest>(end, dimension), sum2);
         }
     }
     const float dot = my_mm256_reduce_add_ps_tree(
