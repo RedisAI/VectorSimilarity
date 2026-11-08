@@ -11,11 +11,45 @@
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq4.h"
 #include "VecSim/utils/alignment.h"
+#include <cmath>
 
 using bfloat16 = vecsim_types::bfloat16;
 using float16 = vecsim_types::float16;
 using sq8 = vecsim_types::sq8;
+using sq4 = vecsim_types::sq4;
+
+// Per-element reconstruction of the SQ4-FP32 inner product distance. Slower than the matched
+// form, but it never forms the unscaled code dot product, which can overflow float for large query
+// values.
+float SQ4_FP32_InnerProductReconstructed(const void *pVect1v, const void *pVect2v,
+                                         size_t dimension) {
+    const auto *x = static_cast<const uint8_t *>(pVect1v);
+    const auto *y = static_cast<const float *>(pVect2v);
+    // Metadata follows the packed payload and is not necessarily float-aligned.
+    const auto *params = x + sq4::data_bytes_count(dimension);
+    const float min_val = load_unaligned<float>(params + sq4::MIN_VAL * sizeof(float));
+    const float delta = load_unaligned<float>(params + sq4::DELTA * sizeof(float));
+    float dot = 0.0f;
+    for (size_t i = 0; i < dimension; ++i) {
+        dot += (min_val + delta * sq4::load_code(x, i)) * y[i];
+    }
+    return 1.0f - dot;
+}
+
+float SQ4_FP32_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    const float dist =
+        1.0f - spaces::quantized::FP32_InnerProduct_Impl<sq4>(pVect1v, pVect2v, dimension);
+    if (!std::isfinite(dist)) {
+        return SQ4_FP32_InnerProductReconstructed(pVect1v, pVect2v, dimension);
+    }
+    return dist;
+}
+
+float SQ4_SQ4_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return 1.0f - spaces::quantized::Stored_InnerProduct_Impl<sq4>(pVect1v, pVect2v, dimension);
+}
 
 /*
  * Optimized asymmetric SQ8-FP32 inner product using algebraic identity:

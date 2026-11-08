@@ -25,6 +25,7 @@
 #include "VecSim/memory/memory_utils.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq4.h"
 #include "VecSim/utils/vecsim_stl.h"
 
 class PreprocessorInterface : public VecsimBaseObject {
@@ -143,8 +144,8 @@ private:
 
 /*
  * QuantPreprocessor is a preprocessor that quantizes storage vectors from DataType to a
- * lower precision representation defined by StorageType (SQ8, the current storage type,
- * stores one uint8_t code per coordinate).
+ * lower precision representation (SQ8 stores one uint8_t code per coordinate, SQ4 packs
+ * two 4-bit codes per byte).
  * Query vectors remain as DataType for asymmetric distance computation.
  *
  * The quantized storage blob contains the quantized values along with metadata (min value,
@@ -153,7 +154,7 @@ private:
  * and then scaling the values to fit in the storage type's code range.
  *
  * Storage layout:
- * | quantized_values[dim] | min_val | delta | x_sum | (x_sum_squares for L2 only) |
+ * | quantized_values (packed for SQ4) | min_val | delta | x_sum | (L2 sum_squares) |
  * where, writing x_r[i] = min_val + delta * a[i] for the value a blob actually represents:
  * x_sum        = Σx_r[i]:  sum of the reconstructed values,
  * x_sum_squares = Σx_r[i]²: sum of their squares.
@@ -388,8 +389,20 @@ private:
                                           d_delta * d_delta * q_sum_squares);
         }
 
+        if constexpr (WithNorm && Metric == VecSimMetric_IP &&
+                      std::is_same_v<StorageType, vecsim_types::sq4>) {
+            // Correction must describe the same reconstructed vector as the packed codes.
+            // Read the emitted codes so this also works when input and output alias.
+            double reconstructed_mean_ip = 0.0;
+            for (size_t j = 0; j < this->dim; ++j) {
+                const double centered = d_min + d_delta * StorageType::load_code(quantized, j);
+                reconstructed_mean_ip += (centered + mean[j]) * mean[j];
+            }
+            x_mean_ip = static_cast<MetadataType>(reconstructed_mean_ip);
+        }
+
         // Metadata uses MetadataType. Use memcpy because the metadata offset (after the
-        // quantized body) is not guaranteed to be sizeof(MetadataType)-aligned.
+        // quantized body, packed for SQ4) is not guaranteed to be sizeof(MetadataType)-aligned.
         void *meta_dst = quantized + StorageType::data_bytes_count(this->dim);
         MetadataType buf[5] = {min_val, delta, sum};
         size_t n = 3;
@@ -512,9 +525,9 @@ public:
     /**
      * Preprocesses the original blob into separate storage and query blobs.
      *
-     * Storage vectors are quantized to StorageType scalar codes (SQ8: one uint8_t per
-     * coordinate), with metadata (min, delta, sum, and sum_squares for L2) appended for
-     * distance reconstruction.
+     * Storage vectors are quantized to scalar codes (SQ8: one uint8_t per coordinate, SQ4: two
+     * 4-bit codes packed per byte), with metadata (min, delta, sum, and
+     * sum_squares for L2) appended for distance reconstruction.
      *
      * Query vectors use QueryType for asymmetric distance computation, with a precomputed
      * sum (for IP/Cosine) or sum of squares (for L2) appended for efficient distance calculation.
