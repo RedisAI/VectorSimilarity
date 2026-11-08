@@ -23,6 +23,7 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
       elementLocks(this->allocator), idToMetaData(this->allocator),
       visitedNodesHandlerPool(0, this->allocator) {
 
+    turboQuantStorage = vecsim::quantization::isTurboQuant(params->quantType);
     this->restoreIndexFields(input);
     this->fieldsValidation();
 
@@ -43,6 +44,11 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 
 template <typename DataType, typename DistType>
 HNSWSerializer::EncodingVersion HNSWIndex<DataType, DistType>::getWriteVersion() const {
+    if (turboQuantStorage) {
+        if (isTurboQuantTraining())
+            throw std::runtime_error("Cannot save TurboQuant while tiered training is pending");
+        return HNSWSerializer::EncodingVersion::V6;
+    }
     return this->isQuantized ? HNSWSerializer::EncodingVersion::V5
                              : HNSWSerializer::EncodingVersion::V4;
 }
@@ -264,7 +270,11 @@ void HNSWIndex<DataType, DistType>::saveIndexFields(std::ofstream &output) const
                                                // capacity
 
     // V5 fields: scalar quantization support (between factory params and index build params)
-    if (this->quantType != VecSimQuant_NONE) {
+    if (turboQuantStorage) {
+        const VecSimQuantType type = getTurboQuant()->bits() == 2 ? VecSimQuant_TQ2 : VecSimQuant_TQ3;
+        writeBinaryPOD(output, type);
+        getTurboQuant()->saveFitted(output);
+    } else if (this->quantType != VecSimQuant_NONE) {
         writeBinaryPOD(output, this->quantType);
         // Write mean vector (dim floats). Empty vector means no mean (zero-mean quantization).
         bool hasMean = !this->serializedMeanVector.empty();

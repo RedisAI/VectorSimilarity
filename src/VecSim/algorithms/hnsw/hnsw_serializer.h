@@ -25,6 +25,7 @@ public:
         V3,
         V4,
         V5, // scalar quantization fields (quantType + mean vector)
+        V6, // fitted TQ2/TQ3 state, including actual transform/codebook/mean terms
         INVALID
     };
 

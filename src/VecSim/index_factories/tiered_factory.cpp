@@ -40,7 +40,8 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
 }
 
 static inline bool RequiresQuantizationTraining(const TieredIndexParams *params) {
-    return params->primaryIndexParams->algoParams.hnswParams.quantType == VecSimQuant_SQ8 &&
+    const auto type = params->primaryIndexParams->algoParams.hnswParams.quantType;
+    return (type == VecSimQuant_SQ8 || vecsim::quantization::isTurboQuant(type)) &&
            params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
 }
 
@@ -54,7 +55,9 @@ static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
     if constexpr (!QuantInput<DataType> || !std::is_same_v<DistType, float>) {
         return false;
     } else {
-        return hnsw_params.quantType == VecSimQuant_SQ8;
+        return hnsw_params.quantType == VecSimQuant_SQ8 ||
+            (std::is_same_v<DataType, float> &&
+             vecsim::quantization::isTurboQuant(hnsw_params.quantType));
     }
 }
 
@@ -68,11 +71,19 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     auto management_layer_allocator = VecSimAllocator::newVecsimAllocator();
     VecSimParams backend_params = *params->primaryIndexParams;
     vecsim_stl::vector<float> initial_mean(management_layer_allocator);
+    VecSimTurboQuantParams tq_params{};
     if (RequiresQuantizationTraining(params)) {
         // Allocate the final SQ8 WithMean layout now. The factory copies this temporary mean;
         // tiered keeps the graph empty until it installs the mean accumulated from FLAT.
         initial_mean.resize(hnsw_params.dim, 0.0f);
-        backend_params.algoParams.hnswParams.quantParams = initial_mean.data();
+        if (vecsim::quantization::isTurboQuant(hnsw_params.quantType)) {
+            const auto *provided = static_cast<const VecSimTurboQuantParams *>(hnsw_params.quantParams);
+            tq_params = {.mean = initial_mean.data(),
+                         .seed = provided ? provided->seed : VECSIM_TURBOQUANT_DEFAULT_SEED};
+            backend_params.algoParams.hnswParams.quantParams = &tq_params;
+        } else {
+            backend_params.algoParams.hnswParams.quantParams = initial_mean.data();
+        }
     }
     auto *hnsw_index =
         static_cast<HNSWIndex<DataType, DistType> *>(HNSWFactory::NewIndex(&backend_params, true));

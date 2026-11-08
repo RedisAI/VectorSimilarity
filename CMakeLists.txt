@@ -29,6 +29,30 @@ include(cmake/san.cmake)
 # ----------------------------------------------------------------------------------------------
 project(VectorSimilarity)
 
+# Official RaBitQ is an opt-in research dependency, never part of the public
+# VectorSimilarity library or installed API.
+option(VECSIM_RABITQ_RESEARCH "Build the RaBitQ research qualification tools" OFF)
+if(VECSIM_RABITQ_RESEARCH)
+	if(NOT VECSIM_BUILD_TESTS)
+		message(FATAL_ERROR "VECSIM_RABITQ_RESEARCH requires VECSIM_BUILD_TESTS")
+	endif()
+	set(RABITQ_BUILD_INDEX OFF CACHE BOOL "" FORCE)
+	set(RABITQ_BUILD_FASTSCAN OFF CACHE BOOL "" FORCE)
+	set(RABITQ_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+	set(RABITQ_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+	set(RABITQ_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+	set(RABITQ_BUILD_PYTHON_BINDINGS OFF CACHE BOOL "" FORCE)
+	set(RABITQ_USE_OPENMP OFF CACHE BOOL "" FORCE)
+	set(RABITQ_ENABLE_NATIVE_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+	include(FetchContent)
+	FetchContent_Declare(
+		rabitq
+		GIT_REPOSITORY https://github.com/VectorDB-NTU/RaBitQ-Library.git
+		GIT_TAG 4c91ef02bdfaa531b81fe679605acae31952d26a
+	)
+	FetchContent_MakeAvailable(rabitq)
+endif()
+
 # Only do these if this is the main project, and not if it is included through add_subdirectory
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -88,6 +112,22 @@ if(VECSIM_BUILD_TESTS)
 endif()
 
 add_subdirectory(src/VecSim)
+
+# TurboQuant's inline runtime selector must have the same definition in the
+# library and internal consumers. Individual SVE2 functions use target attributes;
+# generic objects retain the baseline ISA and dispatch checks the running CPU.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$" AND
+   CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "10")
+	include(CheckIncludeFileCXX)
+	check_include_file_cxx(arm_sve.h VECSIM_HAS_ARM_SVE_H)
+	if(VECSIM_HAS_ARM_SVE_H)
+		target_compile_definitions(VectorSimilarity PUBLIC OPT_SVE2)
+		if(TARGET VectorSimilaritySerializer)
+			target_compile_definitions(VectorSimilaritySerializer PRIVATE OPT_SVE2)
+		endif()
+	endif()
+endif()
 
 # Needed for build as ExternalProject (like RediSearch does)
 install(TARGETS VectorSimilarity DESTINATION ${CMAKE_INSTALL_PREFIX})

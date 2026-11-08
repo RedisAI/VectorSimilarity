@@ -55,6 +55,8 @@ template <VecSimMetric Metric, typename StorageType = sq8>
 [[nodiscard]] constexpr bool QuantizationParamsSupported(VecSimQuantType quant_type,
                                                          VecSimType type,
                                                          VecSimMetric resolved_metric) {
+    if (quant_type == VecSimQuant_TQ2 || quant_type == VecSimQuant_TQ3)
+        return type == VecSimType_FLOAT32 && resolved_metric == VecSimMetric_IP;
     // Reject unknown quantizers instead of silently creating an unquantized index.
     if (quant_type != VecSimQuant_SQ8) {
         return false;
@@ -106,6 +108,21 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
             return NULL;
         }
 
+        if (vecsim::quantization::isTurboQuant(hnswParams->quantType)) {
+            const unsigned bits = vecsim::quantization::turboQuantBits(hnswParams->quantType);
+            abstractInitParams.storedDataSize =
+                vecsim::quantization::turboQuantStorageBytes(hnswParams->dim, bits);
+            abstractInitParams.isQuantized = true;
+            auto components = vecsim::quantization::createTurboQuantComponents(
+                abstractInitParams.allocator, hnswParams->dim, bits,
+                static_cast<const VecSimTurboQuantParams *>(hnswParams->quantParams));
+            auto *index = NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams,
+                                                            components);
+#ifdef BUILD_TESTS
+            index->quantType = hnswParams->quantType;
+#endif
+            return index;
+        }
         if (hnswParams->type == VecSimType_FLOAT32) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_Quantized<float, VecSimMetric_L2>(hnswParams, abstractInitParams,
@@ -168,7 +185,8 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
 
 VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized) {
     VecSimParams vecSimParams = {.algoParams = {.hnswParams = HNSWParams{*params}}};
-    return NewIndex(&vecSimParams);
+    return NewIndex(&vecSimParams,
+        vecsim::quantization::isTurboQuant(params->quantType) ? is_normalized : false);
 }
 
 template <typename DataType, typename DistType = DataType>
@@ -190,7 +208,14 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool wi
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
-    if (params->quantType != VecSimQuant_NONE) {
+    if (vecsim::quantization::isTurboQuant(params->quantType)) {
+        if (!QuantizationParamsSupported(params->quantType, params->type,
+                ResolveQuantizedMetric(params->metric, is_normalized)))
+            throw std::invalid_argument("Unsupported TurboQuant params for HNSW index");
+        est += vecsim::quantization::estimateTurboQuantComponents(
+            params->dim, vecsim::quantization::turboQuantBits(params->quantType));
+        est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
+    } else if (params->quantType != VecSimQuant_NONE) {
         // Keep construction and initial-size validation in sync.
         if (!QuantizationParamsSupported(params->quantType, params->type,
                                          ResolveQuantizedMetric(params->metric, is_normalized))) {
@@ -245,7 +270,17 @@ size_t EstimateElementSize(const HNSWParams *params, bool with_mean) {
 
     size_t stored_data_size;
     // Preserve the element estimator's existing contract: return a size and validate in NewIndex.
-    if (params->quantType == VecSimQuant_SQ8) {
+    if (vecsim::quantization::isTurboQuant(params->quantType)) {
+        if (params->type != VecSimType_FLOAT32 ||
+            (params->metric != VecSimMetric_IP && params->metric != VecSimMetric_Cosine))
+            return SIZE_MAX;
+        try {
+            stored_data_size = vecsim::quantization::turboQuantStorageBytes(
+                params->dim, vecsim::quantization::turboQuantBits(params->quantType));
+        } catch (const std::invalid_argument &) {
+            return SIZE_MAX;
+        }
+    } else if (params->quantType == VecSimQuant_SQ8) {
         if (params->metric == VecSimMetric_L2) {
             stored_data_size = GetQuantizedStoredDataSize<VecSimMetric_L2>(params->dim, with_mean);
         } else {
@@ -336,6 +371,13 @@ static bool InitializeParams(std::ifstream &source_params, HNSWParams &params,
         // VecSimQuantType, so it must never be loaded into the enum.
         std::underlying_type_t<VecSimQuantType> raw_quant_type;
         Serializer::readBinaryPOD(source_params, raw_quant_type);
+        if (version == HNSWSerializer::EncodingVersion::V6) {
+            if (!source_params || (raw_quant_type != VecSimQuant_TQ2 &&
+                                   raw_quant_type != VecSimQuant_TQ3))
+                throw std::runtime_error("Invalid V6 TurboQuant type");
+            params.quantType = static_cast<VecSimQuantType>(raw_quant_type);
+            return true;
+        }
         if (raw_quant_type != VecSimQuant_NONE && raw_quant_type != VecSimQuant_SQ8) {
             return false;
         }
@@ -351,6 +393,97 @@ static bool InitializeParams(std::ifstream &source_params, HNSWParams &params,
         }
     }
     return true;
+}
+
+// Validate a V6 graph before the legacy loader allocates nodes. That loader assumes a
+// complete trusted stream; checking first also prevents partial graph destruction on failure.
+static void ValidateTurboQuantGraph(std::ifstream &input, const HNSWParams &params,
+                                    const std::shared_ptr<VecSimAllocator> &allocator,
+                                    size_t record_bytes) {
+    const auto start = input.tellg();
+    input.seekg(0, std::ios::end);
+    const auto end = input.tellg();
+    input.seekg(start);
+    auto read = [&](auto &value) {
+        input.read(reinterpret_cast<char *>(&value), sizeof(value));
+        if (!input) throw std::runtime_error("Truncated V6 HNSW graph");
+    };
+    size_t m, m0, efc, ef, count, deleted, max_level;
+    double epsilon, mult;
+    idType entrypoint;
+    read(m); read(m0); read(efc); read(ef); read(epsilon); read(mult);
+    read(count); read(deleted); read(max_level); read(entrypoint);
+    if (m < 2 || m > UINT16_MAX / 2 || m0 != 2 * m || !efc || !ef ||
+        !std::isfinite(epsilon) || epsilon <= 0 || !std::isfinite(mult) || mult <= 0 ||
+        count >= INVALID_ID || deleted > count || !params.blockSize ||
+        params.blockSize > UINT_MAX ||
+        (count && (entrypoint >= count || max_level > 65535)) ||
+        (!count && (entrypoint != INVALID_ID || max_level != HNSW_INVALID_LEVEL)))
+        throw std::runtime_error("Invalid V6 HNSW graph parameters");
+    const uint64_t row_bytes = sizeof(labelType) + sizeof(elementFlags) + record_bytes;
+    const auto remaining = end - input.tellg();
+    if (remaining < 0 || uint64_t(count) > uint64_t(remaining) / row_bytes)
+        throw std::runtime_error("Invalid V6 HNSW vector count");
+    size_t marked = 0;
+    for (size_t i = 0; i < count; ++i) {
+        labelType label;
+        elementFlags flags;
+        read(label); read(flags);
+        if (flags & ~DELETE_MARK)
+            throw std::runtime_error("Invalid V6 HNSW element flags");
+        marked += (flags & DELETE_MARK) != 0;
+    }
+    if (marked != deleted) throw std::runtime_error("Inconsistent V6 HNSW deletion count");
+    auto row = allocator->allocate_unique(record_bytes);
+    const size_t code_bytes = record_bytes - 2 * sizeof(float);
+    for (size_t i = 0; i < count; ++i) {
+        input.read(static_cast<char *>(row.get()), record_bytes);
+        if (!input) throw std::runtime_error("Truncated V6 HNSW records");
+        float metadata[2];
+        std::memcpy(metadata, static_cast<const char *>(row.get()) + code_bytes, sizeof(metadata));
+        if (!std::isfinite(metadata[0]) || metadata[0] < 0 || !std::isfinite(metadata[1]))
+            throw std::runtime_error("Invalid V6 TurboQuant record");
+    }
+    vecsim_stl::vector<size_t> node_levels(count, 0, allocator);
+    vecsim_stl::vector<size_t> required_levels(count, 0, allocator);
+    for (size_t block_start = 0; block_start < count; block_start += params.blockSize) {
+        unsigned block_length = 0;
+        read(block_length);
+        if (block_length != std::min(params.blockSize, count - block_start))
+            throw std::runtime_error("Invalid V6 HNSW graph block");
+        for (size_t i = 0; i < block_length; ++i) {
+            size_t level = 0;
+            read(level);
+            if (level > max_level) throw std::runtime_error("Invalid V6 HNSW node level");
+            node_levels[block_start + i] = level;
+            for (size_t l = 0; l <= level; ++l) {
+                linkListSize links = 0;
+                read(links);
+                if (links > (l == 0 ? m0 : m))
+                    throw std::runtime_error("Invalid V6 HNSW link count");
+                for (size_t j = 0; j < links; ++j) {
+                    idType neighbor; read(neighbor);
+                    if (neighbor >= count) throw std::runtime_error("Invalid V6 HNSW neighbor");
+                    required_levels[neighbor] = std::max(required_levels[neighbor], l);
+                }
+                unsigned incoming = 0;
+                read(incoming);
+                if (incoming > count) throw std::runtime_error("Invalid V6 HNSW incoming count");
+                for (size_t j = 0; j < incoming; ++j) {
+                    idType neighbor; read(neighbor);
+                    if (neighbor >= count) throw std::runtime_error("Invalid V6 HNSW incoming edge");
+                    required_levels[neighbor] = std::max(required_levels[neighbor], l);
+                }
+            }
+        }
+    }
+    if (count && node_levels[entrypoint] != max_level)
+        throw std::runtime_error("Inconsistent V6 HNSW entrypoint level");
+    for (size_t i = 0; i < count; ++i)
+        if (node_levels[i] < required_levels[i])
+            throw std::runtime_error("V6 HNSW edge targets a missing level");
+    if (input.tellg() != end) throw std::runtime_error("Trailing V6 HNSW graph bytes");
+    input.seekg(start);
 }
 
 VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
@@ -384,6 +517,23 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&params, nullptr, is_normalized);
 
+    if (vecsim::quantization::isTurboQuant(params.quantType)) {
+        if (!QuantizationParamsSupported(params.quantType, params.type,
+                ResolveQuantizedMetric(params.metric, is_normalized)))
+            return nullptr;
+        const auto bits = vecsim::quantization::turboQuantBits(params.quantType);
+        abstractInitParams.storedDataSize =
+            vecsim::quantization::turboQuantStorageBytes(params.dim, bits);
+        abstractInitParams.isQuantized = true;
+        auto codec = vecsim::quantization::TurboQuant::loadFitted(
+            input, abstractInitParams.allocator, params.dim, bits);
+        ValidateTurboQuantGraph(input, params, abstractInitParams.allocator,
+                                abstractInitParams.storedDataSize);
+        auto components = vecsim::quantization::createTurboQuantComponents(
+            abstractInitParams.allocator, std::move(codec));
+        return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
+                                                   components, version);
+    }
     if (params.quantType != VecSimQuant_NONE) {
         const float *mean_ptr = meanVector.empty() ? nullptr : meanVector.data();
         const VecSimMetric metric = ResolveQuantizedMetric(params.metric, is_normalized);
