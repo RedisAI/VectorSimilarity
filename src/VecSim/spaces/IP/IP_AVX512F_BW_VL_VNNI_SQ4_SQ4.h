@@ -105,10 +105,9 @@ float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI_IMP(const void *pVect1v, con
     // Existing dispatch bounds the full sum by UINT32_MAX. Keep all additions in SIMD,
     // then extract as unsigned before FP32 conversion.
     const __m512i sum = _mm512_add_epi32(sum_low, sum_high);
-    const __m256i s8 = _mm256_add_epi32(_mm512_castsi512_si256(sum),
-                                       _mm512_extracti64x4_epi64(sum, 1));
-    const __m128i s4 = _mm_add_epi32(_mm256_castsi256_si128(s8),
-                                    _mm256_extracti128_si256(s8, 1));
+    const __m256i s8 =
+        _mm256_add_epi32(_mm512_castsi512_si256(sum), _mm512_extracti64x4_epi64(sum, 1));
+    const __m128i s4 = _mm_add_epi32(_mm256_castsi256_si128(s8), _mm256_extracti128_si256(s8, 1));
     const __m128i s2 = _mm_add_epi32(s4, _mm_srli_si128(s4, 8));
     const __m128i s1 = _mm_add_epi32(s2, _mm_srli_si128(s2, 4));
     const auto code_dot = static_cast<uint32_t>(_mm_cvtsi128_si32(s1));
