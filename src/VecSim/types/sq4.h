@@ -15,11 +15,12 @@ namespace vecsim_types {
 // Two scalar-quantized coordinates per byte, followed by the same metadata as SQ8.
 struct sq4 : sq8 {
     static constexpr uint8_t max_code = 15;
+    static constexpr unsigned bits_per_code = 4;
 
     static constexpr size_t data_bytes_count(size_t dim) { return dim / 2 + dim % 2; }
 
     static uint8_t load_code(const uint8_t *data, size_t index) {
-        return (data[index / 2] >> ((index % 2) * 4)) & max_code;
+        return (data[index / 2] >> ((index % 2) * bits_per_code)) & max_code;
     }
 
     // Coordinates are stored in ascending order. Starting each byte with an assignment allows
@@ -28,33 +29,43 @@ struct sq4 : sq8 {
         if (index % 2 == 0) {
             data[index / 2] = code & max_code;
         } else {
-            data[index / 2] = (data[index / 2] & max_code) | ((code & max_code) << 4);
+            data[index / 2] = (data[index / 2] & max_code) | ((code & max_code) << bits_per_code);
         }
     }
 
-    // Code dot hooks bound to the packed load_code above.
+    // Dot product of two packed code arrays: sum(q1_i * q2_i). Each byte is loaded once and both
+    // nibbles are used. The 64-bit integer sum is exact for any dimension.
     static float code_dot(const uint8_t *a, const uint8_t *b, size_t dim) {
-        float product = 0;
-        for (size_t i = 0; i < dim; i++) {
-            product += load_code(a, i) * load_code(b, i);
+        const size_t full_bytes = dim / 2;
+        uint64_t sum = 0;
+        for (size_t j = 0; j < full_bytes; j++) {
+            const uint32_t a_byte = a[j], b_byte = b[j];
+            sum += (a_byte & max_code) * (b_byte & max_code) +
+                   (a_byte >> bits_per_code) * (b_byte >> bits_per_code);
         }
-        return product;
+        if (dim % 2) {
+            // Odd dim: the last byte holds only a low nibble.
+            sum += uint32_t(a[full_bytes] & max_code) * uint32_t(b[full_bytes] & max_code);
+        }
+        return static_cast<float>(sum);
     }
 
+    // Dot product of a packed code array with FP32 values: sum(q_i * y_i). Each byte is loaded
+    // once; the low nibble pairs with y[2j] and the high nibble with y[2j + 1], in two independent
+    // accumulators for instruction-level parallelism.
     static float code_dot_fp32(const uint8_t *codes, const float *y, size_t dim) {
-        float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
-        size_t i = 0;
-        size_t dim4 = dim & ~size_t(3);
-        for (; i < dim4; i += 4) {
-            sum0 += static_cast<float>(load_code(codes, i + 0)) * y[i + 0];
-            sum1 += static_cast<float>(load_code(codes, i + 1)) * y[i + 1];
-            sum2 += static_cast<float>(load_code(codes, i + 2)) * y[i + 2];
-            sum3 += static_cast<float>(load_code(codes, i + 3)) * y[i + 3];
+        const size_t full_bytes = dim / 2;
+        float sum_low = 0, sum_high = 0;
+        for (size_t j = 0; j < full_bytes; j++) {
+            const uint8_t byte = codes[j];
+            sum_low += static_cast<float>(byte & max_code) * y[2 * j];
+            sum_high += static_cast<float>(byte >> bits_per_code) * y[2 * j + 1];
         }
-        for (; i < dim; i++) {
-            sum0 += static_cast<float>(load_code(codes, i)) * y[i];
+        if (dim % 2) {
+            // Odd dim: the last byte holds only a low nibble.
+            sum_low += static_cast<float>(codes[full_bytes] & max_code) * y[dim - 1];
         }
-        return (sum0 + sum1) + (sum2 + sum3);
+        return sum_low + sum_high;
     }
 
     template <VecSimMetric Metric, bool WithNorm = false>

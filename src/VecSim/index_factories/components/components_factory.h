@@ -113,27 +113,6 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
                                                                                mean_ptr);
 }
 
-template <typename DataType, VecSimMetric Metric, bool WithMean>
-IndexComponents<DataType, float>
-CreateSQ4IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
-                         const void *mean_ptr) {
-    static_assert(std::is_same_v<DataType, float>, "SQ4 supports FP32 input only");
-    static_assert(Metric == VecSimMetric_IP || Metric == VecSimMetric_L2,
-                  "SQ4 supports IP and L2 only");
-    return CreateQuantizedIndexComponents<DataType, Metric, WithMean, vecsim_types::sq4>(
-        allocator, dim, static_cast<const float *>(mean_ptr));
-}
-
-template <typename DataType, VecSimMetric Metric>
-IndexComponents<DataType, float>
-CreateSQ4IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
-                         const void *mean_ptr) {
-    if (mean_ptr) {
-        return CreateSQ4IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr);
-    }
-    return CreateSQ4IndexComponents<DataType, Metric, false>(allocator, dim, mean_ptr);
-}
-
 template <typename DataType, typename DistType>
 size_t EstimateComponentsMemory(VecSimMetric metric, bool is_normalized) {
     size_t allocations_overhead = VecSimAllocator::getAllocationOverheadSize();

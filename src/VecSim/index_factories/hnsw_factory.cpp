@@ -410,14 +410,14 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
                 abstractInitParams.storedDataSize =
                     GetQuantizedStoredDataSize<VecSimMetric_L2, sq4>(params.dim,
                                                                      mean_ptr != nullptr);
-                auto components = CreateSQ4IndexComponents<float, VecSimMetric_L2>(
+                auto components = CreateQuantizedIndexComponents<float, VecSimMetric_L2, sq4>(
                     abstractInitParams.allocator, params.dim, mean_ptr);
                 return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
                                                            components, version, mean_ptr);
             }
             abstractInitParams.storedDataSize =
                 GetQuantizedStoredDataSize<VecSimMetric_IP, sq4>(params.dim, mean_ptr != nullptr);
-            auto components = CreateSQ4IndexComponents<float, VecSimMetric_IP>(
+            auto components = CreateQuantizedIndexComponents<float, VecSimMetric_IP, sq4>(
                 abstractInitParams.allocator, params.dim, mean_ptr);
             return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
                                                        components, version, mean_ptr);

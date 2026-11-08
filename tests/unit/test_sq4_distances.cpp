@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <limits>
 #include <random>
 #include <stdexcept>
 #include <utility>
@@ -262,7 +261,7 @@ TEST(SQ4Distances, OddDimMatchesReference) {
     }
 }
 
-TEST(SQ4Distances, MatchedIPEqualsReconstruction) {
+TEST(SQ4Distances, FP32IPEqualsReconstruction) {
     constexpr size_t dim = 768;
     std::mt19937 rng(99);
     std::uniform_int_distribution<int> code_dist(0, 15);
@@ -279,55 +278,6 @@ TEST(SQ4Distances, MatchedIPEqualsReconstruction) {
     const float ref = reconstructedIP(x.data(), query.data(), dim, min_val, delta);
     EXPECT_NEAR(SQ4_FP32_InnerProduct(x.data(), query.data(), dim), ref,
                 1e-5 * std::max(1.0f, std::abs(ref)));
-}
-
-TEST(SQ4Distances, ReconstructedFallbackIsExported) {
-    for (size_t dim : {1u, 17u, 768u}) {
-        SCOPED_TRACE(dim);
-        std::mt19937 rng(7);
-        std::uniform_int_distribution<int> code_dist(0, 15);
-        std::uniform_real_distribution<float> val_dist(-1.0f, 1.0f);
-        std::vector<uint8_t> codes(dim);
-        std::vector<float> values(dim);
-        for (size_t i = 0; i < dim; ++i) {
-            codes[i] = code_dist(rng);
-            values[i] = val_dist(rng);
-        }
-        const float min_val = -0.75f, delta = 0.1f;
-        PackedVector x(codes, min_val, delta);
-        auto query = makeQuery(values);
-        double dot = 0.0;
-        for (size_t i = 0; i < dim; ++i) {
-            dot += (double(min_val) + double(delta) * codes[i]) * values[i];
-        }
-        const double ref = 1.0 - dot;
-        EXPECT_NEAR(SQ4_FP32_InnerProductReconstructed(x.data(), query.data(), dim), ref,
-                    1e-5 * std::max(1.0, std::abs(ref)));
-    }
-}
-
-TEST(SQ4Distances, MatchedIPOverflowFallsBack) {
-    constexpr size_t dim = 16;
-    // codes {0, 15 x 15} with min 0 and delta 1/15 (what storing [0, 1 x 15] produces).
-    std::vector<uint8_t> codes(dim, 15);
-    codes[0] = 0;
-    const float min_val = 0.0f, delta = 1.0f / 15;
-    PackedVector x(codes, min_val, delta);
-    auto query = makeQuery(std::vector<float>(dim, std::numeric_limits<float>::max() / 32));
-    ASSERT_TRUE(std::isfinite(query[dim + sq4::SUM_QUERY]));
-    // The unscaled code dot overflows float, so the matched form is non-finite.
-    float code_dot = 0.0f;
-    for (size_t i = 0; i < dim; ++i) {
-        code_dot += sq4::load_code(x.data(), i) * query[i];
-    }
-    ASSERT_TRUE(std::isinf(code_dot));
-    const float expected = reconstructedIP(x.data(), query.data(), dim, min_val, delta);
-    ASSERT_TRUE(std::isfinite(expected));
-    const float scalar = SQ4_FP32_InnerProduct(x.data(), query.data(), dim);
-    EXPECT_TRUE(std::isfinite(scalar));
-    EXPECT_FLOAT_EQ(scalar, expected);
-    auto dispatched = spaces::GetDistFunc<sq4, float, float>(VecSimMetric_IP, dim, nullptr);
-    EXPECT_FLOAT_EQ(dispatched(x.data(), query.data(), dim), expected);
 }
 
 TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {

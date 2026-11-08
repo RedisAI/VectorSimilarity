@@ -69,8 +69,8 @@ void checkComponents(size_t dim, bool constant) {
         x[i] = offset + (constant ? 1.25f : 0.31f * (int((i * 7) % 19) - 9));
         y[i] = offset + (constant ? -0.75f : 0.23f * (int((i * 11) % 17) - 8));
     }
-    auto components =
-        CreateSQ4IndexComponents<float, Metric>(allocator, dim, WithMean ? mean.data() : nullptr);
+    auto components = CreateQuantizedIndexComponents<float, Metric, vecsim_types::sq4>(
+        allocator, dim, WithMean ? mean.data() : nullptr);
     std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
     std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
     const size_t input_size = dim * sizeof(float);
@@ -179,7 +179,8 @@ TEST(SQ4Components, OddDimTailNibbleIsZero) {
         input[dim - 1] = 100.0f;
         auto check = [&](auto metric_tag) {
             constexpr VecSimMetric Metric = decltype(metric_tag)::value;
-            auto components = CreateSQ4IndexComponents<float, Metric>(allocator, dim, nullptr);
+            auto components = CreateQuantizedIndexComponents<float, Metric, vecsim_types::sq4>(
+                allocator, dim, nullptr);
             std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
             std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
             auto blob = preprocessors->preprocessForStorage(input.data(), dim * sizeof(float));
@@ -219,8 +220,8 @@ TEST(SQ4Components, NonFiniteInputEncodesInBounds) {
         constexpr VecSimMetric Metric = decltype(metric_tag)::value;
         constexpr bool WithMean = decltype(with_mean_tag)::value;
         SCOPED_TRACE(::testing::Message() << "metric=" << Metric << " mean=" << WithMean);
-        auto components = CreateSQ4IndexComponents<float, Metric>(allocator, dim,
-                                                                  WithMean ? mean.data() : nullptr);
+        auto components = CreateQuantizedIndexComponents<float, Metric, vecsim_types::sq4>(
+            allocator, dim, WithMean ? mean.data() : nullptr);
         std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
         std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
         const size_t storage_size = sq4::storage_bytes_count<Metric, WithMean>(dim);
@@ -263,7 +264,8 @@ TEST(SQ4Components, CenteredIPBlobSize768) {
         input[i] = 0.01f * (int(i % 41) - 20);
         mean[i] = 0.002f * (int(i % 9) - 4);
     }
-    auto components = CreateSQ4IndexComponents<float, VecSimMetric_IP>(allocator, dim, mean.data());
+    auto components = CreateQuantizedIndexComponents<float, VecSimMetric_IP, vecsim_types::sq4>(
+        allocator, dim, mean.data());
     std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
     std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
     auto *container = dynamic_cast<MultiPreprocessorsContainer<float, 1> *>(preprocessors.get());
@@ -284,7 +286,8 @@ TEST(SQ4Components, SQ4ComponentsAreNotSQ8Types) {
     auto allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t dim = 8;
     std::vector<float> mean(dim, 0.5f);
-    auto components = CreateSQ4IndexComponents<float, VecSimMetric_IP>(allocator, dim, mean.data());
+    auto components = CreateQuantizedIndexComponents<float, VecSimMetric_IP, vecsim_types::sq4>(
+        allocator, dim, mean.data());
     std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
     std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
     auto *container = dynamic_cast<MultiPreprocessorsContainer<float, 1> *>(preprocessors.get());
@@ -307,7 +310,7 @@ TEST(SQ4Components, StoredL2UsesOneKernel) {
     std::vector<float> zero_mean(dim, 0.0f);
     for (bool centered : {true, false}) {
         SCOPED_TRACE(centered);
-        auto components = CreateSQ4IndexComponents<float, VecSimMetric_L2>(
+        auto components = CreateQuantizedIndexComponents<float, VecSimMetric_L2, vecsim_types::sq4>(
             allocator, dim, centered ? zero_mean.data() : nullptr);
         std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
         std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
