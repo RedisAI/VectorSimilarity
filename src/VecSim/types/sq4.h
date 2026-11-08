@@ -39,13 +39,13 @@ struct sq4 : sq8 {
         const size_t full_bytes = dim / 2;
         uint64_t sum = 0;
         for (size_t j = 0; j < full_bytes; j++) {
-            const uint32_t a_byte = a[j], b_byte = b[j];
+            const uint64_t a_byte = a[j], b_byte = b[j];
             sum += (a_byte & max_code) * (b_byte & max_code) +
                    (a_byte >> bits_per_code) * (b_byte >> bits_per_code);
         }
         if (dim % 2) {
             // Odd dim: the last byte holds only a low nibble.
-            sum += uint32_t(a[full_bytes] & max_code) * uint32_t(b[full_bytes] & max_code);
+            sum += uint64_t(a[full_bytes] & max_code) * uint64_t(b[full_bytes] & max_code);
         }
         return static_cast<float>(sum);
     }
