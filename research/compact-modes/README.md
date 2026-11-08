@@ -1,9 +1,10 @@
 # TQ2/TQ3 StorageTypes
 
 This draft adds smaller total HNSW index choices, with recall and query latency
-as explicit tradeoffs. It is based on PR #1101 (`codex/quant-storage-type`,
-`6a60e4087e8d31c8cdd78ad06c260fed252c9279`, shared storage context foundation).
-It does not include SQ4 from
+as explicit tradeoffs. Work is deferred until PR #1101 (`codex/quant-storage-type`)
+merges. The broader storage context foundation (`6a60e408`) was reverted from
+#1101; its implementation and evidence remain preserved in this draft. Rebase
+and reapply that foundation after #1101 merges. It does not include SQ4 from
 #1099/#1103 and does not change the default quantization mode.
 
 ## Shared StorageType pipeline
@@ -23,7 +24,7 @@ adding a per-candidate virtual call. Components own the shared context; the
 index retains a non-owning alias. Context/control allocations are counted in
 the memory estimator, and allocated query/storage blobs retain their allocator.
 
-This common foundation is in #1101. The TQ-specific layer adds StorageType
+This common foundation is deferred until after #1101 merges. The TQ-specific layer adds StorageType
 registration, contexts, codec/kernels and their tests. SQ4's existing scalar
 layout/code hooks can continue through the scalar-family default context.
 

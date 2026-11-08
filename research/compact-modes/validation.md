@@ -2,6 +2,11 @@
 
 ## Current StorageType revision
 
+This evidence qualifies the preserved prototype, including foundation commit
+`6a60e408`. That foundation has been reverted from #1101 and deferred until
+after #1101 merges. The receipt's base commit identifies the validated snapshot,
+not the current dependency-PR head. Rebase/reapplication will need fresh checks.
+
 Passed on user-selected `dorer-arm-big` (ARM64, Neoverse V2, 16-byte SVE),
 with quiet-host/resource guards and four compile jobs:
 
@@ -16,7 +21,7 @@ with quiet-host/resource guards and four compile jobs:
   public/diagnostic record, score and kernel parity, mutation, query and backend reload.
 - Ten accepted stage receipts; no competing workload recorded. Source, dependency,
   test/benchmark binary and runtime manifests checked.
-- The SQ8-only foundation on #1101 built separately and passed its 61 component
+- The deferred SQ8-only foundation (`6a60e408`) built separately and passed its 61 component
   and 209 SQ8 tests, with its own source/binary/runtime pins and quiet-host guards.
 
 [qualification.json](qualification.json) records 29 source/build-file hashes,
