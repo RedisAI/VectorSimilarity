@@ -112,52 +112,20 @@ public:
         assert(turboQuantStorage);
         return turboQuantPreprocessors().codec();
     }
-    void beginTurboQuantTraining(size_t threshold) {
-        assert(turboQuantStorage && curElementCount == 0 && !isTurboQuantTraining());
-        turboQuantPreprocessors().training().emplace(this->allocator, this->dim, threshold);
-    }
-    bool isTurboQuantTraining() const {
-        return turboQuantStorage && turboQuantPreprocessors().training().has_value();
-    }
-    size_t turboQuantTrainingCount() const {
-        return turboQuantStorage ? turboQuantPreprocessors().trainingCountForInfo() : 0;
-    }
-    bool turboQuantTrainingReady() const {
-        return isTurboQuantTraining() && turboQuantPreprocessors().training()->shouldFinalize();
-    }
-    void addTurboQuantTrainingVector(std::span<const DataType> vector) {
-        if constexpr (QuantInput<DataType>) {
-            turboQuantPreprocessors().training()->add(vector);
-            turboQuantPreprocessors().publishTrainingCount();
-        }
-    }
-    void subtractTurboQuantTrainingVector(std::span<const DataType> vector) {
-        if constexpr (QuantInput<DataType>) {
-            turboQuantPreprocessors().training()->subtract(vector);
-            turboQuantPreprocessors().publishTrainingCount();
-        }
-    }
-    vecsim::quantization::TurboQuant::PreparedMean prepareTurboQuantTraining() const {
-        assert(turboQuantTrainingReady());
-        const auto mean = turboQuantPreprocessors().training()->calculateMean();
-        vecsim::quantization::validateTurboQuantInput(mean.data(), this->dim);
-        return getTurboQuant()->prepareMean({mean.data(), mean.size()});
-    }
-    // Publish only with the exclusive tiered main guard, before migration jobs exist.
-    // Every tiered query prepares and consumes its backend query under the shared main
-    // guard (batch iterators retain it), so it cannot observe mixed fitted terms.
-    void publishTurboQuantTraining(vecsim::quantization::TurboQuant::PreparedMean &&mean) noexcept {
-        assert(isTurboQuantTraining() && curElementCount == 0);
-        getTurboQuant()->publishMean(std::move(mean));
-        turboQuantPreprocessors().training().reset();
-        turboQuantPreprocessors().publishTrainingCount();
-    }
     // Writer-only operation: install the mean once, before any stored vector, under the
     // exclusive tiered main lock and before submitting insertion jobs. The backend must have
-    // its final SQ8 WithNorm components; the caller owns and enforces the one-time transition.
+    // its final storage layout; the caller owns and enforces the one-time transition.
     // A quantizer that learns storedDataSize from data needs deferred backend creation.
-    void setQuantizationMean(std::span<const float> mean) noexcept {
+    void setQuantizationMean(std::span<const float> mean) {
         assert(this->isQuantized && curElementCount == 0 && mean.size() == this->dim);
+        if (turboQuantStorage) {
+            // Prepare every fitted term before publishing any of them. Tiered readers hold
+            // the shared main guard while preparing and consuming their backend queries.
+            vecsim::quantization::validateTurboQuantInput(mean.data(), this->dim);
+            auto prepared = getTurboQuant()->prepareMean(mean);
+            getTurboQuant()->publishMean(std::move(prepared));
+            return;
+        }
         if constexpr (QuantInput<DataType> && std::is_same_v<DistType, float>) {
             if (this->metric == VecSimMetric_L2) {
                 setSQ8Mean<VecSimMetric_L2>(mean);
@@ -2533,8 +2501,6 @@ VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
         info.hnswInfo.turboQuantType = codec->bits() == 2 ? VecSimQuant_TQ2 : VecSimQuant_TQ3;
         info.hnswInfo.quantizedVectorBytes = codec->storageBytes();
         info.hnswInfo.quantizerSharedBytes = codec->sharedDataBytes();
-        info.hnswInfo.quantizerTraining = isTurboQuantTraining();
-        info.hnswInfo.quantizerTrainingCount = turboQuantTrainingCount();
         info.hnswInfo.quantizerQueryKernel = codec->scoringKernelName();
         info.hnswInfo.quantizerGraphKernel = codec->storedScoringKernelName();
     }
@@ -2620,8 +2586,6 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
         integer("QUANT_VECTOR_BYTES", info.hnswInfo.quantizedVectorBytes);
         integer("QUANT_SHARED_BYTES", info.hnswInfo.quantizerSharedBytes);
         integer("QUANT_QUERY_BYTES", codec->queryBytes() + sizeof(float));
-        integer("QUANT_TRAINING", info.hnswInfo.quantizerTraining);
-        integer("QUANT_TRAINING_COUNT", info.hnswInfo.quantizerTrainingCount);
         string("QUANT_QUERY_KERNEL", info.hnswInfo.quantizerQueryKernel);
         string("QUANT_GRAPH_KERNEL", info.hnswInfo.quantizerGraphKernel);
     }

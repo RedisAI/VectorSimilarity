@@ -45,8 +45,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(std::ifstream &input, const HNSWParams 
 template <typename DataType, typename DistType>
 HNSWSerializer::EncodingVersion HNSWIndex<DataType, DistType>::getWriteVersion() const {
     if (turboQuantStorage) {
-        if (isTurboQuantTraining())
-            throw std::runtime_error("Cannot save TurboQuant while tiered training is pending");
         return HNSWSerializer::EncodingVersion::V6;
     }
     return this->isQuantized ? HNSWSerializer::EncodingVersion::V5

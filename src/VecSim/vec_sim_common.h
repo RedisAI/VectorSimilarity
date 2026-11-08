@@ -449,8 +449,6 @@ typedef struct {
     VecSimQuantType turboQuantType;
     size_t quantizedVectorBytes;
     size_t quantizerSharedBytes;
-    size_t quantizerTrainingCount;
-    bool quantizerTraining;
     const char *quantizerQueryKernel;
     const char *quantizerGraphKernel;
 } hnswInfoStruct;

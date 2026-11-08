@@ -119,39 +119,24 @@ private:
 
     bool isQuantized;
 
-    // Writer-owned state exists only while SQ8 vectors are accumulating in FLAT.
+    // Writer-owned state exists only while quantized vectors are accumulating in FLAT.
     // Reads and maintenance always use the real, initially empty backend.
     std::optional<SQ8TrainingState> sqAccumulationState;
 
 #ifdef BUILD_TESTS
     std::function<void()> beforeQuantizationFinalization;
-    std::function<void()> beforeTurboQuantCallbacksPreparation;
+    std::function<void()> beforeQuantizationCallbacksPreparation;
     std::function<void()> afterQuantizationFinalization;
     std::function<void()> afterBackendInsertBeforeFlatRemoval;
 #endif
 
-    bool isAccumulating() const {
-        return sqAccumulationState.has_value() || getHNSWIndex()->isTurboQuantTraining();
-    }
-    size_t accumulationCount() const {
-        return sqAccumulationState ? sqAccumulationState->getCount()
-                                   : getHNSWIndex()->turboQuantTrainingCount();
-    }
     void addToSum(std::span<const DataType> vector) {
-        if (getHNSWIndex()->isTurboQuantTraining()) {
-            getHNSWIndex()->addTurboQuantTrainingVector(vector);
-            return;
-        }
         if constexpr (QuantInput<DataType>) {
             sqAccumulationState->add(vector);
         }
     }
 
     void subtractFromSum(std::span<const DataType> vector) {
-        if (getHNSWIndex()->isTurboQuantTraining()) {
-            getHNSWIndex()->subtractTurboQuantTrainingVector(vector);
-            return;
-        }
         if constexpr (QuantInput<DataType>) {
             sqAccumulationState->subtract(vector);
         }
@@ -292,8 +277,8 @@ public:
 
 #ifdef BUILD_TESTS
     HNSWIndex<DataType, DistType> *getBackendForTests() const { return getHNSWIndex(); }
-    void setBeforeTurboQuantCallbacksPreparationHook(std::function<void()> hook) {
-        beforeTurboQuantCallbacksPreparation = std::move(hook);
+    void setBeforeQuantizationCallbacksPreparationHook(std::function<void()> hook) {
+        beforeQuantizationCallbacksPreparation = std::move(hook);
     }
     void setBeforeQuantizationFinalizationHook(std::function<void()> hook) {
         beforeQuantizationFinalization = std::move(hook);
@@ -793,11 +778,7 @@ TieredHNSWIndex<DataType, DistType>::TieredHNSWIndex(HNSWIndex<DataType, DistTyp
     const size_t normalization_set_size =
         tiered_index_params.specificParams.tieredHnswParams.QuantNormalizationSetSize;
     if (isQuantized && normalization_set_size > 0) {
-        if (hnsw_index->usesTurboQuant()) {
-            hnsw_index->beginTurboQuantTraining(normalization_set_size);
-        } else {
-            sqAccumulationState.emplace(this->allocator, hnsw_index->getDim(), normalization_set_size);
-        }
+        sqAccumulationState.emplace(this->allocator, hnsw_index->getDim(), normalization_set_size);
     }
     // If the param for swapJobThreshold is 0 use the default value, if it exceeds the maximum
     // allowed, use the maximum value.
@@ -846,9 +827,8 @@ int TieredHNSWIndex<DataType, DistType>::addVectorDuringAccumulation(const void 
             this->registerInsertJob(label, job);
         }
         const size_t count = this->frontendIndex->indexSize();
-        assert(accumulationCount() == count);
-        const bool should_finalize = sqAccumulationState ? sqAccumulationState->shouldFinalize()
-            : getHNSWIndex()->turboQuantTrainingReady();
+        assert(sqAccumulationState->getCount() == count);
+        const bool should_finalize = sqAccumulationState->shouldFinalize();
         return std::tuple{result, count, should_finalize};
     }();
 
@@ -876,19 +856,15 @@ int TieredHNSWIndex<DataType, DistType>::deleteVectorDuringAccumulation(labelTyp
     for (const auto &[new_id, previous] : updated_ids) {
         this->updateInsertJobInternalId(previous.first, new_id, previous.second);
     }
-    assert(accumulationCount() == this->frontendIndex->indexSize());
+    assert(sqAccumulationState->getCount() == this->frontendIndex->indexSize());
     return removed;
 }
 
 template <typename DataType, typename DistType>
 void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size_t count) {
     // Preparation may allocate or fail. Until it succeeds, retain all training rows/jobs
-    // and the old coherent codec; a later writer operation can retry finalization.
-    const auto mean = sqAccumulationState ? sqAccumulationState->calculateMean()
-                                         : vecsim_stl::vector<float>(this->allocator);
-    std::optional<vecsim::quantization::TurboQuant::PreparedMean> turbo_mean;
-    if (getHNSWIndex()->isTurboQuantTraining())
-        turbo_mean.emplace(getHNSWIndex()->prepareTurboQuantTraining());
+    // and the previous quantizer state; a later writer operation can retry finalization.
+    const auto mean = sqAccumulationState->calculateMean();
     // Allocate the snapshot before finishing accumulation. Synchronous execution removes jobs
     // from labelToInsertJobs, so iterating the map while dispatching would invalidate iterators.
     vecsim_stl::vector<AsyncJob *> jobs(this->allocator);
@@ -899,14 +875,14 @@ void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size
             jobs.insert(jobs.end(), pending.begin(), pending.end());
         }
     }
-    const bool turbo_in_place = turbo_mean && this->getWriteMode() == VecSim_WriteInPlace;
-    vecsim_stl::vector<JobCallback> turbo_callbacks(this->allocator);
-    if (turbo_mean && !turbo_in_place) {
+    const bool in_place = this->getWriteMode() == VecSim_WriteInPlace;
+    vecsim_stl::vector<JobCallback> callbacks(this->allocator);
+    if (!in_place) {
 #ifdef BUILD_TESTS
-        if (beforeTurboQuantCallbacksPreparation) beforeTurboQuantCallbacksPreparation();
+        if (beforeQuantizationCallbacksPreparation) beforeQuantizationCallbacksPreparation();
 #endif
-        turbo_callbacks.resize(jobs.size());
-        for (size_t i = 0; i < jobs.size(); ++i) turbo_callbacks[i] = jobs[i]->Execute;
+        callbacks.resize(jobs.size());
+        for (size_t i = 0; i < jobs.size(); ++i) callbacks[i] = jobs[i]->Execute;
     }
 #ifdef BUILD_TESTS
     if (beforeQuantizationFinalization) {
@@ -916,8 +892,7 @@ void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size
     {
         const auto main_index_lock = this->acquireMainIndexGuard();
         std::unique_lock<std::shared_mutex> label_lock(labelGuard);
-        if (turbo_mean) getHNSWIndex()->publishTurboQuantTraining(std::move(*turbo_mean));
-        else getHNSWIndex()->setQuantizationMean(mean);
+        getHNSWIndex()->setQuantizationMean(mean);
         // The optional state is consumed once. Emptying a trained index never restarts training.
         sqAccumulationState.reset();
     }
@@ -926,14 +901,12 @@ void TieredHNSWIndex<DataType, DistType>::finalizeQuantizationAndSubmitJobs(size
         afterQuantizationFinalization();
     }
 #endif
-    if (turbo_mean ? turbo_in_place : this->getWriteMode() == VecSim_WriteInPlace) {
+    if (in_place) {
         for (auto *job : jobs) {
             executeInsertJobWrapper(job);
         }
-    } else if (turbo_mean) {
-        this->submitJobs(jobs, turbo_callbacks);
     } else {
-        this->submitJobs(jobs);
+        this->submitJobs(jobs, callbacks);
     }
 }
 
@@ -993,7 +966,7 @@ int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType l
         vecsim::quantization::validateTurboQuantInput(static_cast<const float *>(blob),
                                                      this->frontendIndex->getDim(),
                                                      this->frontendIndex->getMetric() == VecSimMetric_Cosine);
-    if (isAccumulating()) {
+    if (sqAccumulationState) {
         return addVectorDuringAccumulation(blob, label);
     }
     // writeMode is not protected since it is assumed to be called only from the "main thread"
@@ -1078,7 +1051,7 @@ int TieredHNSWIndex<DataType, DistType>::deleteFromFlatAndInsertJobs(labelType l
 
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
-    if (isAccumulating()) {
+    if (sqAccumulationState) {
         return deleteVectorDuringAccumulation(label);
     }
     int num_deleted_vectors = this->deleteFromFlatAndInsertJobs(label);

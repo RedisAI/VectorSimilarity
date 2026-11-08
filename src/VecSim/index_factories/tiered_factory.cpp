@@ -73,7 +73,7 @@ inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
     vecsim_stl::vector<float> initial_mean(management_layer_allocator);
     VecSimTurboQuantParams tq_params{};
     if (RequiresQuantizationTraining(params)) {
-        // Allocate the final SQ8 WithMean layout now. The factory copies this temporary mean;
+        // Allocate the final mean-centered storage layout now. The factory copies this mean;
         // tiered keeps the graph empty until it installs the mean accumulated from FLAT.
         initial_mean.resize(hnsw_params.dim, 0.0f);
         if (vecsim::quantization::isTurboQuant(hnsw_params.quantType)) {

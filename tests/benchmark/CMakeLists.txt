@@ -25,12 +25,10 @@ foreach(benchmark IN ITEMS ${BENCHMARKS})
 	target_link_libraries(bm_${benchmark} VectorSimilarity benchmark::benchmark gtest)
 endforeach()
 
-if(VECSIM_RABITQ_RESEARCH)
-	add_executable(bm_selected_modes ../utils/mock_thread_pool.cpp run_files/bm_selected_modes.cpp)
-	target_link_libraries(bm_selected_modes PRIVATE VectorSimilarity rabitqlib::core gtest)
-	# Match the library's Release assertion policy for shared inline/template code.
-	target_compile_definitions(bm_selected_modes PRIVATE $<$<CONFIG:Release>:NDEBUG>)
-endif()
+add_executable(bm_selected_modes ../utils/mock_thread_pool.cpp run_files/bm_selected_modes.cpp)
+target_link_libraries(bm_selected_modes PRIVATE VectorSimilarity gtest)
+# Match the library's Release assertion policy for shared inline/template code.
+target_compile_definitions(bm_selected_modes PRIVATE $<$<CONFIG:Release>:NDEBUG>)
 
 include(GoogleTest)
 

@@ -351,7 +351,7 @@ TEST_P(TurboQuantTest, TieredLiveMeanTrainingRetriesAndMigratesInBothWriteModes)
             auto *tiered = dynamic_cast<TieredHNSWIndex<float, float> *>(base);
             ASSERT_NE(tiered, nullptr);
             auto *backend = tiered->getBackendForTests();
-            ASSERT_TRUE(backend->isTurboQuantTraining());
+            ASSERT_EQ(base->statisticInfo().flatBufferSize, 0);
             std::array<std::array<float, dim>, 5> rows{};
             for (size_t i = 0; i < rows.size(); ++i)
                 for (size_t j = 0; j < dim; ++j) rows[i][j] = 0.3f * std::sin(float(i * dim + j + 1));
@@ -360,23 +360,27 @@ TEST_P(TurboQuantTest, TieredLiveMeanTrainingRetriesAndMigratesInBothWriteModes)
             EXPECT_EQ(VecSimIndex_AddVector(base, rows[2].data(), 10), 0);
             EXPECT_EQ(VecSimIndex_DeleteVector(base, 20), 1);
             EXPECT_EQ(base->relabelVector(10, 11), VecSimRelabel_OK);
-            EXPECT_EQ(backend->turboQuantTrainingCount(), 1);
+            EXPECT_EQ(base->statisticInfo().flatBufferSize, 1);
             EXPECT_EQ(backend->indexSize(), 0);
             EXPECT_TRUE(pool.jobQ.empty());
-            EXPECT_THROW(backend->saveIndex(path(bits, "untrained")), std::runtime_error);
+            // Backend-only snapshots omit the rows still held in the tiered FLAT buffer.
+            const auto pending_filename = path(bits, "pending_backend");
+            backend->saveIndex(pending_filename);
+            IndexOwner pending_backend(HNSWFactory::NewIndex(pending_filename, true), VecSimIndex_Free);
+            ASSERT_NE(pending_backend, nullptr);
+            EXPECT_EQ(pending_backend->indexSize(), 0);
+            std::remove(pending_filename.c_str());
             VecSimIndex_AddVector(base, rows[1].data(), 20);
             VecSimIndex_AddVector(base, rows[3].data(), 30);
             tiered->setBeforeQuantizationFinalizationHook([] { throw std::bad_alloc(); });
             EXPECT_THROW(VecSimIndex_AddVector(base, rows[4].data(), 40), std::bad_alloc);
-            EXPECT_TRUE(backend->isTurboQuantTraining());
-            EXPECT_EQ(backend->turboQuantTrainingCount(), 4);
+            EXPECT_EQ(base->statisticInfo().flatBufferSize, 4);
             EXPECT_EQ(backend->indexSize(), 0);
             EXPECT_TRUE(pool.jobQ.empty());
             for (float value : backend->getTurboQuant()->biasMean()) EXPECT_EQ(value, 0);
             // A failed preparation/publication attempt is retried by the next writer.
             tiered->setBeforeQuantizationFinalizationHook({});
             EXPECT_EQ(VecSimIndex_AddVector(base, rows[4].data(), 40), 0);
-            EXPECT_FALSE(backend->isTurboQuantTraining());
             if (mode == VecSim_WriteAsync) {
                 EXPECT_EQ(pool.jobQ.size(), 4);
                 while (!pool.jobQ.empty()) pool.thread_iteration();
@@ -401,7 +405,6 @@ TEST_P(TurboQuantTest, TieredLiveMeanTrainingRetriesAndMigratesInBothWriteModes)
             while (!pool.jobQ.empty()) pool.thread_iteration();
             VecSimIndex_AddVector(base, rows[0].data(), 50);
             while (!pool.jobQ.empty()) pool.thread_iteration();
-            EXPECT_FALSE(backend->isTurboQuantTraining());
             EXPECT_TRUE(std::equal(saved_mean.begin(), saved_mean.end(),
                                    backend->getTurboQuant()->biasMean().begin()));
         }
@@ -429,16 +432,16 @@ TEST_P(TurboQuantTest, MultiValueTrainingAndSubsequentUpdatesKeepOneFittedMean) 
     VecSimIndex_AddVector(base, a.data(), 10);
     VecSimIndex_AddVector(base, b.data(), 10);
     EXPECT_EQ(VecSimIndex_DeleteVector(base, 10), 2);
-    EXPECT_EQ(backend->turboQuantTrainingCount(), 0);
+    EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
     VecSimIndex_AddVector(base, a.data(), 11);
     std::array<float, 2 * dim> replacement{};
     std::copy(b.begin(), b.end(), replacement.begin());
     std::copy(c.begin(), c.end(), replacement.begin() + dim);
     EXPECT_EQ(VecSimIndex_UpdateVectors(base, 11, replacement.data(), 2), VecSimUpdate_OK);
-    EXPECT_EQ(backend->turboQuantTrainingCount(), 2);
+    EXPECT_EQ(base->statisticInfo().flatBufferSize, 2);
     EXPECT_EQ(backend->indexSize(), 0);
     VecSimIndex_AddVector(base, a.data(), 12);
-    EXPECT_FALSE(backend->isTurboQuantTraining());
+    EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
     EXPECT_EQ(backend->indexSize(), 3);
     for (size_t i = 0; i < dim; ++i)
         EXPECT_NEAR(backend->getTurboQuant()->biasMean()[i], (double(a[i]) + b[i] + c[i]) / 3, 2e-8);
@@ -625,7 +628,7 @@ TEST_P(TurboQuantTest, ValidatesEveryReplacementBeforeDeletingExistingRows) {
     const double original_score = VecSimIndex_GetDistanceFrom_Unsafe(base, 10, original.data());
     check(base, [&] {
         EXPECT_EQ(base->indexSize(), 1);
-        EXPECT_EQ(backend->turboQuantTrainingCount(), 1);
+        EXPECT_EQ(base->statisticInfo().flatBufferSize, 1);
         EXPECT_EQ(backend->indexSize(), 0);
         EXPECT_DOUBLE_EQ(VecSimIndex_GetDistanceFrom_Unsafe(base, 10, original.data()),
                          original_score);
@@ -633,7 +636,7 @@ TEST_P(TurboQuantTest, ValidatesEveryReplacementBeforeDeletingExistingRows) {
     // Completing training proves that no failed update modified the live running sum.
     VecSimIndex_AddVector(base, original.data(), 20);
     VecSimIndex_AddVector(base, original.data(), 30);
-    EXPECT_FALSE(backend->isTurboQuantTraining());
+    EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
     for (size_t i = 0; i < dim; ++i) EXPECT_FLOAT_EQ(backend->getTurboQuant()->biasMean()[i], original[i]);
 }
 
@@ -658,11 +661,11 @@ TEST_P(TurboQuantTest, RejectsZeroCosineBeforeBufferOrOverwriteMutation) {
         auto *backend = tiered->getBackendForTests();
         std::array<float, dim> row{}, zero{}; row[0] = 0.5f; row[2] = -0.3f;
         EXPECT_THROW(VecSimIndex_AddVector(base, zero.data(), 10), std::invalid_argument);
-        EXPECT_EQ(base->indexSize(), 0); EXPECT_EQ(backend->turboQuantTrainingCount(), 0);
+        EXPECT_EQ(base->indexSize(), 0); EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
         EXPECT_EQ(VecSimIndex_AddVector(base, row.data(), 10), 1);
         EXPECT_THROW(VecSimIndex_AddVector(base, zero.data(), 10), std::invalid_argument);
         EXPECT_THROW(VecSimIndex_UpdateVectors(base, 10, zero.data(), 1), std::invalid_argument);
-        EXPECT_EQ(base->indexSize(), 1); EXPECT_EQ(backend->turboQuantTrainingCount(), 1);
+        EXPECT_EQ(base->indexSize(), 1); EXPECT_EQ(base->statisticInfo().flatBufferSize, 1);
         if (multi) {
             for (size_t zero_row : {size_t(0), size_t(1)}) {
                 std::array<float, 2 * dim> replacement{};
@@ -671,11 +674,11 @@ TEST_P(TurboQuantTest, RejectsZeroCosineBeforeBufferOrOverwriteMutation) {
                 std::fill(replacement.begin() + zero_row * dim,
                           replacement.begin() + (zero_row + 1) * dim, 0.0f);
                 EXPECT_THROW(VecSimIndex_UpdateVectors(base, 10, replacement.data(), 2), std::invalid_argument);
-                EXPECT_EQ(base->indexSize(), 1); EXPECT_EQ(backend->turboQuantTrainingCount(), 1);
+                EXPECT_EQ(base->indexSize(), 1); EXPECT_EQ(base->statisticInfo().flatBufferSize, 1);
             }
         }
         EXPECT_EQ(VecSimIndex_DeleteVector(base, 10), 1);
-        EXPECT_EQ(backend->turboQuantTrainingCount(), 0);
+        EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
         VecSimIndex_AddVector(base, row.data(), 10);
         VecSimIndex_AddVector(base, row.data(), 20);
         while (!pool.jobQ.empty()) pool.thread_iteration();
@@ -708,41 +711,57 @@ struct CallbackPreparationProbe {
         return tieredIndexMock::submit_callback(queue, probe.pool_context, jobs, callbacks, count);
     }
 };
-TEST_P(TurboQuantTest, AsyncCallbacksArePreparedBeforeFittedStatePublication) {
+TEST_P(TurboQuantTest, AsyncCallbacksArePreparedBeforeQuantizationMeanPublication) {
     const unsigned bits = GetParam();
-    WriteModeGuard guard; VecSim_SetWriteMode(VecSim_WriteAsync);
-    TestPool pool;
-    CallbackPreparationProbe probe{.pool_context = pool.ctx};
-    auto hp = parameters(bits, 7); auto primary = CreateParams(hp);
-    TieredIndexParams tp{.jobQueue = &pool.jobQ, .jobQueueCtx = &probe,
-        .submitCb = CallbackPreparationProbe::submit, .flatBufferLimit = 1,
-        .primaryIndexParams = &primary,
-        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = 2}}};
-    auto *base = TieredFactory::NewIndex(&tp); probe.index = base;
-    pool.ctx->index_strong_ref = std::shared_ptr<VecSimIndex>(base, VecSimIndex_Free);
-    ASSERT_NE(base, nullptr);
-    auto *tiered = dynamic_cast<TieredHNSWIndex<float, float> *>(base);
-    tiered->setAfterQuantizationFinalizationHook([&] { probe.memory_after_publication = base->getAllocationSize(); });
-    std::array<float, 7> row{}; row[0] = 0.5f;
-    VecSimIndex_AddVector(base, row.data(), 10);
-    tiered->setBeforeTurboQuantCallbacksPreparationHook([] { throw std::bad_alloc(); });
-    EXPECT_THROW(VecSimIndex_AddVector(base, row.data(), 20), std::bad_alloc);
-    auto *backend = tiered->getBackendForTests();
-    EXPECT_TRUE(backend->isTurboQuantTraining());
-    EXPECT_EQ(backend->turboQuantTrainingCount(), 2);
-    EXPECT_EQ(base->indexSize(), 2); EXPECT_EQ(backend->indexSize(), 0);
-    EXPECT_EQ(probe.calls, 0); EXPECT_TRUE(pool.jobQ.empty());
-    for (float value : backend->getTurboQuant()->biasMean()) EXPECT_EQ(value, 0);
-    tiered->setBeforeTurboQuantCallbacksPreparationHook({});
-    EXPECT_EQ(VecSimIndex_AddVector(base, row.data(), 20), 0);
-    EXPECT_FALSE(backend->isTurboQuantTraining());
-    EXPECT_EQ(probe.calls, 1);
-    EXPECT_EQ(pool.jobQ.size(), 2);
-    while (!pool.jobQ.empty()) pool.thread_iteration();
-    EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
+    WriteModeGuard guard;
+    VecSim_SetWriteMode(VecSim_WriteAsync);
+    for (auto quant_type : {parameters(bits, 7).quantType, VecSimQuant_SQ8}) {
+        SCOPED_TRACE(unsigned(quant_type));
+        TestPool pool;
+        CallbackPreparationProbe probe{.pool_context = pool.ctx};
+        auto hp = parameters(bits, 7);
+        hp.quantType = quant_type;
+        auto primary = CreateParams(hp);
+        TieredIndexParams tp{.jobQueue = &pool.jobQ, .jobQueueCtx = &probe,
+            .submitCb = CallbackPreparationProbe::submit, .flatBufferLimit = 1,
+            .primaryIndexParams = &primary,
+            .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = 2}}};
+        auto *base = TieredFactory::NewIndex(&tp);
+        probe.index = base;
+        pool.ctx->index_strong_ref = std::shared_ptr<VecSimIndex>(base, VecSimIndex_Free);
+        ASSERT_NE(base, nullptr);
+        auto *tiered = dynamic_cast<TieredHNSWIndex<float, float> *>(base);
+        tiered->setAfterQuantizationFinalizationHook([&] {
+            probe.memory_after_publication = base->getAllocationSize();
+        });
+        std::array<float, 7> row{};
+        row[0] = 0.5f;
+        VecSimIndex_AddVector(base, row.data(), 10);
+        tiered->setBeforeQuantizationCallbacksPreparationHook([] { throw std::bad_alloc(); });
+        EXPECT_THROW(VecSimIndex_AddVector(base, row.data(), 20), std::bad_alloc);
+        auto *backend = tiered->getBackendForTests();
+        auto mean = [&]() -> std::span<const float> {
+            if (backend->usesTurboQuant()) return backend->getTurboQuant()->biasMean();
+            return {backend->serializedMeanVector.data(), backend->serializedMeanVector.size()};
+        };
+        ASSERT_EQ(mean().size(), row.size());
+        EXPECT_EQ(base->statisticInfo().flatBufferSize, 2);
+        EXPECT_EQ(base->indexSize(), 2);
+        EXPECT_EQ(backend->indexSize(), 0);
+        EXPECT_EQ(probe.calls, 0);
+        EXPECT_TRUE(pool.jobQ.empty());
+        for (float value : mean()) EXPECT_EQ(value, 0);
+        tiered->setBeforeQuantizationCallbacksPreparationHook({});
+        EXPECT_EQ(VecSimIndex_AddVector(base, row.data(), 20), 0);
+        for (size_t i = 0; i < row.size(); ++i) EXPECT_FLOAT_EQ(mean()[i], row[i]);
+        EXPECT_EQ(probe.calls, 1);
+        EXPECT_EQ(pool.jobQ.size(), 2);
+        while (!pool.jobQ.empty()) pool.thread_iteration();
+        EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
+    }
 }
 
-TEST_P(TurboQuantTest, BackendMetadataUsesAtomicTrainingCountDuringFlatWrites) {
+TEST_P(TurboQuantTest, TieredMetadataReadsLiveFlatCountsDuringTrainingWrites) {
     const unsigned bits = GetParam();
     WriteModeGuard guard; VecSim_SetWriteMode(VecSim_WriteInPlace);
     TestPool pool;
@@ -759,13 +778,20 @@ TEST_P(TurboQuantTest, BackendMetadataUsesAtomicTrainingCountDuringFlatWrites) {
     std::atomic<bool> stop{false}; std::atomic<size_t> reads{0}, invalid{0};
     std::thread reader([&] {
         while (!stop.load()) {
-            auto *info = backend->debugInfoIterator();
-            while (info->hasNext()) {
-                const auto *field = info->next();
-                if (std::strcmp(field->fieldName, "QUANT_TRAINING_COUNT") == 0 &&
-                    field->fieldValue.uintegerValue > 1) ++invalid;
+            const auto info = base->debugInfo();
+            if (info.tieredInfo.frontendCommonInfo.indexSize > 1 ||
+                info.tieredInfo.backendCommonInfo.indexSize != 0 ||
+                info.tieredInfo.backendInfo.hnswInfo.turboQuantType != hp.quantType)
+                ++invalid;
+            auto *iterator = backend->debugInfoIterator();
+            while (iterator->hasNext()) {
+                const auto *field = iterator->next();
+                if (std::strcmp(field->fieldName, "QUANTIZATION") == 0 &&
+                    std::strcmp(field->fieldValue.stringValue, bits == 2 ? "TQ2" : "TQ3") != 0)
+                    ++invalid;
             }
-            delete info; ++reads;
+            delete iterator;
+            ++reads;
         }
     });
     while (reads.load() < 10) std::this_thread::yield();
@@ -775,7 +801,7 @@ TEST_P(TurboQuantTest, BackendMetadataUsesAtomicTrainingCountDuringFlatWrites) {
     }
     stop.store(true); reader.join();
     EXPECT_EQ(invalid.load(), 0); EXPECT_GE(reads.load(), 10);
-    EXPECT_EQ(backend->turboQuantTrainingCount(), 0);
+    EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
 }
 
 TEST(TurboQuantCompatibility, ExistingWriterVersionsAndMetadataRemainUnchanged) {

@@ -3,12 +3,11 @@
 // Bounded validation driver. Exhaustive compressed scans below are codec diagnostics,
 // not a supported FLAT index or a measurement of public product query latency.
 #include "VecSim/vec_sim.h"
-#include "VecSim/algorithms/hnsw/hnsw_single.h"
+#include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/quantization/turboquant_components.h"
-#include "VecSim/quantization/rabitq_research.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -171,8 +170,8 @@ Args parse(int argc, char **argv) {
     }
     require(a.stage == "micro" || a.stage == "tiny" || a.stage == "representation" ||
             a.stage == "hnsw", "--stage must be micro|tiny|representation|hnsw");
-    require(a.codec == "tq2" || a.codec == "tq3" || a.codec == "rq1",
-            "--codec must be tq2|tq3|rq1");
+    require(a.codec == "tq2" || a.codec == "tq3",
+            "--codec must be tq2|tq3");
     require(!a.output.empty(), "--output NEW_DIRECTORY is required");
     if (a.stage == "micro") {
         require(a.vectors == 0 && a.queries == 0, "Micro sizes are fixed: omit --vectors/--queries");
@@ -225,9 +224,8 @@ struct Output {
                << "\nrepresentation_scope\tcodec_diagnostic_not_supported_product_FLAT_not_product_timing"
                << "\nproduct_timing_scope\tpublic_TopK_preparation_search_reply_and_iterator_cleanup"
                << "\ntiming_statistics\tthree_within_process_batch_means_no_percentiles"
-               << "\nindex_memory_scope\tVecSim_requested_allocations_plus_known_external_payloads"
-               << "\nmemory_excluded\tharness_base_queries_training_mean_truth_rankings_and_libc_bookkeeping"
-               << "\nRQ1_status\tresearch_adapter_own_graph_not_supported_public_enum\n";
+               << "\nindex_memory_scope\tVecSim_requested_allocations"
+               << "\nmemory_excluded\tharness_base_queries_training_mean_truth_rankings_and_libc_bookkeeping\n";
     }
     void check(const std::string &name, bool ok, const std::string &detail = "") {
         checks << name << '\t' << (ok ? "PASS" : "FAIL") << '\t' << detail << '\n'; checks.flush();
@@ -322,27 +320,19 @@ struct Codec {
     std::string name;
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     std::shared_ptr<TurboQuant> tq;
-    std::shared_ptr<const vecsim::experimental::RaBitQContext> rq;
     std::unique_ptr<IndexCalculatorInterface<float>> calculator;
     std::unique_ptr<PreprocessorsContainerAbstract> preprocessors;
     std::vector<float> mean;
     size_t stored_bytes = 0, query_bytes = 0;
     explicit Codec(const std::string &name_, const std::vector<float> &mean_) : name(name_), mean(mean_) {
-        if (name == "tq2" || name == "tq3") {
-            tq = std::allocate_shared<TurboQuant>(VecsimSTLAllocator<TurboQuant>(allocator), allocator,
-                dim, name == "tq2" ? 2 : 3, seed, TurboQuantVariant::MSE,
-                TurboQuantExecution::Dispatch, TurboQuantScalePolicy::ProjectionMatch,
-                TurboQuantBiasPolicy::MeanError, std::span<const float>(mean));
-            stored_bytes = tq->storageBytes(); query_bytes = tq->queryBytes() + 4;
-            auto parts = createTurboQuantComponents(allocator, tq);
-            calculator.reset(parts.indexCalculator); preprocessors.reset(parts.preprocessors);
-        } else if (name == "rq1") {
-            auto parts = vecsim::experimental::CreateRaBitQComponents(allocator, dim, 1, mean, seed);
-            rq = parts.context; stored_bytes = rq->storageBytes(); query_bytes = rq->queryBytes();
-            calculator.reset(parts.calculator.release()); preprocessors.reset(parts.preprocessors.release());
-        } else {
-            throw std::invalid_argument("Unknown codec: " + name);
-        }
+        require(name == "tq2" || name == "tq3", "Unknown codec: " + name);
+        tq = std::allocate_shared<TurboQuant>(VecsimSTLAllocator<TurboQuant>(allocator), allocator,
+            dim, name == "tq2" ? 2 : 3, seed, TurboQuantVariant::MSE,
+            TurboQuantExecution::Dispatch, TurboQuantScalePolicy::ProjectionMatch,
+            TurboQuantBiasPolicy::MeanError, std::span<const float>(mean));
+        stored_bytes = tq->storageBytes(); query_bytes = tq->queryBytes() + 4;
+        auto parts = createTurboQuantComponents(allocator, tq);
+        calculator.reset(parts.indexCalculator); preprocessors.reset(parts.preprocessors);
     }
     Blob encode(const float *x) { return preprocessors->preprocessForStorage(x, dim * 4); }
     Blob prepare(const float *q) { return preprocessors->preprocessQuery(q, dim * 4); }
@@ -350,54 +340,35 @@ struct Codec {
         return calculator->calcDistanceForQuery(x,q,dim);
     }
     float pair(const void *x, const void *y) const { return calculator->calcDistance(x,y,dim); }
-    size_t externalBytes() const { return rq ? rq->sharedExternalBytes() : 0; }
     // Independent unpacking and FP64 arithmetic, without calling the scorer or decoder.
     std::vector<double> decoded(const void *record) const {
         const auto *b = static_cast<const unsigned char *>(record);
         std::vector<double> result(dim);
-        if (tq) {
-            const unsigned bits = tq->bits();
-            const double scale = readFloat(record, (dim * bits + 7) / 8);
-            for (size_t d = 0; d < dim; ++d) {
-                const size_t bit = d * bits;
-                unsigned code = 0;
-                for (unsigned j = 0; j < bits; ++j)
-                    code |= unsigned((b[(bit + j) / 8] >> ((bit + j) % 8)) & 1) << j;
-                result[d] = scale * tq->centroids()[code];
-            }
-        } else if (rq) {
-            const double scale = readFloat(record, stored_bytes - 8);
-            for (size_t d = 0; d < dim; ++d) {
-                const size_t start = d / 64 * 64;
-                const size_t width = std::min(size_t(64), rq->paddedDim() - start);
-                const size_t bit = width - 1 - (d - start);
-                const unsigned code = (b[start / 8 + bit / 8] >> (bit % 8)) & 1;
-                result[d] = rq->rotatedMean()[d] - scale * (double(code) - .5);
-            }
+        const unsigned bits = tq->bits();
+        const double scale = readFloat(record, (dim * bits + 7) / 8);
+        for (size_t d = 0; d < dim; ++d) {
+            const size_t bit = d * bits;
+            unsigned code = 0;
+            for (unsigned j = 0; j < bits; ++j)
+                code |= unsigned((b[(bit + j) / 8] >> ((bit + j) % 8)) & 1) << j;
+            result[d] = scale * tq->centroids()[code];
         }
         return result;
     }
     double scalarScore(const void *record, const void *prepared, const float *raw_query) const {
         const auto x = decoded(record);
         double dot = 0;
-        if (tq) {
-            for (size_t d = 0; d < dim; ++d) dot += x[d] * readFloat(prepared, d * 4) + double(mean[d]) * raw_query[d];
-            return 1 - dot + readFloat(record, stored_bytes - 4);
-        }
-        const float *q = rq->queryVector(prepared);
-        for (size_t d = 0; d < dim; ++d) dot += x[d] * q[d];
-        return 1 - dot + double(readFloat(record, stored_bytes - 12)) - 1;
+        for (size_t d = 0; d < dim; ++d) dot += x[d] * readFloat(prepared, d * 4) + double(mean[d]) * raw_query[d];
+        return 1 - dot + readFloat(record, stored_bytes - 4);
     }
     double scalarPair(const void *a, const void *b) const {
         const auto x = decoded(a), y = decoded(b);
         double dot = 0;
         for (size_t d = 0; d < dim; ++d) {
-            const double m = tq ? tq->biasRotatedMean()[d] : 0;
-            dot += tq ? (x[d] + m) * (y[d] + m) : x[d] * y[d];
+            const double m = tq->biasRotatedMean()[d];
+            dot += (x[d] + m) * (y[d] + m);
         }
-        double correction = 0;
-        if (tq) correction = double(readFloat(a, stored_bytes - 4)) + readFloat(b, stored_bytes - 4);
-        if (rq) correction = double(readFloat(a, stored_bytes - 12)) + readFloat(b, stored_bytes - 12) - 2;
+        const double correction = double(readFloat(a, stored_bytes - 4)) + readFloat(b, stored_bytes - 4);
         return 1 - dot + correction;
     }
     void memory(Output &out, size_t records) {
@@ -407,21 +378,16 @@ struct Codec {
         out.memory << "codec\trecord_bytes\t" << stored_bytes << "\ncodec\trecord_count\t" << records
                    << "\ncodec\trecord_payload_total\t" << records * stored_bytes
                    << "\ncodec\tshared_allocator_requested\t" << before
-                   << "\ncodec\tshared_known_external_payload\t" << externalBytes()
                    << "\ncodec\tprepared_query_payload\t" << query_bytes
                    << "\ncodec\tprepared_query_allocator_delta\t" << allocator->getAllocationSize() - before
-                   << "\ncodec\tprepared_query_external_deleter_payload\t" << (rq ? sizeof(std::shared_ptr<VecSimAllocator>) : 0)
-                   << "\ncodec\tshared_float_payload\t" << (tq ? tq->sharedDataBytes() : rq->sharedMeanBytes())
+                   << "\ncodec\tshared_float_payload\t" << tq->sharedDataBytes()
                    << "\ncodec\tFP32_retained_records\t0\n";
-        if (rq) out.memory << "codec\tencoding_temporary_payload\t" << rq->encodingTemporaryBytes() << '\n';
-        if (tq) {
-            out.memory << "codec\tencoding_preprocessor_residual_payload\t" << dim * sizeof(float)
-                       << "\ncodec\tencoding_codec_unit_scratch_payload\t" << dim * sizeof(float)
-                       << "\ncodec\tencoding_known_temporary_payload_total\t" << 2 * dim * sizeof(float) << '\n';
-            out.config << "TQ_encoding_temporary_scope\tpreprocessor_residual_plus_MSE_codec_unit_vectors_excludes_output_record_allocator_headers_and_stack_scalars\n";
-        }
-        if (tq) out.config << "query_kernel\t" << tq->scoringKernelName()
-                           << "\ngraph_kernel\t" << tq->storedScoringKernelName() << '\n';
+        out.memory << "codec\tencoding_preprocessor_residual_payload\t" << dim * sizeof(float)
+                   << "\ncodec\tencoding_codec_unit_scratch_payload\t" << dim * sizeof(float)
+                   << "\ncodec\tencoding_known_temporary_payload_total\t" << 2 * dim * sizeof(float) << '\n';
+        out.config << "TQ_encoding_temporary_scope\tpreprocessor_residual_plus_MSE_codec_unit_vectors_excludes_output_record_allocator_headers_and_stack_scalars\n";
+        out.config << "query_kernel\t" << tq->scoringKernelName()
+                   << "\ngraph_kernel\t" << tq->storedScoringKernelName() << '\n';
     }
 };
 Ranking topK(Ranking values) {
@@ -472,10 +438,9 @@ void numerical(Codec &codec, const Data &data, Output &out, size_t count) {
     }
     out.check("independent_scalar_query_and_graph", true, std::to_string(count) + " records");
 }
-// Odd dimensions exercise both packed-code tails and the RaBitQ final 32-bit word.
+// Odd dimensions exercise packed-code tails independently of the SIMD scorers.
 void tailReferences(const std::string &name, Output &out) {
-    const std::vector<size_t> dimensions = name == "rq1"
-        ? std::vector<size_t>{65,95,97,129} : std::vector<size_t>{3,31,33,65};
+    const std::vector<size_t> dimensions{3,31,33,65};
     for (size_t d : dimensions) {
         auto allocator = VecSimAllocator::newVecsimAllocator();
         std::vector<float> x(d), y(d), q(d), mean(d);
@@ -487,64 +452,42 @@ void tailReferences(const std::string &name, Output &out) {
         VecSim_Normalize(y.data(),d,VecSimType_FLOAT32);
         VecSim_Normalize(q.data(),d,VecSimType_FLOAT32);
         std::shared_ptr<TurboQuant> tq;
-        std::shared_ptr<const vecsim::experimental::RaBitQContext> rq;
         std::unique_ptr<IndexCalculatorInterface<float>> calculator;
         std::unique_ptr<PreprocessorsContainerAbstract> prep;
         size_t stored = 0;
-        if (name == "tq2" || name == "tq3") {
-            tq = std::make_shared<TurboQuant>(allocator,d,name == "tq2" ? 2 : 3,seed,
-                TurboQuantVariant::MSE,TurboQuantExecution::Dispatch,
-                TurboQuantScalePolicy::ProjectionMatch,TurboQuantBiasPolicy::MeanError,mean);
-            auto parts = createTurboQuantComponents(allocator,tq);
-            calculator.reset(parts.indexCalculator); prep.reset(parts.preprocessors); stored = tq->storageBytes();
-        } else if (name == "rq1") {
-            auto parts = vecsim::experimental::CreateRaBitQComponents(allocator,d,1,mean,seed);
-            rq = parts.context; calculator.reset(parts.calculator.release());
-            prep.reset(parts.preprocessors.release()); stored = rq->storageBytes();
-        } else {
-            throw std::invalid_argument("Unknown codec: " + name);
-        }
+        require(name == "tq2" || name == "tq3", "Unknown codec: " + name);
+        tq = std::make_shared<TurboQuant>(allocator,d,name == "tq2" ? 2 : 3,seed,
+            TurboQuantVariant::MSE,TurboQuantExecution::Dispatch,
+            TurboQuantScalePolicy::ProjectionMatch,TurboQuantBiasPolicy::MeanError,mean);
+        auto parts = createTurboQuantComponents(allocator,tq);
+        calculator.reset(parts.indexCalculator); prep.reset(parts.preprocessors); stored = tq->storageBytes();
         auto a = prep->preprocessForStorage(x.data(),d * 4), b = prep->preprocessForStorage(y.data(),d * 4);
         auto query = prep->preprocessQuery(q.data(),d * 4);
-        const size_t decoded_dim = rq ? rq->paddedDim() : d;
         auto decode = [&](const void *record) {
-            std::vector<double> result(decoded_dim);
+            std::vector<double> result(d);
             const auto *bytes = static_cast<const unsigned char *>(record);
-            for (size_t i = 0; i < decoded_dim; ++i) {
-                if (tq) {
-                    unsigned code = 0;
-                    for (unsigned bit = 0; bit < tq->bits(); ++bit) {
-                        const size_t offset = i * tq->bits() + bit;
-                        code |= unsigned((bytes[offset / 8] >> (offset % 8)) & 1) << bit;
-                    }
-                    result[i] = double(readFloat(record,stored - 8)) * tq->centroids()[code];
-                } else if (rq) {
-                    const size_t start = i / 64 * 64, width = std::min(size_t(64),decoded_dim - start);
-                    const size_t bit = width - 1 - (i - start);
-                    const unsigned code = (bytes[start / 8 + bit / 8] >> (bit % 8)) & 1;
-                    result[i] = rq->rotatedMean()[i] - double(readFloat(record,stored - 8)) * (double(code) - .5);
+            for (size_t i = 0; i < d; ++i) {
+                unsigned code = 0;
+                for (unsigned bit = 0; bit < tq->bits(); ++bit) {
+                    const size_t offset = i * tq->bits() + bit;
+                    code |= unsigned((bytes[offset / 8] >> (offset % 8)) & 1) << bit;
                 }
+                result[i] = double(readFloat(record,stored - 8)) * tq->centroids()[code];
             }
             return result;
         };
         const auto da = decode(a.get()), db = decode(b.get());
         double ip = 0, pair_ip = 0, mean_ip = 0;
-        for (size_t i = 0; i < decoded_dim; ++i) {
-            const double query_value = tq ? readFloat(query.get(),i * 4)
-                                          : rq->queryVector(query.get())[i];
+        for (size_t i = 0; i < d; ++i) {
+            const double query_value = readFloat(query.get(),i * 4);
             ip += da[i] * query_value;
-            const double m = tq ? tq->biasRotatedMean()[i] : 0;
+            const double m = tq->biasRotatedMean()[i];
             pair_ip += (da[i] + m) * (db[i] + m);
-            if (i < d) mean_ip += double(mean[i]) * q[i];
+            mean_ip += double(mean[i]) * q[i];
         }
         double expected = 1 - ip, pair_expected = 1 - pair_ip;
-        if (tq) {
-            expected += readFloat(a.get(),stored - 4) - mean_ip;
-            pair_expected += double(readFloat(a.get(),stored - 4)) + readFloat(b.get(),stored - 4);
-        } else if (rq) {
-            expected += double(readFloat(a.get(),stored - 12)) - 1;
-            pair_expected += double(readFloat(a.get(),stored - 12)) + readFloat(b.get(),stored - 12) - 2;
-        }
+        expected += readFloat(a.get(),stored - 4) - mean_ip;
+        pair_expected += double(readFloat(a.get(),stored - 4)) + readFloat(b.get(),stored - 4);
         const double actual = calculator->calcDistanceForQuery(a.get(),query.get(),d);
         const double pair_actual = calculator->calcDistance(a.get(),b.get(),d);
         out.numerical << "tail_query_dim" << d << "\t0\t0\t" << actual << '\t' << expected << '\t' << std::abs(actual - expected)
@@ -647,8 +590,8 @@ HNSWParams params(const std::string &codec, const std::vector<float> &mean,
     config = {.mean = mean.data(), .seed = seed};
     return {.type = VecSimType_FLOAT32, .dim = dim, .metric = VecSimMetric_IP,
             .multi = false, .blockSize = 1024, .M = 16, .efConstruction = 100, .efRuntime = 80,
-            .quantType = codec == "tq2" ? VecSimQuant_TQ2 : codec == "tq3" ? VecSimQuant_TQ3 : VecSimQuant_NONE,
-            .quantParams = codec == "tq2" || codec == "tq3" ? &config : nullptr};
+            .quantType = codec == "tq2" ? VecSimQuant_TQ2 : VecSimQuant_TQ3,
+            .quantParams = &config};
 }
 Ranking query(VecSimIndex *index, const float *q, size_t ef) {
     VecSimQueryParams p{}; p.hnswRuntimeParams.efRuntime = ef;
@@ -687,37 +630,23 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
     VecSim_SetWriteMode(VecSim_WriteInPlace);
     Owner owner(nullptr,VecSimIndex_Free);
     Graph *graph = nullptr;
-    std::unique_ptr<Codec> research;
-    std::string scope = a.codec == "rq1" ? "RQ1_research_own_HNSW" : "public_HNSW";
+    const std::string scope = "public_tiered_TQ_HNSW";
     const auto start = ns();
     VecSimTurboQuantParams config{};
     HNSWParams hp = params(a.codec,codec.mean,config);
     VecSimParams primary{}; primary.algo = VecSimAlgo_HNSWLIB; primary.algoParams.hnswParams = hp;
     // All TQ builds exercise the supported tiered training path, including a full-base threshold.
-    if (a.codec == "tq2" || a.codec == "tq3") {
-        // A seed is explicit, but a supplied diagnostic mean must not initialize the tiered fit.
-        config.mean = nullptr;
-        TieredIndexParams tp{};
-        tp.primaryIndexParams = &primary; tp.flatBufferLimit = 1024; tp.submitCb = unexpectedSubmit;
-        tp.specificParams.tieredHnswParams.QuantNormalizationSetSize = training_count;
-        tp.specificParams.tieredHnswParams.swapJobThreshold = 1024;
-        VecSimParams p{}; p.algo = VecSimAlgo_TIERED; p.algoParams.tieredParams = tp;
-        owner.reset(VecSimIndex_New(&p));
-        auto *tiered = dynamic_cast<Tiered *>(owner.get());
-        require(tiered,"Public tiered factory rejected TQ configuration");
-        graph = tiered->getBackendForTests();
-        scope = "public_tiered_TQ_HNSW";
-    } else if (a.codec == "rq1") {
-        research = std::make_unique<Codec>(a.codec,codec.mean);
-        AbstractIndexInitParams init{.allocator = research->allocator, .dim = dim,
-            .vecType = VecSimType_FLOAT32, .storedDataSize = research->stored_bytes,
-            .metric = VecSimMetric_IP, .blockSize = 1024, .multi = false, .isDisk = false,
-            .isQuantized = true, .logCtx = nullptr, .inputBlobSize = dim * 4};
-        IndexComponents<float,float> parts{research->calculator.get(),research->preprocessors.get()};
-        hp.quantType = VecSimQuant_NONE; hp.quantParams = nullptr;
-        graph = new (research->allocator) HNSWIndex_Single<float,float>(&hp,init,parts,100);
-        research->calculator.release(); research->preprocessors.release(); owner.reset(graph);
-    }
+    // A seed is explicit, but a supplied diagnostic mean must not initialize the tiered fit.
+    config.mean = nullptr;
+    TieredIndexParams tp{};
+    tp.primaryIndexParams = &primary; tp.flatBufferLimit = 1024; tp.submitCb = unexpectedSubmit;
+    tp.specificParams.tieredHnswParams.QuantNormalizationSetSize = training_count;
+    tp.specificParams.tieredHnswParams.swapJobThreshold = 1024;
+    VecSimParams p{}; p.algo = VecSimAlgo_TIERED; p.algoParams.tieredParams = tp;
+    owner.reset(VecSimIndex_New(&p));
+    auto *tiered = dynamic_cast<Tiered *>(owner.get());
+    require(tiered,"Public tiered factory rejected TQ configuration");
+    graph = tiered->getBackendForTests();
     require(owner && graph,"Cannot construct selected index");
     uint64_t observed_allocator_max = owner->getAllocationSize();
     uint64_t pre_threshold_allocator = observed_allocator_max;
@@ -729,34 +658,32 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
     }
     out.time(scope,"construct_insert_with_after_add_memory_sampling",0,0,a.vectors,ns() - start);
     out.memory << scope << "\tbuild_allocator_observed_after_add_max_lower_bound\t" << observed_allocator_max << '\n';
-    if (codec.tq) {
-        out.memory << scope << "\ttraining_pre_threshold_allocator_observed\t" << pre_threshold_allocator
-                   << '\n' << scope << "\ttraining_threshold_FP32_row_payload\t" << training_count * dim * sizeof(float)
-                   << '\n' << scope << "\ttraining_running_sum_double_payload\t" << dim * sizeof(double)
-                   << '\n' << scope << "\ttraining_mean_float_payload\t" << dim * sizeof(float) << '\n';
-        out.config << "build_peak_scope\tobserved_after_each_add_lower_bound_excludes_within_call_temporaries_not_exact_peak\n"
-                   << "training_migration_overlap\tthreshold_FP32_payload_can_overlap_growing_compressed_graph_during_synchronous_migration_not_joint_peak_measured\n";
-    }
+    out.memory << scope << "\ttraining_pre_threshold_allocator_observed\t" << pre_threshold_allocator
+               << '\n' << scope << "\ttraining_threshold_FP32_row_payload\t" << training_count * dim * sizeof(float)
+               << '\n' << scope << "\ttraining_running_sum_double_payload\t" << dim * sizeof(double)
+               << '\n' << scope << "\ttraining_mean_float_payload\t" << dim * sizeof(float) << '\n';
+    out.config << "build_peak_scope\tobserved_after_each_add_lower_bound_excludes_within_call_temporaries_not_exact_peak\n"
+               << "training_migration_overlap\tthreshold_FP32_payload_can_overlap_growing_compressed_graph_during_synchronous_migration_not_joint_peak_measured\n";
     out.check("public_size_and_labels",owner->indexSize() == a.vectors && owner->indexLabelCount() == a.vectors && graph->indexSize() == a.vectors);
     out.check("graph_integrity",graph->checkIntegrity().valid_state && graph->getM() == 16 && graph->getEfConstruction() == 100);
-    if (codec.tq) {
-        const auto actual = graph->getTurboQuant()->biasMean();
-        out.check("tiered_mean_exact",actual.size() == codec.mean.size() &&
-            std::memcmp(actual.data(),codec.mean.data(),dim * 4) == 0);
-        const auto actual_codec = graph->getTurboQuant();
-        const auto same = [](std::span<const float> a, std::span<const float> b) {
-            return a.size() == b.size() && std::memcmp(a.data(),b.data(),a.size_bytes()) == 0;
-        };
-        out.check("public_diagnostic_fitted_state_exact",
-            actual_codec->bits() == codec.tq->bits() && actual_codec->seed() == codec.tq->seed() &&
-            same(actual_codec->rotation(),codec.tq->rotation()) &&
-            same(actual_codec->centroids(),codec.tq->centroids()) &&
-            same(actual_codec->biasRotatedMean(),codec.tq->biasRotatedMean()));
-        const auto info = graph->debugInfo().hnswInfo;
-        out.check("TQ_metadata",!info.quantizerTraining && info.quantizedVectorBytes == codec.stored_bytes &&
-                  info.quantizerSharedBytes == graph->getTurboQuant()->sharedDataBytes());
-        out.memory << scope << "\tquantizer_training_live_count\t" << info.quantizerTrainingCount << '\n';
-    }
+    const auto actual = graph->getTurboQuant()->biasMean();
+    out.check("tiered_mean_exact",actual.size() == codec.mean.size() &&
+        std::memcmp(actual.data(),codec.mean.data(),dim * 4) == 0);
+    const auto actual_codec = graph->getTurboQuant();
+    const auto same = [](std::span<const float> a, std::span<const float> b) {
+        return a.size() == b.size() && std::memcmp(a.data(),b.data(),a.size_bytes()) == 0;
+    };
+    out.check("public_diagnostic_fitted_state_exact",
+        actual_codec->bits() == codec.tq->bits() && actual_codec->seed() == codec.tq->seed() &&
+        same(actual_codec->rotation(),codec.tq->rotation()) &&
+        same(actual_codec->centroids(),codec.tq->centroids()) &&
+        same(actual_codec->biasRotatedMean(),codec.tq->biasRotatedMean()));
+    const auto info = graph->debugInfo().hnswInfo;
+    out.check("TQ_metadata",info.quantizedVectorBytes == codec.stored_bytes &&
+              info.quantizerSharedBytes == graph->getTurboQuant()->sharedDataBytes());
+    const size_t flat_count = tiered->getFlatBufferIndex()->indexSize();
+    out.check("tiered_training_completed",flat_count == 0 && graph->indexSize() == a.vectors);
+    out.memory << scope << "\tpost_training_flat_vector_count\t" << flat_count << '\n';
     for (size_t i = 0; i < std::min(size_t(64),a.vectors); ++i) {
         const size_t id = i * (a.vectors - 1) / 63;
         auto encoded = codec.encode(data.row(id));
@@ -783,16 +710,12 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
         timedQuery(owner.get(),data.query(0),80);
         probe.restore();
         out.check("query_transient_probe_complete",probe.complete());
-        const size_t external_deleter = research ? sizeof(std::shared_ptr<VecSimAllocator>) : 0;
         out.memory << scope << "\tquery_ef80_transient_requested_peak\t" << probe.peak()
                    << '\n' << scope << "\tquery_ef80_transient_requested_live_end\t" << probe.live()
-                   << '\n' << scope << "\tquery_ef80_transient_allocations_live_end\t" << probe.liveAllocations()
-                   << '\n' << scope << "\tquery_ef80_known_external_deleter_payload\t" << external_deleter
-                   << '\n' << scope << "\tquery_ef80_peak_plus_external_conservative_budget\t" << probe.peak() + external_deleter << '\n';
+                   << '\n' << scope << "\tquery_ef80_transient_allocations_live_end\t" << probe.liveAllocations() << '\n';
     }
     out.config << "query_transient_probe_scope\tone_separate_warmed_public_query_ef80_through_reply_cleanup_hooks_restored_before_timing\n"
-               << "query_transient_probe_exclusions\tnon_VecSim_allocations_system_allocator_overhead_and_bookkeeping_excluded_known_RQ1_deleter_reported_separately\n"
-               << "query_transient_budget_scope\trequested_peak_plus_known_external_deleter_is_conservative_sum_not_measured_joint_peak\n";
+               << "query_transient_probe_exclusions\tnon_VecSim_allocations_system_allocator_overhead_and_bookkeeping_excluded\n";
     for (size_t ef : {40,80,160}) {
         for (size_t q = 0; q < a.queries; ++q)
             writeRanking(out,scope,ef,q,query(owner.get(),data.query(q),ef),expected[q]);
@@ -804,39 +727,31 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
         }
     }
     out.memory << scope << "\tsteady_index_allocator_requested\t" << owner->getAllocationSize()
-               << '\n' << scope << "\tknown_external_payload\t"
-               << (research ? research->externalBytes() : 0)
                << '\n' << scope << "\tstored_record_bytes\t" << graph->getStoredDataSize()
                << '\n' << scope << "\tvector_count\t" << graph->indexSize()
                << '\n' << scope << "\tcapacity\t" << graph->indexCapacity() << '\n';
-    if (a.codec != "rq1") {
-        const auto before = query(graph,data.query(0),160);
-        const auto path = a.output / "selected.hnsw";
-        graph->saveIndex(path.string());
-        Owner reload(HNSWFactory::NewIndex(path.string()),VecSimIndex_Free);
-        auto *loaded = dynamic_cast<Graph *>(reload.get()); require(loaded,"Reload type mismatch");
-        out.check("reload_topK_exact",query(loaded,data.query(0),160) == before);
-        out.check("reload_integrity",loaded->checkIntegrity().valid_state && loaded->indexSize() == a.vectors);
-        if (codec.tq) {
-            const auto original_mean = graph->getTurboQuant()->biasMean(), loaded_mean = loaded->getTurboQuant()->biasMean();
-            out.check("reload_mean_exact",original_mean.size() == loaded_mean.size() &&
-                      std::memcmp(original_mean.data(),loaded_mean.data(),original_mean.size_bytes()) == 0);
-        }
-        for (size_t i : {size_t(0),a.vectors / 2,a.vectors - 1})
-            require(std::memcmp(recordByLabel(graph,i),recordByLabel(loaded,i),codec.stored_bytes) == 0,
-                    "Reload record mismatch");
-        out.check("reload_encoded_records_exact",true);
-        out.check("reload_delete",VecSimIndex_DeleteVector(reload.get(),0) == 1);
-        out.check("reload_add_after_delete",VecSimIndex_AddVector(reload.get(),data.row(0),a.vectors + 1) == 1);
-        out.check("reload_mutated_integrity",loaded->indexSize() == a.vectors && loaded->checkIntegrity().valid_state);
-        const auto modified = query(loaded,data.query(0),160);
-        for (const auto &[score,label] : modified) require(label != 0,"Deleted label returned");
-        out.check("reload_mutated_query",true);
-    } else {
-        out.checks << "RQ1_reload\tNOT_APPLICABLE\tresearch_adapter_has_no_persistence_contract\n";
-    }
+    const auto before = query(graph,data.query(0),160);
+    const auto path = a.output / "selected.hnsw";
+    graph->saveIndex(path.string());
+    Owner reload(HNSWFactory::NewIndex(path.string()),VecSimIndex_Free);
+    auto *loaded = dynamic_cast<Graph *>(reload.get()); require(loaded,"Reload type mismatch");
+    out.check("reload_topK_exact",query(loaded,data.query(0),160) == before);
+    out.check("reload_integrity",loaded->checkIntegrity().valid_state && loaded->indexSize() == a.vectors);
+    const auto original_mean = graph->getTurboQuant()->biasMean(), loaded_mean = loaded->getTurboQuant()->biasMean();
+    out.check("reload_mean_exact",original_mean.size() == loaded_mean.size() &&
+              std::memcmp(original_mean.data(),loaded_mean.data(),original_mean.size_bytes()) == 0);
+    for (size_t i : {size_t(0),a.vectors / 2,a.vectors - 1})
+        require(std::memcmp(recordByLabel(graph,i),recordByLabel(loaded,i),codec.stored_bytes) == 0,
+                "Reload record mismatch");
+    out.check("reload_encoded_records_exact",true);
+    out.check("reload_delete",VecSimIndex_DeleteVector(reload.get(),0) == 1);
+    out.check("reload_add_after_delete",VecSimIndex_AddVector(reload.get(),data.row(0),a.vectors + 1) == 1);
+    out.check("reload_mutated_integrity",loaded->indexSize() == a.vectors && loaded->checkIntegrity().valid_state);
+    const auto modified = query(loaded,data.query(0),160);
+    for (const auto &[score,label] : modified) require(label != 0,"Deleted label returned");
+    out.check("reload_mutated_query",true);
     // Tiny additionally covers direct public factory creation with an explicitly frozen mean.
-    if (a.stage == "tiny" && codec.tq) {
+    if (a.stage == "tiny") {
         config.mean = codec.mean.data();
         Owner standalone(VecSimIndex_New(&primary),VecSimIndex_Free);
         auto *direct = dynamic_cast<Graph *>(standalone.get()); require(direct,"Standalone TQ factory failed");

@@ -5,9 +5,6 @@
  */
 #pragma once
 #include "VecSim/quantization/turboquant.h"
-#include "VecSim/quantization/sq8_training_state.h"
-#include <optional>
-#include <atomic>
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "VecSim/spaces/computer/calculator.h"
 #include "VecSim/vec_sim_index.h"
@@ -62,10 +59,6 @@ inline void validateTurboQuantBatch(const void *rows, size_t count, size_t dim, 
 
 class TurboQuantPreprocessors final : public PreprocessorsContainerAbstract {
     std::shared_ptr<TurboQuant> codec_;
-    std::optional<SQ8TrainingState> training_;
-    // Writers update the accumulator under the FLAT guard. Metadata readers need only
-    // this atomic mirror while holding the backend guard, avoiding cross-tier lock nesting.
-    std::atomic<size_t> published_training_count_{0};
     void check(const void *input, size_t bytes) const {
         if (bytes != codec_->dim() * sizeof(float))
             throw std::invalid_argument("TurboQuant expects one FP32 vector");
@@ -76,14 +69,6 @@ public:
                             std::shared_ptr<TurboQuant> codec)
         : PreprocessorsContainerAbstract(allocator, alignof(float), 0), codec_(std::move(codec)) {}
     const std::shared_ptr<TurboQuant> &codec() const { return codec_; }
-    std::optional<SQ8TrainingState> &training() { return training_; }
-    void publishTrainingCount() noexcept {
-        published_training_count_.store(training_ ? training_->getCount() : 0,
-                                         std::memory_order_relaxed);
-    }
-    size_t trainingCountForInfo() const noexcept {
-        return published_training_count_.load(std::memory_order_relaxed);
-    }
     size_t queryBytes() const { return codec_->queryBytes() + sizeof(float); }
     MemoryUtils::unique_blob preprocessForStorage(const void *input, size_t bytes) const override {
         check(input, bytes);
