@@ -1520,8 +1520,7 @@ void checkSQ8Bytes(size_t dim) {
         EXPECT_EQ(encode(QuantPreprocessor<DataType, Metric, WithMean>(allocator, dim)), expected);
     }
 
-    // The SQ8 factory wrapper must produce the same bytes and keep naming the SQ8 component
-    // types that applySQ8Mean dynamic_casts to.
+    // The SQ8 factory must preserve scalar bytes and the selected cached distance kernels.
     if constexpr (std::is_same_v<DataType, float> && Metric != VecSimMetric_Cosine) {
         auto components = CreateSQ8IndexComponents<float, Metric>(allocator, dim,
                                                                   WithMean ? mean.data() : nullptr);
@@ -1533,14 +1532,31 @@ void checkSQ8Bytes(size_t dim) {
         EXPECT_NE((dynamic_cast<QuantPreprocessor<float, Metric, WithMean> *>(
                       container->getPreprocessors()[0])),
                   nullptr);
-        if constexpr (WithMean) {
-            EXPECT_NE((dynamic_cast<DistanceCalculatorWithNorm<float, float, Metric> *>(
-                          calculator.get())),
-                      nullptr);
-        }
         auto blob = preprocessors->preprocessForStorage(input.data(), dim * sizeof(float));
         const auto *factory_bytes = static_cast<const uint8_t *>(blob.get());
         EXPECT_EQ(std::vector<uint8_t>(factory_bytes, factory_bytes + expected.size()), expected);
+        auto query = preprocessors->preprocessQuery(input.data(), dim * sizeof(float));
+        auto stored_dispatch = calculator->getDistanceDispatch(DistanceMode::StoredToStored);
+        auto query_dispatch = calculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+        unsigned char sym_alignment = 0, asym_alignment = 0;
+        auto sym = spaces::GetDistFunc<sq8, float>(Metric, dim, &sym_alignment);
+        using QueryType = typename QuantPreprocessor<float, Metric, WithMean>::QueryType;
+        auto asym = spaces::GetDistFunc<sq8, float, QueryType>(Metric, dim, &asym_alignment);
+        if constexpr (WithMean) {
+            float mean_sum_squares = 0.0f;
+            for (float value : mean)
+                mean_sum_squares += value * value;
+            DistanceCalculatorWithNorm<float, float, Metric> legacy(allocator, asym, sym,
+                                                                    mean_sum_squares);
+            EXPECT_FLOAT_EQ(stored_dispatch(blob.get(), blob.get(), dim),
+                            legacy.calcDistance(blob.get(), blob.get(), dim));
+            EXPECT_FLOAT_EQ(query_dispatch(blob.get(), query.get(), dim),
+                            legacy.calcDistanceForQuery(blob.get(), query.get(), dim));
+        }
+        if constexpr (!WithMean || Metric == VecSimMetric_L2) {
+            EXPECT_EQ(stored_dispatch.stateless_func, sym);
+            EXPECT_EQ(query_dispatch.stateless_func, asym);
+        }
     }
 }
 
@@ -1560,6 +1576,58 @@ void checkSQ8BytesAllModes() {
 TEST(PreprocessorsTest, QuantizedStorageSQ8BytesUnchanged) {
     checkSQ8BytesAllModes<float>();
     checkSQ8BytesAllModes<vecsim_types::float16>();
+}
+
+TEST(PreprocessorsTest, QuantizedBlobsOutliveComponents) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto baseline = allocator->getAllocationSize();
+    constexpr size_t dim = 8;
+    const float input[dim] = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto components = CreateSQ8IndexComponents<float, VecSimMetric_L2>(allocator, dim, nullptr);
+    EXPECT_EQ(allocator->getAllocationSize() - baseline,
+              (EstimateQuantizedComponentsMemory<float, VecSimMetric_L2, vecsim_types::sq8>(
+                  dim, QuantizationInit{})));
+    auto blobs = components.preprocessors->preprocess(input, sizeof(input));
+    delete components.preprocessors;
+    delete components.indexCalculator;
+    EXPECT_EQ(std::memcmp(blobs.getQueryBlob(), input, sizeof(input)), 0);
+    blobs = ProcessedBlobs{};
+    EXPECT_EQ(allocator->getAllocationSize(), baseline);
+}
+
+namespace {
+
+template <QuantInput Input, VecSimMetric Metric, bool WithMean>
+class ThrowingQueryContext
+    : public ScalarStorageContext<vecsim_types::sq8, Input, Metric, WithMean> {
+    using Base = ScalarStorageContext<vecsim_types::sq8, Input, Metric, WithMean>;
+
+public:
+    using Base::Base;
+    void prepareQuery(const void *, void *) const { throw std::runtime_error("Query preparation"); }
+};
+
+struct ThrowingQueryStorage {
+    template <QuantInput Input, VecSimMetric Metric, bool WithMean>
+    using Context = ThrowingQueryContext<Input, Metric, WithMean>;
+};
+
+} // namespace
+
+TEST(PreprocessorsTest, QuantizedCombinedPreparationFailureReleasesBothOutputs) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto baseline = allocator->getAllocationSize();
+    constexpr size_t dim = 8;
+    const float input[dim] = {1, 2, 3, 4, 5, 6, 7, 8};
+    auto components =
+        CreateQuantizedIndexComponents<float, VecSimMetric_L2, false, ThrowingQueryStorage>(
+            allocator, dim, QuantizationInit{});
+    const auto component_bytes = allocator->getAllocationSize();
+    EXPECT_THROW(components.preprocessors->preprocess(input, sizeof(input)), std::runtime_error);
+    EXPECT_EQ(allocator->getAllocationSize(), component_bytes);
+    delete components.preprocessors;
+    delete components.indexCalculator;
+    EXPECT_EQ(allocator->getAllocationSize(), baseline);
 }
 
 // Parameterized test class for QuantPreprocessor with different metrics

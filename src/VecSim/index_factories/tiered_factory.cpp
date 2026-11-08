@@ -40,42 +40,16 @@ static inline BFParams NewBFParams(const TieredIndexParams *params) {
 }
 
 static inline bool RequiresQuantizationTraining(const TieredIndexParams *params) {
-    return params->primaryIndexParams->algoParams.hnswParams.quantType == VecSimQuant_SQ8 &&
+    return params->primaryIndexParams->algoParams.hnswParams.quantType != VecSimQuant_NONE &&
            params->specificParams.tieredHnswParams.QuantNormalizationSetSize > 0;
-}
-
-template <typename DataType, typename DistType>
-static inline bool IsQuantizationSupported(const TieredIndexParams *params) {
-    const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
-    if (hnsw_params.quantType == VecSimQuant_NONE) {
-        return true;
-    }
-
-    if constexpr (!QuantInput<DataType> || !std::is_same_v<DistType, float>) {
-        return false;
-    } else {
-        return hnsw_params.quantType == VecSimQuant_SQ8;
-    }
 }
 
 template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex(const TieredIndexParams *params) {
-    if (!IsQuantizationSupported<DataType, DistType>(params)) {
-        return nullptr;
-    }
-
     const auto &hnsw_params = params->primaryIndexParams->algoParams.hnswParams;
     auto management_layer_allocator = VecSimAllocator::newVecsimAllocator();
-    VecSimParams backend_params = *params->primaryIndexParams;
-    vecsim_stl::vector<float> initial_mean(management_layer_allocator);
-    if (RequiresQuantizationTraining(params)) {
-        // Allocate the final SQ8 WithMean layout now. The factory copies this temporary mean;
-        // tiered keeps the graph empty until it installs the mean accumulated from FLAT.
-        initial_mean.resize(hnsw_params.dim, 0.0f);
-        backend_params.algoParams.hnswParams.quantParams = initial_mean.data();
-    }
-    auto *hnsw_index =
-        static_cast<HNSWIndex<DataType, DistType> *>(HNSWFactory::NewIndex(&backend_params, true));
+    auto *hnsw_index = static_cast<HNSWIndex<DataType, DistType> *>(HNSWFactory::NewIndex(
+        params->primaryIndexParams, true, RequiresQuantizationTraining(params)));
     if (!hnsw_index) {
         return nullptr;
     }

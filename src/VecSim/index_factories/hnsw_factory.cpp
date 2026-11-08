@@ -72,35 +72,34 @@ template <VecSimMetric Metric, typename StorageType = sq8>
 
 template <typename DataType, VecSimMetric Metric, typename StorageType = sq8>
 VecSimIndex *NewIndex_Quantized(const HNSWParams *hnswParams,
-                                AbstractIndexInitParams abstractInitParams, const float *mean_ptr) {
-    const bool with_norm = mean_ptr != nullptr;
-    abstractInitParams.storedDataSize =
-        GetQuantizedStoredDataSize<Metric, StorageType>(abstractInitParams.dim, with_norm);
+                                AbstractIndexInitParams abstractInitParams,
+                                const QuantizationInit &init) {
     abstractInitParams.isQuantized = true;
 
     IndexComponents<DataType, float> components =
-        CreateQuantizedIndexComponents<DataType, Metric, StorageType>(
-            abstractInitParams.allocator, abstractInitParams.dim, mean_ptr);
+        CreateQuantizedIndexComponents<DataType, Metric, StorageType>(abstractInitParams.allocator,
+                                                                      abstractInitParams.dim, init);
+    abstractInitParams.storedDataSize = components.quantization->storageBytes();
     auto index =
         NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams, components);
 #ifdef BUILD_TESTS
     // Store quantization metadata for re-serialization.
     index->quantType = hnswParams->quantType;
-    if (mean_ptr != nullptr) {
-        index->serializedMeanVector.assign(mean_ptr, mean_ptr + abstractInitParams.dim);
-    }
+    const auto mean = components.quantization->mean();
+    index->serializedMeanVector.assign(mean.begin(), mean.end());
 #endif
     return index;
 }
 
-VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized, bool prepareForTraining) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
 
     if (hnswParams->quantType != VecSimQuant_NONE) {
         const VecSimMetric metric = ResolveQuantizedMetric(hnswParams->metric, is_normalized);
-        const float *mean_ptr = static_cast<const float *>(hnswParams->quantParams);
+        const QuantizationInit init{.parameters = hnswParams->quantParams,
+                                    .prepareForTraining = prepareForTraining};
 
         if (!QuantizationParamsSupported(hnswParams->quantType, hnswParams->type, metric)) {
             return NULL;
@@ -109,18 +108,18 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
         if (hnswParams->type == VecSimType_FLOAT32) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_Quantized<float, VecSimMetric_L2>(hnswParams, abstractInitParams,
-                                                                  mean_ptr);
+                                                                  init);
             } else if (metric == VecSimMetric_IP) {
                 return NewIndex_Quantized<float, VecSimMetric_IP>(hnswParams, abstractInitParams,
-                                                                  mean_ptr);
+                                                                  init);
             }
         } else if (hnswParams->type == VecSimType_FLOAT16) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_Quantized<float16, VecSimMetric_L2>(hnswParams, abstractInitParams,
-                                                                    mean_ptr);
+                                                                    init);
             } else if (metric == VecSimMetric_IP) {
                 return NewIndex_Quantized<float16, VecSimMetric_IP>(hnswParams, abstractInitParams,
-                                                                    mean_ptr);
+                                                                    init);
             }
         }
 
@@ -166,9 +165,9 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NULL;
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized) {
+VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized, bool prepareForTraining) {
     VecSimParams vecSimParams = {.algoParams = {.hnswParams = HNSWParams{*params}}};
-    return NewIndex(&vecSimParams);
+    return NewIndex(&vecSimParams, is_normalized, prepareForTraining);
 }
 
 template <typename DataType, typename DistType = DataType>
@@ -196,17 +195,13 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool wi
                                          ResolveQuantizedMetric(params->metric, is_normalized))) {
             throw std::invalid_argument("Unsupported quantization params for HNSW index");
         }
-        // Template arguments do not affect these component sizes.
+        const QuantizationInit init{.prepareForTraining = with_mean};
         if (with_mean) {
-            est += allocations_overhead +
-                   sizeof(DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>);
-            est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
-            est += allocations_overhead + sizeof(QuantPreprocessor<float, VecSimMetric_L2, true>);
-            est += allocations_overhead + params->dim * sizeof(float);
+            est += EstimateQuantizedComponentsMemory<float, VecSimMetric_L2, true, sq8>(params->dim,
+                                                                                        init);
         } else {
-            est += allocations_overhead + sizeof(DistanceCalculatorCommon<float>);
-            est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
-            est += allocations_overhead + sizeof(QuantPreprocessor<float, VecSimMetric_L2>);
+            est += EstimateQuantizedComponentsMemory<float, VecSimMetric_L2, false, sq8>(
+                params->dim, init);
         }
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT32) {
