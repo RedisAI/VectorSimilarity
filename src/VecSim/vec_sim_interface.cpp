@@ -77,4 +77,4 @@ void Vecsim_Log(void *ctx, const char *level, const char *message) {
 
 timeoutCallbackFunction VecSimIndexInterface::timeoutCallback = [](void *ctx) { return 0; };
 logCallbackFunction VecSimIndexInterface::logCallback = Vecsim_Log;
-VecSimWriteMode VecSimIndexInterface::asyncWriteMode = VecSim_WriteAsync;
+std::atomic<VecSimWriteMode> VecSimIndexInterface::asyncWriteMode{VecSim_WriteAsync};
