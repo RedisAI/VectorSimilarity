@@ -70,16 +70,17 @@ template <VecSimMetric Metric, typename StorageType = sq8>
     return true;
 }
 
-template <typename DataType, VecSimMetric Metric>
+template <typename DataType, VecSimMetric Metric, typename StorageType = sq8>
 VecSimIndex *NewIndex_Quantized(const HNSWParams *hnswParams,
                                 AbstractIndexInitParams abstractInitParams, const float *mean_ptr) {
     const bool with_norm = mean_ptr != nullptr;
     abstractInitParams.storedDataSize =
-        GetQuantizedStoredDataSize<Metric>(abstractInitParams.dim, with_norm);
+        GetQuantizedStoredDataSize<Metric, StorageType>(abstractInitParams.dim, with_norm);
     abstractInitParams.isQuantized = true;
 
-    IndexComponents<DataType, float> components = CreateSQ8IndexComponents<DataType, Metric>(
-        abstractInitParams.allocator, abstractInitParams.dim, mean_ptr);
+    IndexComponents<DataType, float> components =
+        CreateQuantizedIndexComponents<DataType, Metric, StorageType>(
+            abstractInitParams.allocator, abstractInitParams.dim, mean_ptr);
     auto index =
         NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams, components);
 #ifdef BUILD_TESTS

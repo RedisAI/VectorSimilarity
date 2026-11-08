@@ -26,6 +26,39 @@ struct sq8 {
 
     static void store_code(uint8_t *data, size_t index, uint8_t code) { data[index] = code; }
 
+    // Dot product of two code arrays: sum(q1_i * q2_i).
+    static float code_dot(const uint8_t *a, const uint8_t *b, size_t dim) {
+        float product = 0;
+        for (size_t i = 0; i < dim; i++) {
+            product += load_code(a, i) * load_code(b, i);
+        }
+        return product;
+    }
+
+    // Dot product of a code array with FP32 values: sum(q_i * y_i). Uses 4 accumulators for
+    // instruction-level parallelism.
+    static float code_dot_fp32(const uint8_t *codes, const float *y, size_t dim) {
+        float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+
+        // Main loop: process 4 elements per iteration
+        size_t i = 0;
+        size_t dim4 = dim & ~size_t(3); // dim4 is a multiple of 4
+        for (; i < dim4; i += 4) {
+            sum0 += static_cast<float>(load_code(codes, i + 0)) * y[i + 0];
+            sum1 += static_cast<float>(load_code(codes, i + 1)) * y[i + 1];
+            sum2 += static_cast<float>(load_code(codes, i + 2)) * y[i + 2];
+            sum3 += static_cast<float>(load_code(codes, i + 3)) * y[i + 3];
+        }
+
+        // Handle remainder (0-3 elements)
+        for (; i < dim; i++) {
+            sum0 += static_cast<float>(load_code(codes, i)) * y[i];
+        }
+
+        // Combine accumulators
+        return (sum0 + sum1) + (sum2 + sum3);
+    }
+
     // Metadata layout indices (stored after quantized values)
     enum MetadataIndex : size_t {
         MIN_VAL = 0,

@@ -84,6 +84,19 @@ CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator
     return {calc, container};
 }
 
+// Run-time overload: selects WithMean from whether mean_ptr is set.
+template <typename DataType, VecSimMetric Metric, typename StorageType>
+IndexComponents<DataType, float>
+CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                               const float *mean_ptr) {
+    if (mean_ptr) {
+        return CreateQuantizedIndexComponents<DataType, Metric, true, StorageType>(allocator, dim,
+                                                                                   mean_ptr);
+    }
+    return CreateQuantizedIndexComponents<DataType, Metric, false, StorageType>(allocator, dim,
+                                                                                mean_ptr);
+}
+
 template <typename DataType, VecSimMetric Metric, bool WithMean>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
@@ -96,10 +109,8 @@ template <typename DataType, VecSimMetric Metric>
 IndexComponents<DataType, float>
 CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                          const float *mean_ptr) {
-    if (mean_ptr) {
-        return CreateSQ8IndexComponents<DataType, Metric, true>(allocator, dim, mean_ptr);
-    }
-    return CreateSQ8IndexComponents<DataType, Metric, false>(allocator, dim, mean_ptr);
+    return CreateQuantizedIndexComponents<DataType, Metric, vecsim_types::sq8>(allocator, dim,
+                                                                               mean_ptr);
 }
 
 template <typename DataType, typename DistType>

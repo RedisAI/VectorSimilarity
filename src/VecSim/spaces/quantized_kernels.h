@@ -18,6 +18,7 @@
 // Scalar kernels for scalar quantized storage, generic over a StorageType that provides
 // load_code(data, i), data_bytes_count(dim) and the MIN_VAL / DELTA / SUM / SUM_SQUARES metadata
 // indices (stored after the codes) and SUM_QUERY (stored after the FP32 query values).
+// It also provides the code dot hooks code_dot(a, b, dim) and code_dot_fp32(codes, y, dim).
 //
 // Stored layout: [codes (data_bytes_count(dim) bytes)] [min_val] [delta] [sum] [sum_squares (L2)]
 // FP32 query layout: [float values (dim)] [y_sum] [y_sum_squares (L2 only)]
@@ -31,7 +32,7 @@ namespace quantized {
  * Asymmetric stored-FP32 inner product using the algebraic identity:
  *   IP(x, y) = sum((min + delta * q_i) * y_i) = min * y_sum + delta * sum(q_i * y_i)
  *
- * Uses 4x loop unrolling with multiple accumulators for ILP.
+ * sum(q_i * y_i) comes from StorageType::code_dot_fp32.
  * Returns the raw inner product value (not distance).
  */
 template <typename StorageType>
@@ -39,26 +40,8 @@ static inline float FP32_InnerProduct_Impl(const void *stored, const void *query
     const auto *pVect1 = static_cast<const uint8_t *>(stored);
     const auto *pVect2 = static_cast<const float *>(query);
 
-    // Use 4 accumulators for instruction-level parallelism
-    float sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
-
-    // Main loop: process 4 elements per iteration
-    size_t i = 0;
-    size_t dim4 = dim & ~size_t(3); // dim4 is a multiple of 4
-    for (; i < dim4; i += 4) {
-        sum0 += static_cast<float>(StorageType::load_code(pVect1, i + 0)) * pVect2[i + 0];
-        sum1 += static_cast<float>(StorageType::load_code(pVect1, i + 1)) * pVect2[i + 1];
-        sum2 += static_cast<float>(StorageType::load_code(pVect1, i + 2)) * pVect2[i + 2];
-        sum3 += static_cast<float>(StorageType::load_code(pVect1, i + 3)) * pVect2[i + 3];
-    }
-
-    // Handle remainder (0-3 elements)
-    for (; i < dim; i++) {
-        sum0 += static_cast<float>(StorageType::load_code(pVect1, i)) * pVect2[i];
-    }
-
-    // Combine accumulators
-    float quantized_dot = (sum0 + sum1) + (sum2 + sum3);
+    // Compute inner product of quantized values with the query: sum(q_i * y_i)
+    const float quantized_dot = StorageType::code_dot_fp32(pVect1, pVect2, dim);
 
     // Storage metadata follows a byte payload and is not necessarily float-aligned.
     const auto *params = pVect1 + StorageType::data_bytes_count(dim);
@@ -115,10 +98,7 @@ static inline float Stored_InnerProduct_Impl(const void *a, const void *b, size_
     const auto *pVect2 = static_cast<const uint8_t *>(b);
 
     // Compute inner product of quantized values: sum(q1[i]*q2[i])
-    float product = 0;
-    for (size_t i = 0; i < dim; i++) {
-        product += StorageType::load_code(pVect1, i) * StorageType::load_code(pVect2, i);
-    }
+    const float product = StorageType::code_dot(pVect1, pVect2, dim);
 
     // Metadata follows byte payloads and is not necessarily float-aligned.
     const auto *params1 = pVect1 + StorageType::data_bytes_count(dim);
