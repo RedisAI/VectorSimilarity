@@ -29,7 +29,7 @@ namespace {
  * Exactness: every vpdpbusd adds four products of at most 225 to each lane, and a lane takes part
  * in at most dim / 128 + 2 steps per nibble half, so a lane of the summed accumulators holds at
  * most 1800 * (dim / 128 + 2), about 268 million at spaces::SQ4_MAX_EXACT_SIMD_DIM, far below
- * INT32_MAX. The lanes are then reduced in 64 bits, so the int32 lanes are not the binding limit:
+ * INT32_MAX. Explicit wrapping SIMD additions reduce the lanes to uint32;
  * the whole total, at most 225 * dim, is what the dispatcher's uint32-based bound keeps exact.
  */
 
@@ -102,12 +102,16 @@ float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI_IMP(const void *pVect1v, con
         SQ4_SQ4_DotStep_AVX512F_BW_VL_VNNI(sum_low, sum_high, xt,
                                            _mm512_maskz_loadu_epi8(masks::bytes, y + complete / 2));
     }
-    // The lanes are non-negative and below INT32_MAX (see above); widen them to 64 bits before the
-    // horizontal sum, which can exceed INT32_MAX.
+    // Existing dispatch bounds the full sum by UINT32_MAX. Keep all additions in SIMD,
+    // then extract as unsigned before FP32 conversion.
     const __m512i sum = _mm512_add_epi32(sum_low, sum_high);
-    const __m512i wide = _mm512_add_epi64(_mm512_cvtepu32_epi64(_mm512_castsi512_si256(sum)),
-                                          _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64(sum, 1)));
-    const auto code_dot = static_cast<uint64_t>(_mm512_reduce_add_epi64(wide));
+    const __m256i s8 = _mm256_add_epi32(_mm512_castsi512_si256(sum),
+                                       _mm512_extracti64x4_epi64(sum, 1));
+    const __m128i s4 = _mm_add_epi32(_mm256_castsi256_si128(s8),
+                                    _mm256_extracti128_si256(s8, 1));
+    const __m128i s2 = _mm_add_epi32(s4, _mm_srli_si128(s4, 8));
+    const __m128i s1 = _mm_add_epi32(s2, _mm_srli_si128(s2, 4));
+    const auto code_dot = static_cast<uint32_t>(_mm_cvtsi128_si32(s1));
     return SQ4_SQ4_StoredIP_AVX512F_BW_VL_VNNI(x, y, dimension, static_cast<float>(code_dot));
 }
 
