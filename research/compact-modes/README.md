@@ -1,8 +1,8 @@
-# TQ2/TQ3 HNSW integration
+# TQ2/TQ3 StorageTypes
 
 This draft adds smaller total HNSW index choices, with recall and query latency
 as explicit tradeoffs. It is based on PR #1101 (`codex/quant-storage-type`,
-`217026b84aa123ae3bc0f483998a0a85b9d47b25`). It does not include SQ4 from
+`6a60e4087e8d31c8cdd78ad06c260fed252c9279`, shared storage context foundation). It does not include SQ4 from
 #1099/#1103 and does not change the default quantization mode.
 
 ## Shared StorageType pipeline

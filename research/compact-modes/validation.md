@@ -1,37 +1,42 @@
 # Validation and historical evidence
 
-## Current shared-training revision
+## Current StorageType revision
 
 Passed on user-selected `dorer-arm-big` (ARM64, Neoverse V2, 16-byte SVE),
 with quiet-host/resource guards and four compile jobs:
 
-- Release test/benchmark build and a separate ordinary library build with tests
-  and test helpers disabled.
-- TQ2/TQ3 repository micros, including independent scalar score references and
-  packed-tail checks. Selected query kernel: SVE2-128 with NEON fallback;
-  stored-pair kernel: NEON.
-- **387 unit tests passed:** TQ 25, existing SQ8 209, common 153. The TQ callback failure/retry
-  case also exercises SQ8, and query-publication/multivalue/update coverage remains.
-- Two real-index smokes, each 1,000 DBpedia vectors and five development queries
-  at dimension 768, after the micro/unit gates. They check ordinary public mean
-  training, record/score parity, mutation, queries and backend reload.
-- All eight stage receipts accepted; no competing workload recorded. Source,
-  dependency, benchmark/test binary and runtime manifests were verified.
+- Release test/benchmark build and ordinary library build with tests/helpers disabled.
+- TQ2/TQ3 repository microchecks, independent scalar references and packed tails.
+  Query kernel: SVE2-128 with NEON fallback; stored-pair kernel: NEON.
+- **2,007 unit tests:** TQ 27, existing SQ8 209, common 153, components 61,
+  distance spaces 1,557. Coverage includes SQ8 byte/kernel equivalence, allocation
+  estimates, failed combined preprocessing, buffer lifetime and cached dispatch after training.
+- Two public DBpedia real-index checks, each 1,000 vectors at dimension 768 and
+  five development queries, after the micro/unit gates. They cover shared training,
+  public/diagnostic record, score and kernel parity, mutation, query and backend reload.
+- Ten accepted stage receipts; no competing workload recorded. Source, dependency,
+  test/benchmark binary and runtime manifests checked.
+- The SQ8-only foundation on #1101 built separately and passed its 61 component
+  and 209 SQ8 tests, with its own source/binary/runtime pins and quiet-host guards.
 
-[qualification.json](qualification.json) records the 17 changed source/build-file
-hashes, counts, kernel selection and stage hashes. All source/build inputs match
-the native snapshot; documentation/receipt were finalized afterward. Earlier
-revision receipts are superseded and do not qualify this refactor.
+[qualification.json](qualification.json) records 29 source/build-file hashes,
+stage hashes, counts and configuration. Source/build inputs match the native snapshot
+byte-for-byte; merging the shared foundation did not change those bytes. The separate
+foundation source export matches commit `6a60e408`. Documentation/receipts were finalized
+afterward. Earlier revision receipts do not qualify this StorageType refactor.
 
-Local evidence: `shared-training-evidence.tar.gz`, SHA-256
-`940470e2fa0eb08fa92e7c457c2d17574e979e8f95902573ee2108e20a00c138`, preserved beside the worktree in
-`tq-shared-training-evidence-20261108/`. It contains commands, logs, manifests and
-receipts, not all native binaries or external dependency bytes. It is not a
-public CI download or a complete offline replay package.
+Local archive: `storage-context-evidence.tar.gz`, SHA-256
+`4fe094fc53c940eb260d07de7b7da0d310e0f803b497a8f39a17c4b415d9ed19`, preserved in
+`storage-context-evidence-20261108/` beside the worktree. It contains commands,
+logs, source exports, manifests and receipts. Native binaries/external dependency
+bytes are not bundled; this is not a public CI download or complete offline replay package.
 
-This is correctness/smoke qualification, not a new 100k/million-vector performance
-comparison, sanitizer/x86 run or foreign-language API qualification. The one-time
-exclusive lock duration during TQ mean installation was not measured.
+These are correctness and small-index checks, not a new 100k/million-vector
+performance comparison, sanitizer/x86 run or foreign-language API qualification.
+The one-time exclusive lock duration during mean installation was not measured.
+Allocator totals include context/control allocations. Process RSS and libc
+bookkeeping are excluded; helper-only SQ8 serialization keeps its legacy separate
+mean mirror outside the VecSim allocator (one dimension-sized FP32 vector).
 
 ## Historical 100k checkpoint (different source tree)
 
@@ -56,7 +61,7 @@ preparation micros were around 62–63 us; that is not a whole-query profile.
 
 Queries served development/policy selection, not independent held-out evaluation.
 This dataset/size does not establish million-vector, other-dataset or x86
-behavior. The shared-training refactor preserves the intended mean calculation
+behavior. The StorageType refactor preserves the intended mean calculation
 and encoding policies, but these historical measurements are not new performance
 results for its implementation.
 

@@ -1,44 +1,68 @@
 {
-  "base_commit": "217026b84aa123ae3bc0f483998a0a85b9d47b25",
+  "base_commit": "6a60e4087e8d31c8cdd78ad06c260fed252c9279",
+  "foundation_parent": "217026b84aa123ae3bc0f483998a0a85b9d47b25",
+  "validated_source_commit": "56abd4882a6397636c44acb293d931dbb531b6d1",
   "host": "dorer-arm-big",
   "native_architecture": "ARM64",
   "source_build_file_sha256": {
     "CMakeLists.txt": "a703b9d6d920efd3f079e8ad5115f568e6d1c85a3a1d7cddd589c404cf541c2e",
-    "src/VecSim/algorithms/hnsw/hnsw.h": "671c7ae98aec29a26b5c3203e3a4a4fd082d41c4d993d5cb558ea2cc3d5d7ba1",
+    "src/VecSim/algorithms/hnsw/hnsw.h": "9fafcf4f42433b8e1d4449664499785f1dd3320a3253f7f30b9ae51abe34c245",
     "src/VecSim/algorithms/hnsw/hnsw_serializer.h": "3c05bb45ae5124d164503224c449125a11f6c9cfa839559f08db1b3b61feb694",
-    "src/VecSim/algorithms/hnsw/hnsw_serializer_impl.h": "76d2d8604cea74e6510919532ae0c548f2a301c74ba4d3d453fb83a793f6914f",
-    "src/VecSim/algorithms/hnsw/hnsw_tiered.h": "87fcc005b922bfd4279536691eae22ee8aa98020bb14870e259cd3c13cb868e5",
-    "src/VecSim/index_factories/hnsw_factory.cpp": "481c850c027474f076110c4690669f2e35a2a9390ea715bfa74f2975729d3123",
-    "src/VecSim/index_factories/tiered_factory.cpp": "2824c4615ba06ddff4407fce2c879072ba0a7b5e49057e5d1aaf16dc19a6d801",
+    "src/VecSim/algorithms/hnsw/hnsw_serializer_impl.h": "bda3fa3821fc3e676b4fabdbf2f338c830916fd48c873682ea9639328e93a43e",
+    "src/VecSim/algorithms/hnsw/hnsw_tiered.h": "16bb3e812401176aa0fdb612ba63722f8015ca545a270f44e5ff0ecf8b628f17",
+    "src/VecSim/index_factories/components/components_factory.h": "9b1a92a33aac78d77388fbba99f13cfba1f22765f4cd87304934af0ecef6d9bf",
+    "src/VecSim/index_factories/hnsw_factory.cpp": "9c8ed95e65a9b84c405867ccd8f9b808f2ba517b1951e1f7ea5facf5b5dc59fe",
+    "src/VecSim/index_factories/hnsw_factory.h": "7f858a3b9dce74ff90af97b2103df64a142825518586d75a9b84565c856c3ed2",
+    "src/VecSim/index_factories/tiered_factory.cpp": "992389ce7d6244dceb90328b5832616ed1a37dd54a59e056fda3661fc3e28a77",
+    "src/VecSim/quantization/quantization_runtime.h": "cbc9c7a5b31fa7d47257d460c82e1e5a97e9c87833e1ef98388077b7e3fe5644",
+    "src/VecSim/quantization/storage_context.h": "beb3cbd8749d989579eecdaa6e96d25ef48d9e7b94f6a827853dc85069426d1c",
     "src/VecSim/quantization/turboquant.h": "35bba8b7b84e9241fef47c56981e6fe8cca5d8d4cf9a135cb6189f01323de1e0",
-    "src/VecSim/quantization/turboquant_components.h": "44a092c6252c2973434cda9e0f764d545747bd242692a8e902fa1ee9f9a94b84",
+    "src/VecSim/quantization/turboquant_components.h": "b6ebc4347932ffcdd04065db26505ebed91ee353ffa7f2d5278b7fcfdd1f8775",
     "src/VecSim/quantization/turboquant_kernels.h": "138f36d8967c0ffe3c3905ac2a05c6ea66be6bb3c7b43aec80f06f5f910339e9",
-    "src/VecSim/vec_sim_common.h": "d28fff233c2cf8ab18d040ab12ce98e4c8cf73fb484809018c5f61d249e1a3a6",
+    "src/VecSim/spaces/computer/calculator.h": "752d46aee4760f8b8775d32b6596c247a1694a9de7427205d8d66df389589692",
+    "src/VecSim/spaces/computer/preprocessor_container.h": "3a41be4ff1cb2c3f5df8361610b97eca0e8aa503e2290fc7d23c3d84e8062b78",
+    "src/VecSim/spaces/computer/preprocessors.h": "8e5776b92408e0c6f698c502898f556dcee3ae15967771ce452929de5de9a00d",
+    "src/VecSim/types/sq8.h": "6e40acec080ec1ef7bb3cb8ee42e803c33fb80b7ff94d73df524d78a2bc5aa4e",
+    "src/VecSim/types/turboquant.h": "43e786bb5320b4619d1c1047b330228b5323cf43356b88ce2448c90329fa6b6e",
+    "src/VecSim/vec_sim_common.h": "ffc85feced100bc2b92870c38138379c21a1f711b90e8e472d07cfe6efc49a62",
+    "src/VecSim/vec_sim_index.h": "54e13ded47614c445ad2ddb8b9bf57d9c6de2167a972339247704e27ca222f4e",
     "src/VecSim/vec_sim_tiered_index.h": "cd8bed87d4260a0fbc34b98225521a5c43b45ee6cec46de20b3d788436ca3856",
     "tests/benchmark/CMakeLists.txt": "e3aeb44240555f22948c07807e3e5aa858ce461fcb99a245ca85f6bdfd1ca8c4",
-    "tests/benchmark/run_files/bm_selected_modes.cpp": "c1edae19992fb3421d1959b639f09694a904bddaa3fc2ac46c398b6945614a81",
+    "tests/benchmark/run_files/bm_selected_modes.cpp": "c039aa406b1fd03eb1093727d07c1f0db1ba9542c64031ed7021741672ae7076",
     "tests/unit/CMakeLists.txt": "05b9e6e28a5804b84e4cc769a9a652781f3c4141a3a8f39e3a415a60c041cb58",
     "tests/unit/test_common.cpp": "0400cd4216629422812c86f88709a950e7e2735452d63d4a670cf5f441ca4222",
-    "tests/unit/test_hnsw_turboquant.cpp": "400af6cfbf0612fbb759e3a25e6c3bc6e066fe32548085c461529808bbfffbab"
+    "tests/unit/test_components.cpp": "3af9c90f2b9f98a3207bf0c0a4ec4feb37a0c23315cb43f63e75a27850cd10c7",
+    "tests/unit/test_hnsw_sq8.cpp": "1cf2db2d50b2dea663c7a2e29e1b954c7269a0cb9b314d206b036d232c6969cb",
+    "tests/unit/test_hnsw_turboquant.cpp": "89badaeaf14104eb9fe5ecfaaed164900c84826c01c65a75d16465d302a59465"
   },
   "unit_pass_counts": {
-    "test_hnsw_turboquant": 25,
+    "test_hnsw_turboquant": 27,
     "test_hnsw_sq8": 209,
-    "test_common": 153
+    "test_common": 153,
+    "test_components": 61,
+    "test_spaces": 1557
+  },
+  "total_unit_passes": 2007,
+  "foundation_unit_pass_counts": {
+    "test_hnsw_sq8": 209,
+    "test_components": 61
   },
   "accepted_stage_sha256": {
-    "build-accepted.json": "5c7bd5b1c644ea7658d74d5af3eb9edba2bab98eee57cecb70bd0cb9ad2dd6d9",
-    "micro-tq2-accepted.json": "9b5e330b5cb202fbec7e20d244ba8d324670d59714e032cdc2e590c22c93fb66",
-    "micro-tq3-accepted.json": "1a765fd53c4c59487dadd5f8dcfa1f6918df235e646c4c2d370d102d7c236535",
-    "tiny-1000-tq2-accepted.json": "2be3d3c7798e1716b7fca0ca8cd46b2aba216dbd885b731540886c55bb84ff81",
-    "tiny-1000-tq3-accepted.json": "861ec5906fd556245a51ae452009222c0213c6003ed7ac0daeb0a7302ff38f1f",
-    "unit-test_common-accepted.json": "d60e5c97e5e2c10cf23a3ed6190d34f17f4323591dd677bc50994ee2bff807e6",
-    "unit-test_hnsw_sq8-accepted.json": "70b02c411457fc3044e3fc63c9414dc3690fc934b9628c3cf03ce0a03bc64c1d",
-    "unit-test_hnsw_turboquant-accepted.json": "e043b12eaef7743634e6d1cdfc4d4604dad4c02cdd5f68b15ffcd2e9c69dd298"
+    "build-accepted.json": "8f43c8ebd06ad3241dabfc74ae0795c30575d584434a2a14fa00ba1ac69ae8f4",
+    "micro-tq2-accepted.json": "834c261b97c421c6c22054707a961de1a19df487f4a413411529a132ac9701bb",
+    "micro-tq3-accepted.json": "72a6c403245a715bad4294ecac68e8c70a462b430c895cf6dcd4217a240f8a4e",
+    "tiny-1000-tq2-accepted.json": "7c6cee1435227045e2b6e27b779cc00a7c1e8e061be270bedc6fb155c2a04407",
+    "tiny-1000-tq3-accepted.json": "c857cf8c190af98205411f9d33a346bdd510d1a3dd7c09135789aca46602577e",
+    "unit-test_common-accepted.json": "3a7be05748672caa4d906e155df3bea0e0218d137032eada52cf76b13566b238",
+    "unit-test_components-accepted.json": "190a4d8557dea09bfa100a3d3ccd984e8fbd783ac7d15447b23a8d79ee8271f8",
+    "unit-test_hnsw_sq8-accepted.json": "e5d146d6b43d103be3cb03107c7ac985d7ce6a4928bba6ebd922372c5d598221",
+    "unit-test_hnsw_turboquant-accepted.json": "2e213f92a60179aece1626f83f0a48cbfe5a187d9e2410ac47bbeed91d98a265",
+    "unit-test_spaces-accepted.json": "b1dd5119888683640edf0bee158094d59beb7dd360aa2ec14cc2f65e3ede3c00"
   },
   "build_modes": [
     "Release tests ON",
-    "Release tests/helpers OFF"
+    "Release tests/helpers OFF",
+    "standalone SQ8 foundation Release tests ON"
   ],
   "micro_config": {
     "tq2": {
@@ -162,6 +186,20 @@
     ],
     "fixture_sha256": "b59f5311786cb48d7f697d11722a4042d953eb174254f0655851737d639cd379"
   },
+  "storage_contract": {
+    "common_factory": "CreateQuantizedIndexComponents",
+    "common_preprocessor": "QuantPreprocessor",
+    "common_calculator": "QuantizedCalculator",
+    "index_alias": "QuantizationRuntime (non-owning)",
+    "tq_branches_in_hnsw_or_tiered": false,
+    "scalar_V5_bytes_preserved": true
+  },
+  "shared_training": {
+    "accumulator": "existing tiered SQ8TrainingState",
+    "mean_installation": "QuantizationRuntime::setMean",
+    "separate_tq_training_state": false,
+    "seed_policy": "fixed; 42 by default"
+  },
   "not_claimed": [
     "new 100k/million-vector comparison",
     "independent held-out evaluation",
@@ -169,15 +207,9 @@
     "p95/p99",
     "process RSS"
   ],
-  "shared_training": {
-    "accumulator": "existing tiered SQ8TrainingState",
-    "mean_installation": "HNSWIndex::setQuantizationMean",
-    "separate_tq_training_state": false,
-    "seed_policy": "fixed; 42 by default"
-  },
   "evidence_archive": {
-    "filename": "shared-training-evidence.tar.gz",
-    "sha256": "940470e2fa0eb08fa92e7c457c2d17574e979e8f95902573ee2108e20a00c138",
-    "scope": "Commands, logs, manifests and receipts; native binaries/external dependency bytes are not bundled. Local archive, not a public download."
+    "filename": "storage-context-evidence.tar.gz",
+    "sha256": "4fe094fc53c940eb260d07de7b7da0d310e0f803b497a8f39a17c4b415d9ed19",
+    "scope": "Commands, logs, source exports, manifests and receipts. Native binaries and external dependency bytes are not bundled. Local archive, not a public download."
   }
 }
