@@ -100,7 +100,16 @@ void checkComponents(size_t dim, bool constant) {
     }
     const auto rx = reconstruct(x_blob.get(), dim, mean);
     const auto ry = reconstruct(y_blob.get(), dim, mean);
-    const double symmetric = referenceDistance<Metric>(rx, ry);
+    double symmetric = referenceDistance<Metric>(rx, ry);
+    if constexpr (WithMean && Metric == VecSimMetric_IP) {
+        // The kernel uses reconstructed centered values, but the mean correction uses the
+        // original inputs to avoid multiplying quantization error by the mean.
+        symmetric = 1.0;
+        for (size_t i = 0; i < dim; ++i) {
+            symmetric -= (rx[i] - mean[i]) * (ry[i] - mean[i]) + double(x[i]) * mean[i] +
+                         double(y[i]) * mean[i] - double(mean[i]) * mean[i];
+        }
+    }
     const double asymmetric = referenceDistance<Metric>(rx, y);
     const double sym_tolerance = 2e-5 * (1.0 + std::abs(symmetric));
     const double asym_tolerance = 2e-5 * (1.0 + std::abs(asymmetric));
@@ -133,9 +142,9 @@ void checkComponents(size_t dim, bool constant) {
     }
 
     if constexpr (WithMean && Metric == VecSimMetric_IP) {
-        double correction = 0.0;
+        float correction = 0.0f;
         for (size_t i = 0; i < dim; ++i) {
-            correction += rx[i] * mean[i];
+            correction += x[i] * mean[i];
         }
         EXPECT_NEAR(
             metadata(x_blob.get(), sq4::data_bytes_count(dim), sq4::mean_ip_index<Metric>()),
@@ -157,7 +166,33 @@ void checkDimensions() {
 
 TEST(SQ4Components, L2MatchesReconstruction) { checkDimensions<VecSimMetric_L2>(); }
 
-TEST(SQ4Components, IPMatchesReconstruction) { checkDimensions<VecSimMetric_IP>(); }
+TEST(SQ4Components, IPMatchesQuantizedKernelAndOriginalMeanCorrection) {
+    checkDimensions<VecSimMetric_IP>();
+}
+
+TEST(SQ4Components, CenteredIPCorrectionAvoidsMeanAmplifiedQuantizationError) {
+    constexpr size_t dim = 3;
+    const std::vector<float> mean(dim, 10.0f);
+    const std::vector<float> x = {10.0f, 13.0f, 12.1f};
+    const std::vector<float> y = {10.0f, 13.0f, 11.0f};
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto components =
+        CreateQuantizedIndexComponents<float, VecSimMetric_IP, sq4>(allocator, dim, mean.data());
+    std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
+    std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+    auto xb = preprocessors->preprocessForStorage(x.data(), dim * sizeof(float));
+    auto yb = preprocessors->preprocessForStorage(y.data(), dim * sizeof(float));
+    const auto rx = reconstruct(xb.get(), dim, mean);
+    const auto ry = reconstruct(yb.get(), dim, mean);
+    const double truth = referenceDistance<VecSimMetric_IP>(x, y);
+    const double decoded = referenceDistance<VecSimMetric_IP>(rx, ry);
+    const float actual = calculator->calcDistance(xb.get(), yb.get(), dim);
+    EXPECT_FLOAT_EQ(
+        metadata(xb.get(), sq4::data_bytes_count(dim), sq4::mean_ip_index<VecSimMetric_IP>()),
+        351.0f);
+    EXPECT_LT(std::abs(actual - truth), 0.11);
+    EXPECT_GT(std::abs(decoded - truth), 1.0);
+}
 
 TEST(SQ4Components, PackedCodesAndMetadataSizes) {
     auto allocator = VecSimAllocator::newVecsimAllocator();
