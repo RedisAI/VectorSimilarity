@@ -1487,7 +1487,7 @@ void checkSQ8Bytes(size_t dim) {
         const double reconstructed = kMin + kStep * codes[i];
         sum += reconstructed;
         sum_squares += reconstructed * reconstructed;
-        mean_ip += double(input_fp32[i]) * mean[i];
+        mean_ip += (reconstructed + mean[i]) * mean[i];
     }
     std::vector<float> expected_metadata = {float(kMin), float(kStep), float(sum)};
     if constexpr (Metric == VecSimMetric_L2) {
@@ -1560,6 +1560,65 @@ void checkSQ8BytesAllModes() {
 TEST(PreprocessorsTest, QuantizedStorageSQ8BytesUnchanged) {
     checkSQ8BytesAllModes<float>();
     checkSQ8BytesAllModes<vecsim_types::float16>();
+}
+
+template <typename DataType>
+void checkSQ8CenteredIPReconstruction() {
+    // The endpoints fix min=-4 and max=7. The interior values do not fall exactly on
+    // the 255-step quantization grid, so an input-based correction fails this case.
+    const std::vector<float> centered = {-4.0f, 7.0f, 0.25f, 1.5f, -2.75f, 3.25f, 4.5f};
+    const std::vector<float> mean = {2.0f, -3.0f, 4.0f, 1.0f, -2.0f, 3.0f, -1.0f};
+    const std::vector<uint8_t> expected_codes = {0, 255, 99, 128, 29, 168, 197};
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    // Exercise every remainder of the four-wide quantization loop.
+    for (size_t dim : {4u, 5u, 6u, 7u}) {
+        SCOPED_TRACE(::testing::Message() << "dim=" << dim << " fp16="
+                                          << (std::is_same_v<DataType, vecsim_types::float16>));
+        std::vector<DataType> input(dim);
+        for (size_t i = 0; i < dim; ++i) {
+            input[i] = fromFloat<DataType>(centered[i] + mean[i]);
+        }
+        auto components = CreateQuantizedIndexComponents<DataType, VecSimMetric_IP, sq8>(
+            allocator, dim, mean.data());
+        std::unique_ptr<IndexCalculatorInterface<float>> calculator(components.indexCalculator);
+        std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+        auto blob = preprocessors->preprocessForStorage(input.data(), dim * sizeof(DataType));
+        const auto *bytes = static_cast<const uint8_t *>(blob.get());
+        ASSERT_EQ(std::vector<uint8_t>(bytes, bytes + dim),
+                  std::vector<uint8_t>(expected_codes.begin(), expected_codes.begin() + dim));
+
+        const double min = -4.0;
+        const double delta = float(11.0f / 255.0f);
+        double mean_ip = 0.0, input_mean_ip = 0.0, self_ip = 0.0;
+        for (size_t i = 0; i < dim; ++i) {
+            const double reconstructed = min + delta * expected_codes[i] + mean[i];
+            mean_ip += reconstructed * mean[i];
+            input_mean_ip += double(centered[i] + mean[i]) * mean[i];
+            self_ip += reconstructed * reconstructed;
+        }
+        ASSERT_GT(std::abs(mean_ip - input_mean_ip), 0.01);
+        EXPECT_FLOAT_EQ(load_unaligned<float>(bytes + dim + 3 * sizeof(float)), float(mean_ip));
+        EXPECT_NEAR(calculator->calcDistance(blob.get(), blob.get(), dim), 1.0 - self_ip, 5e-5);
+
+        // In-place quantization must produce the identical complete blob even though the
+        // input values are overwritten before the correction is finished.
+        auto *container =
+            dynamic_cast<MultiPreprocessorsContainer<DataType, 1> *>(preprocessors.get());
+        ASSERT_NE(container, nullptr);
+        auto *quantizer = dynamic_cast<QuantPreprocessor<DataType, VecSimMetric_IP, true> *>(
+            container->getPreprocessors()[0]);
+        ASSERT_NE(quantizer, nullptr);
+        const size_t blob_size = sq8::storage_bytes_count<VecSimMetric_IP, true>(dim);
+        std::vector<uint8_t> in_place(std::max(blob_size, dim * sizeof(DataType)));
+        std::memcpy(in_place.data(), input.data(), dim * sizeof(DataType));
+        quantizer->preprocessStorageInPlace(in_place.data(), in_place.size());
+        EXPECT_EQ(std::memcmp(in_place.data(), bytes, blob_size), 0);
+    }
+}
+
+TEST(PreprocessorsTest, SQ8CenteredIPCorrectionMatchesReconstructedValues) {
+    checkSQ8CenteredIPReconstruction<float>();
+    checkSQ8CenteredIPReconstruction<vecsim_types::float16>();
 }
 
 // Parameterized test class for QuantPreprocessor with different metrics
@@ -1990,7 +2049,7 @@ protected:
         const size_t query_meta_offset = dim * sizeof(QueryType);
         float centered[dim];
         QueryType expected_query_body[dim];
-        float expected_x_mean_ip = 0.0f;
+        double expected_x_mean_ip = 0.0;
         float expected_y_sum = 0.0f;
         float expected_y_sum_squares = 0.0f;
         float expected_y_mean_ip = 0.0f;
@@ -2002,7 +2061,6 @@ protected:
                 expected_query_body[i] = original_blob[i];
             }
             const float query_value = to_fp32<QueryType>(expected_query_body[i]);
-            expected_x_mean_ip += widened_blob[i] * mean_vec[i];
             expected_y_sum += query_value;
             expected_y_sum_squares += query_value * query_value;
             expected_y_mean_ip += widened_blob[i] * mean_vec[i];
@@ -2011,6 +2069,11 @@ protected:
         constexpr size_t max_storage_baseline = dim * sizeof(uint8_t) + 4 * sizeof(float);
         uint8_t baseline_storage[max_storage_baseline];
         ComputeSQ8Quantization(centered, dim, baseline_storage);
+        const double min = load_unaligned<float>(baseline_storage + dim);
+        const double delta = load_unaligned<float>(baseline_storage + dim + sizeof(float));
+        for (size_t i = 0; i < dim; ++i) {
+            expected_x_mean_ip += (min + delta * baseline_storage[i] + mean_vec[i]) * mean_vec[i];
+        }
 
         vecsim_stl::vector<float> mean_vector(allocator);
         for (size_t i = 0; i < dim; ++i) {

@@ -272,10 +272,9 @@ private:
     using OUTPUT_TYPE = uint8_t;
     using MetadataType = float; // Quantized storage metadata is always FP32.
 
-    // SQ4's centered IP correction x_mean_ip describes the reconstructed vector, like the other
+    // The centered IP correction x_mean_ip describes the reconstructed vector, like the other
     // stored sums, so it is accumulated from the generated codes instead of the input values.
-    static constexpr bool kMeanIpFromCodes =
-        WithNorm && Metric == VecSimMetric_IP && std::is_same_v<StorageType, vecsim_types::sq4>;
+    static constexpr bool kMeanIpFromCodes = WithNorm && Metric == VecSimMetric_IP;
 
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
@@ -288,8 +287,7 @@ private:
     void quantize(const DataType *input, OUTPUT_TYPE *quantized) const {
         assert(input && quantized);
 
-        float x_mean_ip = 0.0f; // only used for WithNorm
-        auto [min_val, max_val] = find_min_max(input, x_mean_ip);
+        auto [min_val, max_val] = find_min_max(input);
 
         // Calculate scaling factor (typed as MetadataType because they end up as metadata).
         const MetadataType diff = (max_val - min_val);
@@ -330,7 +328,7 @@ private:
         // the metadata rather than round it. This is the write path, once per vector.
         uint64_t q0{}, q1{}, q2{}, q3{}; // only used for L2
 
-        // For centered SQ4 IP, the mean correction is accumulated from the codes as they are
+        // For centered IP, the mean correction is accumulated from the codes as they are
         // generated (see kMeanIpFromCodes), in coordinate order with one accumulator.
         const double d_min = min_val, d_delta = delta;
         [[maybe_unused]] double reconstructed_mean_ip = 0.0;
@@ -413,10 +411,6 @@ private:
                                           d_delta * d_delta * q_sum_squares);
         }
 
-        if constexpr (kMeanIpFromCodes) {
-            x_mean_ip = static_cast<MetadataType>(reconstructed_mean_ip);
-        }
-
         // Metadata uses MetadataType. Use memcpy because the metadata offset (after the
         // quantized body, packed for SQ4) is not guaranteed to be sizeof(MetadataType)-aligned.
         void *meta_dst = quantized + StorageType::data_bytes_count(this->dim);
@@ -425,7 +419,7 @@ private:
         if constexpr (Metric == VecSimMetric_L2)
             buf[n++] = sum_squares;
         if constexpr (WithNorm && Metric == VecSimMetric_IP)
-            buf[n++] = x_mean_ip;
+            buf[n++] = static_cast<MetadataType>(reconstructed_mean_ip);
         memcpy(meta_dst, buf, n * sizeof(MetadataType));
     }
 
@@ -666,7 +660,7 @@ private:
         return value;
     }
 
-    std::pair<float, float> find_min_max(const DataType *input, float &x_mean_ip) const {
+    std::pair<float, float> find_min_max(const DataType *input) const {
         if constexpr (!WithNorm) {
             auto [min_it, max_it] = std::minmax_element(input, input + dim);
             return {to_fp32<DataType>(*min_it), to_fp32<DataType>(*max_it)};
@@ -675,18 +669,11 @@ private:
             float value = first_input_value - mean[0];
             float min_val = value;
             float max_val = value;
-            // x_mean_ip only feeds the IP correction term (see DistanceCalculatorWithNorm); the
-            // normalized L2 correction cancels the mean terms exactly, so skip the extra work.
-            if constexpr (Metric == VecSimMetric_IP && !kMeanIpFromCodes)
-                x_mean_ip = first_input_value * mean[0];
-
             for (size_t i = 1; i < dim; ++i) {
                 const float input_value = to_fp32<DataType>(input[i]);
                 value = input_value - mean[i];
                 min_val = std::min(min_val, value);
                 max_val = std::max(max_val, value);
-                if constexpr (Metric == VecSimMetric_IP && !kMeanIpFromCodes)
-                    x_mean_ip += input_value * mean[i];
             }
             return {min_val, max_val};
         }
