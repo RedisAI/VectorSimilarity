@@ -4,10 +4,10 @@
  * Licensed under your choice of RSALv2, SSPLv1, or AGPLv3.
  */
 #pragma once
+#include <type_traits>
 #include "VecSim/quantization/turboquant.h"
-#include "VecSim/spaces/computer/preprocessor_container.h"
+#include "VecSim/quantization/quantization_runtime.h"
 #include "VecSim/spaces/computer/calculator.h"
-#include "VecSim/vec_sim_index.h"
 
 namespace vecsim::quantization {
 inline bool isTurboQuant(VecSimQuantType type) {
@@ -57,54 +57,12 @@ inline void validateTurboQuantBatch(const void *rows, size_t count, size_t dim, 
                                 require_nonzero);
 }
 
-class TurboQuantPreprocessors final : public PreprocessorsContainerAbstract {
+// The common component wrappers share this storage context. The codec remains stable when
+// its fitted mean changes, so previously captured distance dispatches remain valid.
+class TurboQuantStorageContextBase : public QuantizationRuntime {
+protected:
+    std::shared_ptr<VecSimAllocator> allocator_;
     std::shared_ptr<TurboQuant> codec_;
-    void check(const void *input, size_t bytes) const {
-        if (bytes != codec_->dim() * sizeof(float))
-            throw std::invalid_argument("TurboQuant expects one FP32 vector");
-        validateTurboQuantInput(static_cast<const float *>(input), codec_->dim());
-    }
-public:
-    TurboQuantPreprocessors(std::shared_ptr<VecSimAllocator> allocator,
-                            std::shared_ptr<TurboQuant> codec)
-        : PreprocessorsContainerAbstract(allocator, alignof(float), 0), codec_(std::move(codec)) {}
-    const std::shared_ptr<TurboQuant> &codec() const { return codec_; }
-    size_t queryBytes() const { return codec_->queryBytes() + sizeof(float); }
-    MemoryUtils::unique_blob preprocessForStorage(const void *input, size_t bytes) const override {
-        check(input, bytes);
-        auto result = wrapAllocated(allocator->allocate(codec_->storageBytes()));
-        vecsim_stl::vector<float> residual(codec_->dim(), allocator);
-        const auto mean = codec_->biasMean();
-        const auto *values = static_cast<const float *>(input);
-        for (size_t i = 0; i < mean.size(); ++i) residual[i] = values[i] - mean[i];
-        codec_->encode(residual.data(), result.get());
-        return result;
-    }
-    MemoryUtils::unique_blob preprocessQuery(const void *input, size_t bytes,
-                                             bool = false) const override {
-        check(input, bytes);
-        auto result = wrapAllocated(allocator->allocate(queryBytes()));
-        codec_->prepareQuery(static_cast<const float *>(input), result.get());
-        float meanIP = 0;
-        const auto mean = codec_->biasMean();
-        const auto *values = static_cast<const float *>(input);
-        for (size_t i = 0; i < mean.size(); ++i) meanIP += mean[i] * values[i];
-        if (!std::isfinite(meanIP)) throw std::overflow_error("TurboQuant mean IP overflow");
-        std::memcpy(static_cast<unsigned char *>(result.get()) + codec_->queryBytes(),
-                    &meanIP, sizeof(meanIP));
-        return result;
-    }
-    void preprocessStorageInPlace(void *input, size_t bytes) const override {
-        check(input, bytes);
-        if (bytes < codec_->storageBytes())
-            throw std::invalid_argument("TurboQuant storage does not fit input buffer");
-        auto result = preprocessForStorage(input, bytes);
-        std::memcpy(input, result.get(), codec_->storageBytes());
-    }
-};
-
-class TurboQuantCalculator final : public IndexCalculatorInterface<float> {
-    std::shared_ptr<const TurboQuant> codec_;
     static float stored(const void *context, const void *a, const void *b, size_t) {
         return static_cast<const TurboQuant *>(context)->storedDistance(a, b);
     }
@@ -117,53 +75,131 @@ class TurboQuantCalculator final : public IndexCalculatorInterface<float> {
         if (!std::isfinite(score)) throw std::overflow_error("TurboQuant query score overflow");
         return score;
     }
+    TurboQuantStorageContextBase(const std::shared_ptr<VecSimAllocator> &allocator,
+                                 std::shared_ptr<TurboQuant> codec)
+        : allocator_(allocator), codec_(std::move(codec)) {}
+
 public:
-    TurboQuantCalculator(std::shared_ptr<VecSimAllocator> allocator,
-                         std::shared_ptr<const TurboQuant> codec)
-        : IndexCalculatorInterface<float>(allocator), codec_(std::move(codec)) {}
-    float calcDistance(const void *a, const void *b, size_t dim) const override {
-        return stored(codec_.get(), a, b, dim);
+    using QueryType = float;
+    const std::shared_ptr<TurboQuant> &codec() const { return codec_; }
+    void encodeStorage(const void *input, void *output) const {
+        validateTurboQuantInput(static_cast<const float *>(input), codec_->dim());
+        vecsim_stl::vector<float> residual(codec_->dim(), allocator_);
+        const auto values = static_cast<const float *>(input);
+        const auto mean = codec_->biasMean();
+        for (size_t i = 0; i < mean.size(); ++i)
+            residual[i] = values[i] - mean[i];
+        codec_->encode(residual.data(), output);
     }
-    float calcDistanceForQuery(const void *a, const void *b, size_t dim) const override {
-        return query(codec_.get(), a, b, dim);
+    void prepareQuery(const void *input, void *output) const {
+        validateTurboQuantInput(static_cast<const float *>(input), codec_->dim());
+        codec_->prepareQuery(static_cast<const float *>(input), output);
+        float meanIP = 0;
+        const auto mean = codec_->biasMean();
+        const auto values = static_cast<const float *>(input);
+        for (size_t i = 0; i < mean.size(); ++i)
+            meanIP += mean[i] * values[i];
+        if (!std::isfinite(meanIP))
+            throw std::overflow_error("TurboQuant mean IP overflow");
+        std::memcpy(static_cast<unsigned char *>(output) + codec_->queryBytes(), &meanIP,
+                    sizeof(meanIP));
     }
-    DistanceDispatch<float> getDistanceDispatch(DistanceMode mode) const override {
+    void encodeStorageInPlace(void *input, size_t bytes) const {
+        if (bytes != codec_->dim() * sizeof(float) || bytes < storageBytes())
+            throw std::invalid_argument("TurboQuant expects a fitting FP32 vector buffer");
+        auto result = allocator_->allocate_unique(storageBytes());
+        encodeStorage(input, result.get());
+        std::memcpy(input, result.get(), storageBytes());
+    }
+    unsigned char storageAlignment() const { return 0; }
+    unsigned char queryAlignment() const { return alignof(float); }
+    DistanceDispatch<float> getDistanceDispatch(DistanceMode mode) const {
         return DistanceDispatch<float>::stateful(codec_.get(),
             mode == DistanceMode::StoredToStored ? stored : query);
     }
+    void validateBatch(const void *rows, size_t count, size_t rowBytes,
+                       VecSimMetric inputMetric) const override {
+        validateTurboQuantBatch(rows, count, codec_->dim(), rowBytes,
+                                inputMetric == VecSimMetric_Cosine);
+    }
+    void setMean(std::span<const float> mean) override {
+        if (mean.size() != codec_->dim())
+            throw std::invalid_argument("TurboQuant mean dimension mismatch");
+        validateTurboQuantInput(mean.data(), mean.size());
+        auto fitted = codec_->prepareMean(mean);
+        codec_->publishMean(std::move(fitted));
+    }
+    std::span<const float> mean() const override { return codec_->biasMean(); }
+    size_t storageBytes() const override { return codec_->storageBytes(); }
+    size_t queryBytes() const override { return codec_->queryBytes() + sizeof(float); }
+    QuantizationInfo info() const override {
+        return {.type = codec_->bits() == 2 ? VecSimQuant_TQ2 : VecSimQuant_TQ3,
+                .name = codec_->bits() == 2 ? "TQ2" : "TQ3",
+                .scale = codec_->scalePolicyName(),
+                .bias = codec_->biasPolicyName(),
+                .vectorBytes = storageBytes(),
+                .queryBytes = queryBytes(),
+                .sharedBytes = codec_->sharedDataBytes(),
+                .queryKernel = codec_->scoringKernelName(),
+                .graphKernel = codec_->storedScoringKernelName()};
+    }
+#ifdef BUILD_TESTS
+    unsigned encodingVersion() const override { return 6; }
+    void saveState(std::ostream &output) const override { codec_->saveFitted(output); }
+    void validateStoredRecord(const void *record) const override {
+        float metadata[2];
+        std::memcpy(metadata, static_cast<const char *>(record) + storageBytes() - sizeof(metadata),
+                    sizeof(metadata));
+        if (!std::isfinite(metadata[0]) || metadata[0] < 0 || !std::isfinite(metadata[1]))
+            throw std::runtime_error("Invalid V6 TurboQuant record");
+    }
+#endif
 };
 
-inline IndexComponents<float, float>
-createTurboQuantComponents(const std::shared_ptr<VecSimAllocator> &allocator,
-                           std::shared_ptr<TurboQuant> codec) {
-    auto calculator = std::unique_ptr<TurboQuantCalculator>(
-        new (allocator) TurboQuantCalculator(allocator, codec));
-    auto preprocessors = std::unique_ptr<TurboQuantPreprocessors>(
-        new (allocator) TurboQuantPreprocessors(allocator, std::move(codec)));
-    return {calculator.release(), preprocessors.release()};
-}
-inline IndexComponents<float, float>
-createTurboQuantComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
-                           unsigned bits, const VecSimTurboQuantParams *params) {
-    turboQuantStorageBytes(dim, bits);
-    vecsim_stl::vector<float> zero(allocator);
-    const float *mean = params ? params->mean : nullptr;
-    if (!mean) { zero.resize(dim, 0.0f); mean = zero.data(); }
-    validateTurboQuantInput(mean, dim);
-    auto codec = std::allocate_shared<TurboQuant>(VecsimSTLAllocator<TurboQuant>(allocator),
-        allocator, dim, bits, params ? params->seed : VECSIM_TURBOQUANT_DEFAULT_SEED,
-        TurboQuantVariant::MSE, TurboQuantExecution::Dispatch,
-        TurboQuantScalePolicy::ProjectionMatch, TurboQuantBiasPolicy::MeanError,
-        std::span<const float>(mean, dim));
-    return createTurboQuantComponents(allocator, std::move(codec));
-}
-// Includes every permanent allocation. Shared-control-block bookkeeping is implementation
-// dependent, so reserve four pointers plus its allocator in addition to the codec object.
-inline size_t estimateTurboQuantComponents(size_t dim, unsigned bits) {
-    turboQuantStorageBytes(dim, bits);
-    const size_t overhead = VecSimAllocator::getAllocationOverheadSize();
-    return sizeof(TurboQuantCalculator) + sizeof(TurboQuantPreprocessors) + sizeof(TurboQuant) +
-        sizeof(VecsimSTLAllocator<TurboQuant>) + 4 * sizeof(void *) + 7 * overhead +
-        (dim * dim + (size_t(1) << bits) + 2 * dim) * sizeof(float);
-}
+template <unsigned Bits, typename DataType, VecSimMetric Metric, bool WithMean>
+class TurboQuantStorageContext final : public TurboQuantStorageContextBase {
+    static_assert(Bits == 2 || Bits == 3);
+    static_assert(std::is_same_v<DataType, float> && Metric == VecSimMetric_IP);
+    static std::shared_ptr<TurboQuant>
+    createCodec(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                const QuantizationInit &init) {
+        turboQuantStorageBytes(dim, Bits);
+#ifdef BUILD_TESTS
+        if (init.fittedState)
+            return TurboQuant::loadFitted(*init.fittedState, allocator, dim, Bits);
+#endif
+        const auto *params = static_cast<const VecSimTurboQuantParams *>(init.parameters);
+        const float *mean = params && !init.prepareForTraining ? params->mean : nullptr;
+        vecsim_stl::vector<float> zero(allocator);
+        if (!mean) {
+            zero.resize(dim, 0.0f);
+            mean = zero.data();
+        }
+        validateTurboQuantInput(mean, dim);
+        return std::allocate_shared<TurboQuant>(
+            VecsimSTLAllocator<TurboQuant>(allocator), allocator, dim, Bits,
+            params ? params->seed : VECSIM_TURBOQUANT_DEFAULT_SEED, TurboQuantVariant::MSE,
+            TurboQuantExecution::Dispatch, TurboQuantScalePolicy::ProjectionMatch,
+            TurboQuantBiasPolicy::MeanError, std::span<const float>(mean, dim));
+    }
+
+public:
+    TurboQuantStorageContext(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                             const QuantizationInit &init)
+        : TurboQuantStorageContextBase(allocator, createCodec(allocator, dim, init)) {}
+    // Diagnostic references can select execution while using the production wrappers.
+    TurboQuantStorageContext(const std::shared_ptr<VecSimAllocator> &allocator,
+                             std::shared_ptr<TurboQuant> codec)
+        : TurboQuantStorageContextBase(allocator, std::move(codec)) {
+        if (codec_->bits() != Bits)
+            throw std::invalid_argument("TurboQuant bit width mismatch");
+    }
+    static size_t estimateMemory(size_t dim, const QuantizationInit &) {
+        turboQuantStorageBytes(dim, Bits);
+        const size_t overhead = VecSimAllocator::getAllocationOverheadSize();
+        return sizeof(TurboQuantStorageContext) + sizeof(TurboQuant) +
+               sizeof(VecsimSTLAllocator<TurboQuant>) + 4 * sizeof(void *) + 5 * overhead +
+               (dim * dim + (size_t(1) << Bits) + 2 * dim) * sizeof(float);
+    }
+};
 } // namespace vecsim::quantization

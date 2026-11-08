@@ -40,61 +40,127 @@ template <typename DataType>
     return alignment;
 }
 
+// A prebuilt context allows callers with fitted typed state to use the common wrappers.
+template <typename DataType, VecSimMetric Metric, bool WithMean, typename StorageType>
+IndexComponents<DataType, float> CreateQuantizedIndexComponents(
+    const std::shared_ptr<VecSimAllocator> &allocator, size_t,
+    std::shared_ptr<StorageContextFor<StorageType, DataType, Metric, WithMean>> context) {
+    using Preprocessor = QuantPreprocessor<DataType, Metric, WithMean, StorageType>;
+    using Context = typename Preprocessor::Context;
+    auto calculator = std::unique_ptr<IndexCalculatorInterface<float>>(
+        new (allocator) QuantizedCalculator<Context>(allocator, context));
+    auto preprocessor =
+        std::unique_ptr<PreprocessorInterface>(new (allocator) Preprocessor(allocator, context));
+    auto container = std::unique_ptr<MultiPreprocessorsContainer<DataType, 1>>(
+        new (allocator) MultiPreprocessorsContainer<DataType, 1>(
+            allocator, context->queryAlignment(), context->storageAlignment()));
+    [[maybe_unused]] const int ret = container->addPreprocessor(preprocessor.get());
+    assert(ret != -1 && "Quantization preprocessor was not added correctly");
+    preprocessor.release();
+    return {calculator.release(), container.release(), context.get()};
+}
+
+template <typename DataType, VecSimMetric Metric, bool WithMean, typename StorageType>
+IndexComponents<DataType, float>
+CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                               const QuantizationInit &init) {
+    using Context = StorageContextFor<StorageType, DataType, Metric, WithMean>;
+    auto context =
+        std::allocate_shared<Context>(VecsimSTLAllocator<Context>(allocator), allocator, dim, init);
+    return CreateQuantizedIndexComponents<DataType, Metric, WithMean, StorageType>(
+        allocator, dim, std::move(context));
+}
+
 template <typename DataType, VecSimMetric Metric, bool WithMean, typename StorageType>
 IndexComponents<DataType, float>
 CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                                const float *mean_ptr) {
-    using Preprocessor = QuantPreprocessor<DataType, Metric, WithMean, StorageType>;
-    using QueryType = typename Preprocessor::QueryType;
-    unsigned char storage_alignment = 0, asym_storage_alignment = 0;
-
-    // Graph construction compares two stored quantized blobs; search compares a stored blob with a
-    // QueryType query. Both dispatchers report alignment for the stored operand.
-    auto sym_func = spaces::GetDistFunc<StorageType, float>(Metric, dim, &storage_alignment);
-    auto asym_func =
-        spaces::GetDistFunc<StorageType, float, QueryType>(Metric, dim, &asym_storage_alignment);
-    storage_alignment = spaces::combineAlignments(storage_alignment, asym_storage_alignment);
-    const unsigned char query_alignment = GetQueryAlignment<QueryType>(Metric, dim);
-
-    PreprocessorInterface *pp = nullptr;
-    IndexCalculatorInterface<float> *calc = nullptr;
-
-    if constexpr (WithMean) {
-        vecsim_stl::vector<float> mean_vec(allocator);
-        mean_vec.assign(mean_ptr, mean_ptr + dim);
-
-        float mean_sum_squares = 0.0f;
-        for (float v : mean_vec) {
-            mean_sum_squares += v * v;
-        }
-
-        pp = new (allocator) Preprocessor(allocator, dim, mean_vec);
-        calc = new (allocator) DistanceCalculatorWithNorm<DataType, float, Metric, StorageType>(
-            allocator, asym_func, sym_func, mean_sum_squares);
-    } else {
-        pp = new (allocator) Preprocessor(allocator, dim);
-        calc = new (allocator) DistanceCalculatorCommon<float>(allocator, sym_func, asym_func);
-    }
-
-    auto *container = new (allocator)
-        MultiPreprocessorsContainer<DataType, 1>(allocator, query_alignment, storage_alignment);
-    [[maybe_unused]] const int ret = container->addPreprocessor(pp);
-    assert(ret != -1 && "Quantization preprocessor was not added correctly");
-
-    return {calc, container};
+    return CreateQuantizedIndexComponents<DataType, Metric, WithMean, StorageType>(
+        allocator, dim, QuantizationInit{.parameters = mean_ptr});
 }
 
-// Run-time overload: selects WithMean from whether mean_ptr is set.
+// The context interprets parameters; this boundary only selects the mean-aware type.
+template <typename DataType, VecSimMetric Metric, typename StorageType>
+IndexComponents<DataType, float>
+CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
+                               const QuantizationInit &init) {
+    if (init.parameters || init.prepareForTraining) {
+        return CreateQuantizedIndexComponents<DataType, Metric, true, StorageType>(allocator, dim,
+                                                                                   init);
+    }
+    return CreateQuantizedIndexComponents<DataType, Metric, false, StorageType>(allocator, dim,
+                                                                                init);
+}
+
 template <typename DataType, VecSimMetric Metric, typename StorageType>
 IndexComponents<DataType, float>
 CreateQuantizedIndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim,
                                const float *mean_ptr) {
-    if (mean_ptr) {
-        return CreateQuantizedIndexComponents<DataType, Metric, true, StorageType>(allocator, dim,
-                                                                                   mean_ptr);
+    return CreateQuantizedIndexComponents<DataType, Metric, StorageType>(
+        allocator, dim, QuantizationInit{.parameters = mean_ptr});
+}
+
+namespace quantization_detail {
+
+struct AllocationMeasured {};
+inline size_t &sharedAllocationBytes() {
+    static thread_local size_t bytes = 0;
+    return bytes;
+}
+
+// The control block layout is implementation-defined. Use the same allocator state size and
+// alignment as VecsimSTLAllocator so its rebound allocate_shared block has the same layout.
+// Stop at allocation: estimating never constructs a context or fits quantization state.
+template <typename T>
+struct SharedAllocationProbe {
+    using value_type = T;
+    std::shared_ptr<VecSimAllocator> allocator;
+    SharedAllocationProbe() = default;
+    template <typename U>
+    SharedAllocationProbe(const SharedAllocationProbe<U> &other) : allocator(other.allocator) {}
+    T *allocate(size_t count) {
+        sharedAllocationBytes() = count * sizeof(T);
+        throw AllocationMeasured{};
     }
-    return CreateQuantizedIndexComponents<DataType, Metric, false, StorageType>(allocator, dim,
-                                                                                mean_ptr);
+    void deallocate(T *, size_t) {}
+};
+
+template <typename Context>
+size_t contextControlBytes() {
+    static_assert(sizeof(SharedAllocationProbe<Context>) == sizeof(VecsimSTLAllocator<Context>));
+    static_assert(alignof(SharedAllocationProbe<Context>) == alignof(VecsimSTLAllocator<Context>));
+    static const size_t bytes = [] {
+        try {
+            std::allocate_shared<Context>(SharedAllocationProbe<Context>{},
+                                          std::shared_ptr<VecSimAllocator>{}, size_t{1},
+                                          QuantizationInit{});
+        } catch (const AllocationMeasured &) {
+            return sharedAllocationBytes() - sizeof(Context);
+        }
+        std::terminate();
+    }();
+    return bytes;
+}
+
+} // namespace quantization_detail
+
+template <typename DataType, VecSimMetric Metric, bool WithMean, typename StorageType>
+size_t EstimateQuantizedComponentsMemory(size_t dim, const QuantizationInit &init) {
+    using Context = StorageContextFor<StorageType, DataType, Metric, WithMean>;
+    const size_t overhead = VecSimAllocator::getAllocationOverheadSize();
+    return Context::estimateMemory(dim, init) +
+           quantization_detail::contextControlBytes<Context>() + overhead +
+           sizeof(QuantPreprocessor<DataType, Metric, WithMean, StorageType>) + overhead +
+           sizeof(QuantizedCalculator<Context>) + overhead +
+           sizeof(MultiPreprocessorsContainer<DataType, 1>) + overhead;
+}
+
+template <typename DataType, VecSimMetric Metric, typename StorageType>
+size_t EstimateQuantizedComponentsMemory(size_t dim, const QuantizationInit &init) {
+    if (init.parameters || init.prepareForTraining) {
+        return EstimateQuantizedComponentsMemory<DataType, Metric, true, StorageType>(dim, init);
+    }
+    return EstimateQuantizedComponentsMemory<DataType, Metric, false, StorageType>(dim, init);
 }
 
 template <typename DataType, VecSimMetric Metric, bool WithMean>

@@ -7,7 +7,8 @@
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/tiered_factory.h"
 #include "VecSim/index_factories/components/components_factory.h"
-#include "VecSim/quantization/turboquant_components.h"
+#include "VecSim/types/turboquant.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -36,6 +37,32 @@ using Owner = std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)>;
 using Ranking = std::vector<std::pair<double, size_t>>;
 using Blob = MemoryUtils::unique_blob;
 using namespace vecsim::quantization;
+// Typed inspection is confined to the test harness; indexes expose the neutral runtime.
+std::shared_ptr<TurboQuant> getCodec(const HNSWIndex<float, float> *index) {
+    auto *context =
+        dynamic_cast<const TurboQuantStorageContextBase *>(index->getQuantizationRuntime());
+    if (!context)
+        throw std::runtime_error("Expected TurboQuant storage context");
+    return context->codec();
+}
+IndexComponents<float, float>
+diagnosticComponents(const std::shared_ptr<VecSimAllocator> &allocator,
+                     std::shared_ptr<TurboQuant> codec) {
+    const size_t d = codec->dim();
+    if (codec->bits() == 2) {
+        using Context = TurboQuantStorageContext<2, float, VecSimMetric_IP, true>;
+        auto context = std::allocate_shared<Context>(VecsimSTLAllocator<Context>(allocator),
+                                                     allocator, std::move(codec));
+        return CreateQuantizedIndexComponents<float, VecSimMetric_IP, true, vecsim_types::tq2>(
+            allocator, d, std::move(context));
+    }
+    using Context = TurboQuantStorageContext<3, float, VecSimMetric_IP, true>;
+    auto context = std::allocate_shared<Context>(VecsimSTLAllocator<Context>(allocator), allocator,
+                                                 std::move(codec));
+    return CreateQuantizedIndexComponents<float, VecSimMetric_IP, true, vecsim_types::tq3>(
+        allocator, d, std::move(context));
+}
+
 constexpr size_t dim = 768, k = 10, query_offset = 500000;
 constexpr uint64_t seed = 42;
 volatile double sink = 0;
@@ -331,7 +358,7 @@ struct Codec {
             TurboQuantExecution::Dispatch, TurboQuantScalePolicy::ProjectionMatch,
             TurboQuantBiasPolicy::MeanError, std::span<const float>(mean));
         stored_bytes = tq->storageBytes(); query_bytes = tq->queryBytes() + 4;
-        auto parts = createTurboQuantComponents(allocator, tq);
+        auto parts = diagnosticComponents(allocator, tq);
         calculator.reset(parts.indexCalculator); preprocessors.reset(parts.preprocessors);
     }
     Blob encode(const float *x) { return preprocessors->preprocessForStorage(x, dim * 4); }
@@ -459,7 +486,7 @@ void tailReferences(const std::string &name, Output &out) {
         tq = std::make_shared<TurboQuant>(allocator,d,name == "tq2" ? 2 : 3,seed,
             TurboQuantVariant::MSE,TurboQuantExecution::Dispatch,
             TurboQuantScalePolicy::ProjectionMatch,TurboQuantBiasPolicy::MeanError,mean);
-        auto parts = createTurboQuantComponents(allocator,tq);
+        auto parts = diagnosticComponents(allocator, tq);
         calculator.reset(parts.indexCalculator); prep.reset(parts.preprocessors); stored = tq->storageBytes();
         auto a = prep->preprocessForStorage(x.data(),d * 4), b = prep->preprocessForStorage(y.data(),d * 4);
         auto query = prep->preprocessQuery(q.data(),d * 4);
@@ -666,10 +693,10 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
                << "training_migration_overlap\tthreshold_FP32_payload_can_overlap_growing_compressed_graph_during_synchronous_migration_not_joint_peak_measured\n";
     out.check("public_size_and_labels",owner->indexSize() == a.vectors && owner->indexLabelCount() == a.vectors && graph->indexSize() == a.vectors);
     out.check("graph_integrity",graph->checkIntegrity().valid_state && graph->getM() == 16 && graph->getEfConstruction() == 100);
-    const auto actual = graph->getTurboQuant()->biasMean();
+    const auto actual = getCodec(graph)->biasMean();
     out.check("tiered_mean_exact",actual.size() == codec.mean.size() &&
         std::memcmp(actual.data(),codec.mean.data(),dim * 4) == 0);
-    const auto actual_codec = graph->getTurboQuant();
+    const auto actual_codec = getCodec(graph);
     const auto same = [](std::span<const float> a, std::span<const float> b) {
         return a.size() == b.size() && std::memcmp(a.data(),b.data(),a.size_bytes()) == 0;
     };
@@ -678,9 +705,13 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
         same(actual_codec->rotation(),codec.tq->rotation()) &&
         same(actual_codec->centroids(),codec.tq->centroids()) &&
         same(actual_codec->biasRotatedMean(),codec.tq->biasRotatedMean()));
+    out.check("public_diagnostic_kernel_exact",
+              std::strcmp(actual_codec->scoringKernelName(), codec.tq->scoringKernelName()) == 0 &&
+                  std::strcmp(actual_codec->storedScoringKernelName(),
+                              codec.tq->storedScoringKernelName()) == 0);
     const auto info = graph->debugInfo().hnswInfo;
-    out.check("TQ_metadata",info.quantizedVectorBytes == codec.stored_bytes &&
-              info.quantizerSharedBytes == graph->getTurboQuant()->sharedDataBytes());
+    out.check("TQ_metadata", info.quantizedVectorBytes == codec.stored_bytes &&
+                                 info.quantizerSharedBytes == getCodec(graph)->sharedDataBytes());
     const size_t flat_count = tiered->getFlatBufferIndex()->indexSize();
     out.check("tiered_training_completed",flat_count == 0 && graph->indexSize() == a.vectors);
     out.memory << scope << "\tpost_training_flat_vector_count\t" << flat_count << '\n';
@@ -737,7 +768,8 @@ void publicGraph(const Args &a, const Data &data, Codec &codec, Output &out,
     auto *loaded = dynamic_cast<Graph *>(reload.get()); require(loaded,"Reload type mismatch");
     out.check("reload_topK_exact",query(loaded,data.query(0),160) == before);
     out.check("reload_integrity",loaded->checkIntegrity().valid_state && loaded->indexSize() == a.vectors);
-    const auto original_mean = graph->getTurboQuant()->biasMean(), loaded_mean = loaded->getTurboQuant()->biasMean();
+    const auto original_mean = getCodec(graph)->biasMean(),
+               loaded_mean = getCodec(loaded)->biasMean();
     out.check("reload_mean_exact",original_mean.size() == loaded_mean.size() &&
               std::memcmp(original_mean.data(),loaded_mean.data(),original_mean.size_bytes()) == 0);
     for (size_t i : {size_t(0),a.vectors / 2,a.vectors - 1})

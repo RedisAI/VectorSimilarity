@@ -8,7 +8,8 @@
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
 #include "VecSim/index_factories/hnsw_factory.h"
 #include "VecSim/index_factories/tiered_factory.h"
-#include "VecSim/quantization/turboquant_components.h"
+#include "VecSim/types/turboquant.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/vec_sim.h"
 #include "mock_thread_pool.h"
 #include "unit_test_utils.h"
@@ -24,6 +25,32 @@
 
 namespace {
 using namespace vecsim::quantization;
+// Typed inspection is confined to the test harness; indexes expose the neutral runtime.
+std::shared_ptr<TurboQuant> getCodec(const HNSWIndex<float, float> *index) {
+    auto *context =
+        dynamic_cast<const TurboQuantStorageContextBase *>(index->getQuantizationRuntime());
+    if (!context)
+        throw std::runtime_error("Expected TurboQuant storage context");
+    return context->codec();
+}
+IndexComponents<float, float>
+diagnosticComponents(const std::shared_ptr<VecSimAllocator> &allocator,
+                     std::shared_ptr<TurboQuant> codec) {
+    const size_t d = codec->dim();
+    if (codec->bits() == 2) {
+        using Context = TurboQuantStorageContext<2, float, VecSimMetric_IP, true>;
+        auto context = std::allocate_shared<Context>(VecsimSTLAllocator<Context>(allocator),
+                                                     allocator, std::move(codec));
+        return CreateQuantizedIndexComponents<float, VecSimMetric_IP, true, vecsim_types::tq2>(
+            allocator, d, std::move(context));
+    }
+    using Context = TurboQuantStorageContext<3, float, VecSimMetric_IP, true>;
+    auto context = std::allocate_shared<Context>(VecsimSTLAllocator<Context>(allocator), allocator,
+                                                 std::move(codec));
+    return CreateQuantizedIndexComponents<float, VecSimMetric_IP, true, vecsim_types::tq3>(
+        allocator, d, std::move(context));
+}
+
 using IndexOwner = std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)>;
 class TurboQuantTest : public ::testing::TestWithParam<unsigned> {};
 
@@ -103,8 +130,14 @@ TEST_P(TurboQuantTest, IndependentEncodingAndScoreReferencesWithUnalignedTails) 
         }
         auto native = codec(allocator, bits, mean);
         auto scalar = codec(allocator, bits, mean, TurboQuantExecution::Scalar);
-        TurboQuantPreprocessors pp(allocator, native), sp(allocator, scalar);
-        TurboQuantCalculator calculator(allocator, native), reference(allocator, scalar);
+        auto nativeParts = diagnosticComponents(allocator, native);
+        auto scalarParts = diagnosticComponents(allocator, scalar);
+        std::unique_ptr<PreprocessorsContainerAbstract> nativePP(nativeParts.preprocessors),
+            scalarPP(scalarParts.preprocessors);
+        std::unique_ptr<IndexCalculatorInterface<float>> nativeCalc(nativeParts.indexCalculator),
+            scalarCalc(scalarParts.indexCalculator);
+        auto &pp = *nativePP, &sp = *scalarPP;
+        auto &calculator = *nativeCalc, &reference = *scalarCalc;
         auto a = pp.preprocessForStorage(x.data(), dim * sizeof(float));
         auto b = pp.preprocessForStorage(y.data(), dim * sizeof(float));
         auto q = pp.preprocessQuery(query.data(), dim * sizeof(float));
@@ -112,7 +145,7 @@ TEST_P(TurboQuantTest, IndependentEncodingAndScoreReferencesWithUnalignedTails) 
         auto sb = sp.preprocessForStorage(y.data(), dim * sizeof(float));
         auto sq = sp.preprocessQuery(query.data(), dim * sizeof(float));
         EXPECT_EQ(native->storageBytes(), (dim * bits + 7) / 8 + 8);
-        EXPECT_EQ(pp.queryBytes(), 4 * dim + 4);
+        EXPECT_EQ(nativeParts.quantization->queryBytes(), 4 * dim + 4);
         EXPECT_EQ(std::memcmp(a.get(), sa.get(), native->storageBytes()), 0);
         // Independently recover centroid choices and projection-match scale from raw residual.
         float norm = 0;
@@ -158,6 +191,58 @@ TEST_P(TurboQuantTest, IndependentEncodingAndScoreReferencesWithUnalignedTails) 
     }
 }
 
+TEST_P(TurboQuantTest, CommonComponentsCombinedPreprocessMeanUpdateAndLifetime) {
+    const unsigned bits = GetParam();
+    constexpr size_t dim = 7;
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    std::array<float, dim> mean{.1f, .02f, -.03f}, input{.3f, -.2f, .4f, .1f};
+    const auto original = input;
+    VecSimTurboQuantParams params{.mean = mean.data(), .seed = 42};
+    const QuantizationInit init{.parameters = &params};
+    auto parts = bits == 2
+                     ? CreateQuantizedIndexComponents<float, VecSimMetric_IP, vecsim_types::tq2>(
+                           allocator, dim, init)
+                     : CreateQuantizedIndexComponents<float, VecSimMetric_IP, vecsim_types::tq3>(
+                           allocator, dim, init);
+    std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(parts.preprocessors);
+    std::unique_ptr<IndexCalculatorInterface<float>> calculator(parts.indexCalculator);
+    auto *context = dynamic_cast<TurboQuantStorageContextBase *>(parts.quantization);
+    ASSERT_NE(context, nullptr);
+    const auto cached = calculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+    {
+        auto both = preprocessors->preprocess(input.data(), sizeof(input));
+        auto stored = preprocessors->preprocessForStorage(input.data(), sizeof(input));
+        auto query = preprocessors->preprocessQuery(input.data(), sizeof(input));
+        EXPECT_EQ(input, original);
+        EXPECT_EQ(std::memcmp(both.getStorageBlob(), stored.get(), context->storageBytes()), 0);
+        EXPECT_EQ(std::memcmp(both.getQueryBlob(), query.get(), context->queryBytes()), 0);
+        EXPECT_FLOAT_EQ(cached(both.getStorageBlob(), both.getQueryBlob(), dim),
+                        calculator->calcDistanceForQuery(stored.get(), query.get(), dim));
+    }
+    auto invalid = mean;
+    invalid[0] = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_THROW(context->setMean(invalid), std::invalid_argument);
+    EXPECT_TRUE(std::equal(context->mean().begin(), context->mean().end(), mean.begin()));
+    mean[0] = -.12f;
+    context->setMean(mean);
+    const auto current = calculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+    EXPECT_EQ(current.context, cached.context);
+    EXPECT_EQ(current.stateful_func, cached.stateful_func);
+    auto stored = preprocessors->preprocessForStorage(input.data(), sizeof(input));
+    auto query = preprocessors->preprocessQuery(input.data(), sizeof(input));
+    EXPECT_NEAR(cached(stored.get(), query.get(), dim),
+                queryReference(*context->codec(), stored.get(), input.data()), 3e-6);
+    const auto allocated = allocator->getAllocationSize();
+    calculator.reset();
+    EXPECT_LT(allocator->getAllocationSize(), allocated);
+    // Prepared blob deleters retain their allocator after the common wrappers are destroyed.
+    preprocessors.reset();
+    EXPECT_NE(stored.get(), nullptr);
+    stored.reset();
+    query.reset();
+    EXPECT_EQ(allocator->getAllocationSize(), sizeof(VecSimAllocator));
+}
+
 TEST_P(TurboQuantTest, PublicFactoryMetadataRangePersistenceMutationAndOwnership) {
     const unsigned bits = GetParam();
     constexpr size_t dim = 9;
@@ -170,11 +255,11 @@ TEST_P(TurboQuantTest, PublicFactoryMetadataRangePersistenceMutationAndOwnership
     auto *hnsw = dynamic_cast<HNSWIndex<float, float> *>(index.get());
     ASSERT_NE(hnsw, nullptr);
     auto allocator = hnsw->getAllocator();
-    auto retained_codec = hnsw->getTurboQuant();
+    auto retained_codec = getCodec(hnsw);
     EXPECT_EQ(retained_codec->seed(), 0);
     EXPECT_EQ(hnsw->getStoredDataSize(), (dim * bits + 7) / 8 + 8);
     const auto info = hnsw->debugInfo();
-    EXPECT_EQ(info.hnswInfo.turboQuantType, hp.quantType);
+    EXPECT_EQ(info.hnswInfo.quantizationType, hp.quantType);
     EXPECT_EQ(info.hnswInfo.quantizedVectorBytes, hnsw->getStoredDataSize());
     EXPECT_EQ(info.commonInfo.memory, allocator->getAllocationSize());
     EXPECT_GE(VecSimIndex_EstimateInitialSize(&params), index->getAllocationSize());
@@ -215,7 +300,7 @@ TEST_P(TurboQuantTest, PublicFactoryMetadataRangePersistenceMutationAndOwnership
     for (auto getter : {&TurboQuant::rotation, &TurboQuant::centroids, &TurboQuant::biasMean,
                         &TurboQuant::biasRotatedMean}) {
         const auto a = (retained_codec.get()->*getter)();
-        const auto b = (loaded->getTurboQuant().get()->*getter)();
+        const auto b = (getCodec(loaded).get()->*getter)();
         EXPECT_EQ(a.size(), b.size());
         EXPECT_TRUE(std::equal(a.begin(), a.end(), b.begin()));
     }
@@ -268,7 +353,7 @@ TEST_P(TurboQuantTest, CosinePersistenceRequiresNormalizedInputOptIn) {
                         VecSimIndex_GetDistanceFrom_Unsafe(restored.get(), label, query.data()));
     }
     const auto *stored = loaded->getDataByInternalId(0);
-    const double normalized_score = queryReference(*loaded->getTurboQuant(), stored, query.data());
+    const double normalized_score = queryReference(*getCodec(loaded), stored, query.data());
     EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(restored.get(), 0, query.data()),
                 normalized_score, 3e-6);
     auto *reply = VecSimIndex_TopKQuery(restored.get(), query.data(), 2, nullptr, BY_SCORE);
@@ -285,7 +370,7 @@ TEST_P(TurboQuantTest, CosinePersistenceRequiresNormalizedInputOptIn) {
     VecSimQueryReply_IteratorFree(iterator);
     VecSimQueryReply_Free(reply);
     for (auto &value : query) value *= 2;
-    const double raw_score = queryReference(*loaded->getTurboQuant(), stored, query.data());
+    const double raw_score = queryReference(*getCodec(loaded), stored, query.data());
     EXPECT_GT(std::abs(raw_score - normalized_score), 0.1);
     EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(restored.get(), 0, query.data()), raw_score, 3e-6);
     EXPECT_TRUE(loaded->checkIntegrity().valid_state);
@@ -377,7 +462,8 @@ TEST_P(TurboQuantTest, TieredLiveMeanTrainingRetriesAndMigratesInBothWriteModes)
             EXPECT_EQ(base->statisticInfo().flatBufferSize, 4);
             EXPECT_EQ(backend->indexSize(), 0);
             EXPECT_TRUE(pool.jobQ.empty());
-            for (float value : backend->getTurboQuant()->biasMean()) EXPECT_EQ(value, 0);
+            for (float value : getCodec(backend)->biasMean())
+                EXPECT_EQ(value, 0);
             // A failed preparation/publication attempt is retried by the next writer.
             tiered->setBeforeQuantizationFinalizationHook({});
             EXPECT_EQ(VecSimIndex_AddVector(base, rows[4].data(), 40), 0);
@@ -396,17 +482,17 @@ TEST_P(TurboQuantTest, TieredLiveMeanTrainingRetriesAndMigratesInBothWriteModes)
                 for (size_t j = 0; j < dim; ++j) expected_mean[j] += double(row[j]) / 4;
             }
             for (size_t j = 0; j < dim; ++j)
-                EXPECT_NEAR(backend->getTurboQuant()->biasMean()[j], expected_mean[j], 3e-8);
+                EXPECT_NEAR(getCodec(backend)->biasMean()[j], expected_mean[j], 3e-8);
             EXPECT_TRUE(backend->checkIntegrity().valid_state);
-            const auto saved_mean = std::vector<float>(backend->getTurboQuant()->biasMean().begin(),
-                                                       backend->getTurboQuant()->biasMean().end());
+            const auto saved_mean = std::vector<float>(getCodec(backend)->biasMean().begin(),
+                                                       getCodec(backend)->biasMean().end());
             // Removing every row and adding again never restarts a fitted backend.
             for (size_t label : {11, 20, 30, 40}) VecSimIndex_DeleteVector(base, label);
             while (!pool.jobQ.empty()) pool.thread_iteration();
             VecSimIndex_AddVector(base, rows[0].data(), 50);
             while (!pool.jobQ.empty()) pool.thread_iteration();
             EXPECT_TRUE(std::equal(saved_mean.begin(), saved_mean.end(),
-                                   backend->getTurboQuant()->biasMean().begin()));
+                                   getCodec(backend)->biasMean().begin()));
         }
     }
 }
@@ -444,7 +530,7 @@ TEST_P(TurboQuantTest, MultiValueTrainingAndSubsequentUpdatesKeepOneFittedMean) 
     EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
     EXPECT_EQ(backend->indexSize(), 3);
     for (size_t i = 0; i < dim; ++i)
-        EXPECT_NEAR(backend->getTurboQuant()->biasMean()[i], (double(a[i]) + b[i] + c[i]) / 3, 2e-8);
+        EXPECT_NEAR(getCodec(backend)->biasMean()[i], (double(a[i]) + b[i] + c[i]) / 3, 2e-8);
     EXPECT_EQ(VecSimIndex_UpdateVectors(base, 11, a.data(), 1), VecSimUpdate_OK);
     EXPECT_EQ(base->indexSize(), 2);
     EXPECT_TRUE(backend->checkIntegrity().valid_state);
@@ -637,7 +723,8 @@ TEST_P(TurboQuantTest, ValidatesEveryReplacementBeforeDeletingExistingRows) {
     VecSimIndex_AddVector(base, original.data(), 20);
     VecSimIndex_AddVector(base, original.data(), 30);
     EXPECT_EQ(base->statisticInfo().flatBufferSize, 0);
-    for (size_t i = 0; i < dim; ++i) EXPECT_FLOAT_EQ(backend->getTurboQuant()->biasMean()[i], original[i]);
+    for (size_t i = 0; i < dim; ++i)
+        EXPECT_FLOAT_EQ(getCodec(backend)->biasMean()[i], original[i]);
 }
 
 TEST_P(TurboQuantTest, RejectsZeroCosineBeforeBufferOrOverwriteMutation) {
@@ -683,7 +770,8 @@ TEST_P(TurboQuantTest, RejectsZeroCosineBeforeBufferOrOverwriteMutation) {
         VecSimIndex_AddVector(base, row.data(), 20);
         while (!pool.jobQ.empty()) pool.thread_iteration();
         auto normalized = row; VecSim_Normalize(normalized.data(), dim, VecSimType_FLOAT32);
-        for (size_t i = 0; i < dim; ++i) EXPECT_FLOAT_EQ(backend->getTurboQuant()->biasMean()[i], normalized[i]);
+        for (size_t i = 0; i < dim; ++i)
+            EXPECT_FLOAT_EQ(getCodec(backend)->biasMean()[i], normalized[i]);
         const auto before = backend->getStoredVectorDataByLabel(10);
         EXPECT_THROW(VecSimIndex_AddVector(base, zero.data(), 10), std::invalid_argument);
         EXPECT_EQ(backend->getStoredVectorDataByLabel(10), before);
@@ -741,8 +829,7 @@ TEST_P(TurboQuantTest, AsyncCallbacksArePreparedBeforeQuantizationMeanPublicatio
         EXPECT_THROW(VecSimIndex_AddVector(base, row.data(), 20), std::bad_alloc);
         auto *backend = tiered->getBackendForTests();
         auto mean = [&]() -> std::span<const float> {
-            if (backend->usesTurboQuant()) return backend->getTurboQuant()->biasMean();
-            return {backend->serializedMeanVector.data(), backend->serializedMeanVector.size()};
+            return backend->getQuantizationRuntime()->mean();
         };
         ASSERT_EQ(mean().size(), row.size());
         EXPECT_EQ(base->statisticInfo().flatBufferSize, 2);
@@ -781,7 +868,7 @@ TEST_P(TurboQuantTest, TieredMetadataReadsLiveFlatCountsDuringTrainingWrites) {
             const auto info = base->debugInfo();
             if (info.tieredInfo.frontendCommonInfo.indexSize > 1 ||
                 info.tieredInfo.backendCommonInfo.indexSize != 0 ||
-                info.tieredInfo.backendInfo.hnswInfo.turboQuantType != hp.quantType)
+                info.tieredInfo.backendInfo.hnswInfo.quantizationType != hp.quantType)
                 ++invalid;
             auto *iterator = backend->debugInfoIterator();
             while (iterator->hasNext()) {

@@ -21,8 +21,6 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/computer/preprocessors.h"
-#include "VecSim/quantization/sq8_mean.h"
-#include "VecSim/quantization/turboquant_components.h"
 #include <span>
 #include "VecSim/tombstone_interface.h"
 
@@ -93,54 +91,22 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public HNSWSerializer
 #endif
 {
-private:
-    bool turboQuantStorage{false};
-    vecsim::quantization::TurboQuantPreprocessors &turboQuantPreprocessors() const {
-        assert(turboQuantStorage);
-        return *static_cast<vecsim::quantization::TurboQuantPreprocessors *>(
-            this->getPreprocessorsContainer());
-    }
-    template <VecSimMetric Metric>
-    void setSQ8Mean(std::span<const float> mean) noexcept {
-        applySQ8Mean<DataType, Metric>(*this->getPreprocessorsContainer(),
-                                       *this->getIndexCalculator(), mean);
-    }
-
 public:
-    bool usesTurboQuant() const { return turboQuantStorage; }
-    const std::shared_ptr<vecsim::quantization::TurboQuant> &getTurboQuant() const {
-        assert(turboQuantStorage);
-        return turboQuantPreprocessors().codec();
-    }
-    // Writer-only operation: install the mean once, before any stored vector, under the
-    // exclusive tiered main lock and before submitting insertion jobs. The backend must have
-    // its final storage layout; the caller owns and enforces the one-time transition.
-    // A quantizer that learns storedDataSize from data needs deferred backend creation.
+    // Install the mean before storing any vector, with queries excluded by the caller.
+    // The storage context prepares all fallible state before publishing the new mean;
+    // cached scoring callbacks keep referring to the same context throughout.
     void setQuantizationMean(std::span<const float> mean) {
         assert(this->isQuantized && curElementCount == 0 && mean.size() == this->dim);
-        if (turboQuantStorage) {
-            // Prepare every fitted term before publishing any of them. Tiered readers hold
-            // the shared main guard while preparing and consuming their backend queries.
-            vecsim::quantization::validateTurboQuantInput(mean.data(), this->dim);
-            auto prepared = getTurboQuant()->prepareMean(mean);
-            getTurboQuant()->publishMean(std::move(prepared));
-            return;
-        }
-        if constexpr (QuantInput<DataType> && std::is_same_v<DistType, float>) {
-            if (this->metric == VecSimMetric_L2) {
-                setSQ8Mean<VecSimMetric_L2>(mean);
-            } else {
-                // Tiered cosine inputs are already normalized, and use IP SQ8 components.
-                assert(this->metric == VecSimMetric_IP || this->metric == VecSimMetric_Cosine);
-                setSQ8Mean<VecSimMetric_IP>(mean);
-            }
+        assert(this->getQuantizationRuntime());
+        this->getQuantizationRuntime()->setMean(mean);
 #ifdef BUILD_TESTS
-            assert(serializedMeanVector.size() == this->dim);
+        // Compatibility view for existing scalar serialization tests. State is saved by
+        // the context; only an already allocated view is updated here.
+        if (!serializedMeanVector.empty()) {
+            assert(serializedMeanVector.size() == mean.size());
             std::copy(mean.begin(), mean.end(), serializedMeanVector.begin());
-#endif
-        } else {
-            assert(false && "Unsupported SQ8 data type");
         }
+#endif
     }
 
 protected:
@@ -667,9 +633,7 @@ VecSimUpdateCode HNSWIndex<DataType, DistType>::updateVectors(labelType label,
         return VecSimUpdate_OK;
     }
 
-    if (turboQuantStorage)
-        vecsim::quantization::validateTurboQuantBatch(new_blobs, n, this->dim,
-                                                     this->getInputBlobSize());
+    this->validateQuantizationInput(new_blobs, n, this->getInputBlobSize(), this->metric);
     this->deleteVector(label);
     const char *blob = static_cast<const char *>(new_blobs);
     for (size_t i = 0; i < n; i++) {
@@ -1830,7 +1794,6 @@ HNSWIndex<DataType, DistType>::HNSWIndex(const HNSWParams *params,
       elementLocks(this->allocator), idToMetaData(this->allocator),
       visitedNodesHandlerPool(0, this->allocator) {
 
-    turboQuantStorage = vecsim::quantization::isTurboQuant(params->quantType);
     M = params->M ? params->M : HNSW_DEFAULT_M;
     M0 = M * 2;
     if (M0 > UINT16_MAX)
@@ -2496,13 +2459,13 @@ VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
     info.hnswInfo.entrypoint = ep_id != INVALID_ID ? getExternalLabel(ep_id) : INVALID_LABEL;
     info.hnswInfo.visitedNodesPoolSize = this->visitedNodesHandlerPool.getPoolSize();
     info.hnswInfo.numberOfMarkedDeletedNodes = this->getNumMarkedDeleted();
-    if (turboQuantStorage) {
-        const auto &codec = getTurboQuant();
-        info.hnswInfo.turboQuantType = codec->bits() == 2 ? VecSimQuant_TQ2 : VecSimQuant_TQ3;
-        info.hnswInfo.quantizedVectorBytes = codec->storageBytes();
-        info.hnswInfo.quantizerSharedBytes = codec->sharedDataBytes();
-        info.hnswInfo.quantizerQueryKernel = codec->scoringKernelName();
-        info.hnswInfo.quantizerGraphKernel = codec->storedScoringKernelName();
+    if (const auto *context = this->getQuantizationRuntime()) {
+        const auto quant = context->info();
+        info.hnswInfo.quantizationType = quant.type;
+        info.hnswInfo.quantizedVectorBytes = quant.vectorBytes;
+        info.hnswInfo.quantizerSharedBytes = quant.sharedBytes;
+        info.hnswInfo.quantizerQueryKernel = quant.queryKernel;
+        info.hnswInfo.quantizerGraphKernel = quant.graphKernel;
     }
     return info;
 }
@@ -2570,24 +2533,27 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.numberOfMarkedDeletedNodes}}});
 
-    if (turboQuantStorage) {
+    if (const auto *context = this->getQuantizationRuntime(); context && context->info().name) {
+        const auto quant = context->info();
         auto integer = [&](const char *name, uint64_t value) {
             infoIterator->addInfoField(VecSim_InfoField{.fieldName = name,
                 .fieldType = INFOFIELD_UINT64, .fieldValue = {FieldValue{.uintegerValue = value}}});
         };
         auto string = [&](const char *name, const char *value) {
-            infoIterator->addInfoField(VecSim_InfoField{.fieldName = name,
-                .fieldType = INFOFIELD_STRING, .fieldValue = {FieldValue{.stringValue = value}}});
+            if (value)
+                infoIterator->addInfoField(
+                    VecSim_InfoField{.fieldName = name,
+                                     .fieldType = INFOFIELD_STRING,
+                                     .fieldValue = {FieldValue{.stringValue = value}}});
         };
-        const auto &codec = getTurboQuant();
-        string("QUANTIZATION", codec->bits() == 2 ? "TQ2" : "TQ3");
-        string("QUANT_SCALE", "projection-match");
-        string("QUANT_BIAS", "mean-error");
-        integer("QUANT_VECTOR_BYTES", info.hnswInfo.quantizedVectorBytes);
-        integer("QUANT_SHARED_BYTES", info.hnswInfo.quantizerSharedBytes);
-        integer("QUANT_QUERY_BYTES", codec->queryBytes() + sizeof(float));
-        string("QUANT_QUERY_KERNEL", info.hnswInfo.quantizerQueryKernel);
-        string("QUANT_GRAPH_KERNEL", info.hnswInfo.quantizerGraphKernel);
+        string("QUANTIZATION", quant.name);
+        string("QUANT_SCALE", quant.scale);
+        string("QUANT_BIAS", quant.bias);
+        integer("QUANT_VECTOR_BYTES", quant.vectorBytes);
+        integer("QUANT_SHARED_BYTES", quant.sharedBytes);
+        integer("QUANT_QUERY_BYTES", quant.queryBytes);
+        string("QUANT_QUERY_KERNEL", quant.queryKernel);
+        string("QUANT_GRAPH_KERNEL", quant.graphKernel);
     }
     return infoIterator;
 }

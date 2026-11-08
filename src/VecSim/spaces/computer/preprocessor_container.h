@@ -56,7 +56,7 @@ protected:
 
     MemoryUtils::unique_blob wrapAllocated(void *blob) const {
         return MemoryUtils::unique_blob(
-            blob, [this](void *ptr) { this->allocator->free_allocation(ptr); });
+            blob, [allocator = this->allocator](void *ptr) { allocator->free_allocation(ptr); });
     }
 
     static MemoryUtils::unique_blob wrapWithDummyDeleter(void *ptr) {
@@ -186,35 +186,33 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocess(const void *o
     size_t storage_blob_size = input_blob_size;
     size_t query_blob_size = input_blob_size;
 
-    for (auto pp : preprocessors) {
-        if (!pp)
-            break;
-        pp->preprocess(original_blob, storage_blob, query_blob, storage_blob_size, query_blob_size,
-                       this->storage_alignment, this->query_alignment);
+    try {
+        for (auto pp : preprocessors) {
+            if (!pp)
+                break;
+            pp->preprocess(original_blob, storage_blob, query_blob, storage_blob_size,
+                           query_blob_size, this->storage_alignment, this->query_alignment);
+        }
+    } catch (...) {
+        if (query_blob && query_blob != storage_blob)
+            this->allocator->free_allocation(query_blob);
+        if (storage_blob)
+            this->allocator->free_allocation(storage_blob);
+        throw;
     }
-    // At least one blob was allocated.
-
-    // If they point to the same memory, we need to free only one of them.
-    if (storage_blob == query_blob) {
-        return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)),
-                              std::move(Base::wrapWithDummyDeleter(storage_blob)));
-    }
-
-    if (storage_blob == nullptr) { // we processed only the query
-        return ProcessedBlobs(
-            std::move(Base::wrapWithDummyDeleter(const_cast<void *>(original_blob))),
-            std::move(this->wrapAllocated(query_blob)));
-    }
-
-    if (query_blob == nullptr) { // we processed only the storage
-        // query might need to be aligned
-        auto query_ptr = this->maybeCopyToAlignedMem(original_blob, input_blob_size);
-        return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)), std::move(query_ptr));
-    }
-
-    // Else, both were allocated separately, we need to release both.
-    return ProcessedBlobs(std::move(this->wrapAllocated(storage_blob)),
-                          std::move(this->wrapAllocated(query_blob)));
+    // Keep both allocations owned while constructing the returned deleters or copying a query.
+    auto free = [allocator = this->allocator](void *ptr) { allocator->free_allocation(ptr); };
+    std::unique_ptr<void, decltype(free)> storage_guard(storage_blob, free);
+    std::unique_ptr<void, decltype(free)> query_guard(
+        query_blob != storage_blob ? query_blob : nullptr, free);
+    auto storage = storage_blob ? this->wrapAllocated(storage_blob)
+                                : Base::wrapWithDummyDeleter(const_cast<void *>(original_blob));
+    storage_guard.release();
+    auto query = query_blob == storage_blob && query_blob ? Base::wrapWithDummyDeleter(query_blob)
+                 : query_blob                             ? this->wrapAllocated(query_blob)
+                              : this->maybeCopyToAlignedMem(original_blob, input_blob_size);
+    query_guard.release();
+    return ProcessedBlobs(std::move(storage), std::move(query));
 }
 
 template <typename DataType, size_t n_preprocessors>
@@ -223,15 +221,25 @@ MultiPreprocessorsContainer<DataType, n_preprocessors>::preprocessForStorage(
     const void *original_blob, size_t input_blob_size) const {
 
     void *storage_blob = nullptr;
-    for (auto pp : preprocessors) {
-        if (!pp)
-            break;
-        pp->preprocessForStorage(original_blob, storage_blob, input_blob_size,
-                                 this->storage_alignment);
+    try {
+        for (auto pp : preprocessors) {
+            if (!pp)
+                break;
+            pp->preprocessForStorage(original_blob, storage_blob, input_blob_size,
+                                     this->storage_alignment);
+        }
+    } catch (...) {
+        if (storage_blob)
+            this->allocator->free_allocation(storage_blob);
+        throw;
     }
 
-    return storage_blob ? std::move(this->wrapAllocated(storage_blob))
-                        : std::move(Base::wrapWithDummyDeleter(const_cast<void *>(original_blob)));
+    auto free = [allocator = this->allocator](void *ptr) { allocator->free_allocation(ptr); };
+    std::unique_ptr<void, decltype(free)> guard(storage_blob, free);
+    auto result = storage_blob ? this->wrapAllocated(storage_blob)
+                               : Base::wrapWithDummyDeleter(const_cast<void *>(original_blob));
+    guard.release();
+    return result;
 }
 
 template <typename DataType, size_t n_preprocessors>
@@ -239,15 +247,25 @@ MemoryUtils::unique_blob MultiPreprocessorsContainer<DataType, n_preprocessors>:
     const void *original_blob, size_t input_blob_size, bool force_copy) const {
 
     void *query_blob = nullptr;
-    for (auto pp : preprocessors) {
-        if (!pp)
-            break;
-        // modifies the memory in place
-        pp->preprocessQuery(original_blob, query_blob, input_blob_size, this->query_alignment);
+    try {
+        for (auto pp : preprocessors) {
+            if (!pp)
+                break;
+            // modifies the memory in place
+            pp->preprocessQuery(original_blob, query_blob, input_blob_size, this->query_alignment);
+        }
+    } catch (...) {
+        if (query_blob)
+            this->allocator->free_allocation(query_blob);
+        throw;
     }
-    return query_blob
-               ? std::move(this->wrapAllocated(query_blob))
-               : std::move(this->maybeCopyToAlignedMem(original_blob, input_blob_size, force_copy));
+    auto free = [allocator = this->allocator](void *ptr) { allocator->free_allocation(ptr); };
+    std::unique_ptr<void, decltype(free)> guard(query_blob, free);
+    auto result = query_blob
+                      ? this->wrapAllocated(query_blob)
+                      : this->maybeCopyToAlignedMem(original_blob, input_blob_size, force_copy);
+    guard.release();
+    return result;
 }
 
 template <typename DataType, size_t n_preprocessors>

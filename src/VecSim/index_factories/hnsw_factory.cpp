@@ -14,6 +14,7 @@
 #include "VecSim/algorithms/hnsw/hnsw.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
+#include "VecSim/types/turboquant.h"
 
 #include <type_traits>
 
@@ -52,9 +53,8 @@ template <VecSimMetric Metric, typename StorageType = sq8>
 }
 
 // Keep construction and initial-size validation in sync.
-[[nodiscard]] constexpr bool QuantizationParamsSupported(VecSimQuantType quant_type,
-                                                         VecSimType type,
-                                                         VecSimMetric resolved_metric) {
+bool QuantizationParamsSupported(VecSimQuantType quant_type, VecSimType type,
+                                 VecSimMetric resolved_metric) {
     if (quant_type == VecSimQuant_TQ2 || quant_type == VecSimQuant_TQ3)
         return type == VecSimType_FLOAT32 && resolved_metric == VecSimMetric_IP;
     // Reject unknown quantizers instead of silently creating an unquantized index.
@@ -74,70 +74,59 @@ template <VecSimMetric Metric, typename StorageType = sq8>
 
 template <typename DataType, VecSimMetric Metric, typename StorageType = sq8>
 VecSimIndex *NewIndex_Quantized(const HNSWParams *hnswParams,
-                                AbstractIndexInitParams abstractInitParams, const float *mean_ptr) {
-    const bool with_norm = mean_ptr != nullptr;
-    abstractInitParams.storedDataSize =
-        GetQuantizedStoredDataSize<Metric, StorageType>(abstractInitParams.dim, with_norm);
+                                AbstractIndexInitParams abstractInitParams,
+                                const QuantizationInit &init) {
     abstractInitParams.isQuantized = true;
-
-    IndexComponents<DataType, float> components =
-        CreateQuantizedIndexComponents<DataType, Metric, StorageType>(
-            abstractInitParams.allocator, abstractInitParams.dim, mean_ptr);
+    auto components = CreateQuantizedIndexComponents<DataType, Metric, StorageType>(
+        abstractInitParams.allocator, abstractInitParams.dim, init);
+    abstractInitParams.storedDataSize = components.quantization->storageBytes();
     auto index =
         NewIndex_ChooseMultiOrSingle<DataType, float>(hnswParams, abstractInitParams, components);
 #ifdef BUILD_TESTS
-    // Store quantization metadata for re-serialization.
     index->quantType = hnswParams->quantType;
-    if (mean_ptr != nullptr) {
-        index->serializedMeanVector.assign(mean_ptr, mean_ptr + abstractInitParams.dim);
+    if constexpr (std::is_same_v<StorageType, sq8>) {
+        const auto mean = components.quantization->mean();
+        index->serializedMeanVector.assign(mean.begin(), mean.end());
     }
 #endif
     return index;
 }
 
-VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized, bool prepareForTraining) {
     const HNSWParams *hnswParams = &params->algoParams.hnswParams;
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(hnswParams, params->logCtx, is_normalized);
 
     if (hnswParams->quantType != VecSimQuant_NONE) {
         const VecSimMetric metric = ResolveQuantizedMetric(hnswParams->metric, is_normalized);
-        const float *mean_ptr = static_cast<const float *>(hnswParams->quantParams);
+        const QuantizationInit init{.parameters = hnswParams->quantParams,
+                                    .prepareForTraining = prepareForTraining};
 
         if (!QuantizationParamsSupported(hnswParams->quantType, hnswParams->type, metric)) {
             return NULL;
         }
 
-        if (vecsim::quantization::isTurboQuant(hnswParams->quantType)) {
-            const unsigned bits = vecsim::quantization::turboQuantBits(hnswParams->quantType);
-            abstractInitParams.storedDataSize =
-                vecsim::quantization::turboQuantStorageBytes(hnswParams->dim, bits);
-            abstractInitParams.isQuantized = true;
-            auto components = vecsim::quantization::createTurboQuantComponents(
-                abstractInitParams.allocator, hnswParams->dim, bits,
-                static_cast<const VecSimTurboQuantParams *>(hnswParams->quantParams));
-            auto *index = NewIndex_ChooseMultiOrSingle<float>(hnswParams, abstractInitParams,
-                                                            components);
-#ifdef BUILD_TESTS
-            index->quantType = hnswParams->quantType;
-#endif
-            return index;
-        }
+        if (hnswParams->quantType == VecSimQuant_TQ2)
+            return NewIndex_Quantized<float, VecSimMetric_IP, vecsim_types::tq2>(
+                hnswParams, abstractInitParams, init);
+        if (hnswParams->quantType == VecSimQuant_TQ3)
+            return NewIndex_Quantized<float, VecSimMetric_IP, vecsim_types::tq3>(
+                hnswParams, abstractInitParams, init);
         if (hnswParams->type == VecSimType_FLOAT32) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_Quantized<float, VecSimMetric_L2>(hnswParams, abstractInitParams,
-                                                                  mean_ptr);
+                                                                  init);
             } else if (metric == VecSimMetric_IP) {
                 return NewIndex_Quantized<float, VecSimMetric_IP>(hnswParams, abstractInitParams,
-                                                                  mean_ptr);
+                                                                  init);
             }
         } else if (hnswParams->type == VecSimType_FLOAT16) {
             if (metric == VecSimMetric_L2) {
                 return NewIndex_Quantized<float16, VecSimMetric_L2>(hnswParams, abstractInitParams,
-                                                                    mean_ptr);
+                                                                    init);
             } else if (metric == VecSimMetric_IP) {
                 return NewIndex_Quantized<float16, VecSimMetric_IP>(hnswParams, abstractInitParams,
-                                                                    mean_ptr);
+                                                                    init);
             }
         }
 
@@ -183,10 +172,9 @@ VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized) {
     return NULL;
 }
 
-VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized) {
+VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized, bool prepareForTraining) {
     VecSimParams vecSimParams = {.algoParams = {.hnswParams = HNSWParams{*params}}};
-    return NewIndex(&vecSimParams,
-        vecsim::quantization::isTurboQuant(params->quantType) ? is_normalized : false);
+    return NewIndex(&vecSimParams, is_normalized, prepareForTraining);
 }
 
 template <typename DataType, typename DistType = DataType>
@@ -208,31 +196,23 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool wi
 
     size_t est = sizeof(VecSimAllocator) + allocations_overhead;
 
-    if (vecsim::quantization::isTurboQuant(params->quantType)) {
-        if (!QuantizationParamsSupported(params->quantType, params->type,
-                ResolveQuantizedMetric(params->metric, is_normalized)))
-            throw std::invalid_argument("Unsupported TurboQuant params for HNSW index");
-        est += vecsim::quantization::estimateTurboQuantComponents(
-            params->dim, vecsim::quantization::turboQuantBits(params->quantType));
-        est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
-    } else if (params->quantType != VecSimQuant_NONE) {
-        // Keep construction and initial-size validation in sync.
-        if (!QuantizationParamsSupported(params->quantType, params->type,
-                                         ResolveQuantizedMetric(params->metric, is_normalized))) {
+    if (params->quantType != VecSimQuant_NONE) {
+        const auto metric = ResolveQuantizedMetric(params->metric, is_normalized);
+        if (!QuantizationParamsSupported(params->quantType, params->type, metric))
             throw std::invalid_argument("Unsupported quantization params for HNSW index");
-        }
-        // Template arguments do not affect these component sizes.
-        if (with_mean) {
-            est += allocations_overhead +
-                   sizeof(DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>);
-            est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
-            est += allocations_overhead + sizeof(QuantPreprocessor<float, VecSimMetric_L2, true>);
-            est += allocations_overhead + params->dim * sizeof(float);
-        } else {
-            est += allocations_overhead + sizeof(DistanceCalculatorCommon<float>);
-            est += allocations_overhead + sizeof(MultiPreprocessorsContainer<float, 1>);
-            est += allocations_overhead + sizeof(QuantPreprocessor<float, VecSimMetric_L2>);
-        }
+        const QuantizationInit init{.parameters = params->quantParams};
+        if (params->quantType == VecSimQuant_TQ2)
+            est += EstimateQuantizedComponentsMemory<float, VecSimMetric_IP, vecsim_types::tq2>(
+                params->dim, init);
+        else if (params->quantType == VecSimQuant_TQ3)
+            est += EstimateQuantizedComponentsMemory<float, VecSimMetric_IP, vecsim_types::tq3>(
+                params->dim, init);
+        else if (with_mean)
+            est += EstimateQuantizedComponentsMemory<float, VecSimMetric_L2, true, sq8>(params->dim,
+                                                                                        init);
+        else
+            est += EstimateQuantizedComponentsMemory<float, VecSimMetric_L2, false, sq8>(
+                params->dim, init);
         est += EstimateInitialSize_ChooseMultiOrSingle<float>(params->multi);
     } else if (params->type == VecSimType_FLOAT32) {
         est += EstimateComponentsMemory<float, float>(params->metric, is_normalized);
@@ -318,8 +298,7 @@ template <typename DataType, typename DistType = DataType>
 inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNSWParams *params,
                                                  const AbstractIndexInitParams &abstractInitParams,
                                                  IndexComponents<DataType, DistType> &components,
-                                                 HNSWSerializer::EncodingVersion version,
-                                                 const float *mean_ptr = nullptr) {
+                                                 HNSWSerializer::EncodingVersion version) {
     HNSWIndex<DataType, DistType> *index = nullptr;
     // check if single and call the ctor that loads index information from file.
     if (params->multi)
@@ -331,26 +310,39 @@ inline VecSimIndex *NewIndex_ChooseMultiOrSingle(std::ifstream &input, const HNS
 
     index->restoreGraph(input, version);
 
-    // Store quantization metadata for re-serialization.
     index->quantType = params->quantType;
-    if (mean_ptr != nullptr) {
-        index->serializedMeanVector.assign(mean_ptr, mean_ptr + abstractInitParams.dim);
+    if (components.quantization && components.quantization->encodingVersion() == 5) {
+        const auto mean = components.quantization->mean();
+        index->serializedMeanVector.assign(mean.begin(), mean.end());
     }
-
     return index;
 }
+
+static void ValidateQuantizedGraph(std::ifstream &input, const HNSWParams &params,
+                                   const std::shared_ptr<VecSimAllocator> &allocator,
+                                   const QuantizationRuntime &runtime);
 
 template <typename DataType, VecSimMetric Metric, typename StorageType = sq8>
 VecSimIndex *LoadIndex_Quantized(std::ifstream &input, const HNSWParams &params,
                                  AbstractIndexInitParams abstractInitParams,
-                                 HNSWSerializer::EncodingVersion version, const float *mean_ptr) {
+                                 HNSWSerializer::EncodingVersion version,
+                                 const QuantizationInit &init) {
     abstractInitParams.isQuantized = true;
-    abstractInitParams.storedDataSize =
-        GetQuantizedStoredDataSize<Metric, StorageType>(params.dim, mean_ptr != nullptr);
     auto components = CreateQuantizedIndexComponents<DataType, Metric, StorageType>(
-        abstractInitParams.allocator, params.dim, mean_ptr);
+        abstractInitParams.allocator, params.dim, init);
+    abstractInitParams.storedDataSize = components.quantization->storageBytes();
+    if (version >= HNSWSerializer::EncodingVersion::V6) {
+        try {
+            ValidateQuantizedGraph(input, params, abstractInitParams.allocator,
+                                   *components.quantization);
+        } catch (...) {
+            delete components.preprocessors;
+            delete components.indexCalculator;
+            throw;
+        }
+    }
     return NewIndex_ChooseMultiOrSingle<DataType, float>(input, &params, abstractInitParams,
-                                                         components, version, mean_ptr);
+                                                         components, version);
 }
 
 // Initialize @params from file for V3+. For V5+ also reads quantType and mean vector.
@@ -374,7 +366,7 @@ static bool InitializeParams(std::ifstream &source_params, HNSWParams &params,
         if (version == HNSWSerializer::EncodingVersion::V6) {
             if (!source_params || (raw_quant_type != VecSimQuant_TQ2 &&
                                    raw_quant_type != VecSimQuant_TQ3))
-                throw std::runtime_error("Invalid V6 TurboQuant type");
+                throw std::runtime_error("Invalid V6 quantization type");
             params.quantType = static_cast<VecSimQuantType>(raw_quant_type);
             return true;
         }
@@ -397,9 +389,10 @@ static bool InitializeParams(std::ifstream &source_params, HNSWParams &params,
 
 // Validate a V6 graph before the legacy loader allocates nodes. That loader assumes a
 // complete trusted stream; checking first also prevents partial graph destruction on failure.
-static void ValidateTurboQuantGraph(std::ifstream &input, const HNSWParams &params,
-                                    const std::shared_ptr<VecSimAllocator> &allocator,
-                                    size_t record_bytes) {
+static void ValidateQuantizedGraph(std::ifstream &input, const HNSWParams &params,
+                                   const std::shared_ptr<VecSimAllocator> &allocator,
+                                   const QuantizationRuntime &runtime) {
+    const size_t record_bytes = runtime.storageBytes();
     const auto start = input.tellg();
     input.seekg(0, std::ios::end);
     const auto end = input.tellg();
@@ -435,14 +428,10 @@ static void ValidateTurboQuantGraph(std::ifstream &input, const HNSWParams &para
     }
     if (marked != deleted) throw std::runtime_error("Inconsistent V6 HNSW deletion count");
     auto row = allocator->allocate_unique(record_bytes);
-    const size_t code_bytes = record_bytes - 2 * sizeof(float);
     for (size_t i = 0; i < count; ++i) {
         input.read(static_cast<char *>(row.get()), record_bytes);
         if (!input) throw std::runtime_error("Truncated V6 HNSW records");
-        float metadata[2];
-        std::memcpy(metadata, static_cast<const char *>(row.get()) + code_bytes, sizeof(metadata));
-        if (!std::isfinite(metadata[0]) || metadata[0] < 0 || !std::isfinite(metadata[1]))
-            throw std::runtime_error("Invalid V6 TurboQuant record");
+        runtime.validateStoredRecord(row.get());
     }
     vecsim_stl::vector<size_t> node_levels(count, 0, allocator);
     vecsim_stl::vector<size_t> required_levels(count, 0, allocator);
@@ -517,46 +506,37 @@ VecSimIndex *NewIndex(const std::string &location, bool is_normalized) {
     AbstractIndexInitParams abstractInitParams =
         VecSimFactory::NewAbstractInitParams(&params, nullptr, is_normalized);
 
-    if (vecsim::quantization::isTurboQuant(params.quantType)) {
-        if (!QuantizationParamsSupported(params.quantType, params.type,
-                ResolveQuantizedMetric(params.metric, is_normalized)))
-            return nullptr;
-        const auto bits = vecsim::quantization::turboQuantBits(params.quantType);
-        abstractInitParams.storedDataSize =
-            vecsim::quantization::turboQuantStorageBytes(params.dim, bits);
-        abstractInitParams.isQuantized = true;
-        auto codec = vecsim::quantization::TurboQuant::loadFitted(
-            input, abstractInitParams.allocator, params.dim, bits);
-        ValidateTurboQuantGraph(input, params, abstractInitParams.allocator,
-                                abstractInitParams.storedDataSize);
-        auto components = vecsim::quantization::createTurboQuantComponents(
-            abstractInitParams.allocator, std::move(codec));
-        return NewIndex_ChooseMultiOrSingle<float>(input, &params, abstractInitParams,
-                                                   components, version);
-    }
     if (params.quantType != VecSimQuant_NONE) {
-        const float *mean_ptr = meanVector.empty() ? nullptr : meanVector.data();
+        const QuantizationInit init{
+            .parameters = meanVector.empty() ? nullptr : meanVector.data(),
+            .fittedState = version >= HNSWSerializer::EncodingVersion::V6 ? &input : nullptr};
         const VecSimMetric metric = ResolveQuantizedMetric(params.metric, is_normalized);
 
         if (!QuantizationParamsSupported(params.quantType, params.type, metric)) {
             return NULL;
         }
 
+        if (params.quantType == VecSimQuant_TQ2)
+            return LoadIndex_Quantized<float, VecSimMetric_IP, vecsim_types::tq2>(
+                input, params, abstractInitParams, version, init);
+        if (params.quantType == VecSimQuant_TQ3)
+            return LoadIndex_Quantized<float, VecSimMetric_IP, vecsim_types::tq3>(
+                input, params, abstractInitParams, version, init);
         if (params.type == VecSimType_FLOAT32) {
             if (metric == VecSimMetric_L2) {
                 return LoadIndex_Quantized<float, VecSimMetric_L2>(
-                    input, params, abstractInitParams, version, mean_ptr);
+                    input, params, abstractInitParams, version, init);
             } else {
                 return LoadIndex_Quantized<float, VecSimMetric_IP>(
-                    input, params, abstractInitParams, version, mean_ptr);
+                    input, params, abstractInitParams, version, init);
             }
         } else if (params.type == VecSimType_FLOAT16) {
             if (metric == VecSimMetric_L2) {
                 return LoadIndex_Quantized<float16, VecSimMetric_L2>(
-                    input, params, abstractInitParams, version, mean_ptr);
+                    input, params, abstractInitParams, version, init);
             } else {
                 return LoadIndex_Quantized<float16, VecSimMetric_IP>(
-                    input, params, abstractInitParams, version, mean_ptr);
+                    input, params, abstractInitParams, version, init);
             }
         }
     }

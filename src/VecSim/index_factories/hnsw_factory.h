@@ -22,8 +22,12 @@ namespace HNSWFactory {
  * the blobs sent to the index are already normalized. For example, in case it's a tiered index,
  * where the blobs are normalized by the frontend index.
  */
-VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false);
-VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized = false);
+VecSimIndex *NewIndex(const VecSimParams *params, bool is_normalized = false,
+                      bool prepareForTraining = false);
+VecSimIndex *NewIndex(const HNSWParams *params, bool is_normalized = false,
+                      bool prepareForTraining = false);
+bool QuantizationParamsSupported(VecSimQuantType quant_type, VecSimType type,
+                                 VecSimMetric resolved_metric);
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized = false);
 size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool with_mean);
 size_t EstimateElementSize(const HNSWParams *params);

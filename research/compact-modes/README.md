@@ -5,6 +5,27 @@ as explicit tradeoffs. It is based on PR #1101 (`codex/quant-storage-type`,
 `217026b84aa123ae3bc0f483998a0a85b9d47b25`). It does not include SQ4 from
 #1099/#1103 and does not change the default quantization mode.
 
+## Shared StorageType pipeline
+
+SQ8, TQ2 and TQ3 use the same `CreateQuantizedIndexComponents`,
+`QuantPreprocessor` and `QuantizedCalculator`. A StorageType selects its typed
+context, which owns encoding, prepared queries, distance dispatch, validation,
+mean installation and fitted-state persistence. The scalar-family default
+context retains the existing SQ8 arithmetic and SIMD selection; TQ contexts
+retain the current rotation, packed-code scoring and correction policies.
+
+HNSW and tiered code have no TQ flags, casts or codec access. Tiered construction
+requests a backend prepared for regular mean training without interpreting
+quantizer parameters. The backend forwards mean publication and validation to
+its storage context. Scoring still uses the cached distance dispatch, without
+adding a per-candidate virtual call. Components own the shared context; the
+index retains a non-owning alias. Context/control allocations are counted in
+the memory estimator, and allocated query/storage blobs retain their allocator.
+
+This common foundation belongs in #1101. The TQ-specific layer adds StorageType
+registration, contexts, codec/kernels and their tests. SQ4's existing scalar
+layout/code hooks can continue through the scalar-family default context.
+
 ## One regular training phase
 
 TQ2/TQ3 reuse the existing tiered quantization training phase:

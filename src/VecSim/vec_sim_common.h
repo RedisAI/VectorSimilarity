@@ -445,8 +445,8 @@ typedef struct {
     size_t entrypoint;     // Entrypoint vector label.
     size_t visitedNodesPoolSize;       // The max number of parallel graph scans so far.
     size_t numberOfMarkedDeletedNodes; // The number of nodes that are marked as deleted.
-    // TQ metadata is zero for other quantizers; iterator fields are emitted only for TQ.
-    VecSimQuantType turboQuantType;
+    // Storage contexts supply their own metadata and optional detailed iterator fields.
+    VecSimQuantType quantizationType;
     size_t quantizedVectorBytes;
     size_t quantizerSharedBytes;
     const char *quantizerQueryKernel;
