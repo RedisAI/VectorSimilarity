@@ -21,6 +21,7 @@
 #include "VecSim/vec_sim_common.h"
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/spaces/computer/preprocessors.h"
+#include "VecSim/quantization/sq8_mean.h"
 #include <span>
 #include "VecSim/tombstone_interface.h"
 
@@ -91,22 +92,35 @@ class HNSWIndex : public VecSimIndexAbstract<DataType, DistType>,
                   public HNSWSerializer
 #endif
 {
+private:
+    template <VecSimMetric Metric>
+    void setSQ8Mean(std::span<const float> mean) noexcept {
+        applySQ8Mean<DataType, Metric>(*this->getPreprocessorsContainer(),
+                                       *this->getIndexCalculator(), mean);
+    }
+
 public:
-    // Install the mean before storing any vector, with queries excluded by the caller.
-    // The storage context prepares all fallible state before publishing the new mean;
-    // cached scoring callbacks keep referring to the same context throughout.
-    void setQuantizationMean(std::span<const float> mean) {
+    // Writer-only operation: install the mean once, before any stored vector, under the
+    // exclusive tiered main lock and before submitting insertion jobs. The backend must have
+    // its final SQ8 WithNorm components; the caller owns and enforces the one-time transition.
+    // A quantizer that learns storedDataSize from data needs deferred backend creation.
+    void setQuantizationMean(std::span<const float> mean) noexcept {
         assert(this->isQuantized && curElementCount == 0 && mean.size() == this->dim);
-        assert(this->getQuantizationRuntime());
-        this->getQuantizationRuntime()->setMean(mean);
+        if constexpr (QuantInput<DataType> && std::is_same_v<DistType, float>) {
+            if (this->metric == VecSimMetric_L2) {
+                setSQ8Mean<VecSimMetric_L2>(mean);
+            } else {
+                // Tiered cosine inputs are already normalized, and use IP SQ8 components.
+                assert(this->metric == VecSimMetric_IP || this->metric == VecSimMetric_Cosine);
+                setSQ8Mean<VecSimMetric_IP>(mean);
+            }
 #ifdef BUILD_TESTS
-        // Compatibility view for existing scalar serialization tests. State is saved by
-        // the context; only an already allocated view is updated here.
-        if (!serializedMeanVector.empty()) {
-            assert(serializedMeanVector.size() == mean.size());
+            assert(serializedMeanVector.size() == this->dim);
             std::copy(mean.begin(), mean.end(), serializedMeanVector.begin());
-        }
 #endif
+        } else {
+            assert(false && "Unsupported SQ8 data type");
+        }
     }
 
 protected:
@@ -633,7 +647,6 @@ VecSimUpdateCode HNSWIndex<DataType, DistType>::updateVectors(labelType label,
         return VecSimUpdate_OK;
     }
 
-    this->validateQuantizationInput(new_blobs, n, this->getInputBlobSize(), this->metric);
     this->deleteVector(label);
     const char *blob = static_cast<const char *>(new_blobs);
     for (size_t i = 0; i < n; i++) {
@@ -2446,7 +2459,7 @@ VecSimQueryReply *HNSWIndex<DataType, DistType>::rangeQuery(const void *query_da
 template <typename DataType, typename DistType>
 VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
 
-    VecSimIndexDebugInfo info{};
+    VecSimIndexDebugInfo info;
     info.commonInfo = this->getCommonInfo();
     auto [ep_id, max_level] = this->safeGetEntryPointState();
 
@@ -2459,14 +2472,6 @@ VecSimIndexDebugInfo HNSWIndex<DataType, DistType>::debugInfo() const {
     info.hnswInfo.entrypoint = ep_id != INVALID_ID ? getExternalLabel(ep_id) : INVALID_LABEL;
     info.hnswInfo.visitedNodesPoolSize = this->visitedNodesHandlerPool.getPoolSize();
     info.hnswInfo.numberOfMarkedDeletedNodes = this->getNumMarkedDeleted();
-    if (const auto *context = this->getQuantizationRuntime()) {
-        const auto quant = context->info();
-        info.hnswInfo.quantizationType = quant.type;
-        info.hnswInfo.quantizedVectorBytes = quant.vectorBytes;
-        info.hnswInfo.quantizerSharedBytes = quant.sharedBytes;
-        info.hnswInfo.quantizerQueryKernel = quant.queryKernel;
-        info.hnswInfo.quantizerGraphKernel = quant.graphKernel;
-    }
     return info;
 }
 
@@ -2533,30 +2538,6 @@ VecSimDebugInfoIterator *HNSWIndex<DataType, DistType>::debugInfoIterator() cons
         .fieldType = INFOFIELD_UINT64,
         .fieldValue = {FieldValue{.uintegerValue = info.hnswInfo.numberOfMarkedDeletedNodes}}});
 
-    if (const auto *context = this->getQuantizationRuntime(); context && context->info().name) {
-        const auto quant = context->info();
-        auto integer = [&](const char *name, uint64_t value) {
-            infoIterator->addInfoField(
-                VecSim_InfoField{.fieldName = name,
-                                 .fieldType = INFOFIELD_UINT64,
-                                 .fieldValue = {FieldValue{.uintegerValue = value}}});
-        };
-        auto string = [&](const char *name, const char *value) {
-            if (value)
-                infoIterator->addInfoField(
-                    VecSim_InfoField{.fieldName = name,
-                                     .fieldType = INFOFIELD_STRING,
-                                     .fieldValue = {FieldValue{.stringValue = value}}});
-        };
-        string("QUANTIZATION", quant.name);
-        string("QUANT_SCALE", quant.scale);
-        string("QUANT_BIAS", quant.bias);
-        integer("QUANT_VECTOR_BYTES", quant.vectorBytes);
-        integer("QUANT_SHARED_BYTES", quant.sharedBytes);
-        integer("QUANT_QUERY_BYTES", quant.queryBytes);
-        string("QUANT_QUERY_KERNEL", quant.queryKernel);
-        string("QUANT_GRAPH_KERNEL", quant.graphKernel);
-    }
     return infoIterator;
 }
 

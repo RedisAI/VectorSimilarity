@@ -142,7 +142,7 @@ private:
 };
 
 /*
- * ScalarQuantPreprocessor is a preprocessor that quantizes storage vectors from DataType to a
+ * QuantPreprocessor is a preprocessor that quantizes storage vectors from DataType to a
  * lower precision representation defined by StorageType (SQ8, the current storage type,
  * stores one uint8_t code per coordinate).
  * Query vectors remain as DataType for asymmetric distance computation.
@@ -232,7 +232,7 @@ private:
  *   ||x - y||² = sum_sq_x + sum_sq_y - 2 * IP(x, y)
  *   where sum_sq_x, sum_sq_y are precomputed sums of the squared represented values.
  */
-// Input types accepted by ScalarQuantPreprocessor. Opt-in via std::same_as so unrelated types
+// Input types accepted by QuantPreprocessor. Opt-in via std::same_as so unrelated types
 // (e.g. integers, double, bfloat16) are rejected at the template head with a named constraint.
 template <typename T>
 concept QuantInput = std::same_as<T, float> || std::same_as<T, vecsim_types::float16>;
@@ -259,7 +259,7 @@ static inline T from_fp32(float x) {
 
 template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false,
           typename StorageType = vecsim_types::sq8>
-class ScalarQuantPreprocessor : public PreprocessorInterface {
+class QuantPreprocessor : public PreprocessorInterface {
 public:
     // Center L2 queries in FP32 even when the original input is FP16.
     using QueryType = std::conditional_t<WithNorm && Metric == VecSimMetric_L2, float, DataType>;
@@ -270,7 +270,7 @@ private:
 
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP ||
                       Metric == VecSimMetric_Cosine,
-                  "ScalarQuantPreprocessor only supports L2, IP and Cosine metrics");
+                  "QuantPreprocessor only supports L2, IP and Cosine metrics");
     static_assert(!WithNorm || Metric != VecSimMetric_Cosine,
                   "WithNorm does not support Cosine metric.");
 
@@ -489,7 +489,7 @@ public:
     }
 
     // Standard constructor (WithNorm == false): no mean vector.
-    ScalarQuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
         requires(!WithNorm)
         : PreprocessorInterface(allocator), dim(dim),
           storage_bytes_count(StorageType::template storage_bytes_count<Metric>(dim)),
@@ -498,8 +498,8 @@ public:
                                 sizeof(MetadataType)) {}
 
     // WithNorm constructor: accepts a pre-computed mean vector (FP32, length == dim).
-    ScalarQuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim,
-                            const vecsim_stl::vector<float> &mean_vec)
+    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim,
+                      const vecsim_stl::vector<float> &mean_vec)
         requires(WithNorm)
         : PreprocessorInterface(allocator), mean(mean_vec), dim(dim),
           storage_bytes_count(StorageType::template storage_bytes_count<Metric, WithNorm>(dim)),
@@ -558,7 +558,10 @@ public:
         assert(!blob && "storage_blob must be nullptr");
 
         blob = this->allocator->allocate_aligned(storage_bytes_count, storage_alignment);
-        encodeStorage(original_blob, blob);
+        // Cast to appropriate types
+        const DataType *input = static_cast<const DataType *>(original_blob);
+        OUTPUT_TYPE *quantized = static_cast<OUTPUT_TYPE *>(blob);
+        quantize(input, quantized);
 
         input_blob_size = storage_bytes_count;
     }
@@ -589,15 +592,6 @@ public:
 
         // Allocate aligned memory for the query blob
         blob = this->allocator->allocate_aligned(this->query_bytes_count, alignment);
-        prepareQuery(original_blob, blob);
-        query_blob_size = this->query_bytes_count;
-    }
-
-    void encodeStorage(const void *input, void *output) const {
-        quantize(static_cast<const DataType *>(input), static_cast<OUTPUT_TYPE *>(output));
-    }
-
-    void prepareQuery(const void *original_blob, void *blob) const {
         const size_t body_bytes = this->dim * sizeof(QueryType);
         const DataType *input = static_cast<const DataType *>(original_blob);
         QueryType *query_values = static_cast<QueryType *>(blob);
@@ -613,13 +607,8 @@ public:
         // body_bytes, which is not guaranteed to be 4-byte aligned for FP16 query bodies.
         void *metadata_dst = static_cast<uint8_t *>(blob) + body_bytes;
         assign_query_metadata(query_values, input, metadata_dst);
-    }
 
-    std::span<const float> getMean() const {
-        if constexpr (WithNorm) {
-            return {mean.data(), mean.size()};
-        }
-        return {};
+        query_blob_size = this->query_bytes_count;
     }
 
     void preprocessStorageInPlace(void *original_blob, size_t input_blob_size) const override {
@@ -674,100 +663,3 @@ private:
     const size_t storage_bytes_count;
     const size_t query_bytes_count;
 };
-
-// Storage policies may replace the scalar family's context while retaining the same wrappers.
-template <typename StorageType, QuantInput Input, VecSimMetric Metric, bool WithMean>
-class ScalarStorageContext;
-
-template <typename StorageType, QuantInput Input, VecSimMetric Metric, bool WithMean,
-          typename = void>
-struct StorageContextSelector {
-    using type = ScalarStorageContext<StorageType, Input, Metric, WithMean>;
-};
-
-template <typename StorageType, QuantInput Input, VecSimMetric Metric, bool WithMean>
-struct StorageContextSelector<
-    StorageType, Input, Metric, WithMean,
-    std::void_t<typename StorageType::template Context<Input, Metric, WithMean>>> {
-    using type = typename StorageType::template Context<Input, Metric, WithMean>;
-};
-
-template <typename StorageType, QuantInput Input, VecSimMetric Metric, bool WithMean>
-using StorageContextFor =
-    typename StorageContextSelector<StorageType, Input, Metric, WithMean>::type;
-
-#include "VecSim/quantization/quantization_runtime.h"
-
-template <QuantInput DataType, VecSimMetric Metric, bool WithMean = false,
-          typename StorageType = vecsim_types::sq8>
-class QuantPreprocessor : public PreprocessorInterface {
-public:
-    using Context = StorageContextFor<StorageType, DataType, Metric, WithMean>;
-    using QueryType = typename Context::QueryType;
-
-    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, std::shared_ptr<Context> context)
-        : PreprocessorInterface(allocator), context_(std::move(context)) {}
-
-    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim)
-        requires(!WithMean)
-        : QuantPreprocessor(allocator,
-                            std::allocate_shared<Context>(VecsimSTLAllocator<Context>(allocator),
-                                                          allocator, dim, QuantizationInit{})) {}
-
-    QuantPreprocessor(std::shared_ptr<VecSimAllocator> allocator, size_t dim,
-                      const vecsim_stl::vector<float> &mean)
-        requires(WithMean)
-        : QuantPreprocessor(allocator, std::allocate_shared<Context>(
-                                           VecsimSTLAllocator<Context>(allocator), allocator, dim,
-                                           QuantizationInit{.parameters = mean.data()})) {
-        assert(mean.size() == dim);
-    }
-
-    void setMean(std::span<const float> mean)
-        requires(WithMean)
-    {
-        context_->setMean(mean);
-    }
-
-    void preprocess(const void *input, void *&storage, void *&query, size_t &storageBytes,
-                    size_t &queryBytes, unsigned char storageAlignment,
-                    unsigned char queryAlignment) const override {
-        assert(!storage && !query);
-        assert(&storageBytes != &queryBytes);
-        auto storage_output =
-            this->allocator->allocate_aligned_unique(context_->storageBytes(), storageAlignment);
-        auto query_output =
-            this->allocator->allocate_aligned_unique(context_->queryBytes(), queryAlignment);
-        context_->encodeStorage(input, storage_output.get());
-        context_->prepareQuery(input, query_output.get());
-        storage = storage_output.release();
-        query = query_output.release();
-        storageBytes = context_->storageBytes();
-        queryBytes = context_->queryBytes();
-    }
-    void preprocessForStorage(const void *input, void *&output, size_t &bytes,
-                              unsigned char alignment) const override {
-        assert(!output);
-        auto prepared =
-            this->allocator->allocate_aligned_unique(context_->storageBytes(), alignment);
-        context_->encodeStorage(input, prepared.get());
-        output = prepared.release();
-        bytes = context_->storageBytes();
-    }
-    void preprocessQuery(const void *input, void *&output, size_t &bytes,
-                         unsigned char alignment) const override {
-        assert(!output);
-        auto prepared = this->allocator->allocate_aligned_unique(context_->queryBytes(), alignment);
-        context_->prepareQuery(input, prepared.get());
-        output = prepared.release();
-        bytes = context_->queryBytes();
-    }
-    void preprocessStorageInPlace(void *input, size_t bytes) const override {
-        context_->encodeStorageInPlace(input, bytes);
-    }
-
-private:
-    std::shared_ptr<Context> context_;
-};
-
-#include "VecSim/quantization/storage_context.h"

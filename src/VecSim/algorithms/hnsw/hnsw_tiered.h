@@ -946,8 +946,6 @@ HNSWInsertJob *TieredHNSWIndex<DataType, DistType>::addVectorToFlat(const void *
 // parameters.
 template <typename DataType, typename DistType>
 int TieredHNSWIndex<DataType, DistType>::addVector(const void *blob, labelType label) {
-    getHNSWIndex()->validateQuantizationInput(blob, 1, this->frontendIndex->getInputBlobSize(),
-                                              this->frontendIndex->getMetric());
     if (sqAccumulationState) {
         return addVectorDuringAccumulation(blob, label);
     }
@@ -1107,8 +1105,6 @@ VecSimUpdateCode TieredHNSWIndex<DataType, DistType>::updateVectors(labelType la
         return updateVectorSingleValue(label, new_blobs, n);
 
     // -- Multi Value --
-    getHNSWIndex()->validateQuantizationInput(new_blobs, n, this->frontendIndex->getInputBlobSize(),
-                                              this->frontendIndex->getMetric());
     this->deleteVector(label);
     const char *blob = static_cast<const char *>(new_blobs);
     for (size_t i = 0; i < n; i++) {

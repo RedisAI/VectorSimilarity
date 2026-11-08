@@ -15,7 +15,6 @@
 #include "VecSim/utils/vec_utils.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/spaces/computer/calculator.h"
-#include "VecSim/quantization/quantization_runtime.h"
 #include "VecSim/spaces/computer/preprocessor_container.h"
 #include "info_iterator_struct.h"
 #include "containers/data_blocks_container.h"
@@ -67,8 +66,6 @@ template <typename DataType, typename DistType>
 struct IndexComponents {
     IndexCalculatorInterface<DistType> *indexCalculator;
     PreprocessorsContainerAbstract *preprocessors;
-    // Alias owned by the component wrappers, never deleted separately.
-    QuantizationRuntime *quantization = nullptr;
 };
 
 /**
@@ -94,7 +91,6 @@ private:
     DistanceDispatch<DistType> storedDistanceDispatch;
     DistanceDispatch<DistType> queryDistanceDispatch;
     PreprocessorsContainerAbstract *preprocessors; // Storage and query preprocessors.
-    QuantizationRuntime *quantization;             // Non-owning alias into the component context.
 
     size_t inputBlobSize; // The size of input vectors/queries blob in bytes. May differ from dim *
                           // sizeof(vecType) when vectors have been externally preprocessed (e.g.,
@@ -142,8 +138,8 @@ public:
               components.indexCalculator
                   ? components.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery)
                   : DistanceDispatch<DistType>{}),
-          preprocessors(components.preprocessors), quantization(components.quantization),
-          inputBlobSize(params.inputBlobSize), storedDataSize(params.storedDataSize) {
+          preprocessors(components.preprocessors), inputBlobSize(params.inputBlobSize),
+          storedDataSize(params.storedDataSize) {
         assert(VecSimType_sizeof(vecType));
         assert(storedDataSize);
         assert(inputBlobSize);
@@ -232,14 +228,6 @@ public:
     inline void setLastSearchMode(VecSearchMode mode) override { this->lastMode = mode; }
     inline bool isMultiValue() const { return isMulti; }
     inline bool usesQuantizedStorage() const { return isQuantized; }
-    QuantizationRuntime *getQuantizationRuntime() const { return quantization; }
-
-    // Validate the complete input before a replacement can remove existing rows.
-    void validateQuantizationInput(const void *rows, size_t count, size_t rowBytes,
-                                   VecSimMetric inputMetric) const {
-        if (quantization)
-            quantization->validateBatch(rows, count, rowBytes, inputMetric);
-    }
     inline VecSimType getType() const { return vecType; }
     inline VecSimMetric getMetric() const { return metric; }
     inline size_t getStoredDataSize() const { return storedDataSize; }
@@ -377,9 +365,7 @@ public:
     }
 
     IndexComponents<DataType, DistType> get_components() const {
-        return {.indexCalculator = this->indexCalculator,
-                .preprocessors = this->preprocessors,
-                .quantization = this->quantization};
+        return {.indexCalculator = this->indexCalculator, .preprocessors = this->preprocessors};
     }
 
     // Test-only: override the disk flag to exercise disk-specific param resolution

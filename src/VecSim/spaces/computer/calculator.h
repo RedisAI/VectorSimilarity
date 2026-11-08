@@ -250,29 +250,3 @@ public:
         return DistanceDispatch<DistType>::stateful(&context_, calcQueryWithContext);
     }
 };
-
-// Context dispatches are selected once; the index caches these same callbacks and addresses.
-template <typename Context>
-class QuantizedCalculator : public IndexCalculatorInterface<float> {
-public:
-    QuantizedCalculator(std::shared_ptr<VecSimAllocator> allocator,
-                        std::shared_ptr<Context> context)
-        : IndexCalculatorInterface<float>(allocator), context_(std::move(context)),
-          stored_(context_->getDistanceDispatch(DistanceMode::StoredToStored)),
-          query_(context_->getDistanceDispatch(DistanceMode::StoredToQuery)) {}
-
-    float calcDistance(const void *lhs, const void *rhs, size_t dim) const override {
-        return stored_(lhs, rhs, dim);
-    }
-    float calcDistanceForQuery(const void *stored, const void *query, size_t dim) const override {
-        return query_(stored, query, dim);
-    }
-    DistanceDispatch<float> getDistanceDispatch(DistanceMode mode) const override {
-        return mode == DistanceMode::StoredToStored ? stored_ : query_;
-    }
-
-private:
-    std::shared_ptr<Context> context_;
-    DistanceDispatch<float> stored_;
-    DistanceDispatch<float> query_;
-};
