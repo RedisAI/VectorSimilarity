@@ -85,16 +85,16 @@ float SQ4_FP32_InnerProductSIMD16_NEON(const void *pVect1v, const void *pVect2v,
     if constexpr (residual % 4 > 0) {
         float32x4_t codes = vdupq_n_f32(0.0f);
         float32x4_t query = vdupq_n_f32(0.0f);
-        const float q0 = sq4::load_code(x, i);
+        const float q0 = sq4::get_code(x, i);
         codes = vld1q_lane_f32(&q0, codes, 0);
         query = vld1q_lane_f32(y + i, query, 0);
         if constexpr (residual % 4 >= 2) {
-            const float q1 = sq4::load_code(x, i + 1);
+            const float q1 = sq4::get_code(x, i + 1);
             codes = vld1q_lane_f32(&q1, codes, 1);
             query = vld1q_lane_f32(y + i + 1, query, 1);
         }
         if constexpr (residual % 4 >= 3) {
-            const float q2 = sq4::load_code(x, i + 2);
+            const float q2 = sq4::get_code(x, i + 2);
             codes = vld1q_lane_f32(&q2, codes, 2);
             query = vld1q_lane_f32(y + i + 2, query, 2);
         }

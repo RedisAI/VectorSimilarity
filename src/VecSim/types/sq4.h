@@ -8,24 +8,26 @@
  */
 #pragma once
 
-#include "VecSim/types/sq8.h"
+#include <cstdint>
+#include "VecSim/types/quantized_metadata.h"
 
 namespace vecsim_types {
 
 // Two scalar-quantized coordinates per byte, followed by the same metadata as SQ8.
-struct sq4 : sq8 {
+struct sq4 : quantized_metadata {
+    using value_type = uint8_t;
     static constexpr uint8_t max_code = 15;
     static constexpr unsigned bits_per_code = 4;
 
     static constexpr size_t data_bytes_count(size_t dim) { return dim / 2 + dim % 2; }
 
-    static uint8_t load_code(const uint8_t *data, size_t index) {
+    static uint8_t get_code(const uint8_t *data, size_t index) {
         return (data[index / 2] >> ((index % 2) * bits_per_code)) & max_code;
     }
 
     // Coordinates are stored in ascending order. Starting each byte with an assignment allows
     // in-place preprocessing and leaves the unused high nibble zero for odd dimensions.
-    static void store_code(uint8_t *data, size_t index, uint8_t code) {
+    static void set_code(uint8_t *data, size_t index, uint8_t code) {
         if (index % 2 == 0) {
             data[index / 2] = code & max_code;
         } else {
@@ -35,6 +37,7 @@ struct sq4 : sq8 {
 
     // Dot product of two packed code arrays: sum(q1_i * q2_i). Each byte is loaded once and both
     // nibbles are used. The 64-bit integer sum is exact for any dimension.
+    // Used by scalar SQ4-to-SQ4 IP and L2 kernels; SIMD kernels compute the dot product separately.
     static float code_dot(const uint8_t *a, const uint8_t *b, size_t dim) {
         const size_t full_bytes = dim / 2;
         uint64_t sum = 0;

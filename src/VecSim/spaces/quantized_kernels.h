@@ -16,7 +16,7 @@
 // scalar functions (e.g. SQ8_FP32_L2Sqr) instead.
 //
 // Scalar kernels for scalar quantized storage, generic over a StorageType that provides
-// load_code(data, i), data_bytes_count(dim) and the MIN_VAL / DELTA / SUM / SUM_SQUARES metadata
+// get_code(data, i), data_bytes_count(dim) and the MIN_VAL / DELTA / SUM / SUM_SQUARES metadata
 // indices (stored after the codes) and SUM_QUERY (stored after the FP32 query values).
 // It also provides the code dot hooks code_dot(a, b, dim) and code_dot_fp32(codes, y, dim).
 //
@@ -82,7 +82,7 @@ static inline float FP32_L2Sqr(const void *stored, const void *query, size_t dim
         // the scale of min_val and wipe out small residuals. When min_val and y_i are not close,
         // the residual is large and either order is fine.
         float diff =
-            delta * static_cast<float>(StorageType::load_code(pVect1, i)) + (min_val - pVect2[i]);
+            delta * static_cast<float>(StorageType::get_code(pVect1, i)) + (min_val - pVect2[i]);
         res += diff * diff;
     }
     return res;
