@@ -16,6 +16,7 @@
 #include <stddef.h>
 #include <stdexcept>
 #include <cstdarg>
+#include <atomic>
 /**
  * @brief Abstract C++ class for vector index, delete and lookup
  *
@@ -223,7 +224,8 @@ public:
      *
      * @param mode VecSimWriteMode the mode in which we add/remove vectors (async or in-place).
      */
-    static VecSimWriteMode asyncWriteMode;
+    // Atomic: set by the host thread and read by update jobs on worker threads.
+    static std::atomic<VecSimWriteMode> asyncWriteMode;
     inline static void setWriteMode(VecSimWriteMode mode) {
         VecSimIndexInterface::asyncWriteMode = mode;
     }
