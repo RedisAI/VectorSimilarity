@@ -37,6 +37,7 @@ struct sq4 : quantized_metadata {
 
     // Dot product of two packed code arrays: sum(q1_i * q2_i). Each byte is loaded once and both
     // nibbles are used. The 64-bit integer sum is exact for any dimension.
+    // Used by scalar SQ4-to-SQ4 IP and L2 kernels; SIMD kernels compute the dot product separately.
     static float code_dot(const uint8_t *a, const uint8_t *b, size_t dim) {
         const size_t full_bytes = dim / 2;
         uint64_t sum = 0;
