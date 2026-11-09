@@ -68,10 +68,8 @@ float SQ4_FP32_L2SqrSIMD_SVE(const void *pVect1v, const void *pVect2v, size_t di
     svfloat32_t sum2 = svdup_f32(0.0f);
     svfloat32_t sum3 = svdup_f32(0.0f);
     size_t offset = 0; // in packed bytes; the step's first coordinate is 2 * offset
-    // Complete coordinate pairs exclude an odd padding nibble; this bound avoids runtime SVE-length
-    // division.
-    const size_t full_bytes = dimension / 2;
-    for (; offset + 4 * vl <= full_bytes; offset += 4 * vl) {
+    const size_t main_bytes = (dimension / (8 * vl)) * 4 * vl;
+    for (; offset < main_bytes; offset += 4 * vl) {
         L2StepSQ4_FP32_SVE(x + offset, y + 2 * offset, sum0, sum1, min_val_vec, delta_vec);
         L2StepSQ4_FP32_SVE(x + offset + vl, y + 2 * (offset + vl), sum2, sum3, min_val_vec,
                            delta_vec);
