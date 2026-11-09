@@ -343,10 +343,10 @@ private:
             const OUTPUT_TYPE a1 = to_byte((x1 - min_val) * inv_delta);
             const OUTPUT_TYPE a2 = to_byte((x2 - min_val) * inv_delta);
             const OUTPUT_TYPE a3 = to_byte((x3 - min_val) * inv_delta);
-            StorageType::store_code(quantized, i, a0);
-            StorageType::store_code(quantized, i + 1, a1);
-            StorageType::store_code(quantized, i + 2, a2);
-            StorageType::store_code(quantized, i + 3, a3);
+            StorageType::set_code(quantized, i, a0);
+            StorageType::set_code(quantized, i + 1, a1);
+            StorageType::set_code(quantized, i + 2, a2);
+            StorageType::set_code(quantized, i + 3, a3);
 
             s0 += a0;
             s1 += a1;
@@ -371,7 +371,7 @@ private:
         for (; i < this->dim; ++i) {
             const float x = transformed_value(input, i);
             const OUTPUT_TYPE a = to_byte((x - min_val) * inv_delta);
-            StorageType::store_code(quantized, i, a);
+            StorageType::set_code(quantized, i, a);
             q_sum += a;
             if constexpr (Metric == VecSimMetric_L2) {
                 q_sum_squares += uint64_t{a} * a;
