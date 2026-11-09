@@ -21,13 +21,13 @@ struct sq4 : quantized_metadata {
 
     static constexpr size_t data_bytes_count(size_t dim) { return dim / 2 + dim % 2; }
 
-    static uint8_t load_code(const uint8_t *data, size_t index) {
+    static uint8_t get_code(const uint8_t *data, size_t index) {
         return (data[index / 2] >> ((index % 2) * bits_per_code)) & max_code;
     }
 
     // Coordinates are stored in ascending order. Starting each byte with an assignment allows
     // in-place preprocessing and leaves the unused high nibble zero for odd dimensions.
-    static void store_code(uint8_t *data, size_t index, uint8_t code) {
+    static void set_code(uint8_t *data, size_t index, uint8_t code) {
         if (index % 2 == 0) {
             data[index / 2] = code & max_code;
         } else {

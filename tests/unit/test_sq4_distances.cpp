@@ -47,7 +47,7 @@ struct PackedVector {
           reconstructed(codes.size()) {
         float metadata[4] = {minimum, delta, 0.0f, 0.0f};
         for (size_t i = 0; i < codes.size(); ++i) {
-            sq4::store_code(data(), i, codes[i]);
+            sq4::set_code(data(), i, codes[i]);
             reconstructed[i] = minimum + delta * codes[i];
             metadata[sq4::SUM] += reconstructed[i];
             metadata[sq4::SUM_SQUARES] += reconstructed[i] * reconstructed[i];
@@ -77,21 +77,21 @@ TEST(SQ4Distances, PackedLayoutAndSQ8Compatibility) {
     uint8_t packed[8];
     std::memset(packed, 0xff, sizeof(packed));
     for (size_t i = 0; i < 16; ++i) {
-        sq4::store_code(packed, i, i);
+        sq4::set_code(packed, i, i);
         if (i % 2 == 0) {
             EXPECT_EQ(packed[i / 2] & 0xf0, 0);
         }
     }
     for (size_t i = 0; i < 16; ++i) {
-        EXPECT_EQ(sq4::load_code(packed, i), i);
+        EXPECT_EQ(sq4::get_code(packed, i), i);
         if (i % 2 == 0) {
             EXPECT_EQ(packed[i / 2], i | ((i + 1) << 4));
         }
     }
     uint8_t unpacked[256];
     for (size_t i = 0; i < 256; ++i) {
-        sq8::store_code(unpacked, i, i);
-        EXPECT_EQ(sq8::load_code(unpacked, i), i);
+        sq8::set_code(unpacked, i, i);
+        EXPECT_EQ(sq8::get_code(unpacked, i), i);
         EXPECT_EQ(unpacked[i], i);
     }
 }
@@ -234,7 +234,7 @@ double storedMeta(const uint8_t *blob, size_t dim, size_t slot) {
 double identityIP(const uint8_t *x, const uint8_t *y, size_t dim) {
     double code_dot = 0.0;
     for (size_t i = 0; i < dim; ++i) {
-        code_dot += double(sq4::load_code(x, i)) * sq4::load_code(y, i);
+        code_dot += double(sq4::get_code(x, i)) * sq4::get_code(y, i);
     }
     const double min_x = storedMeta(x, dim, sq4::MIN_VAL), dx = storedMeta(x, dim, sq4::DELTA);
     const double min_y = storedMeta(y, dim, sq4::MIN_VAL), dy = storedMeta(y, dim, sq4::DELTA);
@@ -246,7 +246,7 @@ double identityIP(const uint8_t *x, const uint8_t *y, size_t dim) {
 float reconstructedIP(const uint8_t *x, const float *y, size_t dim, float min_val, float delta) {
     float dot = 0.0f;
     for (size_t i = 0; i < dim; ++i) {
-        dot += (min_val + delta * sq4::load_code(x, i)) * y[i];
+        dot += (min_val + delta * sq4::get_code(x, i)) * y[i];
     }
     return 1.0f - dot;
 }
@@ -275,8 +275,8 @@ TEST(SQ4Distances, OddDimMatchesReference) {
         // Decode with the exact float min/delta stored in the blobs, then compute in double.
         const float minx = -0.5f, dx = 1.0f / 15, miny = 0.25f, dy = 1.0f / 30;
         for (size_t i = 0; i < dim; ++i) {
-            xd[i] = double(minx) + double(dx) * sq4::load_code(x.data(), i);
-            yd[i] = double(miny) + double(dy) * sq4::load_code(y.data(), i);
+            xd[i] = double(minx) + double(dx) * sq4::get_code(x.data(), i);
+            yd[i] = double(miny) + double(dy) * sq4::get_code(y.data(), i);
         }
         auto check = [](float actual, double ref) {
             EXPECT_NEAR(actual, ref, 1e-4 * std::max(1.0, std::abs(ref)));

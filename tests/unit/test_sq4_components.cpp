@@ -234,7 +234,7 @@ TEST(SQ4Components, OddDimTailNibbleIsZero) {
             EXPECT_EQ((sq4::storage_bytes_count<Metric>(dim)),
                       dim / 2 + dim % 2 + metadata_count * sizeof(float));
             // A single coordinate is a constant range, which encodes as code 0.
-            EXPECT_EQ(sq4::load_code(bytes, dim - 1), dim == 1 ? 0 : 15);
+            EXPECT_EQ(sq4::get_code(bytes, dim - 1), dim == 1 ? 0 : 15);
             if (dim % 2) {
                 EXPECT_EQ(bytes[dim / 2] & 0xf0, 0);
             }
@@ -273,7 +273,7 @@ TEST(SQ4Components, NonFiniteInputEncodesInBounds) {
 
         auto blob = preprocessors->preprocessForStorage(input.data(), dim * sizeof(float));
         for (size_t i = 0; i < dim; ++i) {
-            EXPECT_LE(sq4::load_code(static_cast<const uint8_t *>(blob.get()), i), 15);
+            EXPECT_LE(sq4::get_code(static_cast<const uint8_t *>(blob.get()), i), 15);
         }
 
         // In place, with a sentinel tail: nothing past the stored blob may be written. The input
