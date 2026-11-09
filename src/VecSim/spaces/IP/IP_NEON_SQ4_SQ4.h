@@ -9,7 +9,7 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/sq4.h"
-#include "VecSim/utils/alignment.h"
+#include "VecSim/spaces/quantized_distance_helpers.h"
 #include <arm_neon.h>
 
 namespace {
@@ -43,23 +43,6 @@ constexpr uint64_t SQ4TailNibbleMask(unsigned residual, bool high) {
 // the metadata after the codes, so it must stay at least 8 bytes for both metrics.
 static_assert(vecsim_types::sq4::storage_metadata_count<VecSimMetric_IP>() * sizeof(float) >= 8);
 static_assert(vecsim_types::sq4::storage_metadata_count<VecSimMetric_L2>() * sizeof(float) >= 8);
-
-// The identity above, from the code dot and both operands' stored metadata. Same operation order as
-// the scalar SQ4_SQ4_InnerProduct.
-static inline float SQ4_SQ4_StoredIP(const uint8_t *x, const uint8_t *y, size_t dimension,
-                                     float code_dot) {
-    using vecsim_types::sq4;
-    const auto *params_x = x + sq4::data_bytes_count(dimension);
-    const auto *params_y = y + sq4::data_bytes_count(dimension);
-    const float min_x = load_unaligned<float>(params_x + sq4::MIN_VAL * sizeof(float));
-    const float delta_x = load_unaligned<float>(params_x + sq4::DELTA * sizeof(float));
-    const float sum_x = load_unaligned<float>(params_x + sq4::SUM * sizeof(float));
-    const float min_y = load_unaligned<float>(params_y + sq4::MIN_VAL * sizeof(float));
-    const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
-    const float sum_y = load_unaligned<float>(params_y + sq4::SUM * sizeof(float));
-    return min_x * sum_y + min_y * sum_x - static_cast<float>(dimension) * min_x * min_y +
-           delta_x * delta_y * code_dot;
-}
 
 // Code products of one 8-byte group (16 coordinates), added pairwise into four uint32 lanes. A
 // byte's low and high nibble products are at most 225 each, so their sum fits a uint16 lane.
@@ -110,7 +93,8 @@ float SQ4_SQ4_InnerProductSIMD16_NEON_IMP(const void *pVect1v, const void *pVect
         sum1 = SQ4_SQ4_DotStep_NEON(sum1, x_low, x_high, vld1_u8(y + i / 2));
     }
     const uint32_t code_dot = vaddvq_u32(vaddq_u32(sum0, sum1));
-    return SQ4_SQ4_StoredIP(x, y, dimension, static_cast<float>(code_dot));
+    return spaces::quantized::Stored_InnerProduct_FromCodeDot<vecsim_types::sq4>(
+        x, y, dimension, static_cast<float>(code_dot));
 }
 
 template <unsigned char residual> // 0..15

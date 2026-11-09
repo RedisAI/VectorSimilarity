@@ -9,7 +9,7 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/sq4.h"
-#include "VecSim/utils/alignment.h"
+#include "VecSim/spaces/quantized_distance_helpers.h"
 #include <immintrin.h>
 
 namespace {
@@ -40,23 +40,6 @@ struct SQ4SQ4TailMasks_AVX512F_BW_VL_VNNI {
     static constexpr __mmask64 bytes = (uint64_t(1) << ((residual + 1) / 2)) - 1;
     static constexpr __mmask64 high = (uint64_t(1) << (residual / 2)) - 1;
 };
-
-// The identity above, from the code dot and both operands' stored metadata. Same operation order as
-// the scalar SQ4_SQ4_InnerProduct.
-static inline float SQ4_SQ4_StoredIP_AVX512F_BW_VL_VNNI(const uint8_t *x, const uint8_t *y,
-                                                        size_t dimension, float code_dot) {
-    using vecsim_types::sq4;
-    const auto *params_x = x + sq4::data_bytes_count(dimension);
-    const auto *params_y = y + sq4::data_bytes_count(dimension);
-    const float min_x = load_unaligned<float>(params_x + sq4::MIN_VAL * sizeof(float));
-    const float delta_x = load_unaligned<float>(params_x + sq4::DELTA * sizeof(float));
-    const float sum_x = load_unaligned<float>(params_x + sq4::SUM * sizeof(float));
-    const float min_y = load_unaligned<float>(params_y + sq4::MIN_VAL * sizeof(float));
-    const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
-    const float sum_y = load_unaligned<float>(params_y + sq4::SUM * sizeof(float));
-    return min_x * sum_y + min_y * sum_x - static_cast<float>(dimension) * min_x * min_y +
-           delta_x * delta_y * code_dot;
-}
 
 // Code products of up to 64 packed bytes (128 coordinates): low nibbles into sum_low, high nibbles
 // into sum_high. Codes are 0..15, so vpdpbusd's unsigned-by-signed bytes multiply them exactly.
@@ -111,7 +94,8 @@ float SQ4_SQ4_InnerProductSIMD64_AVX512F_BW_VL_VNNI_IMP(const void *pVect1v, con
     const __m128i s2 = _mm_add_epi32(s4, _mm_srli_si128(s4, 8));
     const __m128i s1 = _mm_add_epi32(s2, _mm_srli_si128(s2, 4));
     const auto code_dot = static_cast<uint32_t>(_mm_cvtsi128_si32(s1));
-    return SQ4_SQ4_StoredIP_AVX512F_BW_VL_VNNI(x, y, dimension, static_cast<float>(code_dot));
+    return spaces::quantized::Stored_InnerProduct_FromCodeDot<vecsim_types::sq4>(
+        x, y, dimension, static_cast<float>(code_dot));
 }
 
 template <unsigned char residual> // 0..63

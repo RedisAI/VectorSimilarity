@@ -130,6 +130,11 @@ dist_func_t<float> L2_SQ4_SQ4_GetDistFunc(size_t dim, unsigned char *alignment,
         return Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI(dim);
     }
 #endif
+#ifdef OPT_AVX2
+    if (features.avx2 && dim >= 64) {
+        return Choose_SQ4_SQ4_L2_implementation_AVX2(dim);
+    }
+#endif
 #endif
     return ret_dist_func;
 }

@@ -9,7 +9,7 @@
 #pragma once
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/types/sq4.h"
-#include "VecSim/utils/alignment.h"
+#include "VecSim/spaces/quantized_distance_helpers.h"
 #include <arm_sve.h>
 
 // SVE.cpp and SVE2.cpp both compile this header, under different -march flags. The
@@ -45,7 +45,6 @@ static inline void InnerProductStepSQ4_SQ4_SVE(const uint8_t *x, const uint8_t *
 // Returns the raw inner product (not the distance); the L2 identity kernels share it.
 template <bool partial_chunk, unsigned char additional_steps>
 float SQ4_SQ4_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v, size_t dimension) {
-    using vecsim_types::sq4;
     const auto *x = static_cast<const uint8_t *>(pVect1v);
     const auto *y = static_cast<const uint8_t *>(pVect2v);
     const size_t vl = svcntb();
@@ -92,17 +91,8 @@ float SQ4_SQ4_InnerProductSIMD_SVE_IMP(const void *pVect1v, const void *pVect2v,
     sum = svadd_u32_x(pg32, sum, sum3);
     const float code_dot = static_cast<float>(svaddv_u32(pg32, sum));
 
-    const auto *params_x = x + sq4::data_bytes_count(dimension);
-    const auto *params_y = y + sq4::data_bytes_count(dimension);
-    const float min_x = load_unaligned<float>(params_x + sq4::MIN_VAL * sizeof(float));
-    const float delta_x = load_unaligned<float>(params_x + sq4::DELTA * sizeof(float));
-    const float sum_x = load_unaligned<float>(params_x + sq4::SUM * sizeof(float));
-    const float min_y = load_unaligned<float>(params_y + sq4::MIN_VAL * sizeof(float));
-    const float delta_y = load_unaligned<float>(params_y + sq4::DELTA * sizeof(float));
-    const float sum_y = load_unaligned<float>(params_y + sq4::SUM * sizeof(float));
-    // Same operation order as the scalar SQ4_SQ4_InnerProduct.
-    return min_x * sum_y + min_y * sum_x - static_cast<float>(dimension) * min_x * min_y +
-           delta_x * delta_y * code_dot;
+    return spaces::quantized::Stored_InnerProduct_FromCodeDot<vecsim_types::sq4>(x, y, dimension,
+                                                                                 code_dot);
 }
 
 template <bool partial_chunk, unsigned char additional_steps>

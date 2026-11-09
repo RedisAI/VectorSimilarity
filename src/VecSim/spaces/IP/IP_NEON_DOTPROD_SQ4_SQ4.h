@@ -8,7 +8,8 @@
  */
 #pragma once
 #include "VecSim/spaces/space_includes.h"
-#include "VecSim/spaces/IP/IP_NEON_SQ4_SQ4.h" // SQ4TailNibbleMask, SQ4_SQ4_StoredIP
+#include "VecSim/spaces/IP/IP_NEON_SQ4_SQ4.h" // SQ4TailNibbleMask
+#include "VecSim/spaces/quantized_distance_helpers.h"
 #include <arm_neon.h>
 
 namespace {
@@ -56,7 +57,8 @@ float SQ4_SQ4_InnerProductSIMD32_NEON_DOTPROD_IMP(const void *pVect1v, const voi
         tail = vdot_u32(tail, x_high, vshr_n_u8(yb, 4));
     }
     const uint32_t code_dot = vaddvq_u32(vaddq_u32(sum0, sum1)) + vaddv_u32(tail);
-    return SQ4_SQ4_StoredIP(x, y, dimension, static_cast<float>(code_dot));
+    return spaces::quantized::Stored_InnerProduct_FromCodeDot<vecsim_types::sq4>(
+        x, y, dimension, static_cast<float>(code_dot));
 }
 
 template <unsigned char residual> // 0..31

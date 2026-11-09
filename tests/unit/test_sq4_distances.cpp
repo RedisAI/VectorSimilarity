@@ -18,6 +18,7 @@
 #include "VecSim/spaces/functions/NEON_DOTPROD.h"
 #include "VecSim/spaces/functions/SVE.h"
 #include "VecSim/spaces/functions/SVE2.h"
+#include "VecSim/spaces/functions/AVX2.h"
 #include "VecSim/spaces/functions/AVX2_FMA.h"
 #include "VecSim/spaces/functions/AVX512F_BW_VL_VNNI.h"
 
@@ -351,7 +352,7 @@ TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
             EXPECT_EQ(direct, fp32);
             EXPECT_EQ(alignment, 0);
         }
-        // SQ4-SQ4 has SIMD kernels on AArch64 and on x86 with AVX512F_BW_VL_VNNI from dim 64 (both
+        // SQ4-SQ4 has SIMD kernels on AArch64 and on x86 with AVX2 or VNNI from dim 64 (both
         // metrics: L2 is the stored-sum identity over the IP code dot), see the SQ4SIMD tests.
         // Elsewhere scalar.
         for (auto metric : {VecSimMetric_IP, VecSimMetric_L2}) {
@@ -364,12 +365,11 @@ TEST(SQ4Distances, DispatchIsScalarWithZeroAlignment) {
             if (dim < 64) {
                 EXPECT_EQ(stored, scalar);
             }
-            // No x86 tier below AVX512F_BW_VL_VNNI: without VNNI both metrics are scalar.
-            auto no_vnni = spaces::getCpuOptimizationFeatures();
-            no_vnni.avx512vnni = 0;
+            // Clearing all CPU features must return scalar even on SIMD-capable hosts.
+            decltype(spaces::getCpuOptimizationFeatures()) no_simd{};
             EXPECT_EQ(metric == VecSimMetric_IP
-                          ? spaces::IP_SQ4_SQ4_GetDistFunc(dim, nullptr, &no_vnni)
-                          : spaces::L2_SQ4_SQ4_GetDistFunc(dim, nullptr, &no_vnni),
+                          ? spaces::IP_SQ4_SQ4_GetDistFunc(dim, nullptr, &no_simd)
+                          : spaces::L2_SQ4_SQ4_GetDistFunc(dim, nullptr, &no_simd),
                       scalar);
 #elif !defined(CPU_FEATURES_ARCH_AARCH64)
             EXPECT_EQ(stored, scalar);
@@ -762,8 +762,7 @@ TEST(SQ4SIMD, ExactBuffersBeforeGuard) {
 // SIMD SQ4-SQ4 tiers, reached through the dispatcher by clearing the feature flags of the tiers
 // above each, and through their choosers directly. The L2 kernels are the stored-sum identity over
 // the integer code dot, so L2 has the same tiers and dispatch minimum as IP, including the NEON dot
-// product tier. On x86 the one tier is AVX512F_BW_VL_VNNI; with any of its features cleared both
-// metrics are scalar.
+// product tier. On x86 AVX512F_BW_VL_VNNI takes precedence over AVX2; AVX2 needs no FMA.
 namespace {
 // Stored-to-stored forms: IP, and the L2 identity ||x||^2 + ||y||^2 - 2 * IP(x, y) over the stored
 // metadata.
@@ -824,6 +823,15 @@ std::vector<SQ4Tier> sq4SQ4Tiers() {
         tiers.push_back({"AVX512F_BW_VL_VNNI", features,
                          spaces::Choose_SQ4_SQ4_IP_implementation_AVX512F_BW_VL_VNNI,
                          spaces::Choose_SQ4_SQ4_L2_implementation_AVX512F_BW_VL_VNNI, 64});
+    }
+#endif
+#ifdef OPT_AVX2
+    if (features.avx2) {
+        // Force the AVX2-only gate, with FMA and every AVX512 flag cleared.
+        Features avx2_only{};
+        avx2_only.avx2 = 1;
+        tiers.push_back({"AVX2", avx2_only, spaces::Choose_SQ4_SQ4_IP_implementation_AVX2,
+                         spaces::Choose_SQ4_SQ4_L2_implementation_AVX2, 64});
     }
 #endif
 #endif
@@ -996,7 +1004,7 @@ TEST(SQ4SIMD, SQ4L2ToleranceRejectsCorruption) { sq4ToleranceRejectsCorruption(S
 // The integer code dot is exact while 225 * dim fits a uint32. Above SQ4_MAX_EXACT_SIMD_DIM the
 // dispatcher hands back the scalar kernel on every tier; at it, the SIMD kernels are still handed
 // out and are exact for all-15 codes, whose total is the largest a uint32 holds.
-// On x86 that total also exceeds INT32_MAX, so it checks that the signed int32 VNNI lanes are
+// On x86 that total also exceeds INT32_MAX, so it checks that the signed int32 SIMD lanes are
 // reduced without signed wrap.
 TEST(SQ4_SQ4, DispatchFallsBackAboveExactDim) {
     constexpr size_t cap = spaces::SQ4_MAX_EXACT_SIMD_DIM;
@@ -1062,7 +1070,7 @@ TEST(SQ4SIMD, SQ4ExactBuffersBeforeGuard) {
         GTEST_SKIP() << "no SIMD SQ4-SQ4 tier on this machine";
     }
     std::vector<size_t> dims;
-    for (size_t dim = 0; dim < 32; ++dim) {
+    for (size_t dim = 0; dim < 128; ++dim) {
         dims.push_back(dim);
     }
     dims.insert(dims.end(), {127u, 128u, 129u, 767u, 768u, 769u, 1536u, 65536u});
@@ -1092,6 +1100,41 @@ TEST(SQ4SIMD, SQ4ExactBuffersBeforeGuard) {
                 EXPECT_NEAR(kernel(gx, gy, dim), expected, tolerance);
                 EXPECT_NEAR(kernel(gy, gx, dim), expected, tolerance);
             }
+        }
+    }
+}
+#endif
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX2)
+TEST(SQ4SIMD, AVX2NibbleProductsAreExact) {
+    if (!spaces::getCpuOptimizationFeatures().avx2) {
+        GTEST_SKIP() << "AVX2 unavailable";
+    }
+    for (size_t dim = 64; dim < 192; ++dim) {
+        SCOPED_TRACE(dim);
+        // All-15 pairs exercise maddubs' largest sum; alternating and asymmetric codes
+        // distinguish low and high nibbles and expose leakage from the 16-bit shift.
+        for (unsigned pattern = 0; pattern < 3; ++pattern) {
+            SCOPED_TRACE(pattern);
+            std::vector<uint8_t> xc(dim), yc(dim);
+            uint64_t dot = 0;
+            for (size_t i = 0; i < dim; ++i) {
+                xc[i] = pattern == 0 ? 15 : (i % 2 ? 15 : 0);
+                yc[i] = pattern < 2 ? 15 : (i % 2 ? 1 : 14);
+                dot += uint64_t(xc[i]) * yc[i];
+            }
+            PackedVector x(xc, 0.0f, 1.0f), y(yc, 0.0f, 1.0f);
+            if (dim % 2) {
+                x.data()[dim / 2] |= 0xf0;
+                y.data()[dim / 2] |= 0xf0;
+            }
+            const float expected_ip = 1.0f - static_cast<float>(dot);
+            const float expected_l2 =
+                referenceDistance(VecSimMetric_L2, x.reconstructed, y.reconstructed);
+            EXPECT_EQ(spaces::Choose_SQ4_SQ4_IP_implementation_AVX2(dim)(x.data(), y.data(), dim),
+                      expected_ip);
+            EXPECT_EQ(spaces::Choose_SQ4_SQ4_L2_implementation_AVX2(dim)(x.data(), y.data(), dim),
+                      expected_l2);
         }
     }
 }
