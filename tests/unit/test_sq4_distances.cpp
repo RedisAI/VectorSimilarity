@@ -13,6 +13,7 @@
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
 #include "VecSim/types/sq4.h"
+#include "VecSim/types/sq8.h"
 
 #include <algorithm>
 #include <bit>
