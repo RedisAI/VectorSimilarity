@@ -48,10 +48,7 @@ dist_func_t<float> L2_SQ4_FP32_GetDistFunc(size_t dim, unsigned char *alignment,
     dist_func_t<float> ret_dist_func = SQ4_FP32_L2Sqr;
     [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
 #ifdef CPU_FEATURES_ARCH_AARCH64
-    // The kernels handle any dim, but below one 16-coordinate chunk scalar is at least as fast.
-    if (dim < 16) {
-        return ret_dist_func;
-    }
+    // The kernels handle any dim: tails read only the codes and the query's floats plus metadata.
 #ifdef OPT_SVE2
     if (features.sve2) {
         return Choose_SQ4_FP32_L2_implementation_SVE2(dim);

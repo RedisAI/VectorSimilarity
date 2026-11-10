@@ -323,12 +323,12 @@ TEST(SQ4Distances, FP32IPEqualsReconstruction) {
 }
 
 namespace {
-// The dispatcher hands out SQ4-FP32 SIMD kernels from this dim up: one 16-coordinate chunk on
-// AArch64, eight coordinates on x86 (as SQ8).
+// The dispatcher hands out SQ4-FP32 SIMD kernels from this dim up: any dim on AArch64, eight
+// coordinates on x86 (as SQ8, for the AVX2 tail's full 8-float query load).
 #ifdef CPU_FEATURES_ARCH_X86_64
 constexpr size_t SQ4_FP32_SIMD_MIN_DIM = 8;
 #else
-constexpr size_t SQ4_FP32_SIMD_MIN_DIM = 16;
+constexpr size_t SQ4_FP32_SIMD_MIN_DIM = 0;
 #endif
 } // namespace
 
