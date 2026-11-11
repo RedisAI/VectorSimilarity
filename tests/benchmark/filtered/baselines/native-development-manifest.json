@@ -1,0 +1,351 @@
+{
+  "date": "2026-11-02",
+  "classification": "development baseline and harness validation; uncontrolled developer workstation, not an algorithm-selection verdict",
+  "source_revision": "2de821bd185805000e871181737bd3be90a58d77",
+  "source_dirty_at_compile": false,
+  "build_type": "Release",
+  "compiler": "GCC 13.3.0",
+  "cpu_features_version": "v0.10.1",
+  "use_svs": false,
+  "construction": {
+    "m": 16,
+    "ef_construction": 200,
+    "insertion_order": "ascending_external_id"
+  },
+  "search": {
+    "batch_size": 10,
+    "repeats": 3,
+    "timeout_ms": 10000,
+    "concurrency": 1,
+    "cache_preparation": "none; policy order rotates by repeat"
+  },
+  "host_cpu": {
+    "lscpu": [
+      {
+        "field": "Architecture:",
+        "data": "x86_64"
+      },
+      {
+        "field": "CPU op-mode(s):",
+        "data": "32-bit, 64-bit"
+      },
+      {
+        "field": "Address sizes:",
+        "data": "46 bits physical, 48 bits virtual"
+      },
+      {
+        "field": "Byte Order:",
+        "data": "Little Endian"
+      },
+      {
+        "field": "CPU(s):",
+        "data": "14"
+      },
+      {
+        "field": "On-line CPU(s) list:",
+        "data": "0-13"
+      },
+      {
+        "field": "Vendor ID:",
+        "data": "GenuineIntel"
+      },
+      {
+        "field": "Model name:",
+        "data": "Intel(R) Core(TM) Ultra 7 155U"
+      },
+      {
+        "field": "CPU family:",
+        "data": "6"
+      },
+      {
+        "field": "Model:",
+        "data": "170"
+      },
+      {
+        "field": "Thread(s) per core:",
+        "data": "2"
+      },
+      {
+        "field": "Core(s) per socket:",
+        "data": "12"
+      },
+      {
+        "field": "Socket(s):",
+        "data": "1"
+      },
+      {
+        "field": "Stepping:",
+        "data": "4"
+      },
+      {
+        "field": "CPU(s) scaling MHz:",
+        "data": "85%"
+      },
+      {
+        "field": "CPU max MHz:",
+        "data": "4800.0000"
+      },
+      {
+        "field": "CPU min MHz:",
+        "data": "400.0000"
+      },
+      {
+        "field": "BogoMIPS:",
+        "data": "5376.00"
+      },
+      {
+        "field": "Flags:",
+        "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt clwb intel_pt sha_ni xsaveopt xsavec xgetbv1 xsaves split_lock_detect user_shstk avx_vnni dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req hfi vnmi umip pku ospke waitpkg gfni vaes vpclmulqdq rdpid bus_lock_detect movdiri movdir64b fsrm md_clear serialize arch_lbr ibt flush_l1d arch_capabilities"
+      },
+      {
+        "field": "Virtualization:",
+        "data": "VT-x"
+      },
+      {
+        "field": "L1d cache:",
+        "data": "352 KiB (10 instances)"
+      },
+      {
+        "field": "L1i cache:",
+        "data": "640 KiB (10 instances)"
+      },
+      {
+        "field": "L2 cache:",
+        "data": "10 MiB (5 instances)"
+      },
+      {
+        "field": "L3 cache:",
+        "data": "12 MiB (1 instance)"
+      },
+      {
+        "field": "NUMA node(s):",
+        "data": "1"
+      },
+      {
+        "field": "NUMA node0 CPU(s):",
+        "data": "0-13"
+      },
+      {
+        "field": "Vulnerability Gather data sampling:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Ghostwrite:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Indirect target selection:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Itlb multihit:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability L1tf:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Mds:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Meltdown:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Mmio stale data:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Old microcode:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Reg file data sampling:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Retbleed:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Spec rstack overflow:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Spec store bypass:",
+        "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+      },
+      {
+        "field": "Vulnerability Spectre v1:",
+        "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+      },
+      {
+        "field": "Vulnerability Spectre v2:",
+        "data": "Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS Not affected; BHI BHI_DIS_S"
+      },
+      {
+        "field": "Vulnerability Srbds:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Tsa:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Tsx async abort:",
+        "data": "Not affected"
+      },
+      {
+        "field": "Vulnerability Vmscape:",
+        "data": "Mitigation; IBPB before exit to userspace"
+      }
+    ]
+  },
+  "source_download": {
+    "schema_version": 1,
+    "dataset": "dbpedia-1m",
+    "dtype": "<f4",
+    "dimensions": 768,
+    "metric": "cosine",
+    "source": "dbpedia-http-range-docs0:100000-queries0:32",
+    "query_split": "development",
+    "vectors": {
+      "url": "https://s3.eu-west-1.amazonaws.com/dev.cto.redis/VectorSimilarity/dbpedia-cosine-dim768-1M-vectors.raw",
+      "source_rows": 1000000,
+      "source_bytes": 3072000000,
+      "row_start": 0,
+      "row_stop": 100000,
+      "content_range": "bytes 0-307199999/3072000000",
+      "etag": "\"fd480edc8cfc217e0ff9501b071e2a66-367\"",
+      "s3_version_id": "dW6Fp5Z7UM_05fNyeviNZ3o89Enl9wll",
+      "last_modified": "Mon, 03 Nov 2025 16:13:39 GMT",
+      "bytes": 307200000,
+      "file": "dbpedia-base-100k.raw",
+      "sha256": "11a98a0c309caa2eb832a1726e82e4b47d485c4add465d5bcd52eaa978ba2852",
+      "validation": "Exact bytes, all finite FP32, no zero cosine vectors"
+    },
+    "queries": {
+      "url": "https://s3.eu-west-1.amazonaws.com/dev.cto.redis/VectorSimilarity/dbpedia-cosine-dim768-test_vectors.raw",
+      "source_rows": 10000,
+      "source_bytes": 30720000,
+      "row_start": 0,
+      "row_stop": 32,
+      "content_range": "bytes 0-98303/30720000",
+      "etag": "\"663e755607aec064b90a3bfb2bf47ab3-2\"",
+      "s3_version_id": "qeEmVtcr8dJ4s8psU3W0s8pfMQeUKwoE",
+      "last_modified": "Tue, 27 Jun 2023 15:46:49 GMT",
+      "bytes": 98304,
+      "file": "dbpedia-queries-32.raw",
+      "sha256": "853e754189ccc2d38dae4c568127cbdb7d78a00e29fb07a1198f90f5561d4f6b",
+      "validation": "Exact bytes, all finite FP32, no zero cosine vectors"
+    },
+    "download_method": "curl range GET with If-Match from prior HEAD; response version IDs match HEAD; full headers retained",
+    "note": "Importer row numbers refer to these subset files; original row intervals recorded here."
+  },
+  "runs": [
+    {
+      "dataset": "smoke",
+      "ef_runtime": 200,
+      "bundle_id": "bcc89f55799bf32ba0a9c132006ae58a1a130eef6eddc33ad7c4d85c5f2fe50d",
+      "graph_sha256": "13f7ed93042fb2bcd8b22bdbfff9a739bb681e99bb7d3acd055a92f2c8c147ac",
+      "binary_sha256": "eb67c3dbd45352ed77ca3fc917d09f6fe9864392aeffe3c6a4cde865a1028932",
+      "results_sha256": "a259d9b09aa8b9db069c5cee6fbc6845ffd639f1e0b3a4779d8ccf5375147ac4",
+      "report_sha256": "5ad12333d8439fab5f688f6670171f661be0207f4fede15bdee35ba935dee91f",
+      "result_count": 1470,
+      "failure_count": 0,
+      "incomplete_count": 0,
+      "raw_local_directory": "/tmp/mod20221/native-smoke-ef200",
+      "archived_directory": "/home/omer-lerman/Code/RediSearch/.worktree/mod20221-benchmark-artifacts/native-smoke-ef200"
+    },
+    {
+      "dataset": "dbpedia",
+      "ef_runtime": 10,
+      "bundle_id": "ab5ea7cb082fff7f73f75b56786e129851df4d4e06c4a9573b4bca13c8be44f1",
+      "graph_sha256": "a9dabcd1d8cb05dd41fb2648da502cfad496983f73ea130d5b89ef5d06f96ffc",
+      "binary_sha256": "eb67c3dbd45352ed77ca3fc917d09f6fe9864392aeffe3c6a4cde865a1028932",
+      "results_sha256": "3993c6eaeda1cd3631e22757468ab5b7fee6ab624982b30836e21f0b4bc65b64",
+      "report_sha256": "2cb39a9212d80b85e48fb1c7210fc2b2ddf5fd4c776bdfa2dc063bb3319eeff5",
+      "result_count": 1662,
+      "failure_count": 0,
+      "incomplete_count": 0,
+      "raw_local_directory": "/tmp/mod20221/native-dbpedia-ef10",
+      "archived_directory": "/home/omer-lerman/Code/RediSearch/.worktree/mod20221-benchmark-artifacts/native-dbpedia-ef10"
+    },
+    {
+      "dataset": "dbpedia",
+      "ef_runtime": 50,
+      "bundle_id": "ab5ea7cb082fff7f73f75b56786e129851df4d4e06c4a9573b4bca13c8be44f1",
+      "graph_sha256": "a9dabcd1d8cb05dd41fb2648da502cfad496983f73ea130d5b89ef5d06f96ffc",
+      "binary_sha256": "eb67c3dbd45352ed77ca3fc917d09f6fe9864392aeffe3c6a4cde865a1028932",
+      "results_sha256": "b9b9ff19de4cd866b695688eb826454d9353f4542acaa735f57ab1f4dc25c294",
+      "report_sha256": "8e308ddd21446243150df311b55dda47204f06c9a020897ec9787be510177131",
+      "result_count": 1662,
+      "failure_count": 0,
+      "incomplete_count": 0,
+      "raw_local_directory": "/tmp/mod20221/native-dbpedia-ef50",
+      "archived_directory": "/home/omer-lerman/Code/RediSearch/.worktree/mod20221-benchmark-artifacts/native-dbpedia-ef50"
+    },
+    {
+      "dataset": "dbpedia",
+      "ef_runtime": 100,
+      "bundle_id": "ab5ea7cb082fff7f73f75b56786e129851df4d4e06c4a9573b4bca13c8be44f1",
+      "graph_sha256": "a9dabcd1d8cb05dd41fb2648da502cfad496983f73ea130d5b89ef5d06f96ffc",
+      "binary_sha256": "eb67c3dbd45352ed77ca3fc917d09f6fe9864392aeffe3c6a4cde865a1028932",
+      "results_sha256": "583e6d71b51fd0d2e874909e4a7aa706b94bf125e8d1ec9f1ce951b8ed7afa3e",
+      "report_sha256": "02687d9f9266a821827a5951c9d5abf603956ea1b44548dc68690188240a5340",
+      "result_count": 1662,
+      "failure_count": 0,
+      "incomplete_count": 0,
+      "raw_local_directory": "/tmp/mod20221/native-dbpedia-ef100",
+      "archived_directory": "/home/omer-lerman/Code/RediSearch/.worktree/mod20221-benchmark-artifacts/native-dbpedia-ef100"
+    },
+    {
+      "dataset": "dbpedia",
+      "ef_runtime": 200,
+      "bundle_id": "ab5ea7cb082fff7f73f75b56786e129851df4d4e06c4a9573b4bca13c8be44f1",
+      "graph_sha256": "a9dabcd1d8cb05dd41fb2648da502cfad496983f73ea130d5b89ef5d06f96ffc",
+      "binary_sha256": "eb67c3dbd45352ed77ca3fc917d09f6fe9864392aeffe3c6a4cde865a1028932",
+      "results_sha256": "2a1d7fdd8737038d18dc495ded6059693f76404fe072ef6f883dfc5d9c894b21",
+      "report_sha256": "06c77bb83132733175b9d94e05796bea27bc00a22d76b260a8727269bae50897",
+      "result_count": 1662,
+      "failure_count": 0,
+      "incomplete_count": 0,
+      "raw_local_directory": "/tmp/mod20221/native-dbpedia-ef200",
+      "archived_directory": "/home/omer-lerman/Code/RediSearch/.worktree/mod20221-benchmark-artifacts/native-dbpedia-ef200"
+    }
+  ],
+  "builds": {
+    "smoke": {
+      "build_ms": 1283.435737,
+      "build_type": "Release",
+      "compiler": "13.3.0",
+      "index_bytes": 8328884,
+      "serialization_ms": 6.17231,
+      "shared_memory_bytes": 0,
+      "source_dirty": false,
+      "source_revision": "2de821bd185805000e871181737bd3be90a58d77",
+      "write_mode": "in_place"
+    },
+    "dbpedia": {
+      "build_ms": 54218.19451,
+      "build_type": "Release",
+      "compiler": "13.3.0",
+      "index_bytes": 339133536,
+      "serialization_ms": 165.98097,
+      "shared_memory_bytes": 0,
+      "source_dirty": false,
+      "source_revision": "2de821bd185805000e871181737bd3be90a58d77",
+      "write_mode": "in_place"
+    }
+  },
+  "timeout_negative_check": {
+    "status": "completed_with_failures",
+    "result_count": 277,
+    "failure_count": 112,
+    "incomplete_count": 112
+  },
+  "raw_artifacts_note": "Full frozen bundles, graph snapshots, the measured binary and raw runs are preserved at local_archive_root. The original measurement paths under /tmp/mod20221 remain in run metadata. Only this manifest and cohort CSV are published in Git.",
+  "local_archive_root": "/home/omer-lerman/Code/RediSearch/.worktree/mod20221-benchmark-artifacts"
+}
