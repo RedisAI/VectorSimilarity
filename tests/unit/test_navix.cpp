@@ -130,8 +130,6 @@ TEST(Navix, CachesBothDecisionsAcrossBatchesAndInvalidatesOnReset) {
         EXPECT_EQ(f.stats.filterRejected, 3u);
 
         VecSimBatchIterator_Reset(it);
-        f.allowed.erase(labelBase + f.node(3));
-        f.accept(1);
         EXPECT_EQ(f.drain(it), f.allowed);
         for (const auto &[label, calls] : f.filter_calls)
             EXPECT_EQ(calls, 2u) << label;
@@ -153,6 +151,37 @@ TEST(Navix, FilterCacheIsLocalToEachIterator) {
         EXPECT_EQ(calls, 2u) << label;
     VecSimBatchIterator_Free(first);
     VecSimBatchIterator_Free(second);
+}
+
+TEST(Navix, FilterCacheGrowsForNewBackendNodes) {
+    Fixture f;
+    f.sparseGraph();
+    const auto new_id = f.graph->indexSize();
+    f.allowed.insert(labelBase + new_id);
+    auto *it = f.iterator();
+    auto *reply = VecSimBatchIterator_Next(it, 1, BY_ID);
+    ASSERT_EQ(reply->results.size(), 1u);
+    const auto first_label = reply->results[0].id;
+    VecSimQueryReply_Free(reply);
+
+    const auto capacity = f.graph->indexCapacity();
+    VecSimIndex_AddVector(f.index, &f.query, labelBase + new_id);
+    EXPECT_EQ(f.graph->indexCapacity(), capacity);
+    // Simulate an appended migration becoming reachable from the saved frontier.
+    for (idType id = 0; id < f.graph->indexSize(); ++id)
+        f.graph->getElementLevelData(id, 0).numLinks = 0;
+    for (auto label : f.allowed) {
+        if (label == first_label || label == labelBase + new_id)
+            continue;
+        auto &links = f.graph->getElementLevelData(label - labelBase, 0);
+        links.links[0] = new_id;
+        links.numLinks = 1;
+    }
+    auto expected = f.allowed;
+    expected.erase(first_label);
+    EXPECT_EQ(f.drain(it), expected);
+    EXPECT_EQ(f.filter_calls[labelBase + new_id], 1u);
+    VecSimBatchIterator_Free(it);
 }
 
 TEST(Navix, TimeoutInsideSecondHopThenReset) {

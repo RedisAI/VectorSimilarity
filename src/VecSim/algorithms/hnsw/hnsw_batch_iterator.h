@@ -110,9 +110,9 @@ template <typename DataType, typename DistType>
 bool HNSW_BatchIterator<DataType, DistType>::navixMayMatch(idType id) {
     if (index->isMarkedDeleted(id))
         return false;
-    // The NaviX contract keeps internal IDs and the filter stable until reset.
-    if (navix_filter_cache.empty())
-        navix_filter_cache.resize(index->indexSize(), NavixMatch::Unknown);
+    // Grow from the encountered ID: tiered migration can change indexSize concurrently.
+    if (id >= navix_filter_cache.size())
+        navix_filter_cache.resize(size_t(id) + 1, NavixMatch::Unknown);
     auto &cached = navix_filter_cache[id];
     if (cached != NavixMatch::Unknown)
         return cached == NavixMatch::Maybe;

@@ -25,10 +25,12 @@ conservative eligibility. It is not the paper's exact membership-set implementat
   rejected initial seed can navigate without tightening the result bound.
 - Retain the frontier/extras/visited list across batches. Bound ties remain on the
   frontier for the next batch so equal-distance candidates are not silently dropped.
-- Cache NO/MAYBE callback decisions by internal ID across batches. The cache allocates
-  one byte per graph node on the first check (about 1 MB for one million nodes), using
-  the iterator allocator. Reset invalidates decisions and retains capacity for reuse;
-  freeing the iterator releases the cache. Ordinary HNSW queries do not allocate it.
+- Cache NO/MAYBE callback decisions by internal ID across batches. The cache grows
+  through the highest checked ID using the iterator allocator: one byte per ID slot,
+  plus vector capacity slack (one million slots hold 1 MB of decisions). Reset invalidates
+  decisions and retains capacity for reuse; freeing the iterator releases the cache.
+  Ordinary HNSW queries do not allocate it. New backend nodes from background migration
+  are handled without reading the concurrently changing index size.
 - Reuse O(D) scratch space, copy one adjacency list under one node lock, and poll
   the query timeout in both hops. There is no membership bitmap, extra seed,
   disconnected-component recovery, or fallback scan.
@@ -46,4 +48,4 @@ unquantized, single-value FLOAT32 RAM HNSW.
 
 `test_navix` covers rejected seeds/branches, shared second-hop nodes, equal-distance
 batch continuation, strategy selection, timeout/reset, frontend filtering/reset, cached
-NO/MAYBE decisions, reset invalidation, and isolation between query iterators.
+NO/MAYBE decisions, reset invalidation, isolation between query iterators, and backend growth.
