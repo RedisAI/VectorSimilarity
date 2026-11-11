@@ -10,6 +10,7 @@
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/query_result_definitions.h"
+#include <map>
 #include <set>
 
 namespace {
@@ -20,6 +21,7 @@ struct Fixture {
     HNSWIndex<float, float> *graph;
     idType seed;
     std::set<size_t> allowed;
+    std::map<size_t, size_t> filter_calls;
     VecSimNavixStats stats{};
     VecSimQueryParams params{};
     float query = 0;
@@ -42,7 +44,9 @@ struct Fixture {
             graph->getElementLevelData(i, 0).numLinks = 0;
         params.hnswRuntimeParams.efRuntime = 1;
         params.navix = {[](void *ctx, size_t label) {
-                            return static_cast<Fixture *>(ctx)->allowed.contains(label) ? 1 : 0;
+                            auto *fixture = static_cast<Fixture *>(ctx);
+                            ++fixture->filter_calls[label];
+                            return fixture->allowed.contains(label) ? 1 : 0;
                         },
                         this, &stats, false};
     }
@@ -110,6 +114,45 @@ TEST(Navix, AdaptiveModesAndNoMatches) {
             EXPECT_GT(f.stats.oneHopExpansions, 0u);
         VecSimBatchIterator_Free(it);
     }
+}
+
+TEST(Navix, CachesBothDecisionsAcrossBatchesAndInvalidatesOnReset) {
+    for (bool blind : {false, true}) {
+        Fixture f;
+        f.sparseGraph();
+        f.params.navix.forceBlind = blind;
+        auto *it = f.iterator();
+        EXPECT_EQ(f.drain(it), f.allowed);
+        EXPECT_EQ(f.filter_calls.size(), 5u);
+        for (const auto &[label, calls] : f.filter_calls)
+            EXPECT_EQ(calls, 1u) << label;
+        EXPECT_EQ(f.stats.filterChecks, 5u);
+        EXPECT_EQ(f.stats.filterRejected, 3u);
+
+        VecSimBatchIterator_Reset(it);
+        f.allowed.erase(labelBase + f.node(3));
+        f.accept(1);
+        EXPECT_EQ(f.drain(it), f.allowed);
+        for (const auto &[label, calls] : f.filter_calls)
+            EXPECT_EQ(calls, 2u) << label;
+        EXPECT_EQ(f.stats.filterChecks, 10u);
+        EXPECT_EQ(f.stats.filterRejected, 6u);
+        VecSimBatchIterator_Free(it);
+    }
+}
+
+TEST(Navix, FilterCacheIsLocalToEachIterator) {
+    Fixture f;
+    f.sparseGraph();
+    auto *first = f.iterator();
+    auto *second = f.iterator();
+    EXPECT_EQ(f.drain(first), f.allowed);
+    EXPECT_EQ(f.drain(second), f.allowed);
+    EXPECT_EQ(f.filter_calls.size(), 5u);
+    for (const auto &[label, calls] : f.filter_calls)
+        EXPECT_EQ(calls, 2u) << label;
+    VecSimBatchIterator_Free(first);
+    VecSimBatchIterator_Free(second);
 }
 
 TEST(Navix, TimeoutInsideSecondHopThenReset) {
