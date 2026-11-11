@@ -29,6 +29,7 @@ protected:
     bool scores_ready = false;
     size_t index_label_count; // number of labels in the index when calculating the scores,
                               // which is the only time we access the index.
+    size_t unfiltered_label_count; // Captured under the same guard as score calculation.
     vecsim_stl::vector<pair<DistType, labelType>> scores; // vector of scores for every label.
     size_t scores_valid_start_pos; // the first index in the scores vector that contains a vector
                                    // that hasn't been returned already.
@@ -172,8 +173,8 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
     void *query_vector, const BruteForceIndex<DataType, DistType> *bf_index,
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
-      index(bf_index), index_label_count(index->indexLabelCount()), scores(allocator),
-      scores_valid_start_pos(0) {
+      index(bf_index), index_label_count(index->indexLabelCount()),
+      unfiltered_label_count(index_label_count), scores(allocator), scores_valid_start_pos(0) {
     if (queryParams)
         navix = queryParams->navix;
 }
@@ -193,6 +194,7 @@ BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryRe
             return new VecSimQueryReply(this->allocator, rc);
         }
         this->scores_ready = true;
+        this->unfiltered_label_count = this->index_label_count;
         this->index_label_count = this->scores.size();
     }
     if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
@@ -218,7 +220,7 @@ template <typename DataType, typename DistType>
 void BF_BatchIterator<DataType, DistType>::reset() {
     this->scores.clear();
     this->scores_ready = false;
-    this->index_label_count = this->index->indexLabelCount();
+    this->index_label_count = this->unfiltered_label_count;
     this->resetResultsCount();
     this->scores_valid_start_pos = 0;
 }

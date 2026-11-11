@@ -155,5 +155,16 @@ TEST(Navix, FlatFrontendFiltersAndResets) {
     }
     EXPECT_EQ(stats.frontendCandidates, 2u);
     VecSimBatchIterator_Free(it);
+    params.navix.mayMatch = [](void *, size_t) { return 0; };
+    it = VecSimBatchIterator_New(index, &query, &params);
+    for (size_t repeat = 0; repeat < 2; ++repeat) {
+        EXPECT_TRUE(VecSimBatchIterator_HasNext(it));
+        auto *reply = VecSimBatchIterator_Next(it, 3, BY_ID);
+        EXPECT_TRUE(reply->results.empty());
+        VecSimQueryReply_Free(reply);
+        EXPECT_FALSE(VecSimBatchIterator_HasNext(it));
+        VecSimBatchIterator_Reset(it);
+    }
+    VecSimBatchIterator_Free(it);
     VecSimIndex_Free(index);
 }
