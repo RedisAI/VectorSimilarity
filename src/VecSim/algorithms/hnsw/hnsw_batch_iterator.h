@@ -33,6 +33,8 @@ protected:
     using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, Identifier>;
 
     VecSimNavixParams navix{};
+    enum class NavixMatch : uint8_t { Unknown, No, Maybe };
+    vecsim_stl::vector<NavixMatch> navix_filter_cache;
     vecsim_stl::vector<idType> navix_direct, navix_second;
     vecsim_stl::vector<uint8_t> navix_matches;
     vecsim_stl::vector<std::pair<DistType, idType>> navix_branches;
@@ -83,9 +85,10 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
     std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
-      index(index), depleted(false), navix_direct(this->allocator), navix_second(this->allocator),
-      navix_matches(this->allocator), navix_branches(this->allocator),
-      top_candidates_extras(this->allocator), candidates(this->allocator) {
+      index(index), depleted(false), navix_filter_cache(this->allocator),
+      navix_direct(this->allocator), navix_second(this->allocator), navix_matches(this->allocator),
+      navix_branches(this->allocator), top_candidates_extras(this->allocator),
+      candidates(this->allocator) {
 
     if (queryParams)
         navix = queryParams->navix;
@@ -107,9 +110,16 @@ template <typename DataType, typename DistType>
 bool HNSW_BatchIterator<DataType, DistType>::navixMayMatch(idType id) {
     if (index->isMarkedDeleted(id))
         return false;
+    // Grow from the encountered ID: tiered migration can change indexSize concurrently.
+    if (id >= navix_filter_cache.size())
+        navix_filter_cache.resize(size_t(id) + 1, NavixMatch::Unknown);
+    auto &cached = navix_filter_cache[id];
+    if (cached != NavixMatch::Unknown)
+        return cached == NavixMatch::Maybe;
     if (navix.stats)
         ++navix.stats->filterChecks;
     bool pass = navix.mayMatch(navix.context, index->getExternalLabel(id)) != 0;
+    cached = pass ? NavixMatch::Maybe : NavixMatch::No;
     if (!pass && navix.stats)
         ++navix.stats->filterRejected;
     return pass;
@@ -397,6 +407,7 @@ template <typename DataType, typename DistType>
 void HNSW_BatchIterator<DataType, DistType>::reset() {
     this->resetResultsCount();
     this->depleted = false;
+    navix_filter_cache.clear();
 
     // Reset the visited nodes handler.
     this->visited_tag = this->visited_list->getFreshTag();

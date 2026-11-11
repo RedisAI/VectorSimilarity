@@ -25,6 +25,12 @@ conservative eligibility. It is not the paper's exact membership-set implementat
   rejected initial seed can navigate without tightening the result bound.
 - Retain the frontier/extras/visited list across batches. Bound ties remain on the
   frontier for the next batch so equal-distance candidates are not silently dropped.
+- Cache NO/MAYBE callback decisions by internal ID across batches. The cache grows
+  through the highest checked ID using the iterator allocator: one byte per ID slot,
+  plus vector capacity slack (one million slots hold 1 MB of decisions). Reset invalidates
+  decisions and retains capacity for reuse; freeing the iterator releases the cache.
+  Ordinary HNSW queries do not allocate it. New backend nodes from background migration
+  are handled without reading the concurrently changing index size.
 - Reuse O(D) scratch space, copy one adjacency list under one node lock, and poll
   the query timeout in both hops. There is no membership bitmap, extra seed,
   disconnected-component recovery, or fallback scan.
@@ -34,10 +40,12 @@ fail it. Exhaustion can return fewer than k, even when more eligible documents e
 Increasing ef cannot repair all disconnected filtered neighborhoods.
 
 The tiered brute-force frontend applies the same callback before scoring. Counters cover
-base-layer expansion and frontend scoring; distance counts exclude upper-layer descent
+base-layer expansion and frontend scoring. HNSW filter checks/rejections count actual
+callback evaluations, excluding cache hits; distance counts exclude upper-layer descent
 and the initial seed distance. Counters accumulate across calls and resets. Top-k and
 range APIs do not activate this POC; use the batch API. The integration validates only
 unquantized, single-value FLOAT32 RAM HNSW.
 
 `test_navix` covers rejected seeds/branches, shared second-hop nodes, equal-distance
-batch continuation, strategy selection, timeout/reset, and frontend filtering/reset.
+batch continuation, strategy selection, timeout/reset, frontend filtering/reset, cached
+NO/MAYBE decisions, reset invalidation, isolation between query iterators, and backend growth.
