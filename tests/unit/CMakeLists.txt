@@ -50,6 +50,9 @@ add_executable(test_uint8 ../utils/test_main_with_timeout.cpp ../utils/mock_thre
 add_executable(test_index_test_utils ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_index_test_utils.cpp unit_test_utils.cpp)
 add_executable(test_svs ../utils/test_main_with_timeout.cpp ../utils/mock_thread_pool.cpp test_svs.cpp test_svs_tiered.cpp test_svs_multi.cpp test_svs_fp16.cpp test_svs_threadpool.cpp unit_test_utils.cpp)
 
+add_executable(test_navix ../utils/test_main_with_timeout.cpp test_navix.cpp)
+target_link_libraries(test_navix PUBLIC gtest VectorSimilarity)
+
 target_link_libraries(test_hnsw PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_hnsw_sq8 PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_hnsw_sq4 PUBLIC gtest VectorSimilarity)
@@ -67,6 +70,8 @@ target_link_libraries(test_index_test_utils PUBLIC gtest VectorSimilarity)
 target_link_libraries(test_svs PUBLIC gtest VectorSimilarity)
 
 include(GoogleTest)
+
+gtest_discover_tests(test_navix)
 
 gtest_discover_tests(test_hnsw)
 gtest_discover_tests(test_hnsw_sq8)

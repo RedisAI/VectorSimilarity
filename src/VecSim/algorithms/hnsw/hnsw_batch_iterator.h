@@ -32,6 +32,16 @@ protected:
     template <typename Identifier>
     using candidatesMinHeap = vecsim_stl::min_priority_queue<DistType, Identifier>;
 
+    VecSimNavixParams navix{};
+    vecsim_stl::vector<idType> navix_direct, navix_second;
+    vecsim_stl::vector<uint8_t> navix_matches;
+    vecsim_stl::vector<std::pair<DistType, idType>> navix_branches;
+    bool navixMayMatch(idType id);
+    DistType navixDistance(idType id);
+    void navixLinks(idType id, vecsim_stl::vector<idType> &out);
+    VecSimQueryReply_Code expandNavix(idType id);
+    VecSimQueryReply_Code scanNavix(candidatesLabelsMaxHeap<DistType> *top_candidates);
+
     DistType lower_bound;
     candidatesMinHeap<labelType> top_candidates_extras;
     candidatesMinHeap<idType> candidates;
@@ -73,9 +83,12 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
     std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
-      index(index), depleted(false), top_candidates_extras(this->allocator),
-      candidates(this->allocator) {
+      index(index), depleted(false), navix_direct(this->allocator), navix_second(this->allocator),
+      navix_matches(this->allocator), navix_branches(this->allocator),
+      top_candidates_extras(this->allocator), candidates(this->allocator) {
 
+    if (queryParams)
+        navix = queryParams->navix;
     this->entry_point = INVALID_ID; // temporary until we store the entry point to level 0.
     // Use "fresh" tag to mark nodes that were visited along the search in some iteration.
     this->visited_list = index->getVisitedList();
@@ -91,8 +104,133 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
 /******************** Implementation **************/
 
 template <typename DataType, typename DistType>
+bool HNSW_BatchIterator<DataType, DistType>::navixMayMatch(idType id) {
+    if (index->isMarkedDeleted(id))
+        return false;
+    if (navix.stats)
+        ++navix.stats->filterChecks;
+    bool pass = navix.mayMatch(navix.context, index->getExternalLabel(id)) != 0;
+    if (!pass && navix.stats)
+        ++navix.stats->filterRejected;
+    return pass;
+}
+
+template <typename DataType, typename DistType>
+DistType HNSW_BatchIterator<DataType, DistType>::navixDistance(idType id) {
+    if (navix.stats)
+        ++navix.stats->distanceComputations;
+    return index->calcDistanceForQuery(index->getDataByInternalId(id), this->getQueryBlob());
+}
+
+template <typename DataType, typename DistType>
+void HNSW_BatchIterator<DataType, DistType>::navixLinks(idType id,
+                                                        vecsim_stl::vector<idType> &out) {
+    // RAM HNSW's base-layer degree is bounded by 2*M. Allocate before locking;
+    // neither a callback nor a second adjacency lock runs under this node lock.
+    out.resize(2 * index->getM());
+    index->lockNodeLinks(id);
+    const auto &links = index->getElementLevelData(id, 0);
+    assert(links.numLinks <= out.size());
+    const auto count = links.numLinks;
+    std::copy_n(links.links, count, out.begin());
+    index->unlockNodeLinks(id);
+    out.resize(count);
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::expandNavix(idType id) {
+    navixLinks(id, navix_direct);
+    navix_matches.resize(navix_direct.size());
+    size_t passing = 0;
+    for (size_t i = 0; i < navix_direct.size(); ++i) {
+        if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
+            return VecSim_QueryReply_TimedOut;
+        passing += (navix_matches[i] = navixMayMatch(navix_direct[i]));
+    }
+    const size_t degree = 2 * index->getM();
+    const double fraction = navix_direct.empty() ? 0.0 : double(passing) / navix_direct.size();
+    const bool onehop = !navix.forceBlind && fraction > 0.5;
+    const bool directed =
+        !onehop && !navix.forceBlind && fraction * double(degree) * (degree + 1) >= 3.0 * degree;
+    if (navix.stats) {
+        ++navix.stats->expandedNodes;
+        if (onehop)
+            ++navix.stats->oneHopExpansions;
+        else if (directed)
+            ++navix.stats->directedExpansions;
+        else
+            ++navix.stats->blindExpansions;
+    }
+
+    size_t admitted = 0;
+    navix_branches.clear();
+    for (size_t i = 0; i < navix_direct.size(); ++i) {
+        if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
+            return VecSim_QueryReply_TimedOut;
+        idType neighbor = navix_direct[i];
+        const bool enqueue = navix_matches[i] && !hasVisitedNode(neighbor);
+        // Directed expansion orders even rejected branches; reuse this score on admission.
+        DistType distance = (directed || enqueue) ? navixDistance(neighbor) : 0;
+        if (directed)
+            navix_branches.emplace_back(distance, neighbor);
+        if (enqueue) {
+            visitNode(neighbor);
+            candidates.emplace(distance, neighbor);
+            ++admitted;
+        }
+    }
+    if (onehop || admitted >= degree)
+        return VecSim_QueryReply_OK;
+    if (directed)
+        std::sort(navix_branches.begin(), navix_branches.end());
+
+    for (size_t i = 0; i < navix_direct.size() && admitted < degree; ++i) {
+        if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
+            return VecSim_QueryReply_TimedOut;
+        const idType branch = directed ? navix_branches[i].second : navix_direct[i];
+        navixLinks(branch, navix_second);
+        for (idType neighbor : navix_second) {
+            if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
+                return VecSim_QueryReply_TimedOut;
+            if (navix.stats)
+                ++navix.stats->secondHopVisits;
+            if (hasVisitedNode(neighbor) || !navixMayMatch(neighbor))
+                continue;
+            visitNode(neighbor);
+            candidates.emplace(navixDistance(neighbor), neighbor);
+            if (++admitted == degree)
+                break;
+        }
+    }
+    return VecSim_QueryReply_OK;
+}
+
+template <typename DataType, typename DistType>
+VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanNavix(
+    candidatesLabelsMaxHeap<DistType> *top_candidates) {
+    while (!candidates.empty()) {
+        auto [distance, id] = candidates.top();
+        // Leave bound ties on the frontier for the next batch.
+        if (distance >= this->lower_bound && top_candidates->size() >= this->ef)
+            break;
+        if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
+            return VecSim_QueryReply_TimedOut;
+        candidates.pop();
+        // A rejected entry point may navigate, but cannot tighten the result bound.
+        if (navixMayMatch(id))
+            updateHeaps(top_candidates, distance, id);
+        auto code = expandNavix(id);
+        if (code != VecSim_QueryReply_OK)
+            return code;
+    }
+    return VecSim_QueryReply_OK;
+}
+
+template <typename DataType, typename DistType>
 VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanGraphInternal(
     candidatesLabelsMaxHeap<DistType> *top_candidates) {
+    if (navix.mayMatch)
+        return scanNavix(top_candidates);
     while (!candidates.empty()) {
         DistType curr_node_dist = candidates.top().first;
         idType curr_node_id = candidates.top().second;
@@ -221,6 +359,7 @@ HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQuery
         idType bottom_layer_ep = this->index->searchBottomLayerEP(
             this->getQueryBlob(), this->getTimeoutCtx(), &batch->code);
         if (VecSim_OK != batch->code) {
+            this->ef = orig_ef;
             return batch;
         }
         this->entry_point = bottom_layer_ep;
@@ -229,6 +368,7 @@ HNSW_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQuery
     // and it could be that ef > n_res.
     auto *top_candidates = this->scanGraph(&batch->code);
     if (VecSim_OK != batch->code) {
+        this->ef = orig_ef;
         delete top_candidates;
         return batch;
     }

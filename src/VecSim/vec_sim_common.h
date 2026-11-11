@@ -368,6 +368,29 @@ typedef enum {
     QUERY_TYPE_RANGE,
 } VecsimQueryType;
 
+/* Experimental RAM batch traversal. A nonzero callback result means MAYBE, not an exact
+ * match. The context and optional cumulative stats must outlive the batch iterator. The
+ * caller pins a stable label/filter view, including across reset, and serializes access.
+ * Callbacks must not throw, mutate the index, perform I/O, or acquire graph locks. */
+typedef struct {
+    size_t filterChecks;
+    size_t filterRejected;
+    size_t distanceComputations;
+    size_t expandedNodes;
+    size_t oneHopExpansions;
+    size_t blindExpansions;
+    size_t directedExpansions;
+    size_t secondHopVisits;
+    size_t frontendCandidates;
+} VecSimNavixStats;
+
+typedef struct {
+    int (*mayMatch)(void *context, size_t label);
+    void *context;
+    VecSimNavixStats *stats;
+    bool forceBlind;
+} VecSimNavixParams;
+
 /**
  * @brief Query Runtime parameters.
  *
@@ -382,6 +405,7 @@ typedef struct {
     VecSearchMode searchMode;
     void *timeoutCtx; // This parameter is not exposed directly to the user, and we shouldn't expect
                       // to get it from the parameters resolve function.
+    VecSimNavixParams navix; // Zero-initialize to retain ordinary batch traversal.
 } VecSimQueryParams;
 
 /**
