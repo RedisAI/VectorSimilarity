@@ -25,6 +25,8 @@ template <typename DataType, typename DistType>
 class BF_BatchIterator : public VecSimBatchIterator {
 protected:
     const BruteForceIndex<DataType, DistType> *index;
+    VecSimNavixParams navix{};
+    bool scores_ready = false;
     size_t index_label_count; // number of labels in the index when calculating the scores,
                               // which is the only time we access the index.
     vecsim_stl::vector<pair<DistType, labelType>> scores; // vector of scores for every label.
@@ -171,21 +173,27 @@ BF_BatchIterator<DataType, DistType>::BF_BatchIterator(
     VecSimQueryParams *queryParams, std::shared_ptr<VecSimAllocator> allocator)
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr, allocator),
       index(bf_index), index_label_count(index->indexLabelCount()), scores(allocator),
-      scores_valid_start_pos(0) {}
+      scores_valid_start_pos(0) {
+    if (queryParams)
+        navix = queryParams->navix;
+}
 
 template <typename DataType, typename DistType>
 VecSimQueryReply *
 BF_BatchIterator<DataType, DistType>::getNextResults(size_t n_res, VecSimQueryReply_Order order) {
     // Only in the first iteration we need to compute all the scores
-    if (this->scores.empty()) {
+    if (!this->scores_ready) {
         assert(getResultsCount() == 0);
 
         // The only time we access the index. This function also updates the iterator's label count.
         auto rc = calculateScores();
 
         if (VecSim_OK != rc) {
+            this->scores.clear();
             return new VecSimQueryReply(this->allocator, rc);
         }
+        this->scores_ready = true;
+        this->index_label_count = this->scores.size();
     }
     if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
         return new VecSimQueryReply(this->allocator, VecSim_QueryReply_TimedOut);
@@ -209,6 +217,8 @@ bool BF_BatchIterator<DataType, DistType>::isDepleted() {
 template <typename DataType, typename DistType>
 void BF_BatchIterator<DataType, DistType>::reset() {
     this->scores.clear();
+    this->scores_ready = false;
+    this->index_label_count = this->index->indexLabelCount();
     this->resetResultsCount();
     this->scores_valid_start_pos = 0;
 }
