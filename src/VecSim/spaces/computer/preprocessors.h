@@ -22,9 +22,11 @@
 
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
+#include "VecSim/spaces/IP_space.h"
 #include "VecSim/memory/memory_utils.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq8_a8.h"
 #include "VecSim/types/sq4.h"
 #include "VecSim/utils/vecsim_stl.h"
 
@@ -667,11 +669,44 @@ private:
         }
     }
 
+protected:
     // Mean vector for WithNorm=true; zero-size placeholder otherwise (no runtime overhead).
     [[no_unique_address]] std::conditional_t<WithNorm, vecsim_stl::vector<float>, std::monostate>
         mean;
 
     const size_t dim;
+
+private:
     const size_t storage_bytes_count;
     const size_t query_bytes_count;
+};
+
+// SQ8 storage with an A8 query (vecsim_types::sq8_a8_query): the query is quantized once to int8
+// codes on its own grid, so each distance is one integer dot product. Storage blobs are the base
+// class's, and preprocess() returns them with a separate A8 query blob. With WithNorm the query is
+// centered like the stored vectors, reading the mean when it is encoded, so a mean installed later
+// with setMean applies to later queries.
+template <QuantInput DataType, VecSimMetric Metric, bool WithNorm = false>
+class SQ8A8QueryPreprocessor : public QuantPreprocessor<DataType, Metric, WithNorm> {
+    using Base = QuantPreprocessor<DataType, Metric, WithNorm>;
+    static_assert(Metric == VecSimMetric_IP, "A8 queries serve SQ8 inner product only");
+
+public:
+    using Base::Base;
+
+    void preprocessQuery(const void *original_blob, void *&blob, size_t &query_blob_size,
+                         unsigned char alignment) const override {
+        assert(!blob && "query_blob must be nullptr");
+        // Chosen once from the CPU features; the choice does not depend on the index.
+        static const auto encode = spaces::SQ8_A8_GetQueryEncoder<DataType>();
+
+        const size_t bytes = vecsim_types::sq8_a8_query::blob_bytes_count(this->dim);
+        blob = this->allocator->allocate_aligned(bytes, alignment);
+        const float *mean = nullptr;
+        if constexpr (WithNorm) {
+            mean = this->mean.data();
+        }
+        encode(static_cast<const DataType *>(original_blob), mean, this->dim, blob);
+        query_blob_size = bytes;
+    }
 };

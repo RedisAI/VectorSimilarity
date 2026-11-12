@@ -43,6 +43,10 @@ struct sq8_a8_query {
     static constexpr size_t blob_bytes_count(size_t dim) {
         return consts_offset(dim) + CONSTS_COUNT * sizeof(double);
     }
+
+    // Allocation alignment of a query blob. The kernels need none (unaligned and masked loads,
+    // constants read with memcpy); 64 keeps the codes on whole cache lines.
+    static constexpr unsigned char blob_alignment = 64;
 };
 
 static_assert(sizeof(double) == sizeof(int64_t), "A8 query constants use 8-byte slots");

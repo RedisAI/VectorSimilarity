@@ -216,6 +216,13 @@ size_t EstimateInitialSize(const HNSWParams *params, bool is_normalized, bool wi
                       sizeof(QuantPreprocessor<float, VecSimMetric_L2, true>));
         static_assert(sizeof(QuantPreprocessor<float, VecSimMetric_L2, false, sq4>) ==
                       sizeof(QuantPreprocessor<float, VecSimMetric_L2>));
+        // Nor does the query path: the A8 classes add no data members.
+        static_assert(sizeof(SQ8A8QueryPreprocessor<float, VecSimMetric_IP, true>) ==
+                      sizeof(QuantPreprocessor<float, VecSimMetric_L2, true>));
+        static_assert(sizeof(SQ8A8QueryPreprocessor<float, VecSimMetric_IP>) ==
+                      sizeof(QuantPreprocessor<float, VecSimMetric_L2>));
+        static_assert(sizeof(SQ8A8QueryDistanceCalculatorWithNorm<float, float, VecSimMetric_IP>) ==
+                      sizeof(DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>));
         if (with_mean) {
             est += allocations_overhead +
                    sizeof(DistanceCalculatorWithNorm<float, float, VecSimMetric_L2>);

@@ -14,6 +14,8 @@
 #include <cstring>
 #include <exception>
 #include <thread>
+#include <algorithm>
+#include <vector>
 
 #include "VecSim/vec_sim.h"
 #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
@@ -263,6 +265,55 @@ inline void ComputeSQ8Quantization(const float *original_blob, size_t dim, uint8
     // (output + dim) is not guaranteed to be 4-byte aligned for arbitrary dim values.
     const float metadata[4] = {min_val, delta, sum, sum_squares};
     std::memcpy(output + dim, metadata, sizeof(metadata));
+}
+
+/**
+ * Error bound of an SQ8 IP distance whose query is an A8 query (vecsim_types::sq8_a8_query),
+ * derived from the two quantization steps rather than picked.
+ *
+ * x is the stored vector and y the query (FP32 values of the index's input), mean the index mean
+ * or nullptr; the index quantizes both centered, x' = x - mean and y' = y - mean. With the stored
+ * step dx = range(x') / 255 and the query step s = range(y') / 255, and u = x' - y':
+ *   stored rounding:  |IP(x', y') - IP(xh', y')| <= dx / 2 * sum |y'_i|
+ *   query rounding:   |IP(xh', y') - IP_A8|      <= s / 2 * sum (|u_i - mean(u)| + dx + s)
+ * The A8 constants cancel the query's rounding except for its error e_i (|e_i| <= s / 2) times the
+ * deviation of xh'_i - yh'_i from its mean, which is at most |u_i - mean(u)| + dx + s. The rest is
+ * the FP32 rounding of the stored metadata, of x_mean_ip and of the final distance.
+ */
+inline double SQ8A8DistanceTolerance(const float *x, const float *y, const float *mean,
+                                     size_t dim) {
+    std::vector<double> xc(dim), yc(dim);
+    for (size_t i = 0; i < dim; i++) {
+        const double m = mean ? mean[i] : 0.0;
+        xc[i] = x[i] - m;
+        yc[i] = y[i] - m;
+    }
+    const auto [x_lo, x_hi] = std::minmax_element(xc.begin(), xc.end());
+    const auto [y_lo, y_hi] = std::minmax_element(yc.begin(), yc.end());
+    const double dx = (*x_hi - *x_lo) / 255.0;
+    const double s = (*y_hi - *y_lo) / 255.0;
+    double y_abs = 0, x_abs = 0, xy_abs = 0, mean_terms = 0, u_mean = 0;
+    for (size_t i = 0; i < dim; i++) {
+        const double m = mean ? mean[i] : 0.0;
+        y_abs += std::fabs(yc[i]);
+        x_abs += std::fabs(xc[i]);
+        xy_abs += std::fabs(static_cast<double>(x[i]) * y[i]);
+        mean_terms += std::fabs(x[i] * m) + std::fabs(y[i] * m) + m * m;
+        u_mean += xc[i] - yc[i];
+    }
+    u_mean /= static_cast<double>(dim);
+    double u_dev = 0;
+    for (size_t i = 0; i < dim; i++) {
+        u_dev += std::fabs(xc[i] - yc[i] - u_mean);
+    }
+    const double stored = dx / 2 * y_abs;
+    const double query = s / 2 * (u_dev + static_cast<double>(dim) * (dx + s));
+    const double y_max = std::max(std::fabs(*y_lo), std::fabs(*y_hi));
+    // FP32 epsilon per summed term, generously: the stored SUM (times the query offset, at most
+    // max |y'|), the FP32 sums behind x_mean_ip and mean_sum_squares, and the result.
+    const double rounding =
+        1e-5 + 1e-6 * (x_abs * y_max + xy_abs) + 2e-7 * static_cast<double>(dim) * mean_terms;
+    return 1.01 * (stored + query) + rounding;
 }
 
 // TODO: Move all test_utils to this namespace

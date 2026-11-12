@@ -13,6 +13,7 @@
 #include "VecSim/memory/vecsim_base.h"
 #include "VecSim/spaces/spaces.h"
 #include "VecSim/types/sq8.h"
+#include "VecSim/types/sq8_a8.h"
 #include "VecSim/utils/alignment.h"
 
 enum class DistanceMode {
@@ -156,7 +157,7 @@ class DistanceCalculatorWithNorm : public IndexCalculatorInterface<DistType> {
     static_assert(Metric == VecSimMetric_L2 || Metric == VecSimMetric_IP,
                   "DistanceCalculatorWithNorm only supports L2 and IP metrics");
 
-private:
+protected:
     struct WithNormDistanceContext {
         spaces::dist_func_t<DistType> stored_func;
         spaces::dist_func_t<DistType> query_func;
@@ -166,6 +167,7 @@ private:
     // HNSW may install the accumulated mean before storing the first vector.
     WithNormDistanceContext context_;
 
+private:
     static DistType calcStoredWithContext(const void *opaque_context, const void *v1,
                                           const void *v2, size_t dim) {
         const auto *context = static_cast<const WithNormDistanceContext *>(opaque_context);
@@ -248,5 +250,50 @@ public:
             return DistanceDispatch<DistType>::stateful(&context_, calcStoredWithContext);
         }
         return DistanceDispatch<DistType>::stateful(&context_, calcQueryWithContext);
+    }
+};
+
+// SQ8 storage with an A8 query (vecsim_types::sq8_a8_query) in a mean-centered IP index. The
+// query is encoded centered, y' = y - mean, like the stored vectors, so the query path applies the
+// stored-to-stored correction, with y_mean_ip = <mean, y> read from the query's constants. The
+// stored-to-stored path is the base class's.
+template <typename DataType, typename DistType, VecSimMetric Metric>
+class SQ8A8QueryDistanceCalculatorWithNorm
+    : public DistanceCalculatorWithNorm<DataType, DistType, Metric> {
+    using Base = DistanceCalculatorWithNorm<DataType, DistType, Metric>;
+    using Context = typename Base::WithNormDistanceContext;
+    static_assert(Metric == VecSimMetric_IP, "A8 queries serve SQ8 inner product only");
+
+    static DistType calcA8QueryWithContext(const void *opaque_context, const void *candidate,
+                                           const void *query, size_t dim) {
+        using sq8 = vecsim_types::sq8;
+        using a8 = vecsim_types::sq8_a8_query;
+        const auto *context = static_cast<const Context *>(opaque_context);
+        // base = 1 - IP(x', y'). As for two stored blobs:
+        // 1 - IP(x, y) = base - x_mean_ip - y_mean_ip + mean_sum_squares
+        const DistType base = context->query_func(candidate, query, dim);
+        const float x_mean_ip = load_unaligned<float>(static_cast<const uint8_t *>(candidate) +
+                                                      sq8::data_bytes_count(dim) +
+                                                      sq8::mean_ip_index<Metric>() * sizeof(float));
+        const double y_mean_ip =
+            load_unaligned<double>(static_cast<const uint8_t *>(query) + a8::consts_offset(dim) +
+                                   a8::Y_MEAN_IP * sizeof(double));
+        return static_cast<DistType>(static_cast<double>(base) - x_mean_ip - y_mean_ip +
+                                     context->mean_sum_squares);
+    }
+
+public:
+    using Base::Base;
+
+    DistType calcDistanceForQuery(const void *candidate, const void *query,
+                                  size_t dim) const override {
+        return calcA8QueryWithContext(&this->context_, candidate, query, dim);
+    }
+
+    DistanceDispatch<DistType> getDistanceDispatch(DistanceMode mode) const override {
+        if (mode == DistanceMode::StoredToStored) {
+            return Base::getDistanceDispatch(mode);
+        }
+        return DistanceDispatch<DistType>::stateful(&this->context_, calcA8QueryWithContext);
     }
 };

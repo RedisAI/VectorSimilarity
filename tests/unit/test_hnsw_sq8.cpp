@@ -11,6 +11,7 @@
 #include "VecSim/algorithms/hnsw/hnsw_single.h"
 #include "VecSim/algorithms/hnsw/hnsw_multi.h"
 #include "VecSim/index_factories/hnsw_factory.h"
+#include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/vec_sim.h"
@@ -26,6 +27,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <map>
 #include <mutex>
 #include <memory>
 #include <random>
@@ -2062,5 +2064,411 @@ TEST(SQ8TieredHNSWTest, MeanCenteredFP16L2BufferedAndMigratedValues) {
         ASSERT_EQ(info.tieredInfo.backendCommonInfo.indexSize, count);
         ASSERT_EQ(info.tieredInfo.frontendCommonInfo.indexSize, 0);
         verify_queries();
+    }
+}
+
+/* ======================== SQ8 IP with A8 queries ========================= */
+
+namespace {
+
+bool HostHasA8Queries() { return spaces::IP_SQ8_A8_GetDistFunc(spaces::SQ8_A8_MIN_DIM) != nullptr; }
+
+template <typename DataType>
+DataType A8FromFloat(float value) {
+    if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
+        return vecsim_types::FP32_to_FP16(value);
+    } else {
+        return value;
+    }
+}
+
+template <typename DataType>
+float A8ToFloat(DataType value) {
+    if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
+        return vecsim_types::FP16_to_FP32(value);
+    } else {
+        return value;
+    }
+}
+
+template <typename DataType>
+constexpr VecSimType A8IndexType() {
+    return std::is_same_v<DataType, vecsim_types::float16> ? VecSimType_FLOAT16
+                                                           : VecSimType_FLOAT32;
+}
+
+// Vectors whose distances to the query are far apart compared with the A8 error: vector k is
+// t_k * q + sqrt(1 - t_k^2) * r_k + o, with q a random unit query, r_k a random unit vector
+// orthogonal to q, t_k evenly spaced over [-1, 1] and the common offset o = 0.3 q + 0.5 w (w a
+// random unit vector orthogonal to q), so IP(x_k, q) = t_k + 0.3. The offset gives a learned mean
+// a large <mean, q>, so a wrong mean correction shows. The values are stored in the index data
+// type, and the references use them widened back to FP32.
+template <typename DataType>
+struct A8SearchData {
+    std::vector<DataType> query;
+    std::vector<std::vector<DataType>> vectors;
+};
+
+template <typename DataType>
+A8SearchData<DataType> MakeA8SearchData(size_t dim, size_t count, unsigned seed) {
+    std::mt19937 gen(seed);
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    const auto random_unit = [&](const std::vector<double> *orthogonal_to) {
+        std::vector<double> v(dim);
+        for (auto &value : v) {
+            value = dist(gen);
+        }
+        if (orthogonal_to) {
+            double dot = 0;
+            for (size_t i = 0; i < dim; i++) {
+                dot += v[i] * (*orthogonal_to)[i];
+            }
+            for (size_t i = 0; i < dim; i++) {
+                v[i] -= dot * (*orthogonal_to)[i];
+            }
+        }
+        double norm = 0;
+        for (double value : v) {
+            norm += value * value;
+        }
+        for (auto &value : v) {
+            value /= std::sqrt(norm);
+        }
+        return v;
+    };
+    const std::vector<double> q = random_unit(nullptr);
+    A8SearchData<DataType> data;
+    for (double value : q) {
+        data.query.push_back(A8FromFloat<DataType>(static_cast<float>(value)));
+    }
+    const std::vector<double> w = random_unit(&q);
+    for (size_t k = 0; k < count; k++) {
+        const double t = -1.0 + 2.0 * static_cast<double>(k) / static_cast<double>(count - 1);
+        const std::vector<double> r = random_unit(&q);
+        std::vector<DataType> x(dim);
+        for (size_t i = 0; i < dim; i++) {
+            const double offset = 0.3 * q[i] + 0.5 * w[i];
+            x[i] = A8FromFloat<DataType>(
+                static_cast<float>(t * q[i] + std::sqrt(1 - t * t) * r[i] + offset));
+        }
+        data.vectors.push_back(std::move(x));
+    }
+    return data;
+}
+
+template <typename DataType>
+std::vector<float> A8Widen(const std::vector<DataType> &v) {
+    std::vector<float> out(v.size());
+    for (size_t i = 0; i < v.size(); i++) {
+        out[i] = A8ToFloat(v[i]);
+    }
+    return out;
+}
+
+// What a Cosine index stores: the vector normalized, rounded to the data type.
+template <typename DataType>
+std::vector<float> A8Normalized(const std::vector<DataType> &v) {
+    double norm = 0;
+    for (DataType value : v) {
+        norm += static_cast<double>(A8ToFloat(value)) * A8ToFloat(value);
+    }
+    std::vector<float> out(v.size());
+    for (size_t i = 0; i < v.size(); i++) {
+        out[i] =
+            A8ToFloat(A8FromFloat<DataType>(static_cast<float>(A8ToFloat(v[i]) / std::sqrt(norm))));
+    }
+    return out;
+}
+
+struct A8Expected {
+    double distance;
+    double tolerance;
+};
+
+// The true distance of a stored vector to the query, with the A8 bound (unit_test_utils.h).
+// extra_relative covers what the bound does not: the data-type rounding of Cosine's normalization.
+A8Expected ExpectedA8Distance(const std::vector<float> &x, const std::vector<float> &y,
+                              const float *mean, double extra_relative) {
+    double ip = 0, ip_abs = 0;
+    for (size_t i = 0; i < x.size(); i++) {
+        ip += static_cast<double>(x[i]) * y[i];
+        ip_abs += std::fabs(static_cast<double>(x[i]) * y[i]);
+    }
+    return {1.0 - ip,
+            SQ8A8DistanceTolerance(x.data(), y.data(), mean, x.size()) + extra_relative * ip_abs};
+}
+
+// Top-K, GetDistanceFrom_Unsafe, range query and batch iterator against the references. A
+// multi-value label scores its closest vector. The spacing of the data keeps the ranking
+// unambiguous at these tolerances, which is checked first.
+void VerifyA8Searches(VecSimIndex *index, const void *query, const std::vector<size_t> &labels,
+                      const std::vector<A8Expected> &expected) {
+    std::map<size_t, A8Expected> best;
+    for (size_t k = 0; k < labels.size(); k++) {
+        auto it = best.find(labels[k]);
+        if (it == best.end() || expected[k].distance < it->second.distance) {
+            best[labels[k]] = expected[k];
+        }
+    }
+    std::vector<size_t> order;
+    for (const auto &[label, value] : best) {
+        order.push_back(label);
+    }
+    std::sort(order.begin(), order.end(),
+              [&](size_t a, size_t b) { return best[a].distance < best[b].distance; });
+    for (size_t r = 0; r + 1 < order.size(); r++) {
+        const A8Expected &a = best[order[r]], &b = best[order[r + 1]];
+        ASSERT_GT(b.distance - a.distance, a.tolerance + b.tolerance) << "rank " << r;
+    }
+
+    const auto verify = [&](size_t id, double score, size_t rank) {
+        ASSERT_LT(rank, order.size());
+        EXPECT_EQ(id, order[rank]) << "rank " << rank;
+        EXPECT_NEAR(score, best[id].distance, best[id].tolerance) << "label " << id;
+    };
+    const size_t n = order.size();
+    runTopKSearchTest(index, query, n, verify);
+    for (const auto &[label, value] : best) {
+        EXPECT_NEAR(VecSimIndex_GetDistanceFrom_Unsafe(index, label, query), value.distance,
+                    value.tolerance)
+            << "label " << label;
+    }
+    // The closest three labels; the radius splits the gap to the fourth in proportion to the two
+    // tolerances, so it clears both.
+    const A8Expected &in = best[order[2]], &out = best[order[3]];
+    const double radius =
+        in.distance + (out.distance - in.distance) * in.tolerance / (in.tolerance + out.tolerance);
+    runRangeQueryTest(index, query, radius, verify, 3, BY_SCORE);
+    VecSimBatchIterator *iterator = VecSimBatchIterator_New(index, query, nullptr);
+    ASSERT_NE(iterator, nullptr);
+    runBatchIteratorSearchTest(iterator, n, verify);
+    VecSimBatchIterator_Free(iterator);
+}
+
+// The query distance of each vector as components built by the factory compute it: the A8 path on
+// this CPU, or with arch_opt the path of a CPU without AVX-512.
+template <typename DataType>
+std::vector<float> A8ComponentDistances(const A8SearchData<DataType> &data, const float *mean,
+                                        const void *arch_opt) {
+    const size_t dim = data.query.size();
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    auto components =
+        CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(allocator, dim, mean, arch_opt);
+    std::vector<float> distances;
+    {
+        auto query =
+            components.preprocessors->preprocessQuery(data.query.data(), dim * sizeof(DataType));
+        for (const auto &x : data.vectors) {
+            auto stored =
+                components.preprocessors->preprocessForStorage(x.data(), dim * sizeof(DataType));
+            distances.push_back(
+                components.indexCalculator->calcDistanceForQuery(stored.get(), query.get(), dim));
+        }
+    }
+    delete components.preprocessors;
+    delete components.indexCalculator;
+    return distances;
+}
+
+// The index scores with the A8 path: GetDistanceFrom_Unsafe equals the A8 components' distance
+// bit for bit (a multi-value label takes its closest vector), and differs from the path of a CPU
+// without AVX-512 for some label.
+template <typename DataType>
+void ExpectIndexUsesA8Queries(VecSimIndex *index, const A8SearchData<DataType> &data,
+                              const std::vector<size_t> &labels, const float *mean) {
+    auto features_off = spaces::getCpuOptimizationFeatures();
+    std::memset(&features_off, 0, sizeof(features_off));
+    const std::vector<float> a8 = A8ComponentDistances(data, mean, nullptr);
+    const std::vector<float> fallback = A8ComponentDistances(data, mean, &features_off);
+    std::map<size_t, std::pair<float, float>> best;
+    for (size_t k = 0; k < labels.size(); k++) {
+        auto [it, inserted] = best.try_emplace(labels[k], a8[k], fallback[k]);
+        if (!inserted) {
+            it->second.first = std::min(it->second.first, a8[k]);
+            it->second.second = std::min(it->second.second, fallback[k]);
+        }
+    }
+    bool differs = false;
+    for (const auto &[label, distances] : best) {
+        EXPECT_EQ(VecSimIndex_GetDistanceFrom_Unsafe(index, label, data.query.data()),
+                  distances.first)
+            << "label " << label;
+        differs = differs || distances.first != distances.second;
+    }
+    EXPECT_TRUE(differs) << "the A8 and fallback paths gave identical distances";
+}
+
+constexpr size_t kA8VectorCount = 9;
+
+template <typename DataType>
+void RunA8StandaloneTest(size_t dim, bool with_mean, bool multi) {
+    SCOPED_TRACE(::testing::Message()
+                 << "dim=" << dim << " fp16="
+                 << (std::is_same_v<DataType, vecsim_types::float16>) << " mean=" << with_mean
+                 << " multi=" << multi);
+    const auto data = MakeA8SearchData<DataType>(dim, kA8VectorCount, static_cast<unsigned>(dim));
+    std::vector<float> mean(dim);
+    std::mt19937 gen(7);
+    std::uniform_real_distribution<float> mean_dist(-0.05f, 0.05f);
+    for (auto &value : mean) {
+        value = mean_dist(gen);
+    }
+    HNSWParams params = {.type = A8IndexType<DataType>(),
+                         .dim = dim,
+                         .metric = VecSimMetric_IP,
+                         .multi = multi,
+                         .initialCapacity = kA8VectorCount,
+                         .M = 16,
+                         .efConstruction = 100,
+                         .efRuntime = kA8VectorCount,
+                         .quantType = VecSimQuant_SQ8,
+                         .quantParams = with_mean ? mean.data() : nullptr};
+    VecSimParams vecsim_params = CreateParams(params);
+    std::unique_ptr<VecSimIndex, decltype(&VecSimIndex_Free)> index(VecSimIndex_New(&vecsim_params),
+                                                                    VecSimIndex_Free);
+    ASSERT_NE(index, nullptr);
+
+    std::vector<size_t> labels;
+    std::vector<A8Expected> expected;
+    const std::vector<float> query = A8Widen(data.query);
+    for (size_t k = 0; k < kA8VectorCount; k++) {
+        labels.push_back(multi ? k / 2 : k);
+        ASSERT_EQ(VecSimIndex_AddVector(index.get(), data.vectors[k].data(), labels.back()), 1);
+        expected.push_back(ExpectedA8Distance(A8Widen(data.vectors[k]), query,
+                                              with_mean ? mean.data() : nullptr, 0.0));
+    }
+    const auto original_query = data.query;
+    ExpectIndexUsesA8Queries(index.get(), data, labels, with_mean ? mean.data() : nullptr);
+    VerifyA8Searches(index.get(), data.query.data(), labels, expected);
+    EXPECT_EQ(std::memcmp(data.query.data(), original_query.data(), dim * sizeof(DataType)), 0);
+}
+
+// A tiered index learns its mean from the first vectors, which wait in the flat buffer; the
+// backend is built with a zero mean and gets the learned one before any vector migrates. Queries
+// are checked with every vector buffered, with some migrated and with all migrated.
+template <typename DataType>
+void RunA8TieredLateMeanTest(size_t dim, VecSimMetric metric, bool multi) {
+    SCOPED_TRACE(::testing::Message()
+                 << "dim=" << dim << " fp16="
+                 << (std::is_same_v<DataType, vecsim_types::float16>) << " metric=" << metric
+                 << " multi=" << multi);
+    const auto data =
+        MakeA8SearchData<DataType>(dim, kA8VectorCount, static_cast<unsigned>(dim) + 1);
+    tieredIndexMock mock_thread_pool;
+    HNSWParams hnsw_params = {.type = A8IndexType<DataType>(),
+                              .dim = dim,
+                              .metric = metric,
+                              .multi = multi,
+                              .M = 16,
+                              .efConstruction = 100,
+                              .efRuntime = kA8VectorCount,
+                              .quantType = VecSimQuant_SQ8};
+    VecSimParams primary_params = CreateParams(hnsw_params);
+    TieredIndexParams tiered_params = {
+        .jobQueue = &mock_thread_pool.jobQ,
+        .jobQueueCtx = mock_thread_pool.ctx,
+        .submitCb = tieredIndexMock::submit_callback,
+        .flatBufferLimit = kA8VectorCount,
+        .primaryIndexParams = &primary_params,
+        .specificParams = {TieredHNSWParams{.QuantNormalizationSetSize = kA8VectorCount}}};
+    VecSimParams params = CreateParams(tiered_params);
+    auto *index = VecSimIndex_New(&params);
+    if (!index) {
+        mock_thread_pool.reset_ctx();
+        FAIL() << "the tiered SQ8 index must construct";
+    }
+    mock_thread_pool.ctx->index_strong_ref.reset(index);
+    const auto tier_sizes = [index] {
+        const auto info = VecSimIndex_DebugInfo(index);
+        return std::pair{info.tieredInfo.frontendCommonInfo.indexSize,
+                         info.tieredInfo.backendCommonInfo.indexSize};
+    };
+
+    // What the index stores (normalized for Cosine) and the mean it learns from it.
+    std::vector<std::vector<float>> stored;
+    std::vector<double> sum(dim, 0.0);
+    for (const auto &x : data.vectors) {
+        stored.push_back(metric == VecSimMetric_Cosine ? A8Normalized(x) : A8Widen(x));
+        for (size_t i = 0; i < dim; i++) {
+            sum[i] += stored.back()[i];
+        }
+    }
+    std::vector<float> mean(dim);
+    for (size_t i = 0; i < dim; i++) {
+        mean[i] = static_cast<float>(sum[i] / kA8VectorCount);
+    }
+    const std::vector<float> query =
+        metric == VecSimMetric_Cosine ? A8Normalized(data.query) : A8Widen(data.query);
+    // Cosine normalizes in the data type, which the references only reproduce to about one unit
+    // in the last place of each operand: FP16 values may differ by one ulp (2^-10 relative) in the
+    // vector and in the query, FP32 ones by the rounding of the FP32 norm.
+    const double normalization_error = metric != VecSimMetric_Cosine                     ? 0.0
+                                       : std::is_same_v<DataType, vecsim_types::float16> ? 0x1p-9
+                                                                                         : 1e-4;
+    std::vector<size_t> labels;
+    std::vector<A8Expected> expected;
+    for (size_t k = 0; k < kA8VectorCount; k++) {
+        labels.push_back(multi ? k / 2 : k);
+        ASSERT_EQ(VecSimIndex_AddVector(index, data.vectors[k].data(), labels.back()), 1);
+        expected.push_back(ExpectedA8Distance(stored[k], query, mean.data(), normalization_error));
+    }
+    // Training finished with the last vector, and every insertion job waits.
+    ASSERT_EQ(mock_thread_pool.jobQ.size(), kA8VectorCount);
+    {
+        SCOPED_TRACE("all buffered");
+        VerifyA8Searches(index, data.query.data(), labels, expected);
+    }
+    for (size_t job = 0; job < kA8VectorCount / 2; job++) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tier_sizes().second, kA8VectorCount / 2);
+    {
+        SCOPED_TRACE("partly migrated");
+        VerifyA8Searches(index, data.query.data(), labels, expected);
+    }
+    while (!mock_thread_pool.jobQ.empty()) {
+        mock_thread_pool.thread_iteration();
+    }
+    ASSERT_EQ(tier_sizes(), (std::pair<size_t, size_t>{0, kA8VectorCount}));
+    {
+        SCOPED_TRACE("all migrated");
+        VerifyA8Searches(index, data.query.data(), labels, expected);
+    }
+    // The backend scores with the A8 path and the learned mean. Only for IP: with Cosine the
+    // references cannot reproduce the index's normalized values bit for bit.
+    if (metric == VecSimMetric_IP) {
+        ExpectIndexUsesA8Queries(index, data, labels, mean.data());
+    }
+}
+
+} // namespace
+
+// The A8 query path (dim >= SQ8_A8_MIN_DIM on a CPU with AVX-512 VNNI) through the public API.
+// 777 is not a multiple of 64, so the kernel and encoder tails run too.
+TEST(HNSWSQ8A8QueryTest, PublicAPIsAboveTheGate) {
+    if (!HostHasA8Queries()) {
+        GTEST_SKIP() << "No A8 query kernel for this CPU";
+    }
+    for (const size_t dim : {size_t{768}, size_t{777}, size_t{1024}}) {
+        for (bool with_mean : {false, true}) {
+            for (bool multi : {false, true}) {
+                RunA8StandaloneTest<float>(dim, with_mean, multi);
+                RunA8StandaloneTest<vecsim_types::float16>(dim, with_mean, multi);
+            }
+        }
+    }
+}
+
+TEST(SQ8TieredHNSWTest, A8QueriesWithLateMeanBufferedAndMigrated) {
+    if (!HostHasA8Queries()) {
+        GTEST_SKIP() << "No A8 query kernel for this CPU";
+    }
+    for (const size_t dim : {size_t{768}, size_t{1024}}) {
+        for (auto metric : {VecSimMetric_IP, VecSimMetric_Cosine}) {
+            for (bool multi : {false, true}) {
+                RunA8TieredLateMeanTest<float>(dim, metric, multi);
+                RunA8TieredLateMeanTest<vecsim_types::float16>(dim, metric, multi);
+            }
+        }
     }
 }

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <typeinfo>
 #include <vector>
 #include "gtest/gtest.h"
 #include "VecSim/vec_sim.h"
@@ -22,6 +23,10 @@
 #include "VecSim/index_factories/components/components_factory.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/L2_space.h"
+#include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/sq8_a8_query_encoder.h"
+#include "VecSim/quantization/sq8_mean.h"
+#include "VecSim/types/sq8_a8.h"
 #include "unit_test_utils.h"
 #include "tests_utils.h"
 
@@ -2845,4 +2850,431 @@ TEST(SQ8TrainingStateTest, AccumulatesInFP64) {
     EXPECT_EQ(state.getCount(), 1);
     EXPECT_DOUBLE_EQ(state.getRunningSum()[0], 1.0);
     EXPECT_FLOAT_EQ(state.calculateMean()[0], 1.0f);
+}
+
+/* ======================== SQ8 IP with A8 queries ========================= */
+
+namespace {
+
+using sq8_a8 = vecsim_types::sq8_a8_query;
+
+// Whether this build and CPU have the A8 query path at all.
+bool HostHasA8Queries() { return spaces::IP_SQ8_A8_GetDistFunc(spaces::SQ8_A8_MIN_DIM) != nullptr; }
+
+// CPU features with everything off, so the factory takes the paths of a CPU without AVX-512.
+auto CpuFeaturesOff() {
+    auto features = spaces::getCpuOptimizationFeatures();
+    std::memset(&features, 0, sizeof(features));
+    return features;
+}
+
+template <typename DataType>
+PreprocessorInterface *SQ8FactoryPreprocessor(const IndexComponents<DataType, float> &components) {
+    return static_cast<MultiPreprocessorsContainer<DataType, 1> *>(components.preprocessors)
+        ->getPreprocessors()[0];
+}
+
+template <typename DataType>
+DataType SQ8A8FromFloat(float value) {
+    if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
+        return vecsim_types::FP32_to_FP16(value);
+    } else {
+        return value;
+    }
+}
+
+template <typename DataType>
+float SQ8A8ToFloat(DataType value) {
+    if constexpr (std::is_same_v<DataType, vecsim_types::float16>) {
+        return vecsim_types::FP16_to_FP32(value);
+    } else {
+        return value;
+    }
+}
+
+template <typename DataType>
+std::vector<DataType> SQ8A8RandomVector(size_t dim, int seed, float min_val, float max_val) {
+    std::vector<float> values(dim);
+    test_utils::populate_float_vec(values.data(), dim, seed, min_val, max_val);
+    std::vector<DataType> out(dim);
+    for (size_t i = 0; i < dim; i++) {
+        out[i] = SQ8A8FromFloat<DataType>(values[i]);
+    }
+    return out;
+}
+
+template <typename DataType>
+std::vector<float> SQ8A8Widen(const std::vector<DataType> &v) {
+    std::vector<float> out(v.size());
+    for (size_t i = 0; i < v.size(); i++) {
+        out[i] = SQ8A8ToFloat(v[i]);
+    }
+    return out;
+}
+
+double SQ8A8Const(const void *query, size_t dim, size_t index) {
+    return load_unaligned<double>(static_cast<const uint8_t *>(query) + sq8_a8::consts_offset(dim) +
+                                  index * sizeof(double));
+}
+
+// The components the factory builds for an SQ8 IP index: the A8 classes where expect_a8,
+// otherwise the asymmetric query for FP32 and FP16 alike, exactly as below the gate.
+template <typename DataType, bool WithMean>
+void verifySQ8IPFactoryPath(size_t dim, const void *arch_opt, bool expect_a8) {
+    SCOPED_TRACE(::testing::Message()
+                 << "dim=" << dim << " mean=" << WithMean
+                 << " fp16=" << (std::is_same_v<DataType, vecsim_types::float16>) << " forced_off="
+                 << (arch_opt != nullptr));
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    std::vector<float> mean(dim, 0.125f);
+    auto components = CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(
+        allocator, dim, WithMean ? mean.data() : nullptr, arch_opt);
+    PreprocessorInterface &pp = *SQ8FactoryPreprocessor(components);
+    IndexCalculatorInterface<float> &calc = *components.indexCalculator;
+
+    using A8Preprocessor = SQ8A8QueryPreprocessor<DataType, VecSimMetric_IP, WithMean>;
+    EXPECT_EQ(dynamic_cast<A8Preprocessor *>(&pp) != nullptr, expect_a8);
+    if constexpr (WithMean) {
+        // applySQ8Mean's casts hold on every path.
+        EXPECT_NE((dynamic_cast<QuantPreprocessor<DataType, VecSimMetric_IP, true> *>(&pp)),
+                  nullptr);
+        EXPECT_NE(
+            (dynamic_cast<DistanceCalculatorWithNorm<DataType, float, VecSimMetric_IP> *>(&calc)),
+            nullptr);
+    } else {
+        EXPECT_EQ(typeid(calc), typeid(DistanceCalculatorCommon<float>));
+    }
+    EXPECT_TRUE(calc.getDistanceDispatch(DistanceMode::StoredToQuery).isValid());
+    EXPECT_TRUE(calc.getDistanceDispatch(DistanceMode::StoredToStored).isValid());
+
+    const std::vector<DataType> y = SQ8A8RandomVector<DataType>(dim, 3, -1.0f, 1.0f);
+    {
+        auto query = components.preprocessors->preprocessQuery(y.data(), dim * sizeof(DataType));
+        auto storage =
+            components.preprocessors->preprocessForStorage(y.data(), dim * sizeof(DataType));
+        if (expect_a8) {
+            EXPECT_EQ(typeid(pp), typeid(A8Preprocessor));
+            if constexpr (WithMean) {
+                EXPECT_EQ(
+                    typeid(calc),
+                    typeid(SQ8A8QueryDistanceCalculatorWithNorm<DataType, float, VecSimMetric_IP>));
+            }
+            EXPECT_EQ(components.preprocessors->getQueryAlignment(), sq8_a8::blob_alignment);
+        } else {
+            EXPECT_EQ(typeid(pp), typeid(QuantPreprocessor<DataType, VecSimMetric_IP, WithMean>));
+            if constexpr (WithMean) {
+                EXPECT_EQ(typeid(calc),
+                          typeid(DistanceCalculatorWithNorm<DataType, float, VecSimMetric_IP>));
+            }
+            // The query is the raw input vector followed by its FP32 metadata.
+            EXPECT_EQ(std::memcmp(query.get(), y.data(), dim * sizeof(DataType)), 0);
+        }
+    }
+    delete components.preprocessors;
+    delete components.indexCalculator;
+}
+
+template <typename DataType>
+void verifySQ8IPFactoryPaths() {
+    const bool host_a8 = HostHasA8Queries();
+    const auto off = CpuFeaturesOff();
+    for (const size_t dim : {spaces::SQ8_A8_MIN_DIM - 1, spaces::SQ8_A8_MIN_DIM, size_t{1024}}) {
+        const bool a8 = host_a8 && dim >= spaces::SQ8_A8_MIN_DIM;
+        verifySQ8IPFactoryPath<DataType, false>(dim, nullptr, a8);
+        verifySQ8IPFactoryPath<DataType, true>(dim, nullptr, a8);
+        verifySQ8IPFactoryPath<DataType, false>(dim, &off, false);
+        verifySQ8IPFactoryPath<DataType, true>(dim, &off, false);
+    }
+}
+
+} // namespace
+
+TEST(SQ8A8FactoryTest, ChoosesQueryPathByGate) {
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_F_BW_VL_VNNI)
+    const auto cpu = spaces::getCpuOptimizationFeatures();
+    EXPECT_EQ(HostHasA8Queries(),
+              cpu.avx512f && cpu.avx512bw && cpu.avx512vl && cpu.avx512vnni ? true : false);
+#endif
+    verifySQ8IPFactoryPaths<float>();
+    verifySQ8IPFactoryPaths<vecsim_types::float16>();
+}
+
+// L2 and SQ4 never take the A8 path.
+TEST(SQ8A8FactoryTest, L2AndSQ4KeepAsymmetricQueriesAboveTheGate) {
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    constexpr size_t dim = 1024;
+    std::vector<float> mean(dim, 0.125f);
+    const float *const mean_ptrs[] = {nullptr, mean.data()};
+    for (const float *mean_ptr : mean_ptrs) {
+        auto l2 = CreateSQ8IndexComponents<float, VecSimMetric_L2>(allocator, dim, mean_ptr);
+        auto l2_fp16 = CreateSQ8IndexComponents<vecsim_types::float16, VecSimMetric_L2>(
+            allocator, dim, mean_ptr);
+        auto sq4 = CreateQuantizedIndexComponents<float, VecSimMetric_IP, vecsim_types::sq4>(
+            allocator, dim, mean_ptr);
+        const PreprocessorInterface &l2_pp = *SQ8FactoryPreprocessor(l2);
+        const PreprocessorInterface &l2_fp16_pp = *SQ8FactoryPreprocessor(l2_fp16);
+        const PreprocessorInterface &sq4_pp = *SQ8FactoryPreprocessor(sq4);
+        if (mean_ptr) {
+            EXPECT_EQ(typeid(l2_pp), typeid(QuantPreprocessor<float, VecSimMetric_L2, true>));
+            EXPECT_EQ(typeid(l2_fp16_pp),
+                      typeid(QuantPreprocessor<vecsim_types::float16, VecSimMetric_L2, true>));
+            EXPECT_EQ(typeid(sq4_pp),
+                      typeid(QuantPreprocessor<float, VecSimMetric_IP, true, vecsim_types::sq4>));
+        } else {
+            EXPECT_EQ(typeid(l2_pp), typeid(QuantPreprocessor<float, VecSimMetric_L2>));
+            EXPECT_EQ(typeid(l2_fp16_pp),
+                      typeid(QuantPreprocessor<vecsim_types::float16, VecSimMetric_L2>));
+            EXPECT_EQ(typeid(sq4_pp),
+                      typeid(QuantPreprocessor<float, VecSimMetric_IP, false, vecsim_types::sq4>));
+        }
+        delete l2.preprocessors;
+        delete l2.indexCalculator;
+        delete l2_fp16.preprocessors;
+        delete l2_fp16.indexCalculator;
+        delete sq4.preprocessors;
+        delete sq4.indexCalculator;
+    }
+}
+
+namespace {
+
+// The A8 query blob through the container: the encoder's codes, zeroed padding and constants,
+// 64-byte alignment, and preprocess() returning the storage blob and a separate A8 blob, both
+// released with the processed blobs.
+template <typename DataType, bool WithMean>
+void verifySQ8A8QueryBlob(size_t dim) {
+    SCOPED_TRACE(::testing::Message() << "dim=" << dim << " mean=" << WithMean << " fp16="
+                                      << (std::is_same_v<DataType, vecsim_types::float16>));
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const std::vector<float> mean = SQ8A8Widen(SQ8A8RandomVector<float>(dim, 5, -0.1f, 0.1f));
+    const float *mean_ptr = WithMean ? mean.data() : nullptr;
+    auto components = CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(allocator, dim, mean_ptr);
+    const std::vector<DataType> y = SQ8A8RandomVector<DataType>(dim, 6, -1.0f, 1.0f);
+    const std::vector<DataType> original_y = y;
+    const size_t query_bytes = sq8_a8::blob_bytes_count(dim);
+    const size_t storage_bytes = sq8::storage_bytes_count<VecSimMetric_IP, WithMean>(dim);
+
+    // The scalar encoder is the reference; the production encoder may be the AVX-512 one.
+    std::vector<uint8_t> expected(query_bytes);
+    spaces::quantized::SQ8_A8_EncodeQuery(y.data(), mean_ptr, dim, expected.data());
+
+    const uint64_t baseline = allocator->getAllocationSize();
+    {
+        auto query = components.preprocessors->preprocessQuery(y.data(), dim * sizeof(DataType));
+        auto storage =
+            components.preprocessors->preprocessForStorage(y.data(), dim * sizeof(DataType));
+        auto paired = components.preprocessors->preprocess(y.data(), dim * sizeof(DataType));
+        ASSERT_NE(query.get(), nullptr);
+        EXPECT_EQ(reinterpret_cast<uintptr_t>(query.get()) % sq8_a8::blob_alignment, 0u);
+        const auto *bytes = static_cast<const uint8_t *>(query.get());
+        // Codes and the zeroed padding.
+        EXPECT_EQ(std::memcmp(bytes, expected.data(), sq8_a8::consts_offset(dim)), 0);
+        for (size_t i = dim; i < sq8_a8::consts_offset(dim); i++) {
+            EXPECT_EQ(bytes[i], 0) << "padding byte " << i;
+        }
+        for (size_t index : {sq8_a8::QD, sq8_a8::QM, sq8_a8::P}) {
+            EXPECT_EQ(
+                std::memcmp(bytes + sq8_a8::consts_offset(dim) + index * sizeof(double),
+                            expected.data() + sq8_a8::consts_offset(dim) + index * sizeof(double),
+                            sizeof(double)),
+                0)
+                << "constant " << index;
+        }
+        const double s = SQ8A8Const(expected.data(), dim, sq8_a8::QD);
+        EXPECT_NEAR(SQ8A8Const(bytes, dim, sq8_a8::QS),
+                    SQ8A8Const(expected.data(), dim, sq8_a8::QS),
+                    1e-12 * (std::fabs(SQ8A8Const(expected.data(), dim, sq8_a8::QS)) + s));
+        EXPECT_NEAR(SQ8A8Const(bytes, dim, sq8_a8::QK),
+                    SQ8A8Const(expected.data(), dim, sq8_a8::QK),
+                    1e-12 * 128.0 * s * s * static_cast<double>(dim));
+        if constexpr (WithMean) {
+            double y_mean_ip = 0;
+            for (size_t i = 0; i < dim; i++) {
+                y_mean_ip += static_cast<double>(mean[i]) * SQ8A8ToFloat(y[i]);
+            }
+            EXPECT_NEAR(SQ8A8Const(bytes, dim, sq8_a8::Y_MEAN_IP), y_mean_ip,
+                        1e-12 * static_cast<double>(dim));
+        } else {
+            EXPECT_EQ(SQ8A8Const(bytes, dim, sq8_a8::Y_MEAN_IP), 0.0);
+        }
+
+        // preprocess() returns two blobs: the storage blob and an identical A8 query blob.
+        ASSERT_NE(paired.getStorageBlob(), nullptr);
+        ASSERT_NE(paired.getQueryBlob(), nullptr);
+        EXPECT_NE(paired.getStorageBlob(), paired.getQueryBlob());
+        EXPECT_EQ(std::memcmp(paired.getStorageBlob(), storage.get(), storage_bytes), 0);
+        EXPECT_EQ(std::memcmp(paired.getQueryBlob(), query.get(), query_bytes), 0);
+        EXPECT_EQ(reinterpret_cast<uintptr_t>(paired.getQueryBlob()) % sq8_a8::blob_alignment, 0u);
+        if (const auto alignment = components.preprocessors->getStorageAlignment()) {
+            EXPECT_EQ(reinterpret_cast<uintptr_t>(paired.getStorageBlob()) % alignment, 0u);
+        }
+        EXPECT_GT(allocator->getAllocationSize(), baseline);
+    }
+    // Both blobs of preprocess() (and the single ones) were released.
+    EXPECT_EQ(allocator->getAllocationSize(), baseline);
+    EXPECT_EQ(std::memcmp(y.data(), original_y.data(), dim * sizeof(DataType)), 0);
+    delete components.preprocessors;
+    delete components.indexCalculator;
+}
+
+} // namespace
+
+TEST(SQ8A8FactoryTest, QueryBlobLayoutAlignmentAndOwnership) {
+    if (!HostHasA8Queries()) {
+        GTEST_SKIP() << "No A8 query kernel for this CPU";
+    }
+    for (const size_t dim : {size_t{768}, size_t{1001}}) {
+        verifySQ8A8QueryBlob<float, false>(dim);
+        verifySQ8A8QueryBlob<float, true>(dim);
+        verifySQ8A8QueryBlob<vecsim_types::float16, false>(dim);
+        verifySQ8A8QueryBlob<vecsim_types::float16, true>(dim);
+    }
+}
+
+namespace {
+
+// Query distances are the A8 kernel plus, with a mean, the stored-to-stored correction; they stay
+// within the bound derived from the two quantization steps of the true distance. Stored-to-stored
+// distances are those of the asymmetric path.
+template <typename DataType, bool WithMean>
+void verifySQ8A8Distances(size_t dim) {
+    SCOPED_TRACE(::testing::Message() << "dim=" << dim << " mean=" << WithMean << " fp16="
+                                      << (std::is_same_v<DataType, vecsim_types::float16>));
+    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const std::vector<float> mean = SQ8A8Widen(SQ8A8RandomVector<float>(dim, 7, -0.1f, 0.1f));
+    const float *mean_ptr = WithMean ? mean.data() : nullptr;
+    const auto off = CpuFeaturesOff();
+    auto a8 = CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(allocator, dim, mean_ptr);
+    auto fallback =
+        CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(allocator, dim, mean_ptr, &off);
+    const auto query_dispatch =
+        a8.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+    const auto stored_dispatch =
+        a8.indexCalculator->getDistanceDispatch(DistanceMode::StoredToStored);
+    ASSERT_TRUE(query_dispatch.isValid());
+    ASSERT_TRUE(stored_dispatch.isValid());
+    float mean_sum_squares = 0.0f;
+    for (float v : mean) {
+        mean_sum_squares += v * v;
+    }
+
+    const std::vector<DataType> y = SQ8A8RandomVector<DataType>(dim, 8, -1.0f, 1.0f);
+    const std::vector<float> y_f = SQ8A8Widen(y);
+    const size_t storage_bytes = sq8::storage_bytes_count<VecSimMetric_IP, WithMean>(dim);
+    auto query = a8.preprocessors->preprocessQuery(y.data(), dim * sizeof(DataType));
+    auto y_storage = a8.preprocessors->preprocessForStorage(y.data(), dim * sizeof(DataType));
+    for (int seed : {9, 10, 11}) {
+        const std::vector<DataType> x = SQ8A8RandomVector<DataType>(dim, seed, -1.0f, 1.0f);
+        const std::vector<float> x_f = SQ8A8Widen(x);
+        auto stored = a8.preprocessors->preprocessForStorage(x.data(), dim * sizeof(DataType));
+        auto fallback_stored =
+            fallback.preprocessors->preprocessForStorage(x.data(), dim * sizeof(DataType));
+        ASSERT_EQ(std::memcmp(stored.get(), fallback_stored.get(), storage_bytes), 0);
+
+        const float got = a8.indexCalculator->calcDistanceForQuery(stored.get(), query.get(), dim);
+        // The A8 kernel is bit-identical to the scalar reference.
+        const float kernel = SQ8_A8_InnerProduct(stored.get(), query.get(), dim);
+        if constexpr (WithMean) {
+            const float x_mean_ip = load_unaligned<float>(
+                static_cast<const uint8_t *>(stored.get()) + sq8::data_bytes_count(dim) +
+                sq8::mean_ip_index<VecSimMetric_IP>() * sizeof(float));
+            const double y_mean_ip = SQ8A8Const(query.get(), dim, sq8_a8::Y_MEAN_IP);
+            EXPECT_EQ(got, static_cast<float>(static_cast<double>(kernel) - x_mean_ip - y_mean_ip +
+                                              mean_sum_squares));
+        } else {
+            EXPECT_EQ(got, kernel);
+        }
+        EXPECT_EQ(query_dispatch(stored.get(), query.get(), dim), got);
+
+        double ip = 0;
+        for (size_t i = 0; i < dim; i++) {
+            ip += static_cast<double>(x_f[i]) * y_f[i];
+        }
+        const double tolerance = SQ8A8DistanceTolerance(x_f.data(), y_f.data(), mean_ptr, dim);
+        EXPECT_NEAR(got, 1.0 - ip, tolerance) << "seed " << seed;
+
+        // Stored-to-stored is unchanged from the asymmetric path.
+        const float sym = a8.indexCalculator->calcDistance(stored.get(), y_storage.get(), dim);
+        EXPECT_EQ(sym, fallback.indexCalculator->calcDistance(fallback_stored.get(),
+                                                              y_storage.get(), dim));
+        EXPECT_EQ(stored_dispatch(stored.get(), y_storage.get(), dim), sym);
+    }
+    query.reset();
+    y_storage.reset();
+    for (auto *components : {&a8, &fallback}) {
+        delete components->preprocessors;
+        delete components->indexCalculator;
+    }
+}
+
+} // namespace
+
+TEST(SQ8A8FactoryTest, DistancesAndDispatch) {
+    if (!HostHasA8Queries()) {
+        GTEST_SKIP() << "No A8 query kernel for this CPU";
+    }
+    for (const size_t dim : {size_t{768}, size_t{1024}}) {
+        verifySQ8A8Distances<float, false>(dim);
+        verifySQ8A8Distances<float, true>(dim);
+        verifySQ8A8Distances<vecsim_types::float16, false>(dim);
+        verifySQ8A8Distances<vecsim_types::float16, true>(dim);
+    }
+}
+
+// A tiered index creates its components with a zero mean and installs the learned one later
+// through applySQ8Mean. Queries encoded after that, including through a dispatch cached before
+// it, match components built with the mean from the start.
+TEST(SQ8A8FactoryTest, DeferredMeanTakesEffect) {
+    if (!HostHasA8Queries()) {
+        GTEST_SKIP() << "No A8 query kernel for this CPU";
+    }
+    const auto run = [](auto tag) {
+        using DataType = decltype(tag);
+        constexpr size_t dim = 768;
+        SCOPED_TRACE(::testing::Message()
+                     << "fp16=" << (std::is_same_v<DataType, vecsim_types::float16>));
+        auto allocator = VecSimAllocator::newVecsimAllocator();
+        const std::vector<float> zero(dim, 0.0f);
+        const std::vector<float> mean = SQ8A8Widen(SQ8A8RandomVector<float>(dim, 12, -0.2f, 0.2f));
+        auto deferred =
+            CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(allocator, dim, zero.data());
+        auto direct =
+            CreateSQ8IndexComponents<DataType, VecSimMetric_IP>(allocator, dim, mean.data());
+        const auto cached =
+            deferred.indexCalculator->getDistanceDispatch(DistanceMode::StoredToQuery);
+        ASSERT_NE((dynamic_cast<SQ8A8QueryPreprocessor<DataType, VecSimMetric_IP, true> *>(
+                      SQ8FactoryPreprocessor(deferred))),
+                  nullptr);
+        applySQ8Mean<DataType, VecSimMetric_IP>(*deferred.preprocessors, *deferred.indexCalculator,
+                                                mean);
+        const std::vector<DataType> x = SQ8A8RandomVector<DataType>(dim, 13, -1.0f, 1.0f);
+        const std::vector<DataType> y = SQ8A8RandomVector<DataType>(dim, 14, -1.0f, 1.0f);
+        {
+            auto x_deferred =
+                deferred.preprocessors->preprocessForStorage(x.data(), dim * sizeof(DataType));
+            auto y_deferred =
+                deferred.preprocessors->preprocessQuery(y.data(), dim * sizeof(DataType));
+            auto x_direct =
+                direct.preprocessors->preprocessForStorage(x.data(), dim * sizeof(DataType));
+            auto y_direct = direct.preprocessors->preprocessQuery(y.data(), dim * sizeof(DataType));
+            EXPECT_EQ(std::memcmp(x_deferred.get(), x_direct.get(),
+                                  sq8::storage_bytes_count<VecSimMetric_IP, true>(dim)),
+                      0);
+            EXPECT_EQ(std::memcmp(y_deferred.get(), y_direct.get(), sq8_a8::blob_bytes_count(dim)),
+                      0);
+            EXPECT_NE(SQ8A8Const(y_deferred.get(), dim, sq8_a8::Y_MEAN_IP), 0.0);
+            const float expected =
+                direct.indexCalculator->calcDistanceForQuery(x_direct.get(), y_direct.get(), dim);
+            EXPECT_EQ(cached(x_deferred.get(), y_deferred.get(), dim), expected);
+            EXPECT_EQ(deferred.indexCalculator->calcDistanceForQuery(x_deferred.get(),
+                                                                     y_deferred.get(), dim),
+                      expected);
+        }
+        for (auto *components : {&deferred, &direct}) {
+            delete components->preprocessors;
+            delete components->indexCalculator;
+        }
+    };
+    run(float{});
+    run(vecsim_types::float16{});
 }
