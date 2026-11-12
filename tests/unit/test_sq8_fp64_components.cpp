@@ -16,6 +16,7 @@
 #include <vector>
 #include "gtest/gtest.h"
 #include "VecSim/index_factories/components/components_factory.h"
+#include "VecSim/spaces/sq8_fp64.h"
 
 namespace {
 using vecsim_types::sq8_fp64;
@@ -156,3 +157,19 @@ TEST(SQ8FP64Components, NearbyLargeValuesKeepDoublePrecision) {
     EXPECT_NEAR(calculator->calcDistance(precise.get(), precise.get(), 2), 0.0, 1e-40);
 }
 } // namespace
+
+TEST(SQ8FP64Components, AsymmetricL2UnalignedQuery) {
+    constexpr size_t dim = 3;
+    std::vector<uint8_t> stored(sq8_fp64::storage_bytes_count<VecSimMetric_L2>(dim));
+    stored[0] = 2;
+    stored[1] = 5;
+    stored[2] = 9;
+    const double minimum = 100000000.0;
+    const double delta = 0.5;
+    std::memcpy(stored.data() + dim, &minimum, sizeof(minimum));
+    std::memcpy(stored.data() + dim + sizeof(double), &delta, sizeof(delta));
+    const double values[] = {100000000.5, 100000003.5, 100000002.0};
+    alignas(double) uint8_t query[sizeof(values) + 1];
+    std::memcpy(query + 1, values, sizeof(values));
+    EXPECT_DOUBLE_EQ(spaces::L2_SQ8FP64_FP64(stored.data(), query + 1, dim), 7.5);
+}

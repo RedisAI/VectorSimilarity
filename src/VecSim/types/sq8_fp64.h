@@ -17,8 +17,10 @@ namespace vecsim_types {
 // SQ8 bytes followed by double reconstruction metadata; distinct from the FP32 SQ8 layout.
 struct sq8_fp64 : quantized_metadata {
     using value_type = uint8_t;
+    using metadata_type = double;
     static constexpr uint8_t max_code = std::numeric_limits<uint8_t>::max();
     static constexpr size_t data_bytes_count(size_t dim);
+    static uint8_t get_code(const uint8_t *data, size_t index);
     template <VecSimMetric Metric>
     static constexpr size_t storage_bytes_count(size_t dim);
     template <VecSimMetric Metric>
@@ -26,6 +28,8 @@ struct sq8_fp64 : quantized_metadata {
 };
 
 constexpr size_t sq8_fp64::data_bytes_count(size_t dim) { return dim; }
+
+inline uint8_t sq8_fp64::get_code(const uint8_t *data, size_t index) { return data[index]; }
 
 template <VecSimMetric Metric>
 constexpr size_t sq8_fp64::storage_bytes_count(size_t dim) {
