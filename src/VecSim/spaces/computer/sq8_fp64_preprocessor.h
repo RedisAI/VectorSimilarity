@@ -72,7 +72,7 @@ void SQ8FP64Preprocessor<Metric>::quantize(const double *input, uint8_t *output)
         }
     }
     const double metadata[] = {minimum, delta, sum, squares};
-    std::memcpy(output + dim, metadata,
+    std::memcpy(output + vecsim_types::sq8_fp64::data_bytes_count(dim), metadata,
                 vecsim_types::sq8_fp64::storage_metadata_count<Metric>() * sizeof(double));
 }
 

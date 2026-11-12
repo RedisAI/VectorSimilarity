@@ -29,7 +29,7 @@ constexpr size_t sq8_fp64::data_bytes_count(size_t dim) { return dim; }
 
 template <VecSimMetric Metric>
 constexpr size_t sq8_fp64::storage_bytes_count(size_t dim) {
-    return dim + storage_metadata_count<Metric>() * sizeof(double);
+    return data_bytes_count(dim) + storage_metadata_count<Metric>() * sizeof(double);
 }
 
 template <VecSimMetric Metric>

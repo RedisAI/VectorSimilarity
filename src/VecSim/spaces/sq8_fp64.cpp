@@ -13,7 +13,8 @@
 namespace spaces {
 namespace {
 double metadata(const void *blob, size_t dim, size_t index) {
-    return load_unaligned<double>(static_cast<const uint8_t *>(blob) + dim +
+    return load_unaligned<double>(static_cast<const uint8_t *>(blob) +
+                                  vecsim_types::sq8_fp64::data_bytes_count(dim) +
                                   index * sizeof(double));
 }
 
