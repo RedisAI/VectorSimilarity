@@ -13,6 +13,7 @@
 #include "VecSim/vec_sim_index.h"
 #include "VecSim/index_factories/components/preprocessors_factory.h"
 #include "VecSim/spaces/computer/calculator.h"
+#include "VecSim/spaces/computer/sq8_fp64_preprocessor.h"
 
 template <typename DataType, typename DistType>
 IndexComponents<DataType, DistType>
@@ -111,6 +112,27 @@ CreateSQ8IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size
                          const float *mean_ptr) {
     return CreateQuantizedIndexComponents<DataType, Metric, vecsim_types::sq8>(allocator, dim,
                                                                                mean_ptr);
+}
+
+// Cosine storage and query inputs must already be normalized by the caller.
+template <VecSimMetric Metric>
+IndexComponents<double, double>
+CreateSQ8FP64IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim) {
+    unsigned char storage_alignment = 0;
+    const auto symmetric = spaces::GetDistFunc<vecsim_types::sq8_fp64, double>(
+        Metric, dim, &storage_alignment);
+    unsigned char asymmetric_alignment = 0;
+    const auto asymmetric = spaces::GetDistFunc<vecsim_types::sq8_fp64, double, double>(
+        Metric, dim, &asymmetric_alignment);
+    storage_alignment = spaces::combineAlignments(storage_alignment, asymmetric_alignment);
+    auto *calculator = new (allocator)
+        DistanceCalculatorCommon<double>(allocator, symmetric, asymmetric);
+    auto *container = new (allocator)
+        MultiPreprocessorsContainer<double, 1>(allocator, 0, storage_alignment);
+    auto *preprocessor = new (allocator) SQ8FP64Preprocessor<Metric>(allocator, dim);
+    [[maybe_unused]] const int result = container->addPreprocessor(preprocessor);
+    assert(result != -1);
+    return {calculator, container};
 }
 
 template <typename DataType, typename DistType>
