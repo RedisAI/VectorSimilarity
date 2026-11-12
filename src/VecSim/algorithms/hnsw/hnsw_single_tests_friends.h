@@ -19,3 +19,4 @@ friend class BF16HNSWTest_testSizeEstimation_Test;
 friend class BF16TieredTest_testSizeEstimation_Test;
 friend class FP16HNSWTest_testSizeEstimation_Test;
 friend class FP16TieredTest_testSizeEstimation_Test;
+friend class HNSWMemoryDiagnostic_breakdown_Test;

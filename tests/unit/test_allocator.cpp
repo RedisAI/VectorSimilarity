@@ -424,11 +424,9 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     int allocation_delta = allocator->getAllocationSize() - before;
     size_t vec_max_level = hnswIndex->getGraphDataByInternalId(1)->toplevel;
 
-    // Expect the creation of an empty incoming edges set in every level (+ the allocator header
-    // overhead), and a single node in the labels' lookup hash table.
-    size_t expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead);
-    expected_allocation_delta += hashTableNodeSize;
+    // Expect a single node in the labels' lookup hash table. Empty incoming edges sets allocate
+    // nothing.
+    size_t expected_allocation_delta = hashTableNodeSize;
 
     // Account for allocating link lists for levels higher than 0, if exists.
     if (vec_max_level > 0) {
@@ -462,16 +460,13 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
     vec_max_level = hnswIndex->getGraphDataByInternalId(5)->toplevel;
 
     /* Compute the expected allocation delta:
-     * 1. empty incoming edges set in every level (+ allocator's header).
-     * 2. A node in the labels_lookup has table (+ allocator's header). If rehashing occurred, we
+     * 1. A node in the labels_lookup has table (+ allocator's header). If rehashing occurred, we
      * account also for the diff in the buckets size (each bucket has sizeof(size_t) overhead).
-     * 3. Account for allocating link lists for levels higher than 0, if exists.
-     * 4. Finally, expect an allocation of the data buffer in the incoming edges vector of vec1 due
-     * to the insertion, and the fact that vec1 will re-select its neighbours.
+     * 2. Account for allocating link lists for levels higher than 0, if exists.
+     * 3. Finally, expect the allocation of the incoming edges set of vec1 due to the insertion,
+     * and the fact that vec1 will re-select its neighbours. Empty sets allocate nothing.
      */
-    expected_allocation_delta =
-        (vec_max_level + 1) * (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) +
-        hashTableNodeSize;
+    expected_allocation_delta = hashTableNodeSize;
     size_t buckets_diff = hnswIndex->labelLookup.bucket_count() - buckets_num_before;
     expected_allocation_delta += buckets_diff * sizeof(size_t);
     if (vec_max_level > 0) {
@@ -479,11 +474,12 @@ TYPED_TEST(IndexAllocatorTest, testIncomingEdgesSet) {
             hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;
     }
 
-    // Expect that the first element is pushed to the incoming edges vector of element 1 in level 0.
-    // Then, we account for the capacity of the buffer that is allocated for the vector data.
+    // Expect that the first element is pushed to the incoming edges set of element 1 in level 0,
+    // which allocates the set's header and room for its capacity.
+    ASSERT_EQ(hnswIndex->getElementLevelData(1, 0).getIncomingEdges().size(), 1);
     expected_allocation_delta +=
-        hnswIndex->getElementLevelData(1, 0).incomingUnidirectionalEdges->capacity() *
-            sizeof(idType) +
+        sizeof(IncomingEdges) +
+        hnswIndex->getElementLevelData(1, 0).getIncomingEdgesCapacity() * sizeof(idType) +
         vecsimAllocationOverhead;
     ASSERT_EQ(allocation_delta, expected_allocation_delta);
 
@@ -556,8 +552,7 @@ TYPED_TEST(IndexAllocatorTest, test_hnsw_reclaim_memory) {
 
     // Compute the expected memory allocation due to the last vector insertion.
     size_t vec_max_level = hnswIndex->getGraphDataByInternalId(block_size)->toplevel;
-    size_t last_vec_graph_data_mem =
-        (sizeof(vecsim_stl::vector<idType>) + vecsimAllocationOverhead) + hashTableNodeSize;
+    size_t last_vec_graph_data_mem = hashTableNodeSize;
     if (vec_max_level > 0) {
         last_vec_graph_data_mem +=
             hnswIndex->levelDataSize * vec_max_level + vecsimAllocationOverhead;

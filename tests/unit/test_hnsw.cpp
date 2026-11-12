@@ -2380,7 +2380,7 @@ TYPED_TEST(HNSWTest, isolateDeletedElementEdgeShapes) {
         auto *hnsw_index = this->CastToHNSW(index);
         ElementLevelData &isolated = hnsw_index->getElementLevelData(isolated_id, 0);
         isolated.removeLink(deleted_neighbour_id);
-        isolated.newIncomingUnidirectionalEdge(deleted_neighbour_id);
+        isolated.newIncomingUnidirectionalEdge(deleted_neighbour_id, *hnsw_index->getAllocator());
         ASSERT_TRUE(hnsw_index->checkIntegrity().valid_state);
 
         hnsw_index->isolateDeletedElement(isolated_id);

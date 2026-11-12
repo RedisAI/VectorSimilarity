@@ -114,7 +114,7 @@ protected:
 
     // Measures ghost memory across all incoming edges vectors in the HNSW graph.
     // Ghost memory = sum of (capacity - size) * sizeof(idType) for every
-    // incomingUnidirectionalEdges vector across all nodes and all levels.
+    // incoming-edge list across all nodes and all levels.
     // Reports scalar stats via benchmark state counters and prints distribution
     // details (top-10, percentiles) to stdout.
     void measure_ghost_memory(benchmark::State &state, int iteration = -1,
@@ -133,9 +133,8 @@ protected:
             auto *graph_data = hnsw_->getGraphDataByInternalId(id);
             for (size_t level = 0; level <= graph_data->toplevel; level++) {
                 auto &level_data = hnsw_->getElementLevelData(graph_data, level);
-                auto &incoming = level_data.getIncomingEdges();
-                size_t sz = incoming.size();
-                size_t cap = incoming.capacity();
+                size_t sz = level_data.getIncomingEdges().size();
+                size_t cap = level_data.getIncomingEdgesCapacity();
 
                 total_used_bytes += sz * sizeof(idType);
                 total_alloc_bytes += cap * sizeof(idType);
@@ -201,7 +200,7 @@ protected:
             auto *graph_data = hnsw_->getGraphDataByInternalId(id);
             for (size_t level = 0; level <= graph_data->toplevel; level++) {
                 auto &level_data = hnsw_->getElementLevelData(graph_data, level);
-                level_data.incomingUnidirectionalEdges->shrink_to_fit();
+                level_data.shrinkIncomingEdgesToFit(*hnsw_->getAllocator());
             }
         }
     }

@@ -117,7 +117,7 @@ HNSWIndexMetaData HNSWIndex<DataType, DistType>::checkIntegrity() const {
             if (s.size() != cur.numLinks) {
                 return res;
             }
-            incoming_edges_sets_sizes += cur.incomingUnidirectionalEdges->size();
+            incoming_edges_sets_sizes += cur.getIncomingEdges().size();
         }
     }
     if (num_deleted != this->numMarkedDeleted) {
@@ -241,11 +241,11 @@ void HNSWIndex<DataType, DistType>::restoreLevel(std::ifstream &input, ElementLe
     // Restore the incoming edges of the current element
     unsigned int size;
     readBinaryPOD(input, size);
-    data.incomingUnidirectionalEdges->reserve(size);
+    data.reserveIncomingEdges(size, *this->allocator);
     idType id = INVALID_ID;
     for (size_t i = 0; i < size; i++) {
         readBinaryPOD(input, id);
-        data.incomingUnidirectionalEdges->push_back(id);
+        data.newIncomingUnidirectionalEdge(id, *this->allocator);
     }
 }
 
@@ -332,12 +332,12 @@ void HNSWIndex<DataType, DistType>::saveLevel(std::ofstream &output, ElementLeve
     }
 
     // Save the incoming edges of the current element
-    unsigned int size = data.incomingUnidirectionalEdges->size();
+    unsigned int size = data.getIncomingEdges().size();
     writeBinaryPOD(output, size);
-    for (idType id : *data.incomingUnidirectionalEdges) {
+    for (idType id : data.getIncomingEdges()) {
         writeBinaryPOD(output, id);
     }
 
     // Shrink the incoming edges vector for integrity check
-    data.incomingUnidirectionalEdges->shrink_to_fit();
+    data.shrinkIncomingEdgesToFit(*this->allocator);
 }

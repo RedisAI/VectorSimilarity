@@ -3,6 +3,8 @@
 
 #include <cassert>
 #include <algorithm>
+#include <span>
+#include <stdexcept>
 #include "VecSim/utils/vec_utils.h"
 
 // Amortized shrink thresholds for incoming edges vectors.
@@ -14,9 +16,19 @@ using candidatesList = vecsim_stl::vector<std::pair<DistType, idType>>;
 
 typedef uint16_t linkListSize;
 
+// The unidirectional incoming edges of one element at one level, stored as a single allocation of
+// this header followed by the ids.
+struct IncomingEdges {
+    uint32_t size;
+    uint32_t capacity;
+    idType ids[];
+};
+
 struct ElementLevelData {
-    // A list of ids that are pointing to the node where each edge is *unidirectional*
-    vecsim_stl::vector<idType> *incomingUnidirectionalEdges;
+    // The ids of the elements that point to this one where the edge is *unidirectional*, or null
+    // while there are none. Owned by this level data and freed with `freeIncomingEdges`. It is
+    // guarded by the element's lock, like the links.
+    IncomingEdges *incomingUnidirectionalEdges;
     linkListSize numLinks;
     // Flexible array member - https://en.wikipedia.org/wiki/Flexible_array_member
     // Using this trick, we can have the links list as part of the ElementLevelData struct, and
@@ -27,17 +39,21 @@ struct ElementLevelData {
     // all nesting structs.
     idType links[];
 
-    explicit ElementLevelData(std::shared_ptr<VecSimAllocator> allocator)
-        : incomingUnidirectionalEdges(new(allocator) vecsim_stl::vector<idType>(allocator)),
-          numLinks(0) {}
+    ElementLevelData() : incomingUnidirectionalEdges(nullptr), numLinks(0) {}
 
     linkListSize getNumLinks() const { return this->numLinks; }
     idType getLinkAtPos(size_t pos) const {
         assert(pos < numLinks);
         return this->links[pos];
     }
-    const vecsim_stl::vector<idType> &getIncomingEdges() const {
-        return *incomingUnidirectionalEdges;
+    std::span<const idType> getIncomingEdges() const {
+        if (!incomingUnidirectionalEdges) {
+            return {};
+        }
+        return {incomingUnidirectionalEdges->ids, incomingUnidirectionalEdges->size};
+    }
+    size_t getIncomingEdgesCapacity() const {
+        return incomingUnidirectionalEdges ? incomingUnidirectionalEdges->capacity : 0;
     }
     std::vector<idType> copyLinks() {
         std::vector<idType> links_copy;
@@ -72,27 +88,71 @@ struct ElementLevelData {
         assert(i < numLinks && "Corruption in HNSW index"); // node_id not found - error
         numLinks--;
     }
-    void newIncomingUnidirectionalEdge(idType node_id) {
-        this->incomingUnidirectionalEdges->push_back(node_id);
-    }
-    bool removeIncomingUnidirectionalEdgeIfExists(idType node_id) {
-        bool result = this->incomingUnidirectionalEdges->remove(node_id);
-
-        if (result) {
-            auto &vec = *this->incomingUnidirectionalEdges;
-            if (vec.capacity() > INCOMING_EDGES_SHRINK_RATIO * vec.size()) {
-                vec.shrink_to_fit();
-            }
+    // Grows the capacity like `std::vector` does (doubling, starting at one).
+    void newIncomingUnidirectionalEdge(idType node_id, VecSimAllocator &allocator) {
+        size_t size = getIncomingEdges().size();
+        if (size == getIncomingEdgesCapacity()) {
+            resizeIncomingEdges(std::max<size_t>(1, 2 * size), allocator);
         }
-
-        return result;
+        incomingUnidirectionalEdges->ids[incomingUnidirectionalEdges->size++] = node_id;
+    }
+    // Removes node_id by moving the last id into its place. Shrinks the allocation when it is more
+    // than INCOMING_EDGES_SHRINK_RATIO times larger than needed, and frees it when it empties.
+    bool removeIncomingUnidirectionalEdgeIfExists(idType node_id, VecSimAllocator &allocator) {
+        auto edges = getIncomingEdges();
+        auto it = std::find(edges.begin(), edges.end(), node_id);
+        if (it == edges.end()) {
+            return false;
+        }
+        incomingUnidirectionalEdges->ids[it - edges.begin()] = edges.back();
+        size_t size = --incomingUnidirectionalEdges->size;
+        if (getIncomingEdgesCapacity() > INCOMING_EDGES_SHRINK_RATIO * size) {
+            resizeIncomingEdges(size, allocator);
+        }
+        return true;
     }
     void swapNodeIdInIncomingEdges(idType id_before, idType id_after) {
-        auto it = std::find(this->incomingUnidirectionalEdges->begin(),
-                            this->incomingUnidirectionalEdges->end(), id_before);
+        auto edges = getIncomingEdges();
+        auto it = std::find(edges.begin(), edges.end(), id_before);
         // This should always succeed
-        assert(it != this->incomingUnidirectionalEdges->end());
-        *it = id_after;
+        assert(it != edges.end());
+        incomingUnidirectionalEdges->ids[it - edges.begin()] = id_after;
+    }
+    // Makes room for at least `capacity` incoming edges in one allocation.
+    void reserveIncomingEdges(size_t capacity, VecSimAllocator &allocator) {
+        if (capacity > getIncomingEdgesCapacity()) {
+            resizeIncomingEdges(capacity, allocator);
+        }
+    }
+    void shrinkIncomingEdgesToFit(VecSimAllocator &allocator) {
+        if (getIncomingEdgesCapacity() > getIncomingEdges().size()) {
+            resizeIncomingEdges(getIncomingEdges().size(), allocator);
+        }
+    }
+    void freeIncomingEdges(VecSimAllocator &allocator) {
+        allocator.free_allocation(incomingUnidirectionalEdges);
+        incomingUnidirectionalEdges = nullptr;
+    }
+
+private:
+    // Sets the capacity to `capacity` (at least the current size), keeping the ids.
+    void resizeIncomingEdges(size_t capacity, VecSimAllocator &allocator) {
+        assert(capacity >= getIncomingEdges().size());
+        if (capacity == 0) {
+            freeIncomingEdges(allocator);
+            return;
+        }
+        bool was_empty = incomingUnidirectionalEdges == nullptr;
+        auto *resized = static_cast<IncomingEdges *>(allocator.reallocate(
+            incomingUnidirectionalEdges, sizeof(IncomingEdges) + capacity * sizeof(idType)));
+        if (resized == nullptr) {
+            throw std::runtime_error("VecSim index low memory error");
+        }
+        if (was_empty) {
+            resized->size = 0;
+        }
+        resized->capacity = capacity;
+        incomingUnidirectionalEdges = resized;
     }
 };
 
@@ -103,24 +163,24 @@ struct ElementGraphData {
 
     ElementGraphData(size_t maxLevel, size_t high_level_size,
                      std::shared_ptr<VecSimAllocator> allocator)
-        : toplevel(maxLevel), others(nullptr), level0(allocator) {
+        : toplevel(maxLevel), others(nullptr), level0() {
         if (toplevel > 0) {
             others = (ElementLevelData *)allocator->callocate(high_level_size * toplevel);
             if (others == nullptr) {
                 throw std::runtime_error("VecSim index low memory error");
             }
             for (size_t i = 0; i < maxLevel; i++) {
-                new ((char *)others + i * high_level_size) ElementLevelData(allocator);
+                new ((char *)others + i * high_level_size) ElementLevelData();
             }
         }
     }
     ~ElementGraphData() = delete; // should be destroyed using `destroy'
 
     void destroy(size_t levelDataSize, std::shared_ptr<VecSimAllocator> allocator) {
-        delete this->level0.incomingUnidirectionalEdges;
+        this->level0.freeIncomingEdges(*allocator);
         ElementLevelData *cur_ld = this->others;
         for (size_t i = 0; i < this->toplevel; i++) {
-            delete cur_ld->incomingUnidirectionalEdges;
+            cur_ld->freeIncomingEdges(*allocator);
             cur_ld = reinterpret_cast<ElementLevelData *>(reinterpret_cast<char *>(cur_ld) +
                                                           levelDataSize);
         }

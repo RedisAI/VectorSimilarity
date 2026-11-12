@@ -1058,7 +1058,7 @@ void HNSWIndex<DataType, DistType>::revisitNeighborConnections(
             neighbor_level.setLinkAtPos(neighbour_neighbours_idx++, new_node_id);
         } else {
             // unidirectional connection - put the new node in the neighbour's incoming edges.
-            neighbor_level.newIncomingUnidirectionalEdge(new_node_id);
+            neighbor_level.newIncomingUnidirectionalEdge(new_node_id, *this->allocator);
         }
     }
     // Done updating the neighbor's neighbors.
@@ -1207,8 +1207,9 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 // otherwise, edge turned from bidirectional to one directional,
                 // and it should be saved in the neighbor's incoming edges.
                 auto &node_level_data = getElementLevelData(node_id, level);
-                if (!node_level_data.removeIncomingUnidirectionalEdgeIfExists(neighbour_id)) {
-                    neighbor_level.newIncomingUnidirectionalEdge(node_id);
+                if (!node_level_data.removeIncomingUnidirectionalEdgeIfExists(neighbour_id,
+                                                                              *this->allocator)) {
+                    neighbor_level.newIncomingUnidirectionalEdge(node_id, *this->allocator);
                 }
             }
         }
@@ -1229,7 +1230,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 if (node_level.getLinkAtPos(j) == neighbour_id) {
                     // Swap the last element with the current one (equivalent to removing the
                     // neighbor from the list) - this should always succeed and return true.
-                    bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(node_id);
+                    bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(
+                        node_id, *this->allocator);
                     (void)res;
                     assert(res && "The edge should be in the incoming unidirectional edges");
                     bidirectional_edge = true;
@@ -1237,7 +1239,7 @@ void HNSWIndex<DataType, DistType>::repairConnectionsForDeletion(
                 }
             }
             if (!bidirectional_edge) {
-                node_level.newIncomingUnidirectionalEdge(neighbour_id);
+                node_level.newIncomingUnidirectionalEdge(neighbour_id, *this->allocator);
             }
         }
     }
@@ -1612,8 +1614,8 @@ void HNSWIndex<DataType, DistType>::mutuallyUpdateForRepairedNode(
         // we add it to the unidirectional edges set. Note: we assume that all updates occur
         // mutually and atomically, then can rely on this assumption.
         auto &chosen_node_level_data = getElementLevelData(chosen_id, level);
-        if (!node_level.removeIncomingUnidirectionalEdgeIfExists(chosen_id)) {
-            chosen_node_level_data.newIncomingUnidirectionalEdge(node_id);
+        if (!node_level.removeIncomingUnidirectionalEdgeIfExists(chosen_id, *this->allocator)) {
+            chosen_node_level_data.newIncomingUnidirectionalEdge(node_id, *this->allocator);
         }
     }
     // Done updating the node's neighbors.
@@ -1741,8 +1743,8 @@ void HNSWIndex<DataType, DistType>::mutuallyRemoveNeighborAtPos(ElementLevelData
     // neighbour's incoming edges set. Note: we assume that every update is performed atomically
     // mutually, so it should be sufficient to look at the removed node's incoming edges set
     // alone.
-    if (!removed_node_level.removeIncomingUnidirectionalEdgeIfExists(node_id)) {
-        node_level.newIncomingUnidirectionalEdge(removed_node);
+    if (!removed_node_level.removeIncomingUnidirectionalEdgeIfExists(node_id, *this->allocator)) {
+        node_level.newIncomingUnidirectionalEdge(removed_node, *this->allocator);
     }
 }
 
@@ -1885,7 +1887,8 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
             } else if (points_to_other) {
                 // Unidirectional out - the other side recorded it as an incoming edge.
                 level_data.removeLink(other_id);
-                bool res = other.removeIncomingUnidirectionalEdgeIfExists(internalId);
+                bool res =
+                    other.removeIncomingUnidirectionalEdgeIfExists(internalId, *this->allocator);
                 (void)res;
                 assert(res && "The edge should be in the incoming unidirectional edges");
             } else if (other_points_here) {
@@ -1894,7 +1897,8 @@ void HNSWIndex<DataType, DistType>::isolateDeletedElement(idType internalId) {
                 assert(isMarkedDeleted(other_id) &&
                        "a live element still points to a fully repaired deleted element");
                 other.removeLink(internalId);
-                bool res = level_data.removeIncomingUnidirectionalEdgeIfExists(other_id);
+                bool res =
+                    level_data.removeIncomingUnidirectionalEdgeIfExists(other_id, *this->allocator);
                 (void)res;
                 assert(res && "The edge should be in the incoming unidirectional edges");
             }
@@ -1930,7 +1934,8 @@ void HNSWIndex<DataType, DistType>::disposeElementData(idType internalId) {
             // . (We know we will get here and remove this deleted id permanently.)
             // However, upon asynchronous delete, this should always succeed since we do update
             // the incoming edges in the mutual update even for deleted elements.
-            bool res = neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId);
+            bool res =
+                neighbour.removeIncomingUnidirectionalEdgeIfExists(internalId, *this->allocator);
             // Assert the logical condition of: is_marked_deleted(id) => res==True.
             (void)res;
             assert((!isMarkedDeleted(internalId) || res) && "The edge should be in the incoming "
@@ -2013,8 +2018,8 @@ void HNSWIndex<DataType, DistType>::repairConnectionsAndEntryPoint(
             // incoming edges.
             if (!bidirectional_edge) {
                 // This should always return true (remove should succeed).
-                bool res =
-                    neighbor_level.removeIncomingUnidirectionalEdgeIfExists(element_internal_id);
+                bool res = neighbor_level.removeIncomingUnidirectionalEdgeIfExists(
+                    element_internal_id, *this->allocator);
                 (void)res;
                 assert(res && "The edge should be in the incoming unidirectional edges");
             }

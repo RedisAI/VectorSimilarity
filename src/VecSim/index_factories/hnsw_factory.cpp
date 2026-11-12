@@ -291,12 +291,18 @@ size_t EstimateElementSize(const HNSWParams *params, bool with_mean) {
     size_t size_meta_data = sizeof(tag_t) + sizeof(ElementMetaData) +
                             sizeof(vecsim_stl::one_byte_mutex) + size_label_lookup_entry;
 
-    /* Disclaimer: we are neglecting two additional factors that consume memory:
-     * 1. The overall bucket size in labels_lookup hash table is usually higher than the number of
-     * requested buckets (which is the index capacity), and it is auto selected according to the
-     * hashing policy and the max load factor.
-     * 2. The incoming edges that aren't bidirectional are stored in a dynamic array
-     * (vecsim_stl::vector) Those edges' memory *is omitted completely* from this estimation.
+    /* This is the memory one more element of index capacity takes, which is what growing the
+     * index by a block allocates per element. Storing a vector in that capacity allocates more,
+     * which this estimation leaves out:
+     * 1. Its node in the labels lookup hash table (a next pointer, the label and the id, plus the
+     * allocator header).
+     * 2. Its incoming unidirectional edges, one allocation per level that has any. Most elements
+     * have none at level 0; on average they take about M bytes per element.
+     * 3. Its links in the levels above level 0, if it has any (levelDataSize per level, plus the
+     * allocator header).
+     * Also, the bucket count of the labels lookup hash table is usually higher than the requested
+     * number of buckets (the index capacity), as it is selected by the hashing policy and the max
+     * load factor.
      */
     return size_meta_data + size_total_data_per_element;
 }
