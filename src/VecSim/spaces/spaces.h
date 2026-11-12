@@ -86,6 +86,9 @@ static constexpr size_t SQ4_MAX_EXACT_SIMD_DIM = std::numeric_limits<uint32_t>::
 static constexpr size_t FP16_MAX_UNIT_IP_SIMD_DIM = 65504;
 static constexpr size_t FP16_MAX_UNIT_L2_SIMD_DIM = FP16_MAX_UNIT_IP_SIMD_DIM / 4;
 
+static constexpr size_t SQ8_FP16_NATIVE_MIN_DIM = 128;
+static constexpr size_t SQ8_FP16_FOUR_SUMS_MIN_DIM = 256;
+
 static inline auto getCpuOptimizationFeatures(const void *arch_opt = nullptr) {
 
 #if defined(CPU_FEATURES_ARCH_AARCH64)
