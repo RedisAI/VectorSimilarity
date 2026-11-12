@@ -19,8 +19,8 @@ double metadata(const void *blob, size_t dim, size_t index) {
 
 template <bool L2, bool Asymmetric>
 double distance(const void *left, const void *right, size_t dim) {
-    const auto *a = static_cast<const uint8_t *>(left);
-    const auto *b = static_cast<const uint8_t *>(right);
+    const auto *const a = static_cast<const uint8_t *>(left);
+    const auto *const b = static_cast<const uint8_t *>(right);
     const double min_a = metadata(left, dim, vecsim_types::sq8_fp64::MIN_VAL);
     const double delta_a = metadata(left, dim, vecsim_types::sq8_fp64::DELTA);
     double min_b = 0.0;

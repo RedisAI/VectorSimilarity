@@ -102,7 +102,7 @@ void SQ8FP64Preprocessor<Metric>::preprocessQuery(const void *original, void *&q
                                                   size_t &query_size,
                                                   unsigned char alignment) const {
     assert(!query);
-    const auto *input = static_cast<const double *>(original);
+    const auto *const input = static_cast<const double *>(original);
     double sum = 0.0;
     double squares = 0.0;
     for (size_t i = 0; i < dim; ++i) {

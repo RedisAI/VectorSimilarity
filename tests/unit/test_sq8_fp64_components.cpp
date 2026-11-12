@@ -25,9 +25,9 @@ double readMetadata(const void *blob, size_t offset, size_t index) {
 
 template <VecSimMetric Metric>
 void checkLayout(size_t dim, double constant) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     SQ8FP64Preprocessor<Metric> preprocessor(allocator, dim);
-    std::vector<double> input(dim, constant);
+    const std::vector<double> input(dim, constant);
     const auto original = input;
     void *storage = nullptr;
     void *query = nullptr;
@@ -72,14 +72,14 @@ TEST(SQ8FP64Components, LayoutAlignmentConstantsAndInPlace) {
 }
 
 TEST(SQ8FP64Components, DoublePrecisionRangeAndMetadata) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     SQ8FP64Preprocessor<VecSimMetric_L2> preprocessor(allocator, 3);
     for (double scale : {1.0, 1e100, 1e-300}) {
         const double input[] = {scale, 1.25 * scale, 2.0 * scale};
         void *storage = nullptr;
         size_t size = sizeof(input);
         preprocessor.preprocessForStorage(input, storage, size, 0);
-        const auto *codes = static_cast<const uint8_t *>(storage);
+        const auto *const codes = static_cast<const uint8_t *>(storage);
         EXPECT_EQ(codes[0], 0);
         EXPECT_EQ(codes[1], 64);
         EXPECT_EQ(codes[2], 255);
@@ -95,25 +95,45 @@ TEST(SQ8FP64Components, DoublePrecisionRangeAndMetadata) {
 }
 
 TEST(SQ8FP64Components, DefinedConversionOutsideRepresentableDeltaDomain) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     SQ8FP64Preprocessor<VecSimMetric_IP> preprocessor(allocator, 2);
     const double tiny = std::numeric_limits<double>::denorm_min();
     for (const auto &input : {std::vector<double>{-1e308, 1e308}, std::vector<double>{0.0, tiny}}) {
         void *storage = nullptr;
         size_t size = input.size() * sizeof(double);
         preprocessor.preprocessForStorage(input.data(), storage, size, 0);
-        const auto *codes = static_cast<const uint8_t *>(storage);
+        const auto *const codes = static_cast<const uint8_t *>(storage);
         EXPECT_EQ(codes[0], 0);
         EXPECT_EQ(codes[1], input[0] == 0.0 ? 255 : 0);
         allocator->free_allocation(storage);
     }
 }
 
+template <VecSimMetric Metric>
+void checkZeroDistance(double expected) {
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto components = CreateSQ8FP64IndexComponents<Metric>(allocator, 3);
+    const std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
+    const std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+    const double input[] = {0.0, 0.0, 0.0};
+    const auto blobs = preprocessors->preprocess(input, sizeof(input));
+    EXPECT_DOUBLE_EQ(calculator->calcDistance(blobs.getStorageBlob(), blobs.getStorageBlob(), 3),
+                     expected);
+    EXPECT_DOUBLE_EQ(
+        calculator->calcDistanceForQuery(blobs.getStorageBlob(), blobs.getQueryBlob(), 3),
+        expected);
+}
+
+TEST(SQ8FP64Components, ZeroDistances) {
+    checkZeroDistance<VecSimMetric_L2>(0.0);
+    checkZeroDistance<VecSimMetric_IP>(1.0);
+}
+
 TEST(SQ8FP64Components, NearbyLargeValuesKeepDoublePrecision) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     const auto components = CreateSQ8FP64IndexComponents<VecSimMetric_L2>(allocator, 2);
-    std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
-    std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+    const std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
+    const std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
     const double input[] = {1e8, 1e8 + 1.0};
     const double query[] = {1e8, 1e8};
     const auto stored = preprocessors->preprocessForStorage(input, sizeof(input));

@@ -21,7 +21,7 @@ namespace {
 using vecsim_types::sq8_fp64;
 
 std::vector<double> reconstruct(const void *blob, size_t dim, double &delta) {
-    const auto *bytes = static_cast<const uint8_t *>(blob);
+    const auto *const bytes = static_cast<const uint8_t *>(blob);
     double minimum;
     std::memcpy(&minimum, bytes + dim, sizeof(double));
     std::memcpy(&delta, bytes + dim + sizeof(double), sizeof(double));
@@ -64,24 +64,30 @@ void checkBound(VecSimMetric metric, double actual, double expected, double delt
         norm1_b += std::abs(b[i]);
         scale = std::max({scale, std::abs(a[i]), std::abs(b[i])});
     }
+    const double error_a =
+        std::all_of(a.begin(), a.end(), [&](double value) { return value == a.front(); }) ? 0.0
+                                                                                          : delta_a;
+    const double error_b =
+        std::all_of(b.begin(), b.end(), [&](double value) { return value == b.front(); }) ? 0.0
+                                                                                          : delta_b;
     const double slack = 64 * std::numeric_limits<double>::epsilon() * (a.size() + 1) * scale;
     if (metric == VecSimMetric_L2) {
         EXPECT_GE(actual, 0.0);
         EXPECT_LE(std::abs(std::sqrt(actual) - std::sqrt(expected)),
-                  (delta_a + delta_b) * std::sqrt(double(a.size())) / 2 + slack);
+                  (error_a + error_b) * std::sqrt(double(a.size())) / 2 + slack);
     } else {
-        EXPECT_LE(std::abs(actual - expected), delta_a * norm1_b / 2 + delta_b * norm1_a / 2 +
-                                                   a.size() * delta_a * delta_b / 4 +
+        EXPECT_LE(std::abs(actual - expected), error_a * norm1_b / 2 + error_b * norm1_a / 2 +
+                                                   a.size() * error_a * error_b / 4 +
                                                    slack * scale);
     }
 }
 
 template <VecSimMetric Metric>
 void checkDistances(size_t dim, bool nearly_parallel) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     const auto components = CreateSQ8FP64IndexComponents<Metric>(allocator, dim);
-    std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
-    std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+    const std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
+    const std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
     std::vector<double> a(dim);
     std::vector<double> b(dim);
     for (size_t i = 0; i < dim; ++i) {
@@ -134,10 +140,10 @@ TEST(SQ8FP64Distances, MetricsReconstructionAndAnalyticalBounds) {
 }
 
 TEST(SQ8FP64Distances, OriginalDoubleTopTwoRanking) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     const auto components = CreateSQ8FP64IndexComponents<VecSimMetric_L2>(allocator, 3);
-    std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
-    std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
+    const std::unique_ptr<IndexCalculatorInterface<double>> calculator(components.indexCalculator);
+    const std::unique_ptr<PreprocessorsContainerAbstract> preprocessors(components.preprocessors);
     const std::vector<double> query(3, 1e8 + 3);
     const auto processed = preprocessors->preprocessQuery(query.data(), 3 * sizeof(double));
     const std::array<double, 4> offsets = {0, 2, 5, 9};
@@ -162,7 +168,7 @@ TEST(SQ8FP64Distances, OriginalDoubleTopTwoRanking) {
 }
 
 TEST(SQ8FP64Distances, DispatchAlignmentUnalignedBlobsAndInvalidMetric) {
-    auto allocator = VecSimAllocator::newVecsimAllocator();
+    const auto allocator = VecSimAllocator::newVecsimAllocator();
     SQ8FP64Preprocessor<VecSimMetric_L2> preprocessor(allocator, 3);
     const double input[] = {1e8, 1e8 + 1, 1e8 + 2};
     void *storage = nullptr;
