@@ -65,14 +65,14 @@ combined, except that `bridgeRejected` takes precedence over the two-hop control
   inspections, not total query work. Budget stops can reduce recall or exhaust the frontier;
   there is no automatic retry/fallback. Partial lists restart from their beginning on a
   later visit, so small budgets can repeatedly scan the same prefix.
-- `bridgeRejected`: enqueue every unvisited direct neighbor, including rejected nodes,
+- `bridgeRejected`: enqueue every direct neighbor not yet visited, including rejected nodes,
   and disable second-hop expansion. Only MAYBE nodes enter result heaps and affect the
   result bound. This uses one-hop graph navigation with filtered result admission;
   it can cross longer rejected chains, but does not guarantee exact recall or recovery
   from genuinely disconnected graph components. With no matches it may scan the whole
   reachable graph, subject to the query timeout. The existing NaviX stopping rule is
   retained: distance ties at a full result bound wait for the next batch (`>=`), unlike
-  ordinary HNSW's strict `>` comparison. This can defer a rejected bridge and a closer
+  the strict `>` comparison in ordinary HNSW. This can defer a rejected bridge and a closer
   match behind it when the consumer stops after the first batch.
 
 New counters report skipped complete second-hop lists, expansions stopped by the
