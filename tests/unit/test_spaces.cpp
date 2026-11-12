@@ -28,6 +28,8 @@
 #include "VecSim/types/float16.h"
 #include "VecSim/types/sq8.h"
 #include "VecSim/spaces/quantized_kernels.h"
+#include "VecSim/spaces/sq8_a8_query_encoder.h"
+#include "VecSim/types/sq8_a8.h"
 #include "VecSim/spaces/functions/AVX512F.h"
 #include "VecSim/spaces/functions/AVX.h"
 #include "VecSim/spaces/functions/SSE.h"
@@ -5574,3 +5576,481 @@ TEST_F(SpacesTest, SQ8_SQ8_L2_self_distance_is_near_zero) {
             << "dispatched kernel, dim " << dim;
     }
 }
+
+/* ======================== Tests SQ8 with an A8 query ========================= */
+
+namespace {
+
+using sq8_a8 = vecsim_types::sq8_a8_query;
+
+double A8Const(const std::vector<uint8_t> &query, size_t dim, size_t index) {
+    return load_unaligned<double>(query.data() + sq8_a8::consts_offset(dim) +
+                                  index * sizeof(double));
+}
+
+int64_t A8CodeSum(const std::vector<uint8_t> &query, size_t dim) {
+    return load_unaligned<int64_t>(query.data() + sq8_a8::consts_offset(dim) +
+                                   sq8_a8::P * sizeof(double));
+}
+
+// The production scalar encoder, into a blob whose padding starts non-zero.
+template <typename InputType>
+std::vector<uint8_t> A8Encode(const std::vector<InputType> &y) {
+    std::vector<uint8_t> blob(sq8_a8::blob_bytes_count(y.size()), 0xAB);
+    spaces::quantized::SQ8_A8_EncodeQuery(y.data(), y.size(), blob.data());
+    return blob;
+}
+
+std::vector<float> A8RandomVector(size_t dim, int seed, float min_val = -1.0f, float max_val = 1.0f,
+                                  bool normalize = false) {
+    std::vector<float> v(dim);
+    test_utils::populate_float_vec(v.data(), dim, seed, min_val, max_val);
+    if (normalize) {
+        spaces::GetNormalizeFunc<float>()(v.data(), dim);
+    }
+    return v;
+}
+
+// SQ8 storage from floats through the tests' quantizer. The blob has room for the L2 metadata;
+// the IP kernels read min, delta and SUM only.
+std::vector<uint8_t> A8Stored(const std::vector<float> &x) {
+    std::vector<uint8_t> blob(x.size() +
+                              sq8::storage_metadata_count<VecSimMetric_L2>() * sizeof(float));
+    test_utils::quantize_float_vec_to_sq8_with_metadata(x.data(), x.size(), blob.data());
+    return blob;
+}
+
+// SQ8 storage with the given codes; SUM is derived from the integer code sum in double, as
+// QuantPreprocessor does.
+std::vector<uint8_t> A8StoredFromCodes(const std::vector<uint8_t> &codes, float min_val,
+                                       float delta) {
+    const size_t dim = codes.size();
+    std::vector<uint8_t> blob(dim + sq8::storage_metadata_count<VecSimMetric_IP>() * sizeof(float));
+    std::memcpy(blob.data(), codes.data(), dim);
+    uint64_t code_sum = 0;
+    for (uint8_t a : codes) {
+        code_sum += a;
+    }
+    const float sum = static_cast<float>(static_cast<double>(dim) * min_val +
+                                         static_cast<double>(delta) * code_sum);
+    auto *params = blob.data() + dim;
+    std::memcpy(params + sq8::MIN_VAL * sizeof(float), &min_val, sizeof(float));
+    std::memcpy(params + sq8::DELTA * sizeof(float), &delta, sizeof(float));
+    std::memcpy(params + sq8::SUM * sizeof(float), &sum, sizeof(float));
+    return blob;
+}
+
+// The A8 grid and codes by definition: s = (max y - min y) / 255 (1 for a constant query),
+// c = min y + 128 * s and p_i = clamp(floor((y_i - c) / s + 0.5), -128, 127), all in double.
+struct A8ReferenceCodes {
+    double s, c;
+    std::vector<int> p;
+};
+
+A8ReferenceCodes A8ReferenceEncode(const std::vector<float> &y) {
+    double lo = y[0], hi = y[0];
+    for (float v : y) {
+        lo = v < lo ? v : lo;
+        hi = v > hi ? v : hi;
+    }
+    A8ReferenceCodes ref;
+    ref.s = hi > lo ? (hi - lo) / 255.0 : 1.0;
+    ref.c = lo + 128.0 * ref.s;
+    for (float v : y) {
+        const double t = std::floor((static_cast<double>(v) - ref.c) / ref.s + 0.5);
+        ref.p.push_back(static_cast<int>(t < -128.0 ? -128.0 : t > 127.0 ? 127.0 : t));
+    }
+    return ref;
+}
+
+// The A8 inner product estimate by its definition, in long double with two-pass sums:
+//   IP = d * s * dot + m * s * P + SUM * (c + E / dim) + K,   K = s * sum (p_i - P / dim) * e_i
+// with e_i = (y_i - c) - s * p_i. It shares no code with the encoder's one-pass constants or the
+// kernels' double epilogue. true_ip is the inner product of the stored reconstruction with the
+// float query. The estimate leaves -sum (w_i - mean(w)) * e_i of it, w_i = xh_i - yh_i, plus the
+// FP32 rounding of SUM times (c + E / dim); bound is the worst case of both.
+struct A8Reference {
+    long double ip, scale, true_ip, bound, slack;
+};
+
+A8Reference A8ReferenceIP(const uint8_t *stored, const std::vector<float> &y) {
+    const size_t dim = y.size();
+    const A8ReferenceCodes q = A8ReferenceEncode(y);
+    const auto *params = stored + dim;
+    const long double m = load_unaligned<float>(params + sq8::MIN_VAL * sizeof(float));
+    const long double d = load_unaligned<float>(params + sq8::DELTA * sizeof(float));
+    const long double sum = load_unaligned<float>(params + sq8::SUM * sizeof(float));
+    const long double s = q.s, c = q.c, D = static_cast<long double>(dim);
+
+    int64_t dot = 0, P = 0, A = 0;
+    long double E = 0;
+    std::vector<long double> e(dim);
+    for (size_t i = 0; i < dim; i++) {
+        dot += static_cast<int64_t>(stored[i]) * q.p[i];
+        P += q.p[i];
+        A += stored[i];
+        e[i] = (static_cast<long double>(y[i]) - c) - s * q.p[i];
+        E += e[i];
+    }
+    const long double p_mean = static_cast<long double>(P) / D;
+    long double K = 0;
+    for (size_t i = 0; i < dim; i++) {
+        K += (q.p[i] - p_mean) * e[i];
+    }
+    K *= s;
+
+    A8Reference ref;
+    const long double qs = c + E / D;
+    ref.ip = d * s * dot + m * s * P + sum * qs + K;
+    ref.scale =
+        std::fabs(d * s * dot) + std::fabs(m * s * P) + std::fabs(sum * qs) + std::fabs(K) + 1.0L;
+
+    long double true_ip = 0, true_ip_terms = 0, w_mean = 0, e_max = 0, w_dev = 0;
+    std::vector<long double> w(dim);
+    for (size_t i = 0; i < dim; i++) {
+        const long double xh = m + d * stored[i];
+        true_ip += xh * y[i];
+        true_ip_terms += std::fabs(xh * y[i]);
+        w[i] = xh - (c + s * q.p[i]);
+        w_mean += w[i];
+        e_max = std::fabs(e[i]) > e_max ? std::fabs(e[i]) : e_max;
+    }
+    w_mean /= D;
+    for (size_t i = 0; i < dim; i++) {
+        w_dev += std::fabs(w[i] - w_mean);
+    }
+    ref.true_ip = true_ip;
+    ref.bound = e_max * w_dev + std::fabs(qs) * std::fabs(sum - (D * m + d * A));
+    // Rounding of the long double sums themselves.
+    ref.slack = 1e-15L * (ref.scale + true_ip_terms);
+    return ref;
+}
+
+// A kernel's float distance against the reference: one ulp of the float result for the final
+// rounding, plus 1e-12 of the term scale for the double arithmetic (the study's matching rule).
+double A8Tolerance(const A8Reference &ref) {
+    const float magnitude = std::fabs(static_cast<float>(1.0L - ref.ip));
+    const float ulp = std::nextafter(magnitude, std::numeric_limits<float>::infinity()) - magnitude;
+    return ulp + 1e-12 * static_cast<double>(ref.scale);
+}
+
+void ExpectA8MatchesReference(const std::vector<uint8_t> &stored, const std::vector<float> &y,
+                              const char *what) {
+    const size_t dim = y.size();
+    const std::vector<uint8_t> query = A8Encode(y);
+    const A8Reference ref = A8ReferenceIP(stored.data(), y);
+    EXPECT_NEAR(SQ8_A8_InnerProduct(stored.data(), query.data(), dim),
+                static_cast<double>(1.0L - ref.ip), A8Tolerance(ref))
+        << what << ", dim " << dim;
+    EXPECT_LE(std::fabs(ref.ip - ref.true_ip), ref.bound + ref.slack)
+        << "estimate outside its error bound: " << what << ", dim " << dim;
+}
+
+// Checks one encoding against the definition: codes, zeroed padding and the exact constants
+// bit for bit, the summed constants within 1e-12 of their scale.
+void ExpectA8EncodingMatchesDefinition(const std::vector<float> &y, const char *what) {
+    const size_t dim = y.size();
+    const std::vector<uint8_t> blob = A8Encode(y);
+    const A8ReferenceCodes ref = A8ReferenceEncode(y);
+
+    int64_t P = 0;
+    for (size_t i = 0; i < dim; i++) {
+        ASSERT_EQ(static_cast<int>(static_cast<int8_t>(blob[i])), ref.p[i])
+            << what << ", dim " << dim << " at " << i;
+        P += ref.p[i];
+    }
+    for (size_t i = dim; i < sq8_a8::consts_offset(dim); i++) {
+        ASSERT_EQ(blob[i], 0) << "padding byte " << i << ", " << what << ", dim " << dim;
+    }
+    EXPECT_EQ(A8CodeSum(blob, dim), P) << what << ", dim " << dim;
+    EXPECT_EQ(A8Const(blob, dim, sq8_a8::QD), ref.s) << what << ", dim " << dim;
+    EXPECT_EQ(A8Const(blob, dim, sq8_a8::QM), ref.s * static_cast<double>(P))
+        << what << ", dim " << dim;
+    EXPECT_EQ(A8Const(blob, dim, sq8_a8::Y_MEAN_IP), 0.0) << what << ", dim " << dim;
+
+    const long double s = ref.s, c = ref.c, D = static_cast<long double>(dim);
+    long double E = 0;
+    std::vector<long double> e(dim);
+    for (size_t i = 0; i < dim; i++) {
+        e[i] = (static_cast<long double>(y[i]) - c) - s * ref.p[i];
+        E += e[i];
+    }
+    long double K = 0;
+    for (size_t i = 0; i < dim; i++) {
+        K += (ref.p[i] - static_cast<long double>(P) / D) * e[i];
+    }
+    K *= s;
+    EXPECT_NEAR(A8Const(blob, dim, sq8_a8::QS), static_cast<double>(c + E / D),
+                1e-12 * static_cast<double>(std::fabs(c) + s))
+        << what << ", dim " << dim;
+    // |K| is at most 128 * s^2 * dim.
+    EXPECT_NEAR(A8Const(blob, dim, sq8_a8::QK), static_cast<double>(K),
+                1e-12 * static_cast<double>(128.0L * s * s * D))
+        << what << ", dim " << dim;
+}
+
+} // namespace
+
+TEST_F(SpacesTest, SQ8_A8_QueryBlobLayout) {
+    EXPECT_EQ(sq8_a8::consts_offset(1), 8u);
+    EXPECT_EQ(sq8_a8::consts_offset(8), 8u);
+    EXPECT_EQ(sq8_a8::consts_offset(9), 16u);
+    EXPECT_EQ(sq8_a8::consts_offset(768), 768u);
+    EXPECT_EQ(sq8_a8::consts_offset(769), 776u);
+    EXPECT_EQ(sq8_a8::blob_bytes_count(769), 776u + 6 * sizeof(double));
+}
+
+TEST_F(SpacesTest, SQ8_A8_EncoderMatchesDefinition) {
+    for (const size_t dim : {1UL, 3UL, 8UL, 9UL, 63UL, 768UL, 769UL, 1536UL}) {
+        for (int seed : {1, 2}) {
+            ExpectA8EncodingMatchesDefinition(A8RandomVector(dim, seed, -1.0f, 1.0f, true),
+                                              "normalized");
+            ExpectA8EncodingMatchesDefinition(A8RandomVector(dim, seed, 1000.0f, 1001.0f),
+                                              "offset");
+            ExpectA8EncodingMatchesDefinition(A8RandomVector(dim, seed, -1e-3f, 1e-3f), "small");
+        }
+    }
+}
+
+TEST_F(SpacesTest, SQ8_A8_EncoderFixedCases) {
+    constexpr size_t dim = 769;
+
+    // A constant query has no range: s = 1, every code is -128 and nothing is rounded, so the
+    // constants reconstruct it exactly.
+    for (const float value : {0.0f, 0.25f, -3.5f}) {
+        const std::vector<uint8_t> blob = A8Encode(std::vector<float>(dim, value));
+        for (size_t i = 0; i < dim; i++) {
+            ASSERT_EQ(static_cast<int>(static_cast<int8_t>(blob[i])), -128)
+                << "value " << value << " at " << i;
+        }
+        EXPECT_EQ(A8CodeSum(blob, dim), -128 * static_cast<int64_t>(dim));
+        EXPECT_EQ(A8Const(blob, dim, sq8_a8::QD), 1.0);
+        EXPECT_EQ(A8Const(blob, dim, sq8_a8::QM), -128.0 * dim);
+        EXPECT_EQ(A8Const(blob, dim, sq8_a8::QS), value + 128.0);
+        EXPECT_EQ(A8Const(blob, dim, sq8_a8::QK), 0.0);
+        EXPECT_EQ(A8Const(blob, dim, sq8_a8::Y_MEAN_IP), 0.0);
+    }
+
+    // A range that overflows FP32 is still finite in double, so the codes reach both ends of the
+    // grid and the constants stay finite.
+    std::vector<float> wide(dim);
+    for (size_t i = 0; i < dim; i++) {
+        wide[i] = i % 2 ? std::numeric_limits<float>::max() : -std::numeric_limits<float>::max();
+    }
+    const std::vector<uint8_t> wide_blob = A8Encode(wide);
+    for (size_t i = 0; i < dim; i++) {
+        ASSERT_EQ(static_cast<int>(static_cast<int8_t>(wide_blob[i])), i % 2 ? 127 : -128)
+            << "at " << i;
+    }
+    for (size_t index : {sq8_a8::QD, sq8_a8::QM, sq8_a8::QS, sq8_a8::QK}) {
+        EXPECT_TRUE(std::isfinite(A8Const(wide_blob, dim, index))) << "constant " << index;
+    }
+
+    // A NaN coordinate is left out of the range and gets the defined code -128, so the other codes
+    // are those of the same query with that coordinate at its minimum.
+    std::vector<float> with_nan = A8RandomVector(dim, 7);
+    with_nan[5] = std::numeric_limits<float>::quiet_NaN();
+    std::vector<float> with_min = with_nan;
+    float min_val = with_nan[0];
+    for (size_t i = 0; i < dim; i++) {
+        min_val = i != 5 && with_nan[i] < min_val ? with_nan[i] : min_val;
+    }
+    with_min[5] = min_val;
+    const std::vector<uint8_t> nan_blob = A8Encode(with_nan);
+    const std::vector<uint8_t> min_blob = A8Encode(with_min);
+    EXPECT_EQ(static_cast<int>(static_cast<int8_t>(nan_blob[5])), -128);
+    EXPECT_EQ(std::memcmp(nan_blob.data(), min_blob.data(), dim), 0);
+
+    // An FP16 query encodes exactly as its FP32 widening.
+    for (const size_t fp16_dim : {1UL, 768UL, 1001UL}) {
+        std::vector<float16> y16(fp16_dim);
+        test_utils::populate_float16_vec(y16.data(), fp16_dim, 11);
+        std::vector<float> y32(fp16_dim);
+        for (size_t i = 0; i < fp16_dim; i++) {
+            y32[i] = vecsim_types::FP16_to_FP32(y16[i]);
+        }
+        EXPECT_EQ(A8Encode(y16), A8Encode(y32)) << "dim " << fp16_dim;
+    }
+}
+
+TEST_F(SpacesTest, SQ8_A8_ScalarMatchesExactReference) {
+    for (const size_t dim : {1UL, 2UL, 7UL, 64UL, 100UL, 767UL, 768UL, 1000UL, 1536UL}) {
+        for (int seed : {1, 2}) {
+            ExpectA8MatchesReference(A8Stored(A8RandomVector(dim, seed, -1.0f, 1.0f, true)),
+                                     A8RandomVector(dim, seed + 50, -1.0f, 1.0f, true),
+                                     "normalized");
+        }
+        ExpectA8MatchesReference(A8Stored(A8RandomVector(dim, 3, 1000.0f, 1001.0f)),
+                                 A8RandomVector(dim, 4, 1000.0f, 1001.0f), "offset");
+        const std::vector<uint8_t> stored = A8Stored(A8RandomVector(dim, 5));
+        ExpectA8MatchesReference(stored, std::vector<float>(dim, 0.25f), "constant query");
+        ExpectA8MatchesReference(stored, std::vector<float>(dim, 0.0f), "zero query");
+        std::vector<float> outlier = A8RandomVector(dim, 6);
+        outlier[dim / 2] = 100.0f;
+        ExpectA8MatchesReference(stored, outlier, "outlier query");
+        ExpectA8MatchesReference(A8StoredFromCodes(std::vector<uint8_t>(dim, 0), -0.5f, 1.0f / 255),
+                                 A8RandomVector(dim, 8), "all-0 codes");
+        ExpectA8MatchesReference(
+            A8StoredFromCodes(std::vector<uint8_t>(dim, 255), -0.5f, 1.0f / 255),
+            A8RandomVector(dim, 9), "all-255 codes");
+    }
+}
+
+// The chooser is the only switch for the A8 query path, so its gates are pinned here.
+TEST_F(SpacesTest, SQ8_A8_ChooserGates) {
+    // The bound must sit exactly where a signed 32-bit total of 255 * 128 products runs out.
+    constexpr uint64_t max_term = 255ULL * 128ULL;
+    constexpr uint64_t int32_max = std::numeric_limits<int32_t>::max();
+    ASSERT_EQ(SQ8_A8_MAX_EXACT_SIMD_DIM, 65793u);
+    ASSERT_LE(max_term * SQ8_A8_MAX_EXACT_SIMD_DIM, int32_max);
+    ASSERT_GT(max_term * (SQ8_A8_MAX_EXACT_SIMD_DIM + 1), int32_max);
+    ASSERT_EQ(SQ8_A8_MIN_DIM, 768u);
+
+    const auto cpu = getCpuOptimizationFeatures();
+    for (const size_t dim :
+         {size_t{1}, SQ8_A8_MIN_DIM - 1, SQ8_A8_MAX_EXACT_SIMD_DIM + 1, size_t{100000}}) {
+        EXPECT_EQ(IP_SQ8_A8_GetDistFunc(dim, nullptr, &cpu), nullptr) << "dim " << dim;
+    }
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_F_BW_VL_VNNI)
+    // Every feature reported, so the gates are checked whatever this CPU has. The kernels are only
+    // compared here, not called.
+    auto all_on = cpu;
+    std::memset(&all_on, 0xFF, sizeof(all_on));
+    for (const size_t dim : {SQ8_A8_MIN_DIM, size_t{1024}, SQ8_A8_MAX_EXACT_SIMD_DIM}) {
+        unsigned char alignment = 0;
+        const auto expected = Choose_SQ8_A8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+        EXPECT_EQ(IP_SQ8_A8_GetDistFunc(dim, &alignment, &all_on), expected) << "dim " << dim;
+        EXPECT_EQ(alignment, 0) << "dim " << dim;
+    }
+    EXPECT_EQ(IP_SQ8_A8_GetDistFunc(SQ8_A8_MIN_DIM - 1, nullptr, &all_on), nullptr);
+    EXPECT_EQ(IP_SQ8_A8_GetDistFunc(SQ8_A8_MAX_EXACT_SIMD_DIM + 1, nullptr, &all_on), nullptr);
+    // Any one of the four features missing turns the path off.
+    for (int missing = 0; missing < 4; missing++) {
+        auto features = all_on;
+        switch (missing) {
+        case 0:
+            features.avx512f = 0;
+            break;
+        case 1:
+            features.avx512bw = 0;
+            break;
+        case 2:
+            features.avx512vl = 0;
+            break;
+        default:
+            features.avx512vnni = 0;
+            break;
+        }
+        EXPECT_EQ(IP_SQ8_A8_GetDistFunc(SQ8_A8_MIN_DIM, nullptr, &features), nullptr)
+            << "missing feature " << missing;
+    }
+#else
+    // This build has no A8 kernels, so the path is off at every dimension.
+    EXPECT_EQ(IP_SQ8_A8_GetDistFunc(SQ8_A8_MIN_DIM, nullptr, &cpu), nullptr);
+#endif
+}
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512_F_BW_VL_VNNI)
+namespace {
+
+// For these blobs the distance is 1 - (dot - expected): min 0, delta 1 and SUM 0 on the stored
+// side, QD 1, QM 0, QS 0 and QK -expected on the query side, every term an integer below 2^53.
+// So it is exactly 1 iff the kernel's integer dot equals expected.
+float A8DotProbe(dist_func_t<float> func, const std::vector<uint8_t> &codes,
+                 const std::vector<int8_t> &query_codes, int64_t expected) {
+    const size_t dim = codes.size();
+    std::vector<uint8_t> stored = A8StoredFromCodes(codes, 0.0f, 1.0f);
+    const float zero_sum = 0.0f;
+    std::memcpy(stored.data() + dim + sq8::SUM * sizeof(float), &zero_sum, sizeof(float));
+    std::vector<uint8_t> query(sq8_a8::blob_bytes_count(dim), 0);
+    std::memcpy(query.data(), query_codes.data(), dim);
+    const double consts[] = {1.0, 0.0, 0.0, -static_cast<double>(expected)};
+    std::memcpy(query.data() + sq8_a8::consts_offset(dim), consts, sizeof(consts));
+    return func(stored.data(), query.data(), dim);
+}
+
+} // namespace
+
+class SQ8_A8_AVX512VNNITest : public testing::TestWithParam<size_t> {};
+
+TEST_P(SQ8_A8_AVX512VNNITest, MatchesScalarBitForBit) {
+    auto optimization = getCpuOptimizationFeatures();
+    if (!optimization.avx512f || !optimization.avx512bw || !optimization.avx512vl ||
+        !optimization.avx512vnni) {
+        GTEST_SKIP() << "AVX512 F/BW/VL/VNNI is unavailable";
+    }
+    const size_t dim = GetParam();
+    const dist_func_t<float> simd = Choose_SQ8_A8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    const bool gate_on = dim >= SQ8_A8_MIN_DIM && dim <= SQ8_A8_MAX_EXACT_SIMD_DIM;
+    unsigned char alignment = 0;
+    EXPECT_EQ(IP_SQ8_A8_GetDistFunc(dim, &alignment, &optimization), gate_on ? simd : nullptr);
+    EXPECT_EQ(alignment, 0);
+
+    // The integer dot is exact, for random codes and for both extremes of each operand.
+    std::vector<uint8_t> codes(dim);
+    std::vector<int8_t> query_codes(dim);
+    const auto expect_exact_dot = [&](const char *what) {
+        int64_t expected = 0;
+        for (size_t i = 0; i < dim; i++) {
+            expected += static_cast<int64_t>(codes[i]) * query_codes[i];
+        }
+        EXPECT_EQ(A8DotProbe(SQ8_A8_InnerProduct, codes, query_codes, expected), 1.0f)
+            << "scalar, " << what << ", dim " << dim;
+        EXPECT_EQ(A8DotProbe(simd, codes, query_codes, expected), 1.0f)
+            << "AVX512, " << what << ", dim " << dim;
+    };
+    for (int seed : {1, 2}) {
+        test_utils::populate_uint8_vec(codes.data(), dim, seed);
+        test_utils::populate_int8_vec(query_codes.data(), dim, seed + 100);
+        expect_exact_dot("random codes");
+    }
+    for (const uint8_t a : {uint8_t{0}, uint8_t{255}}) {
+        for (const int8_t p : {int8_t{-128}, int8_t{127}}) {
+            codes.assign(dim, a);
+            query_codes.assign(dim, p);
+            expect_exact_dot("extreme codes");
+        }
+    }
+
+    // Distances of encoded queries are bit-identical to the scalar reference, also from blobs
+    // that start at an odd address (stored) or 8 bytes past an allocation (query).
+    const auto expect_bit_identical = [&](const std::vector<uint8_t> &stored,
+                                          const std::vector<uint8_t> &query, const char *what) {
+        const float scalar = SQ8_A8_InnerProduct(stored.data(), query.data(), dim);
+        const float vectorized = simd(stored.data(), query.data(), dim);
+        EXPECT_EQ(std::memcmp(&scalar, &vectorized, sizeof(float)), 0)
+            << what << ", dim " << dim << ": scalar " << scalar << ", AVX512 " << vectorized;
+        std::vector<uint8_t> stored_buf(stored.size() + 1);
+        std::vector<uint8_t> query_buf(query.size() + 8);
+        std::memcpy(stored_buf.data() + 1, stored.data(), stored.size());
+        std::memcpy(query_buf.data() + 8, query.data(), query.size());
+        const float shifted = simd(stored_buf.data() + 1, query_buf.data() + 8, dim);
+        EXPECT_EQ(std::memcmp(&scalar, &shifted, sizeof(float)), 0)
+            << what << ", shifted blobs, dim " << dim;
+    };
+    for (int seed : {1, 2}) {
+        expect_bit_identical(A8Stored(A8RandomVector(dim, seed, -1.0f, 1.0f, true)),
+                             A8Encode(A8RandomVector(dim, seed + 50, -1.0f, 1.0f, true)),
+                             "normalized");
+    }
+    expect_bit_identical(A8Stored(A8RandomVector(dim, 3, 1000.0f, 1001.0f)),
+                         A8Encode(A8RandomVector(dim, 4, 1000.0f, 1001.0f)), "offset");
+    expect_bit_identical(A8StoredFromCodes(std::vector<uint8_t>(dim, 0), -0.5f, 1.0f / 255),
+                         A8Encode(A8RandomVector(dim, 5)), "all-0 codes");
+    expect_bit_identical(A8StoredFromCodes(std::vector<uint8_t>(dim, 255), -0.5f, 1.0f / 255),
+                         A8Encode(A8RandomVector(dim, 6)), "all-255 codes");
+}
+
+// Every residual dim % 64 inside the gate.
+INSTANTIATE_TEST_SUITE_P(SQ8_A8_EveryResidual, SQ8_A8_AVX512VNNITest,
+                         testing::Range(size_t{768}, size_t{832}));
+// Below the gate (the kernel itself handles any dim), each count of leftover 64-byte chunks after
+// the 256-byte loop, and the largest exact dim.
+INSTANTIATE_TEST_SUITE_P(SQ8_A8_Dims, SQ8_A8_AVX512VNNITest,
+                         testing::Values(size_t{1}, size_t{15}, size_t{63}, size_t{64}, size_t{65},
+                                         size_t{127}, size_t{128}, size_t{255}, size_t{256},
+                                         size_t{257}, size_t{512}, size_t{767}, size_t{832},
+                                         size_t{896}, size_t{960}, size_t{1000}, size_t{1024},
+                                         size_t{1088}, size_t{1152}, size_t{1216}, size_t{1536},
+                                         spaces::SQ8_A8_MAX_EXACT_SIMD_DIM));
+#endif

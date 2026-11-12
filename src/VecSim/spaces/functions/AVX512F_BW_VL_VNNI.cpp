@@ -20,6 +20,8 @@
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ8_SQ8.h"
 
+#include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ8_A8.h"
+
 #include "VecSim/spaces/IP/IP_AVX512F_BW_VL_VNNI_SQ4_FP32.h"
 #include "VecSim/spaces/L2/L2_AVX512F_BW_VL_VNNI_SQ4_FP32.h"
 
@@ -118,6 +120,13 @@ dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_SQ8_L2SqrSIMD64_AVX512F_BW_VL_VNNI);
+    return ret_dist_func;
+}
+
+// SQ8 storage vs an A8 query (int8 query codes plus per-query constants)
+dist_func_t<float> Choose_SQ8_A8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim) {
+    dist_func_t<float> ret_dist_func;
+    CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 64, SQ8_A8_InnerProductSIMD64_AVX512F_BW_VL_VNNI);
     return ret_dist_func;
 }
 

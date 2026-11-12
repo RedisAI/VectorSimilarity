@@ -38,4 +38,7 @@ dist_func_t<float> Choose_SQ8_SQ8_IP_implementation_AVX512F_BW_VL_VNNI(size_t di
 dist_func_t<float> Choose_SQ8_SQ8_Cosine_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 dist_func_t<float> Choose_SQ8_SQ8_L2_implementation_AVX512F_BW_VL_VNNI(size_t dim);
 
+// SQ8 storage vs an A8 query (int8 query codes plus per-query constants); also serves Cosine
+dist_func_t<float> Choose_SQ8_A8_IP_implementation_AVX512F_BW_VL_VNNI(size_t dim);
+
 } // namespace spaces

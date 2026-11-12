@@ -54,6 +54,10 @@ float SQ8_FP32_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension
     return SQ8_FP32_InnerProduct(pVect1v, pVect2v, dimension);
 }
 
+float SQ8_A8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension) {
+    return spaces::quantized::SQ8_A8_IPDistance(pVect1v, pVect2v, dimension);
+}
+
 /*
  * Optimized asymmetric SQ8-FP16 inner product using algebraic identity:
  *   IP(x, y) = Σ(x_i * y_i)

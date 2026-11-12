@@ -130,5 +130,21 @@ static inline float Stored_L2Sqr(const void *a, const void *b, size_t dim) {
     return sum_sq_1 + sum_sq_2 - 2.0f * ip;
 }
 
+/*
+ * SQ8 storage vs an A8 query (int8 codes plus per-query constants, see
+ * vecsim_types::sq8_a8_query): the integer code dot sum(a_i * p_i), accumulated in int64 so it is
+ * exact at any dimension, completed by the epilogue every tier shares. Returns the distance.
+ */
+static inline float SQ8_A8_IPDistance(const void *stored, const void *query, size_t dim) {
+    const auto *codes = static_cast<const uint8_t *>(stored);
+    const auto *query_codes = static_cast<const int8_t *>(query);
+    int64_t code_dot = 0;
+    for (size_t i = 0; i < dim; i++) {
+        code_dot += static_cast<int32_t>(codes[i]) * static_cast<int32_t>(query_codes[i]);
+    }
+    return SQ8_A8_InnerProduct_FromCodeDot(codes, static_cast<const uint8_t *>(query), dim,
+                                           code_dot);
+}
+
 } // namespace quantized
 } // namespace spaces

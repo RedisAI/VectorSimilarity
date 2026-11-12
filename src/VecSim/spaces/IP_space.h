@@ -50,4 +50,9 @@ dist_func_t<float> IP_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment =
                                           const void *arch_opt = nullptr);
 dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                               const void *arch_opt = nullptr);
+// SQ8 storage vs an A8 query (vecsim_types::sq8_a8_query). Returns nullptr when the A8 path is off
+// for this dim and CPU; the caller then keeps its existing query path. The kernels need no
+// alignment, so the hint is left unchanged.
+dist_func_t<float> IP_SQ8_A8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
+                                         const void *arch_opt = nullptr);
 } // namespace spaces

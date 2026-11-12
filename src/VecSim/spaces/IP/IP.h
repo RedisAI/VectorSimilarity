@@ -53,6 +53,12 @@ float SQ8_SQ8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dime
 // Vector layout: [uint8_t values (dim)] [min_val (float)] [delta (float)] [sum (float)]
 float SQ8_SQ8_Cosine(const void *pVect1v, const void *pVect2v, size_t dimension);
 
+// SQ8 storage vs an A8 query, the scalar reference of the A8 kernels. It is not selected by the
+// dispatcher; IP_SQ8_A8_GetDistFunc returns only SIMD kernels.
+// pVect1 is storage (SQ8): [uint8_t values (dim)] [min_val] [delta] [sum]
+// pVect2 is the A8 query (vecsim_types::sq8_a8_query): [int8 codes (dim)] [pad] [constants]
+float SQ8_A8_InnerProduct(const void *pVect1v, const void *pVect2v, size_t dimension);
+
 float FP32_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);
 
 double FP64_InnerProduct(const void *pVect1, const void *pVect2, size_t dimension);

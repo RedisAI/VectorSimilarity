@@ -536,6 +536,26 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
     return ret_dist_func;
 }
 
+// SQ8 storage vs an A8 query. There is no scalar default: the scalar SQ8_A8_InnerProduct is only
+// the tests' reference, so outside the gates the caller gets nullptr and keeps its existing query
+// kernel.
+dist_func_t<float> IP_SQ8_A8_GetDistFunc(size_t dim, unsigned char *alignment,
+                                         const void *arch_opt) {
+    if (dim < spaces::SQ8_A8_MIN_DIM || dim > spaces::SQ8_A8_MAX_EXACT_SIMD_DIM) {
+        return nullptr;
+    }
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512_F_BW_VL_VNNI
+    if (features.avx512f && features.avx512bw && features.avx512vl && features.avx512vnni) {
+        return Choose_SQ8_A8_IP_implementation_AVX512F_BW_VL_VNNI(dim);
+    }
+#endif
+#endif // __x86_64__
+    return nullptr;
+}
+
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;
     if (alignment == nullptr) {

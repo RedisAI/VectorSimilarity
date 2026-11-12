@@ -65,6 +65,21 @@ static constexpr size_t UINT8_MAX_EXACT_SIMD_DIM =
     std::numeric_limits<int32_t>::max() /
     (std::numeric_limits<uint8_t>::max() * std::numeric_limits<uint8_t>::max());
 
+// The SQ8 kernels for an A8 query (int8 codes, vecsim_types::sq8_a8_query) multiply uint8 stored
+// codes by int8 query codes, so each product is at most 255 * 128 = 32,640 in magnitude, and they
+// hold the code dot in a signed 32-bit int. That makes 65,793 the largest dimension they are exact
+// at: 32,640 * 65,793 is 2,147,483,520 and fits INT32_MAX, and one dimension more does not. The
+// bound is wider than UINT8_MAX_EXACT_SIMD_DIM, so between the two an index scores queries with
+// SIMD A8 kernels while its stored-to-stored distances use the scalar kernel.
+static constexpr size_t SQ8_A8_MAX_EXACT_SIMD_DIM =
+    std::numeric_limits<int32_t>::max() /
+    (std::numeric_limits<uint8_t>::max() * -static_cast<int>(std::numeric_limits<int8_t>::min()));
+
+// The A8 query path is used from this dimension up. Below it, encoding the query and the
+// per-distance epilogue take a larger share of each distance, and the measured gains were mixed,
+// so smaller indexes keep their existing query kernels.
+static constexpr size_t SQ8_A8_MIN_DIM = 768;
+
 // The SQ4-SQ4 inner product kernels accumulate the integer code dot sum(q1 * q2), each product at
 // most 15 * 15 = 225, in unsigned 32-bit lanes (vpadalq_u16 / vdotq_u32 / svdot_u32), and NEON
 // reduces those lanes with vaddvq_u32, whose result is also a uint32. The narrowest accumulator is
