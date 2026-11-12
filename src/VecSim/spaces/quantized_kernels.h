@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include "VecSim/utils/alignment.h"
 #include "VecSim/spaces/quantized_distance_helpers.h"
 
@@ -80,11 +81,7 @@ static inline typename StorageType::metadata_type StoredQueryL2(const void *stor
 
     Real res = 0;
     for (size_t i = 0; i < dim; i++) {
-        // Order matters. When the stored range sits far from zero, min_val and y_i are within a
-        // factor of two of each other, so min_val - y_i is exact (Sterbenz) and rounding happens
-        // only at the scale of the residual. Forming (min_val + delta*q_i) first would round at
-        // the scale of min_val and wipe out small residuals. When min_val and y_i are not close,
-        // the residual is large and either order is fine.
+        // Subtract min and query first to preserve small residuals with a large common offset.
         const Real query_value = load_unaligned<Real>(pVect2 + i * sizeof(Real));
         const Real diff =
             delta * static_cast<Real>(StorageType::get_code(pVect1, i)) + (min_val - query_value);
@@ -95,6 +92,7 @@ static inline typename StorageType::metadata_type StoredQueryL2(const void *stor
 
 template <typename StorageType>
 static inline float FP32_L2Sqr(const void *stored, const void *query, size_t dim) {
+    static_assert(std::is_same_v<typename StorageType::metadata_type, float>);
     return StoredQueryL2<StorageType>(stored, query, dim);
 }
 
