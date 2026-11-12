@@ -49,6 +49,12 @@ using normalizeVector_f = void (*)(void *input_vector, const size_t dim);
 template <typename DataType>
 normalizeVector_f<DataType> GetNormalizeFunc();
 
+// Encodes a query into an A8 query blob (vecsim_types::sq8_a8_query); mean is nullptr or the mean
+// of a mean-centered index. See spaces/sq8_a8_query_encoder.h.
+template <typename InputType>
+using sq8_a8_encode_func_t = void (*)(const InputType *query, const float *mean, size_t dim,
+                                      void *blob);
+
 static int inline is_little_endian() {
     unsigned int x = 1;
     return *(char *)&x;

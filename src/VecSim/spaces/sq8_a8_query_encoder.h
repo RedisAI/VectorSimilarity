@@ -85,21 +85,42 @@ static inline void SQ8_A8_FinishQuery(const SQ8_A8_QueryGrid &grid, const SQ8_A8
     std::memcpy(consts_out + a8::P * sizeof(double), &sums.P, sizeof(int64_t));
 }
 
+// Writes <mean, y> of the uncentered query to the Y_MEAN_IP slot. Each product of two floats is
+// exact in double, so only the summation order can differ between encoders.
+static inline void SQ8_A8_SetQueryMeanIP(double y_mean_ip, size_t dim, void *blob) {
+    using a8 = vecsim_types::sq8_a8_query;
+    std::memcpy(static_cast<uint8_t *>(blob) + a8::consts_offset(dim) +
+                    a8::Y_MEAN_IP * sizeof(double),
+                &y_mean_ip, sizeof(y_mean_ip));
+}
+
+// Widens one input element to FP32.
+template <typename InputType>
+static inline float SQ8_A8_InputValue(const InputType *query, size_t i) {
+    if constexpr (std::is_same_v<InputType, vecsim_types::float16>) {
+        return vecsim_types::FP16_to_FP32(query[i]);
+    } else {
+        return query[i];
+    }
+}
+
 // Writes the full A8 query blob (vecsim_types::sq8_a8_query::blob_bytes_count(dim) bytes) for a
 // float or float16 query. FP16 values are widened to FP32 first, so an FP16 query encodes exactly
 // as its FP32 widening.
+//
+// mean is nullptr, or the mean of a mean-centered index (dim FP32 values). Then the query is
+// centered in FP32 as y - mean, exactly as the stored vectors are, and <mean, y> of the uncentered
+// query is written to Y_MEAN_IP.
 template <typename InputType>
-static inline void SQ8_A8_EncodeQuery(const InputType *query, size_t dim, void *blob) {
+static inline void SQ8_A8_EncodeQuery(const InputType *query, const float *mean, size_t dim,
+                                      void *blob) {
     static_assert(std::is_same_v<InputType, float> ||
                       std::is_same_v<InputType, vecsim_types::float16>,
                   "The A8 query encoder takes float or float16 input");
     assert(dim > 0);
-    const auto value = [query](size_t i) -> float {
-        if constexpr (std::is_same_v<InputType, vecsim_types::float16>) {
-            return vecsim_types::FP16_to_FP32(query[i]);
-        } else {
-            return query[i];
-        }
+    const auto value = [query, mean](size_t i) -> float {
+        const float y = SQ8_A8_InputValue(query, i);
+        return mean ? y - mean[i] : y;
     };
 
     float min_val = value(0);
@@ -117,6 +138,20 @@ static inline void SQ8_A8_EncodeQuery(const InputType *query, size_t dim, void *
         codes[i] = SQ8_A8_EncodeElement(value(i), grid, sums);
     }
     SQ8_A8_FinishQuery(grid, sums, dim, blob);
+
+    if (mean) {
+        double y_mean_ip = 0;
+        for (size_t i = 0; i < dim; i++) {
+            y_mean_ip += static_cast<double>(mean[i]) * SQ8_A8_InputValue(query, i);
+        }
+        SQ8_A8_SetQueryMeanIP(y_mean_ip, dim, blob);
+    }
+}
+
+// The query of an index without a mean.
+template <typename InputType>
+static inline void SQ8_A8_EncodeQuery(const InputType *query, size_t dim, void *blob) {
+    SQ8_A8_EncodeQuery(query, nullptr, dim, blob);
 }
 
 } // namespace quantized

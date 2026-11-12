@@ -6054,3 +6054,240 @@ INSTANTIATE_TEST_SUITE_P(SQ8_A8_Dims, SQ8_A8_AVX512VNNITest,
                                          size_t{1088}, size_t{1152}, size_t{1216}, size_t{1536},
                                          spaces::SQ8_A8_MAX_EXACT_SIMD_DIM));
 #endif
+
+#if defined(CPU_FEATURES_ARCH_X86_64) && defined(OPT_AVX512F)
+namespace {
+
+template <typename T>
+std::vector<T> A8CastInput(const std::vector<float> &y) {
+    if constexpr (std::is_same_v<T, float16>) {
+        std::vector<float16> out(y.size());
+        for (size_t i = 0; i < y.size(); i++) {
+            out[i] = vecsim_types::FP32_to_FP16(y[i]);
+        }
+        return out;
+    } else {
+        return y;
+    }
+}
+
+// A constant may be NaN when the query holds NaN or an infinity; then both encoders must agree.
+void ExpectA8ConstNear(double scalar, double simd, double tolerance, const std::string &what) {
+    if (std::isnan(scalar) || std::isnan(simd)) {
+        EXPECT_TRUE(std::isnan(scalar) && std::isnan(simd))
+            << what << ": scalar " << scalar << ", AVX512F " << simd;
+    } else if (std::isinf(scalar) || std::isinf(simd)) {
+        EXPECT_EQ(scalar, simd) << what;
+    } else {
+        EXPECT_NEAR(simd, scalar, tolerance) << what;
+    }
+}
+
+// The AVX-512F encoder against the scalar one on one query: the codes, the zeroed padding, P, QD
+// and QM bit for bit; QS, QK and Y_MEAN_IP are sums in another order, so within 1e-12 of their
+// scale (the scalar encoder's tolerance against the definition).
+template <typename InputType>
+void ExpectA8EncodersMatch(sq8_a8_encode_func_t<InputType> simd_encode,
+                           const std::vector<InputType> &y, const float *mean,
+                           const std::string &what) {
+    const size_t dim = y.size();
+    std::vector<uint8_t> scalar(sq8_a8::blob_bytes_count(dim), 0xAB);
+    std::vector<uint8_t> simd(sq8_a8::blob_bytes_count(dim), 0xCD);
+    spaces::quantized::SQ8_A8_EncodeQuery(y.data(), mean, dim, scalar.data());
+    simd_encode(y.data(), mean, dim, simd.data());
+
+    for (size_t i = 0; i < sq8_a8::consts_offset(dim); i++) {
+        ASSERT_EQ(simd[i], scalar[i]) << what << ", dim " << dim << ", byte " << i;
+    }
+    for (size_t i = dim; i < sq8_a8::consts_offset(dim); i++) {
+        ASSERT_EQ(simd[i], 0) << what << ", dim " << dim << ", padding byte " << i;
+    }
+    EXPECT_EQ(A8CodeSum(simd, dim), A8CodeSum(scalar, dim)) << what << ", dim " << dim;
+    for (size_t index : {sq8_a8::QD, sq8_a8::QM}) {
+        const double a = A8Const(scalar, dim, index), b = A8Const(simd, dim, index);
+        EXPECT_TRUE(std::memcmp(&a, &b, sizeof(double)) == 0 || (std::isnan(a) && std::isnan(b)))
+            << what << ", dim " << dim << ", constant " << index << ": " << a << " vs " << b;
+    }
+    const double s = A8Const(scalar, dim, sq8_a8::QD);
+    const double qs = A8Const(scalar, dim, sq8_a8::QS);
+    ExpectA8ConstNear(qs, A8Const(simd, dim, sq8_a8::QS), 1e-12 * (std::fabs(qs) + s),
+                      what + ", QS, dim " + std::to_string(dim));
+    // |K| is at most 128 * s^2 * dim.
+    ExpectA8ConstNear(A8Const(scalar, dim, sq8_a8::QK), A8Const(simd, dim, sq8_a8::QK),
+                      1e-12 * 128.0 * s * s * static_cast<double>(dim),
+                      what + ", QK, dim " + std::to_string(dim));
+    double mean_ip_scale = 0;
+    for (size_t i = 0; mean && i < dim; i++) {
+        mean_ip_scale += std::fabs(static_cast<double>(mean[i]) *
+                                   spaces::quantized::SQ8_A8_InputValue(y.data(), i));
+    }
+    ExpectA8ConstNear(A8Const(scalar, dim, sq8_a8::Y_MEAN_IP),
+                      A8Const(simd, dim, sq8_a8::Y_MEAN_IP), 1e-12 * mean_ip_scale,
+                      what + ", Y_MEAN_IP, dim " + std::to_string(dim));
+    if (!mean) {
+        EXPECT_EQ(A8Const(simd, dim, sq8_a8::Y_MEAN_IP), 0.0) << what << ", dim " << dim;
+    }
+}
+
+// Queries that reach every branch of the code computation: ordinary data, constant and zero
+// queries, exact rounding ties, saturated ends, NaN (first element, inside a vector block, in the
+// tail), infinities and subnormals.
+std::vector<std::pair<std::string, std::vector<float>>> A8EncoderCases(size_t dim) {
+    std::vector<std::pair<std::string, std::vector<float>>> cases;
+    cases.emplace_back("normalized", A8RandomVector(dim, 1, -1.0f, 1.0f, true));
+    cases.emplace_back("offset", A8RandomVector(dim, 2, 1000.0f, 1001.0f));
+    cases.emplace_back("small", A8RandomVector(dim, 3, -1e-3f, 1e-3f));
+    cases.emplace_back("constant", std::vector<float>(dim, 0.25f));
+    cases.emplace_back("zero", std::vector<float>(dim, 0.0f));
+    // With min 0 and max 255 the grid is s = 1, c = 128, so y = k + 0.5 lands exactly on a
+    // rounding tie (v / s + 0.5 is an integer).
+    std::vector<float> ties(dim);
+    for (size_t i = 0; i < dim; i++) {
+        ties[i] = static_cast<float>(i % 255) + 0.5f;
+    }
+    ties[0] = 0.0f;
+    if (dim > 1) {
+        ties[dim - 1] = 255.0f;
+    }
+    cases.emplace_back("rounding ties", ties);
+    // The same with an inexact step (s = 0.3): the quotients land within rounding of an integer,
+    // so any change to the rounding of the code computation shows.
+    std::vector<float> inexact_ties(dim);
+    for (size_t i = 0; i < dim; i++) {
+        inexact_ties[i] = static_cast<float>((static_cast<double>(i % 255) + 0.5) * 0.3);
+    }
+    inexact_ties[0] = 0.0f;
+    if (dim > 1) {
+        inexact_ties[dim - 1] = 76.5f;
+    }
+    cases.emplace_back("rounding ties, inexact step", inexact_ties);
+    std::vector<float> wide(dim);
+    for (size_t i = 0; i < dim; i++) {
+        wide[i] = i % 2 ? std::numeric_limits<float>::max() : -std::numeric_limits<float>::max();
+    }
+    cases.emplace_back("+-FLT_MAX", wide);
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    for (size_t at : {size_t{0}, size_t{20}, dim - 1}) {
+        if (at < dim) {
+            std::vector<float> with_nan = A8RandomVector(dim, 4);
+            with_nan[at] = nan;
+            cases.emplace_back("NaN at " + std::to_string(at), with_nan);
+        }
+    }
+    std::vector<float> with_inf = A8RandomVector(dim, 5);
+    with_inf[dim / 2] = std::numeric_limits<float>::infinity();
+    cases.emplace_back("+inf", with_inf);
+    std::vector<float> with_neg_inf = A8RandomVector(dim, 6);
+    with_neg_inf[dim / 3] = -std::numeric_limits<float>::infinity();
+    cases.emplace_back("-inf", with_neg_inf);
+    std::vector<float> outlier = A8RandomVector(dim, 7);
+    outlier[dim / 2] = 100.0f;
+    cases.emplace_back("outlier", outlier);
+    cases.emplace_back("subnormal", A8RandomVector(dim, 8, -1e-39f, 1e-39f));
+    return cases;
+}
+
+template <typename InputType>
+void ExpectA8EncodersMatchOnAllCases(sq8_a8_encode_func_t<InputType> simd_encode) {
+    for (const size_t dim : {1UL, 7UL, 15UL, 16UL, 17UL, 31UL, 32UL, 33UL, 767UL, 768UL, 769UL,
+                             1000UL, 1024UL, 1536UL}) {
+        const std::vector<float> mean = A8RandomVector(dim, 9, -0.5f, 0.5f);
+        for (const auto &[name, values] : A8EncoderCases(dim)) {
+            const std::vector<InputType> y = A8CastInput<InputType>(values);
+            ExpectA8EncodersMatch(simd_encode, y, nullptr, name);
+            ExpectA8EncodersMatch(simd_encode, y, mean.data(), name + ", centered");
+        }
+    }
+}
+
+} // namespace
+
+TEST_F(SpacesTest, SQ8_A8_AVX512FEncoderMatchesScalar) {
+    const auto cpu = getCpuOptimizationFeatures();
+    if (!cpu.avx512f) {
+        GTEST_SKIP() << "AVX512F is unavailable";
+    }
+    ExpectA8EncodersMatchOnAllCases<float>(Choose_SQ8_A8_FP32_QueryEncoder_AVX512F());
+    ExpectA8EncodersMatchOnAllCases<float16>(Choose_SQ8_A8_FP16_QueryEncoder_AVX512F());
+}
+
+// vcvtph2ps against FP16_to_FP32 for every finite FP16 value: each query is a run of consecutive
+// encodings, so its range is narrow and each conversion moves its code.
+TEST_F(SpacesTest, SQ8_A8_AVX512FEncoderMatchesScalarOnEveryFP16Value) {
+    const auto cpu = getCpuOptimizationFeatures();
+    if (!cpu.avx512f) {
+        GTEST_SKIP() << "AVX512F is unavailable";
+    }
+    const auto simd_encode = Choose_SQ8_A8_FP16_QueryEncoder_AVX512F();
+    constexpr size_t dim = 1031;
+    std::vector<float16> y;
+    for (uint32_t bits = 0; bits <= 0xFFFF; bits++) {
+        const float16 value{static_cast<uint16_t>(bits)};
+        if ((bits & 0x7C00u) == 0x7C00u) {
+            continue; // infinity or NaN
+        }
+        y.push_back(value);
+        if (y.size() == dim) {
+            ExpectA8EncodersMatch(simd_encode, y, nullptr,
+                                  "FP16 run ending at " + std::to_string(bits));
+            y.clear();
+        }
+    }
+    if (!y.empty()) {
+        ExpectA8EncodersMatch(simd_encode, y, nullptr, "last FP16 run");
+    }
+}
+
+TEST_F(SpacesTest, SQ8_A8_QueryEncoderChooser) {
+    auto features = getCpuOptimizationFeatures();
+    std::memset(&features, 0xFF, sizeof(features));
+    EXPECT_EQ(SQ8_A8_GetQueryEncoder<float>(&features), Choose_SQ8_A8_FP32_QueryEncoder_AVX512F());
+    EXPECT_EQ(SQ8_A8_GetQueryEncoder<float16>(&features),
+              Choose_SQ8_A8_FP16_QueryEncoder_AVX512F());
+    features.avx512f = 0;
+    // The scalar encoder; it has internal linkage, so it is identified by what it writes.
+    const auto fp32_fallback = SQ8_A8_GetQueryEncoder<float>(&features);
+    const auto fp16_fallback = SQ8_A8_GetQueryEncoder<float16>(&features);
+    ASSERT_NE(fp32_fallback, nullptr);
+    ASSERT_NE(fp16_fallback, nullptr);
+    EXPECT_NE(fp32_fallback, Choose_SQ8_A8_FP32_QueryEncoder_AVX512F());
+    EXPECT_NE(fp16_fallback, Choose_SQ8_A8_FP16_QueryEncoder_AVX512F());
+    const std::vector<float> y = A8RandomVector(769, 10);
+    const std::vector<float> mean = A8RandomVector(769, 11);
+    std::vector<uint8_t> expected(sq8_a8::blob_bytes_count(y.size()));
+    std::vector<uint8_t> got(expected.size());
+    spaces::quantized::SQ8_A8_EncodeQuery(y.data(), mean.data(), y.size(), expected.data());
+    fp32_fallback(y.data(), mean.data(), y.size(), got.data());
+    EXPECT_EQ(got, expected);
+    const std::vector<float16> y16 = A8CastInput<float16>(y);
+    spaces::quantized::SQ8_A8_EncodeQuery(y16.data(), mean.data(), y16.size(), expected.data());
+    fp16_fallback(y16.data(), mean.data(), y16.size(), got.data());
+    EXPECT_EQ(got, expected);
+}
+#endif
+
+// The centered encoding is the encoding of y - mean (in FP32), plus <mean, y> of the raw query.
+TEST_F(SpacesTest, SQ8_A8_EncoderCentersOnMean) {
+    for (const size_t dim : {1UL, 768UL, 1001UL}) {
+        const std::vector<float> y = A8RandomVector(dim, 12);
+        const std::vector<float> mean = A8RandomVector(dim, 13, -0.5f, 0.5f);
+        std::vector<float> centered(dim);
+        long double mean_ip = 0;
+        for (size_t i = 0; i < dim; i++) {
+            centered[i] = y[i] - mean[i];
+            mean_ip += static_cast<long double>(mean[i]) * y[i];
+        }
+        std::vector<uint8_t> blob(sq8_a8::blob_bytes_count(dim), 0xAB);
+        spaces::quantized::SQ8_A8_EncodeQuery(y.data(), mean.data(), dim, blob.data());
+        const std::vector<uint8_t> expected = A8Encode(centered);
+        const size_t y_mean_ip_offset = sq8_a8::consts_offset(dim) + sq8_a8::Y_MEAN_IP * 8;
+        EXPECT_EQ(std::memcmp(blob.data(), expected.data(), y_mean_ip_offset), 0) << "dim " << dim;
+        EXPECT_EQ(std::memcmp(blob.data() + y_mean_ip_offset + 8,
+                              expected.data() + y_mean_ip_offset + 8, 8),
+                  0)
+            << "dim " << dim;
+        EXPECT_NEAR(A8Const(blob, dim, sq8_a8::Y_MEAN_IP), static_cast<double>(mean_ip),
+                    1e-12 * static_cast<double>(dim))
+            << "dim " << dim;
+    }
+}

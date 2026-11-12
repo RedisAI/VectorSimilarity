@@ -9,6 +9,7 @@
 #include "VecSim/spaces/space_includes.h"
 #include "VecSim/spaces/IP_space.h"
 #include "VecSim/spaces/IP/IP.h"
+#include "VecSim/spaces/sq8_a8_query_encoder.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/types/float16.h"
 #include "VecSim/spaces/functions/AVX512F.h"
@@ -555,6 +556,27 @@ dist_func_t<float> IP_SQ8_A8_GetDistFunc(size_t dim, unsigned char *alignment,
 #endif // __x86_64__
     return nullptr;
 }
+
+template <typename InputType>
+sq8_a8_encode_func_t<InputType> SQ8_A8_GetQueryEncoder(const void *arch_opt) {
+    [[maybe_unused]] auto features = getCpuOptimizationFeatures(arch_opt);
+
+#ifdef CPU_FEATURES_ARCH_X86_64
+#ifdef OPT_AVX512F
+    if (features.avx512f) {
+        if constexpr (std::is_same_v<InputType, float16>) {
+            return Choose_SQ8_A8_FP16_QueryEncoder_AVX512F();
+        } else {
+            return Choose_SQ8_A8_FP32_QueryEncoder_AVX512F();
+        }
+    }
+#endif
+#endif // __x86_64__
+    return quantized::SQ8_A8_EncodeQuery<InputType>;
+}
+
+template sq8_a8_encode_func_t<float> SQ8_A8_GetQueryEncoder<float>(const void *arch_opt);
+template sq8_a8_encode_func_t<float16> SQ8_A8_GetQueryEncoder<float16>(const void *arch_opt);
 
 dist_func_t<float> IP_FP32_GetDistFunc(size_t dim, unsigned char *alignment, const void *arch_opt) {
     unsigned char dummy_alignment;

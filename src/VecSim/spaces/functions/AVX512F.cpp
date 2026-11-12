@@ -17,6 +17,7 @@
 #include "VecSim/spaces/IP/IP_AVX512F_FP32.h"
 #include "VecSim/spaces/IP/IP_AVX512F_FP64.h"
 #include "VecSim/spaces/IP/IP_AVX512F_SQ8_FP16.h"
+#include "VecSim/spaces/IP/IP_AVX512F_SQ8_A8_Encoder.h"
 
 namespace spaces {
 
@@ -75,6 +76,14 @@ dist_func_t<float> Choose_SQ8_FP16_L2_implementation_AVX512F(size_t dim) {
     dist_func_t<float> ret_dist_func;
     CHOOSE_IMPLEMENTATION(ret_dist_func, dim, 16, SQ8_FP16_L2SqrSIMD16_AVX512F);
     return ret_dist_func;
+}
+
+// The A8 query encoders need only AVX-512F; the A8 kernels that read their output need VNNI.
+sq8_a8_encode_func_t<float> Choose_SQ8_A8_FP32_QueryEncoder_AVX512F() {
+    return SQ8_A8_EncodeQuery_AVX512F<float>;
+}
+sq8_a8_encode_func_t<float16> Choose_SQ8_A8_FP16_QueryEncoder_AVX512F() {
+    return SQ8_A8_EncodeQuery_AVX512F<float16>;
 }
 
 #include "implementation_chooser_cleanup.h"

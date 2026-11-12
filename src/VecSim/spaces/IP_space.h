@@ -55,4 +55,8 @@ dist_func_t<float> Cosine_SQ8_SQ8_GetDistFunc(size_t dim, unsigned char *alignme
 // alignment, so the hint is left unchanged.
 dist_func_t<float> IP_SQ8_A8_GetDistFunc(size_t dim, unsigned char *alignment = nullptr,
                                          const void *arch_opt = nullptr);
+// The A8 query encoder for float or float16 input: vectorized where the CPU has AVX-512F, the
+// scalar encoder otherwise. Both write the same codes.
+template <typename InputType>
+sq8_a8_encode_func_t<InputType> SQ8_A8_GetQueryEncoder(const void *arch_opt = nullptr);
 } // namespace spaces
