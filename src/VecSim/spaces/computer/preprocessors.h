@@ -179,13 +179,15 @@ private:
  * store metric-specific FP32 values from the query body to accelerate asymmetric distance
  * computation:
  * - For IP/Cosine: y_sum = Σy_i (sum of query values)
- * - For SQ8 L2: y_sum = Σy_i, y_sum_squares = Σy_i²
- * - For SQ4 L2: two zero-initialized reserved FP32 slots; direct residual kernels need no sums.
+ * - For SQ8 L2 with a non-FP32 query body: y_sum = Σy_i, y_sum_squares = Σy_i²
+ * - For SQ4 L2, and SQ8 L2 with an FP32 query body (FP32 input, or any input under normalized L2):
+ *   two zero-initialized reserved FP32 slots; direct residual kernels need no sums.
  *
  * Query blob layout:
  * - For IP/Cosine: | query_values[dim] | y_sum |
  * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
- *   SQ4 L2 keeps the same layout, with both trailing slots reserved and zero-initialized.
+ *   SQ4 L2 and FP32-query SQ8 L2 keep the same layout, with both trailing slots reserved and
+ *   zero-initialized.
  *
  * Query metadata is always FP32. The query blob size is:
  * - For IP/Cosine: dim * sizeof(DataType) + 1 * sizeof(float)
@@ -579,13 +581,15 @@ public:
      * the original query values.
      *
      * - For IP/Cosine: y_sum = Σy_i (sum of query values)
-     * - For SQ8 L2: y_sum = Σy_i, y_sum_squares = Σy_i²
-     * - For SQ4 L2: two zero-initialized reserved FP32 slots; no query reductions are needed.
+     * - For SQ8 L2 with a non-FP32 query body: y_sum = Σy_i, y_sum_squares = Σy_i²
+     * - For SQ4 L2, and SQ8 L2 with an FP32 query body (FP32 input, or any input under
+     *   normalized L2): two zero-initialized reserved FP32 slots; no query reductions are needed.
      *
      * Query blob layout:
      * - For IP/Cosine: | query_values[dim] | y_sum |
      * - For L2:        | query_values[dim] | y_sum | y_sum_squares |
-     *   SQ4 L2 reserves and zero-initializes both trailing slots instead of computing sums.
+     *   SQ4 L2 and FP32-query SQ8 L2 reserve and zero-initialize both trailing slots instead of
+     *   computing sums.
      *
      * Query blob size:
      * - For IP/Cosine: dim * sizeof(QueryType) + 1 * sizeof(float)
@@ -611,9 +615,12 @@ public:
         // Compute and write FP32 query metadata after the query body. The metadata offset is
         // body_bytes, which is not guaranteed to be 4-byte aligned for FP16 query bodies.
         void *metadata_dst = static_cast<uint8_t *>(blob) + body_bytes;
-        if constexpr (std::is_same_v<StorageType, vecsim_types::sq4> && Metric == VecSimMetric_L2) {
-            // SQ4 L2 computes residuals directly, so query sums are unused. Keep initialized
-            // padding for SIMD tails that load a final query pair when dim is odd.
+        if constexpr (Metric == VecSimMetric_L2 &&
+                      (std::is_same_v<StorageType, vecsim_types::sq4> ||
+                       std::is_same_v<QueryType, float>)) {
+            // SQ4 L2 and FP32-query SQ8 L2 compute residuals directly, so query sums are unused.
+            // Keep initialized padding for SIMD tails that load a final query pair when dim is
+            // odd, and keep the blob layout and size unchanged.
             const MetadataType padding[2] = {};
             memcpy(metadata_dst, padding, sizeof(padding));
         } else {

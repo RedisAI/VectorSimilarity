@@ -1048,7 +1048,7 @@ TEST(PreprocessorsTest, Int8NormalizeThenIncreaseSize) {
 
 // Tests the quantization preprocessor with a single preprocessor in the chain.
 // The QuantPreprocessor allocates and processes both the storage blob (quantized) and the query
-// blob (original values + precomputed sum_squares for L2).
+// blob (original values + query metadata slots).
 TEST(PreprocessorsTest, QuantizationTest) {
     std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     constexpr size_t n_preprocessors = 1;
@@ -1068,14 +1068,6 @@ TEST(PreprocessorsTest, QuantizationTest) {
     // Query layout: | query_values[dim] | y_sum_squares (for L2) |
     constexpr size_t query_blob_bytes_count =
         (dim + sq8::query_metadata_count<VecSimMetric_L2>()) * sizeof(float);
-
-    // Compute expected sum and sum of squares for L2:
-    float expected_query_sum = 0;
-    float expected_query_sum_squares = 0;
-    for (size_t i = 0; i < dim; ++i) {
-        expected_query_sum += original_blob[i];
-        expected_query_sum_squares += original_blob[i] * original_blob[i];
-    }
 
     auto quant_preprocessor =
         new (allocator) QuantPreprocessor<float, VecSimMetric_L2>(allocator, dim);
@@ -1103,8 +1095,9 @@ TEST(PreprocessorsTest, QuantizationTest) {
         // Verify query blob content
         const float *query_floats = static_cast<const float *>(query_blob);
         EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
-        ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
-        ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY], expected_query_sum_squares);
+        // FP32-query L2 does not use the query sums: both slots are zero.
+        ASSERT_EQ(query_floats[dim + sq8::SUM_QUERY], 0.0f);
+        ASSERT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY], 0.0f);
     }
 
     // Test preprocessForStorage
@@ -1126,8 +1119,9 @@ TEST(PreprocessorsTest, QuantizationTest) {
         // Verify query blob content: original floats followed by sum_squares
         const float *query_floats = static_cast<const float *>(query_blob.get());
         EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
-        ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
-        ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY], expected_query_sum_squares);
+        // FP32-query L2 does not use the query sums: both slots are zero.
+        ASSERT_EQ(query_floats[dim + sq8::SUM_QUERY], 0.0f);
+        ASSERT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY], 0.0f);
 
         // Check address is aligned
         unsigned char address_alignment = (uintptr_t)(query_blob.get()) % alignment;
@@ -1601,10 +1595,8 @@ protected:
         size_t expected_query_size = getExpectedQuerySize<Metric>();
 
         float expected_query_sum = 0;
-        float expected_query_sum_squares = 0;
         for (size_t i = 0; i < dim; ++i) {
             expected_query_sum += original_blob[i];
-            expected_query_sum_squares += original_blob[i] * original_blob[i];
         }
 
         auto quant_preprocessor = new (allocator) QuantPreprocessor<float, Metric>(allocator, dim);
@@ -1645,10 +1637,12 @@ protected:
             EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
 
             // Verify precomputed value (sum for IP/Cosine, sum and sum_squares for L2)
-            ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
             if constexpr (Metric == VecSimMetric_L2) {
-                ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY],
-                                expected_query_sum_squares);
+                // FP32-query L2 does not use the query sums: both slots are zero.
+                ASSERT_EQ(query_floats[dim + sq8::SUM_QUERY], 0.0f);
+                ASSERT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY], 0.0f);
+            } else {
+                ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
             }
 
             allocator->free_allocation(storage_blob);
@@ -1681,10 +1675,12 @@ protected:
             EXPECT_NO_FATAL_FAILURE(CompareVectors<float>(query_floats, original_blob, dim));
 
             // Verify precomputed value (sum for IP/Cosine, sum and sum_squares for L2)
-            ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
             if constexpr (Metric == VecSimMetric_L2) {
-                ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY],
-                                expected_query_sum_squares);
+                // FP32-query L2 does not use the query sums: both slots are zero.
+                ASSERT_EQ(query_floats[dim + sq8::SUM_QUERY], 0.0f);
+                ASSERT_EQ(query_floats[dim + sq8::SUM_SQUARES_QUERY], 0.0f);
+            } else {
+                ASSERT_FLOAT_EQ(query_floats[dim + sq8::SUM_QUERY], expected_query_sum);
             }
             allocator->free_allocation(blob);
         }
@@ -1992,7 +1988,6 @@ protected:
         QueryType expected_query_body[dim];
         float expected_x_mean_ip = 0.0f;
         float expected_y_sum = 0.0f;
-        float expected_y_sum_squares = 0.0f;
         float expected_y_mean_ip = 0.0f;
         for (size_t i = 0; i < dim; ++i) {
             centered[i] = widened_blob[i] - mean_vec[i];
@@ -2004,7 +1999,6 @@ protected:
             const float query_value = to_fp32<QueryType>(expected_query_body[i]);
             expected_x_mean_ip += widened_blob[i] * mean_vec[i];
             expected_y_sum += query_value;
-            expected_y_sum_squares += query_value * query_value;
             expected_y_mean_ip += widened_blob[i] * mean_vec[i];
         }
 
@@ -2046,13 +2040,18 @@ protected:
             }
             EXPECT_NO_FATAL_FAILURE(CompareVectors<QueryType>(
                 static_cast<const QueryType *>(query_blob), expected_query_body, dim));
-            ASSERT_FLOAT_EQ(
-                load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
-                expected_y_sum);
             if constexpr (Metric == VecSimMetric_L2) {
-                ASSERT_FLOAT_EQ(load_meta(query_blob, query_meta_offset +
-                                                          sq8::SUM_SQUARES_QUERY * sizeof(float)),
-                                expected_y_sum_squares);
+                // The centered L2 query body is FP32 and uses the direct residual: both slots are
+                // zero.
+                ASSERT_EQ(load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
+                          0.0f);
+                ASSERT_EQ(load_meta(query_blob,
+                                    query_meta_offset + sq8::SUM_SQUARES_QUERY * sizeof(float)),
+                          0.0f);
+            } else {
+                ASSERT_FLOAT_EQ(
+                    load_meta(query_blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
+                    expected_y_sum);
             }
             if constexpr (Metric == VecSimMetric_IP) {
                 ASSERT_FLOAT_EQ(
@@ -2081,12 +2080,15 @@ protected:
             ASSERT_EQ(blob_size, expected_query_size);
             EXPECT_NO_FATAL_FAILURE(CompareVectors<QueryType>(static_cast<const QueryType *>(blob),
                                                               expected_query_body, dim));
-            ASSERT_FLOAT_EQ(load_meta(blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
-                            expected_y_sum);
             if constexpr (Metric == VecSimMetric_L2) {
-                ASSERT_FLOAT_EQ(
+                ASSERT_EQ(load_meta(blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
+                          0.0f);
+                ASSERT_EQ(
                     load_meta(blob, query_meta_offset + sq8::SUM_SQUARES_QUERY * sizeof(float)),
-                    expected_y_sum_squares);
+                    0.0f);
+            } else {
+                ASSERT_FLOAT_EQ(load_meta(blob, query_meta_offset + sq8::SUM_QUERY * sizeof(float)),
+                                expected_y_sum);
             }
             if constexpr (Metric == VecSimMetric_IP) {
                 ASSERT_FLOAT_EQ(
@@ -2125,9 +2127,9 @@ TEST(QuantPreprocessorFP16WithNormTest, L2CenteringPreservesFP32RangeAndPrecisio
             for (size_t i = 0; i < dim; ++i) {
                 EXPECT_FLOAT_EQ(values[i], expected);
             }
-            EXPECT_FLOAT_EQ(values[dim + sq8::SUM_QUERY], expected * dim);
-            EXPECT_NEAR(values[dim + sq8::SUM_SQUARES_QUERY], double(expected) * expected * dim,
-                        double(expected) * expected * dim * 1e-6);
+            // The centered L2 query uses the direct residual, so both sum slots are zero.
+            EXPECT_EQ(values[dim + sq8::SUM_QUERY], 0.0f);
+            EXPECT_EQ(values[dim + sq8::SUM_SQUARES_QUERY], 0.0f);
         }
     }
 }
