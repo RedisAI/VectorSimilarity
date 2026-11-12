@@ -380,6 +380,9 @@ typedef struct {
     size_t directedExpansions;
     size_t secondHopVisits;
     size_t frontendCandidates;
+    size_t secondHopSkipped;
+    size_t secondHopBudgetExhausted;
+    size_t bridgeExpansions;
 } VecSimNavixStats;
 
 typedef struct {
@@ -387,6 +390,9 @@ typedef struct {
     void *context;
     VecSimNavixStats *stats;
     bool forceBlind;
+    bool skipScanned;
+    size_t secondHopBudget; // Neighbor inspections per expansion; zero means unlimited.
+    bool bridgeRejected;    // One-hop traversal through all nodes, filtered result admission.
 } VecSimNavixParams;
 
 /**

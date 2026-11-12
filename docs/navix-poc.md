@@ -49,3 +49,31 @@ unquantized, single-value FLOAT32 RAM HNSW.
 `test_navix` covers rejected seeds/branches, shared second-hop nodes, equal-distance
 batch continuation, strategy selection, timeout/reset, frontend filtering/reset, cached
 NO/MAYBE decisions, reset invalidation, isolation between query iterators, and backend growth.
+
+## Traversal experiments
+
+The default and `forceBlind` behavior are unchanged. Three opt-in controls can be
+combined, except that `bridgeRejected` takes precedence over the two-hop controls:
+
+- `skipScanned`: skip second-hop adjacency lists already processed completely by this
+  iterator, including lists processed as direct neighbors. Partial lists remain eligible.
+  An additional byte per encountered internal-ID slot is retained across batches and
+  cleared on reset. As with visited nodes, completed lists are not reconsidered for
+  concurrent graph changes; compare these policies on a fully built, stable graph.
+- `secondHopBudget`: maximum second-hop neighbor inspections per expansion (zero is
+  unlimited). Already-visited and rejected neighbors consume the budget too. This bounds
+  inspections, not total query work. Budget stops can reduce recall or exhaust the frontier;
+  there is no automatic retry/fallback. Partial lists restart from their beginning on a
+  later visit, so small budgets can repeatedly scan the same prefix.
+- `bridgeRejected`: enqueue every unvisited direct neighbor, including rejected nodes,
+  and disable second-hop expansion. Only MAYBE nodes enter result heaps and affect the
+  result bound. This uses ordinary one-hop HNSW navigation with filtered result admission;
+  it can cross longer rejected chains, but does not guarantee exact recall or recovery
+  from genuinely disconnected graph components. With no matches it may scan the whole
+  reachable graph, subject to the query timeout.
+
+New counters report skipped complete second-hop lists, expansions stopped by the
+inspection budget, and bridge-mode expansions. A budget exhaustion is counted only if
+an additional inspection was prevented. The parameter/stat struct additions change the
+C ABI; rebuild consumers with the matching headers and library. The flat frontend still
+uses its existing callback filter and has no hop policy.
