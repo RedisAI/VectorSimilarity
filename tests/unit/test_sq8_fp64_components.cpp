@@ -173,3 +173,17 @@ TEST(SQ8FP64Components, AsymmetricL2UnalignedQuery) {
     std::memcpy(query + 1, values, sizeof(values));
     EXPECT_DOUBLE_EQ(spaces::L2_SQ8FP64_FP64(stored.data(), query + 1, dim), 7.5);
 }
+
+TEST(SQ8FP64Components, AsymmetricL2PreservesSmallResiduals) {
+    constexpr size_t dim = 3;
+    std::vector<uint8_t> stored(sq8_fp64::storage_bytes_count<VecSimMetric_L2>(dim));
+    stored[0] = 1;
+    stored[1] = 2;
+    stored[2] = 3;
+    const double minimum = 1e15;
+    const double delta = 0x1p-10;
+    std::memcpy(stored.data() + dim, &minimum, sizeof(minimum));
+    std::memcpy(stored.data() + dim + sizeof(double), &delta, sizeof(delta));
+    const double query[] = {minimum + 0.125, minimum + 0.25, minimum + 0.375};
+    EXPECT_EQ(spaces::L2_SQ8FP64_FP64(stored.data(), query, dim), 112903.0 / 524288.0);
+}
