@@ -7,8 +7,12 @@
  * GNU Affero General Public License v3 (AGPLv3).
  */
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <vector>
 #include "gtest/gtest.h"
 #include "VecSim/index_factories/components/components_factory.h"
@@ -79,6 +83,11 @@ TEST(SQ8FP64Components, DoublePrecisionRangeAndMetadata) {
         void *storage = nullptr;
         size_t size = sizeof(input);
         preprocessor.preprocessForStorage(input, storage, size, 0);
+        std::vector<double> inplace((std::max(size, sizeof(input)) + sizeof(double) - 1) /
+                                    sizeof(double));
+        std::memcpy(inplace.data(), input, sizeof(input));
+        preprocessor.preprocessStorageInPlace(inplace.data(), inplace.size() * sizeof(double));
+        EXPECT_EQ(std::memcmp(inplace.data(), storage, size), 0);
         const auto *const codes = static_cast<const uint8_t *>(storage);
         EXPECT_EQ(codes[0], 0);
         EXPECT_EQ(codes[1], 64);

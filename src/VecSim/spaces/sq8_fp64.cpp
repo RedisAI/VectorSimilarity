@@ -23,12 +23,8 @@ double distance(const void *left, const void *right, size_t dim) {
     const auto *const b = static_cast<const uint8_t *>(right);
     const double min_a = metadata(left, dim, vecsim_types::sq8_fp64::MIN_VAL);
     const double delta_a = metadata(left, dim, vecsim_types::sq8_fp64::DELTA);
-    double min_b = 0.0;
-    double delta_b = 0.0;
-    if constexpr (!Asymmetric) {
-        min_b = metadata(right, dim, vecsim_types::sq8_fp64::MIN_VAL);
-        delta_b = metadata(right, dim, vecsim_types::sq8_fp64::DELTA);
-    }
+    const double min_b = Asymmetric ? 0.0 : metadata(right, dim, vecsim_types::sq8_fp64::MIN_VAL);
+    const double delta_b = Asymmetric ? 0.0 : metadata(right, dim, vecsim_types::sq8_fp64::DELTA);
     double result = 0.0;
     for (size_t i = 0; i < dim; ++i) {
         if constexpr (L2) {
