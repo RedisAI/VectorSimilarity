@@ -166,9 +166,15 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::expandNavix(idType
             ++navix.stats->expandedNodes;
             ++navix.stats->bridgeExpansions;
         }
-        for (idType neighbor : navix_direct) {
+        for (size_t i = 0; i < navix_direct.size(); ++i) {
+            if (i + 1 < navix_direct.size()) {
+                const idType next = navix_direct[i + 1];
+                __builtin_prefetch(visited_list->getElementsTags() + next);
+                __builtin_prefetch(index->getDataByInternalId(next));
+            }
             if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
                 return VecSim_QueryReply_TimedOut;
+            const idType neighbor = navix_direct[i];
             if (hasVisitedNode(neighbor))
                 continue;
             visitNode(neighbor);
@@ -263,6 +269,8 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::scanNavix(
     candidatesLabelsMaxHeap<DistType> *top_candidates) {
     while (!candidates.empty()) {
         auto [distance, id] = candidates.top();
+        __builtin_prefetch(index->getGraphDataByInternalId(id));
+        __builtin_prefetch(index->getMetaDataAddress(id));
         // Leave bound ties on the frontier for the next batch.
         if (distance >= this->lower_bound && top_candidates->size() >= this->ef)
             break;
