@@ -107,9 +107,8 @@ dist_func_t<float> GetDistFunc<uint8_t, float>(VecSimMetric metric, size_t dim,
 }
 
 template <>
-dist_func_t<double> GetDistFunc<vecsim_types::sq8_fp64, double>(VecSimMetric metric,
-                                                               size_t dim,
-                                                               unsigned char *alignment) {
+dist_func_t<double> GetDistFunc<vecsim_types::sq8_fp64, double>(VecSimMetric metric, size_t dim,
+                                                                unsigned char *alignment) {
     if (alignment) {
         *alignment = 0;
     }
@@ -125,8 +124,8 @@ dist_func_t<double> GetDistFunc<vecsim_types::sq8_fp64, double>(VecSimMetric met
 
 template <>
 dist_func_t<double> GetDistFunc<vecsim_types::sq8_fp64, double, double>(VecSimMetric metric,
-                                                                       size_t dim,
-                                                                       unsigned char *alignment) {
+                                                                        size_t dim,
+                                                                        unsigned char *alignment) {
     if (alignment) {
         *alignment = 0;
     }

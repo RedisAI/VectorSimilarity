@@ -119,16 +119,16 @@ template <VecSimMetric Metric>
 IndexComponents<double, double>
 CreateSQ8FP64IndexComponents(const std::shared_ptr<VecSimAllocator> &allocator, size_t dim) {
     unsigned char storage_alignment = 0;
-    const auto symmetric = spaces::GetDistFunc<vecsim_types::sq8_fp64, double>(
-        Metric, dim, &storage_alignment);
+    const auto symmetric =
+        spaces::GetDistFunc<vecsim_types::sq8_fp64, double>(Metric, dim, &storage_alignment);
     unsigned char asymmetric_alignment = 0;
     const auto asymmetric = spaces::GetDistFunc<vecsim_types::sq8_fp64, double, double>(
         Metric, dim, &asymmetric_alignment);
     storage_alignment = spaces::combineAlignments(storage_alignment, asymmetric_alignment);
-    auto *const calculator = new (allocator)
-        DistanceCalculatorCommon<double>(allocator, symmetric, asymmetric);
-    auto *const container = new (allocator)
-        MultiPreprocessorsContainer<double, 1>(allocator, 0, storage_alignment);
+    auto *const calculator =
+        new (allocator) DistanceCalculatorCommon<double>(allocator, symmetric, asymmetric);
+    auto *const container =
+        new (allocator) MultiPreprocessorsContainer<double, 1>(allocator, 0, storage_alignment);
     auto *const preprocessor = new (allocator) SQ8FP64Preprocessor<Metric>(allocator, dim);
     [[maybe_unused]] const int result = container->addPreprocessor(preprocessor);
     assert(result != -1);
