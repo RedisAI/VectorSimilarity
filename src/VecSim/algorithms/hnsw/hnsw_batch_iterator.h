@@ -35,12 +35,14 @@ protected:
     VecSimNavixParams navix{};
     enum class NavixMatch : uint8_t { Unknown, No, Maybe };
     vecsim_stl::vector<NavixMatch> navix_filter_cache;
+    vecsim_stl::vector<uint8_t> navix_scanned;
     vecsim_stl::vector<idType> navix_direct, navix_second;
     vecsim_stl::vector<uint8_t> navix_matches;
     vecsim_stl::vector<std::pair<DistType, idType>> navix_branches;
     bool navixMayMatch(idType id);
     DistType navixDistance(idType id);
     void navixLinks(idType id, vecsim_stl::vector<idType> &out);
+    void navixMarkScanned(idType id);
     VecSimQueryReply_Code expandNavix(idType id);
     VecSimQueryReply_Code scanNavix(candidatesLabelsMaxHeap<DistType> *top_candidates);
 
@@ -86,9 +88,9 @@ HNSW_BatchIterator<DataType, DistType>::HNSW_BatchIterator(
     : VecSimBatchIterator(query_vector, queryParams ? queryParams->timeoutCtx : nullptr,
                           std::move(allocator)),
       index(index), depleted(false), navix_filter_cache(this->allocator),
-      navix_direct(this->allocator), navix_second(this->allocator), navix_matches(this->allocator),
-      navix_branches(this->allocator), top_candidates_extras(this->allocator),
-      candidates(this->allocator) {
+      navix_scanned(this->allocator), navix_direct(this->allocator), navix_second(this->allocator),
+      navix_matches(this->allocator), navix_branches(this->allocator),
+      top_candidates_extras(this->allocator), candidates(this->allocator) {
 
     if (queryParams)
         navix = queryParams->navix;
@@ -148,8 +150,32 @@ void HNSW_BatchIterator<DataType, DistType>::navixLinks(idType id,
 }
 
 template <typename DataType, typename DistType>
+void HNSW_BatchIterator<DataType, DistType>::navixMarkScanned(idType id) {
+    if (!navix.skipScanned)
+        return;
+    if (id >= navix_scanned.size())
+        navix_scanned.resize(size_t(id) + 1, 0);
+    navix_scanned[id] = 1;
+}
+
+template <typename DataType, typename DistType>
 VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::expandNavix(idType id) {
     navixLinks(id, navix_direct);
+    if (navix.bridgeRejected) {
+        if (navix.stats) {
+            ++navix.stats->expandedNodes;
+            ++navix.stats->bridgeExpansions;
+        }
+        for (idType neighbor : navix_direct) {
+            if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
+                return VecSim_QueryReply_TimedOut;
+            if (hasVisitedNode(neighbor))
+                continue;
+            visitNode(neighbor);
+            candidates.emplace(navixDistance(neighbor), neighbor);
+        }
+        return VecSim_QueryReply_OK;
+    }
     navix_matches.resize(navix_direct.size());
     size_t passing = 0;
     for (size_t i = 0; i < navix_direct.size(); ++i) {
@@ -189,28 +215,45 @@ VecSimQueryReply_Code HNSW_BatchIterator<DataType, DistType>::expandNavix(idType
             ++admitted;
         }
     }
+    navixMarkScanned(id);
     if (onehop || admitted >= degree)
         return VecSim_QueryReply_OK;
     if (directed)
         std::sort(navix_branches.begin(), navix_branches.end());
 
+    size_t inspected = 0;
     for (size_t i = 0; i < navix_direct.size() && admitted < degree; ++i) {
         if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
             return VecSim_QueryReply_TimedOut;
         const idType branch = directed ? navix_branches[i].second : navix_direct[i];
+        if (navix.skipScanned && branch < navix_scanned.size() && navix_scanned[branch]) {
+            if (navix.stats)
+                ++navix.stats->secondHopSkipped;
+            continue;
+        }
         navixLinks(branch, navix_second);
-        for (idType neighbor : navix_second) {
+        size_t j = 0;
+        for (; j < navix_second.size() && admitted < degree; ++j) {
             if (VECSIM_TIMEOUT(this->getTimeoutCtx()))
                 return VecSim_QueryReply_TimedOut;
+            if (navix.secondHopBudget && inspected == navix.secondHopBudget) {
+                if (navix.stats)
+                    ++navix.stats->secondHopBudgetExhausted;
+                return VecSim_QueryReply_OK;
+            }
+            ++inspected;
             if (navix.stats)
                 ++navix.stats->secondHopVisits;
+            const idType neighbor = navix_second[j];
             if (hasVisitedNode(neighbor) || !navixMayMatch(neighbor))
                 continue;
             visitNode(neighbor);
             candidates.emplace(navixDistance(neighbor), neighbor);
-            if (++admitted == degree)
-                break;
+            ++admitted;
         }
+        // A budget, admission limit, or timeout must not mark a partial list complete.
+        if (j == navix_second.size())
+            navixMarkScanned(branch);
     }
     return VecSim_QueryReply_OK;
 }
@@ -408,6 +451,7 @@ void HNSW_BatchIterator<DataType, DistType>::reset() {
     this->resetResultsCount();
     this->depleted = false;
     navix_filter_cache.clear();
+    navix_scanned.clear();
 
     // Reset the visited nodes handler.
     this->visited_tag = this->visited_list->getFreshTag();

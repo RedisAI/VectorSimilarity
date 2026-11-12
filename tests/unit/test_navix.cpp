@@ -240,3 +240,82 @@ TEST(Navix, FlatFrontendFiltersAndResets) {
     VecSimBatchIterator_Free(it);
     VecSimIndex_Free(index);
 }
+
+TEST(Navix, SkipsCompletedNeighborhoodsAcrossBatchesAndResets) {
+    size_t baseline_visits = 0;
+    for (bool skip : {false, true}) {
+        Fixture f;
+        f.sparseGraph();
+        f.params.navix.skipScanned = skip;
+        auto *it = f.iterator();
+        EXPECT_EQ(f.drain(it), f.allowed);
+        if (!skip) {
+            baseline_visits = f.stats.secondHopVisits;
+        } else {
+            EXPECT_LT(f.stats.secondHopVisits, baseline_visits);
+            EXPECT_GT(f.stats.secondHopSkipped, 0u);
+            const auto visits = f.stats.secondHopVisits;
+            VecSimBatchIterator_Reset(it);
+            EXPECT_EQ(f.drain(it), f.allowed);
+            EXPECT_EQ(f.stats.secondHopVisits, 2 * visits);
+        }
+        VecSimBatchIterator_Free(it);
+    }
+}
+
+TEST(Navix, AdmissionLimitDoesNotCompletePartialNeighborhood) {
+    Fixture f;
+    f.params.navix.forceBlind = true;
+    f.params.navix.skipScanned = true;
+    f.edges(0, {1, 2, 3, 4, 5, 6, 7, 8});
+    f.edges(1, {9, 10});
+    f.edges(2, {1});
+    for (size_t i = 2; i <= 10; ++i)
+        f.accept(i);
+    auto *it = f.iterator();
+    EXPECT_EQ(f.drain(it), f.allowed);
+    VecSimBatchIterator_Free(it);
+}
+
+TEST(Navix, SecondHopBudgetBoundsInspectionsAndLeavesPartialListsEligible) {
+    Fixture f;
+    f.params.navix.forceBlind = true;
+    f.params.navix.skipScanned = true;
+    f.params.navix.secondHopBudget = 2;
+    f.edges(0, {1, 2});
+    f.edges(1, {3, 4, 5});
+    f.edges(2, {1});
+    f.accept(2);
+    f.accept(4);
+    auto *it = f.iterator();
+    EXPECT_EQ(f.drain(it), f.allowed);
+    // Both expansions reach the still-partial list through rejected node 1.
+    EXPECT_EQ(f.stats.secondHopBudgetExhausted, 2u);
+    EXPECT_EQ(f.stats.secondHopVisits, 4u);
+    EXPECT_LE(f.stats.secondHopVisits, f.stats.expandedNodes * f.params.navix.secondHopBudget);
+    VecSimBatchIterator_Reset(it);
+    EXPECT_EQ(f.drain(it), f.allowed);
+    VecSimBatchIterator_Free(it);
+}
+
+TEST(Navix, OneHopBridgesRejectedChainsWithoutReturningThem) {
+    for (bool matches : {false, true}) {
+        Fixture f;
+        f.params.navix.bridgeRejected = true;
+        f.edges(0, {1});
+        f.edges(1, {2, 0});
+        f.edges(2, {3, 1});
+        f.edges(3, {4, 2});
+        if (matches) {
+            f.accept(3);
+            f.accept(4);
+        }
+        auto *it = f.iterator();
+        EXPECT_EQ(f.drain(it), f.allowed);
+        EXPECT_GT(f.stats.bridgeExpansions, 0u);
+        EXPECT_EQ(f.stats.secondHopVisits, 0u);
+        VecSimBatchIterator_Reset(it);
+        EXPECT_EQ(f.drain(it), f.allowed);
+        VecSimBatchIterator_Free(it);
+    }
+}
