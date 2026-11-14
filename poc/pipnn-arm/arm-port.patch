@@ -1,0 +1,144 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ba41e07..61815be 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -75,12 +75,12 @@ set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+ set(HWY_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+ set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+ set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+-add_subdirectory(external/mirage)
++# PiPNN-only build: MIRAGE is not required
+ 
+ add_subdirectory(algorithms)
+-add_subdirectory(analysis)
+-add_subdirectory(benchmark)
+-add_subdirectory(data_tools)
++# PiPNN-only build: skip analysis
++# PiPNN-only build: skip benchmark
++# PiPNN-only build: skip data tools
+ #add_subdirectory(range_search)
+ 
+ 
+diff --git a/algorithms/CMakeLists.txt b/algorithms/CMakeLists.txt
+index 660d8c1..5b7f98c 100644
+--- a/algorithms/CMakeLists.txt
++++ b/algorithms/CMakeLists.txt
+@@ -1,8 +1 @@
+-add_subdirectory(HCNNG)
+-add_subdirectory(HNSW)
+-add_subdirectory(hnswlib)
+-add_subdirectory(mirage)
+ add_subdirectory(PipNN)
+-add_subdirectory(pyNNDescent)
+-add_subdirectory(vamana)
+-add_subdirectory(vamanaRange)
+diff --git a/algorithms/PipNN/CMakeLists.txt b/algorithms/PipNN/CMakeLists.txt
+index 913ad60..b7b5fc5 100644
+--- a/algorithms/PipNN/CMakeLists.txt
++++ b/algorithms/PipNN/CMakeLists.txt
+@@ -36,3 +36,5 @@ foreach(CURRENT_DATATYPE_CMAKE ${CONFIG_DATATYPES_CMAKE})
+         message(STATUS "Configured Target: ${TARGET_NAME} with Definitions: ${DATATYPE_DEFINE}, ${DISTANCETYPE_DEFINE}")
+     endforeach()
+ endforeach()
++add_executable(pipnn_query pipnn_query.cpp)
++target_link_libraries(pipnn_query PRIVATE parlay ParlayANN Eigen3::Eigen absl::synchronization absl::flat_hash_set absl::span hwy hwy_contrib)
+diff --git a/algorithms/PipNN/pipnn_utils.h b/algorithms/PipNN/pipnn_utils.h
+index 81b9149..510dc00 100644
+--- a/algorithms/PipNN/pipnn_utils.h
++++ b/algorithms/PipNN/pipnn_utils.h
+@@ -29,6 +29,16 @@
+ #include <type_traits>
+ #include <Eigen/Dense>
+ #include <cfloat>
++#include <cstdlib>
++#include <new>
++
++inline void* pipnn_aligned_malloc(size_t bytes, size_t alignment) {
++  void* ptr = nullptr;
++  if (posix_memalign(&ptr, alignment, bytes) != 0) {
++    throw std::bad_alloc();
++  }
++  return ptr;
++}
+ 
+ 
+ #include "../utils/graph.h"
+@@ -239,7 +249,7 @@ size_t kMaxDimension = 2048;
+ void* get_point_mat() {
+   if (tl_point_mat == nullptr) {
+     // Enough space for float points.
+-    tl_point_mat = (uint8_t*)_mm_malloc(kMaxClusterSize * kMaxDimension * sizeof(uint32_t), 64);
++    tl_point_mat = (uint8_t*)pipnn_aligned_malloc(kMaxClusterSize * kMaxDimension * sizeof(uint32_t), 64);
+     for (size_t i=0; i < kMaxClusterSize * kMaxDimension * sizeof(uint32_t); ++i) {
+       tl_point_mat[i] = 0;
+     }
+@@ -251,7 +261,7 @@ void* get_point_mat() {
+ void* get_dist_mat() {
+   if (tl_dist_mat == nullptr) {
+     // Enough space for float distances.
+-    tl_dist_mat = (uint8_t*)_mm_malloc(kMaxClusterSize * kMaxClusterSize * sizeof(uint32_t), 64);
++    tl_dist_mat = (uint8_t*)pipnn_aligned_malloc(kMaxClusterSize * kMaxClusterSize * sizeof(uint32_t), 64);
+     for (size_t i=0; i < kMaxClusterSize * kMaxClusterSize * sizeof(uint32_t); ++i) {
+       tl_dist_mat[i] = 0;
+     }
+@@ -315,14 +325,14 @@ constexpr size_t kMaxLeaderSize = 2048;
+ 
+ static void* get_tile_point_mat() {
+   if (!tile_point_mat)
+-    tile_point_mat = (uint8_t*)_mm_malloc(
++    tile_point_mat = (uint8_t*)pipnn_aligned_malloc(
+       kMaxTileSize * kMaxDimension * sizeof(float), 64);
+   return tile_point_mat;
+ }
+ 
+ static void* get_tile_dist_mat() {
+   if (!tile_dist_mat)
+-    tile_dist_mat = (uint8_t*)_mm_malloc(
++    tile_dist_mat = (uint8_t*)pipnn_aligned_malloc(
+       kMaxTileSize * kMaxLeaderSize * sizeof(float), 64);
+   return tile_dist_mat;
+ }
+@@ -344,7 +354,7 @@ void assign_leaders(PR& Points,
+   //assert(dim <= kMaxDimension);
+ 
+   // this is a buffer for the leader points shared across all threads spawned here
+-  float* Lmat = (float*)_mm_malloc(M * dim * sizeof(float), 64);
++  float* Lmat = (float*)pipnn_aligned_malloc(M * dim * sizeof(float), 64);
+   for (size_t j = 0; j < M; ++j) {
+     coord_type* loc = reinterpret_cast<coord_type*>(Points.location(leaders[j]));
+     for (size_t d = 0; d < dim; ++d) {
+@@ -430,7 +440,7 @@ void assign_leaders(PR& Points,
+     );
+   }
+ 
+-  _mm_free(Lmat);
++  std::free(Lmat);
+ }
+ 
+ 
+diff --git a/algorithms/utils/NSGDist.h b/algorithms/utils/NSGDist.h
+index aab1509..3dc4f22 100644
+--- a/algorithms/utils/NSGDist.h
++++ b/algorithms/utils/NSGDist.h
+@@ -6,7 +6,9 @@
+ #define EFANNA2E_DISTANCE_H
+ 
+ #include <math.h>
++#if defined(__x86_64__) || defined(__i386__)
+ #include <x86intrin.h>
++#endif
+ 
+ #include <algorithm>
+ #include <iostream>
+diff --git a/algorithms/utils/hash.h b/algorithms/utils/hash.h
+index 3d4a2c2..3cd1f12 100644
+--- a/algorithms/utils/hash.h
++++ b/algorithms/utils/hash.h
+@@ -1,7 +1,6 @@
+ #include "parlay/parallel.h"
+ #include "parlay/primitives.h"
+ #include "parlay/random.h"
+-#include <immintrin.h>
+ 
+ #include <cmath>  // For sqrt
+ #include <iomanip> // For formatting output

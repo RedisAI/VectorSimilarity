@@ -1,0 +1,50 @@
+diff --git a/src/VecSim/index_factories/tiered_factory.h b/src/VecSim/index_factories/tiered_factory.h
+index 9d51c93d..49861dcf 100644
+--- a/src/VecSim/index_factories/tiered_factory.h
++++ b/src/VecSim/index_factories/tiered_factory.h
+@@ -15,7 +15,9 @@
+ #include "VecSim/memory/vecsim_malloc.h"
+ #include "VecSim/vec_sim_index.h"
+ #include "VecSim/algorithms/hnsw/hnsw_tiered.h"
++#if HAVE_SVS
+ #include "VecSim/algorithms/svs/svs_tiered.h"
++#endif
+ #include "VecSim/algorithms/brute_force/brute_force.h"
+ #include "VecSim/index_factories/factory_utils.h"
+ 
+diff --git a/src/VecSim/vec_sim.cpp b/src/VecSim/vec_sim.cpp
+index b781fe76..da40cd59 100644
+--- a/src/VecSim/vec_sim.cpp
++++ b/src/VecSim/vec_sim.cpp
+@@ -15,7 +15,9 @@
+ #include "VecSim/vec_sim_index.h"
+ #include "VecSim/vec_sim_adhoc_bf_ctx.h"
+ #include "VecSim/types/bfloat16.h"
++#if HAVE_SVS
+ #include "VecSim/algorithms/svs/svs_utils.h"
++#endif
+ #include <cassert>
+ #include "memory.h"
+ 
+@@ -44,7 +46,9 @@ extern "C" void VecSim_UpdateThreadPoolSize(size_t new_size) {
+     // Resize the shared SVS pool. Clamped to a minimum of 1. OS threads are spawned
+     // lazily on first SVS index creation; once an index exists this resizes the
+     // shared pool immediately (cooperating with the deferred-shrink protocol).
++#if HAVE_SVS
+     VecSimSVSThreadPool::resize(new_size);
++#endif
+ }
+ 
+ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimRawParam rparam,
+@@ -406,7 +410,11 @@ extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *i
+ }
+ 
+ extern "C" size_t VecSim_GetSharedMemory(void) {
++#if HAVE_SVS
+     return VecSimSVSThreadPool::getSharedAllocationSize();
++#else
++    return 0;
++#endif
+ }
+ 
+ extern "C" VecSimIndexBasicInfo VecSimIndex_BasicInfo(VecSimIndex *index) {

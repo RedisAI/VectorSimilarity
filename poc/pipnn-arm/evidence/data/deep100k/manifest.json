@@ -1,0 +1,19 @@
+{
+  "name": "deep100k",
+  "n": 100000,
+  "dim": 96,
+  "queries": 999,
+  "metric": "L2",
+  "excluded_overlap_hashes": 5,
+  "normalized_overlap_hashes": 0,
+  "excluded_near_identical": 0,
+  "excluded_tied_top10": 1,
+  "truth": "float64 exact over this base",
+  "preparation_seconds": 1.4005875792354345,
+  "base_sha256": "4d38d409ed8a96b80cdf83165d537ad5983777b4392b1eb9d4f59b731d4ea1bd",
+  "query_sha256": "2a0c081ab5bfab192f7989775e39fe7c061e80adeacc6012c4735f758dc66869",
+  "thread_env": {
+    "OPENBLAS_NUM_THREADS": "4",
+    "OMP_NUM_THREADS": "4"
+  }
+}

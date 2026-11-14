@@ -1,0 +1,23 @@
+	Command being timed: "/home/ubuntu/pipnn-poc-20261114/upstream/build/algorithms/PipNN/neighbors-pipnn_FLOAT_T_EUCLIDEAN -base_path /home/ubuntu/pipnn-poc-20261114/data/dbpedia100k/base.fbin -graph_outfile /home/ubuntu/pipnn-poc-20261114/results/dbpedia100k-pipnn-a1.4-trees1-r1.graph -num_clusters 1 -fanout 30 -fanout_scheme 10,3 -cluster_size 1024 -mst_deg 2 -prune -prune_all -prune_degree 64 -table_size 160 -top_level_leaders 1000 -fraction_leaders 0.005 -hash_bits 12 -leaf_method EigenKNN -quantize_bits 0 -quantize_mode 0 -alpha 1.4"
+	User time (seconds): 66.13
+	System time (seconds): 0.38
+	Percent of CPU this job got: 99%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 1:06.53
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1203380
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 180664
+	Voluntary context switches: 1
+	Involuntary context switches: 264
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 20536
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

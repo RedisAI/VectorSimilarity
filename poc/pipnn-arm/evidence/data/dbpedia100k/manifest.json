@@ -1,0 +1,19 @@
+{
+  "name": "dbpedia100k",
+  "n": 100000,
+  "dim": 1536,
+  "queries": 1000,
+  "metric": "L2 on FP32 unit-normalized vectors",
+  "excluded_overlap_hashes": 0,
+  "normalized_overlap_hashes": 0,
+  "excluded_near_identical": 0,
+  "excluded_tied_top10": 0,
+  "truth": "float64 exact over this base",
+  "preparation_seconds": 6.469971586950123,
+  "base_sha256": "96d405539cbe8aa6d2fa86b45f2dee167eced17c9d560874f927cf360fcdaf5c",
+  "query_sha256": "505b2e67242cf5e70d851bd6b19a623d41502155bdf6dd95284f5a8d76e6ed9c",
+  "thread_env": {
+    "OPENBLAS_NUM_THREADS": "4",
+    "OMP_NUM_THREADS": "4"
+  }
+}

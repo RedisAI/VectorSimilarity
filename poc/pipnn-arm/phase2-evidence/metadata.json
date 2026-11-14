@@ -1,0 +1,14 @@
+{
+  "host": "dorer-arm-big",
+  "threads": 1,
+  "phase": "parameter screen; unchanged compiled executables",
+  "sha256": {
+    "vecsim_bench": "8db23ee1784eca1c16733c9e20de373dc62692de1898f8d202e524a7e08e87ad",
+    "pipnn_query": "ae8f3bc86e547a8981f56d9d4b61ef5a3ba7c0f3d5e1b772a6e2173a215c085b",
+    "neighbors-pipnn_FLOAT_T_EUCLIDEAN": "99f4a087a3741aa53aa4353d1bb7319325d008b01b03b7fb2988395fa2903a8a",
+    "data/dbpedia100k/base.fbin": "0ac4601b0c95b067aadb4b1803bf1df7164ddb6ccc642a885587bd0d34a89edf",
+    "data/dbpedia100k/query.fbin": "222a3c7291cd88d805646f501fdd4e1822b78822238f1ca5c485e0043e025f84",
+    "data/dbpedia100k/truth.ibin": "b6c3a8d8af62ff9fde15806655e3f0a9b1abf7c915ce1ee2c72ba149e82f645e"
+  },
+  "note": "File hashes include headers; preparation manifest hashes cover vector payload arrays."
+}
