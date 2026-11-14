@@ -1,0 +1,214 @@
+[2026-11-14 09:36:55.540] [verbose] Updating HNSW index capacity from 0 to 1024
+[2026-11-14 09:36:55.540] [verbose] Resizing HNSW index from 0 to 1024
+[2026-11-14 09:36:55.599] [verbose] Updating HNSW index capacity from 1024 to 2048
+[2026-11-14 09:36:55.599] [verbose] Resizing HNSW index from 1024 to 2048
+[2026-11-14 09:36:55.689] [verbose] Updating HNSW index capacity from 2048 to 3072
+[2026-11-14 09:36:55.689] [verbose] Resizing HNSW index from 2048 to 3072
+[2026-11-14 09:36:55.792] [verbose] Updating HNSW index capacity from 3072 to 4096
+[2026-11-14 09:36:55.792] [verbose] Resizing HNSW index from 3072 to 4096
+[2026-11-14 09:36:55.909] [verbose] Updating HNSW index capacity from 4096 to 5120
+[2026-11-14 09:36:55.909] [verbose] Resizing HNSW index from 4096 to 5120
+[2026-11-14 09:36:56.038] [verbose] Updating HNSW index capacity from 5120 to 6144
+[2026-11-14 09:36:56.038] [verbose] Resizing HNSW index from 5120 to 6144
+[2026-11-14 09:36:56.178] [verbose] Updating HNSW index capacity from 6144 to 7168
+[2026-11-14 09:36:56.178] [verbose] Resizing HNSW index from 6144 to 7168
+[2026-11-14 09:36:56.325] [verbose] Updating HNSW index capacity from 7168 to 8192
+[2026-11-14 09:36:56.325] [verbose] Resizing HNSW index from 7168 to 8192
+[2026-11-14 09:36:56.490] [verbose] Updating HNSW index capacity from 8192 to 9216
+[2026-11-14 09:36:56.490] [verbose] Resizing HNSW index from 8192 to 9216
+[2026-11-14 09:36:56.682] [verbose] Updating HNSW index capacity from 9216 to 10240
+[2026-11-14 09:36:56.682] [verbose] Resizing HNSW index from 9216 to 10240
+[2026-11-14 09:36:56.868] [verbose] Updating HNSW index capacity from 10240 to 11264
+[2026-11-14 09:36:56.868] [verbose] Resizing HNSW index from 10240 to 11264
+[2026-11-14 09:36:57.048] [verbose] Updating HNSW index capacity from 11264 to 12288
+[2026-11-14 09:36:57.048] [verbose] Resizing HNSW index from 11264 to 12288
+[2026-11-14 09:36:57.239] [verbose] Updating HNSW index capacity from 12288 to 13312
+[2026-11-14 09:36:57.239] [verbose] Resizing HNSW index from 12288 to 13312
+[2026-11-14 09:36:57.437] [verbose] Updating HNSW index capacity from 13312 to 14336
+[2026-11-14 09:36:57.437] [verbose] Resizing HNSW index from 13312 to 14336
+[2026-11-14 09:36:57.646] [verbose] Updating HNSW index capacity from 14336 to 15360
+[2026-11-14 09:36:57.646] [verbose] Resizing HNSW index from 14336 to 15360
+[2026-11-14 09:36:57.867] [verbose] Updating HNSW index capacity from 15360 to 16384
+[2026-11-14 09:36:57.867] [verbose] Resizing HNSW index from 15360 to 16384
+[2026-11-14 09:36:58.093] [verbose] Updating HNSW index capacity from 16384 to 17408
+[2026-11-14 09:36:58.093] [verbose] Resizing HNSW index from 16384 to 17408
+[2026-11-14 09:36:58.332] [verbose] Updating HNSW index capacity from 17408 to 18432
+[2026-11-14 09:36:58.332] [verbose] Resizing HNSW index from 17408 to 18432
+[2026-11-14 09:36:58.570] [verbose] Updating HNSW index capacity from 18432 to 19456
+[2026-11-14 09:36:58.570] [verbose] Resizing HNSW index from 18432 to 19456
+[2026-11-14 09:36:58.826] [verbose] Updating HNSW index capacity from 19456 to 20480
+[2026-11-14 09:36:58.826] [verbose] Resizing HNSW index from 19456 to 20480
+[2026-11-14 09:36:59.067] [verbose] Updating HNSW index capacity from 20480 to 21504
+[2026-11-14 09:36:59.067] [verbose] Resizing HNSW index from 20480 to 21504
+[2026-11-14 09:36:59.318] [verbose] Updating HNSW index capacity from 21504 to 22528
+[2026-11-14 09:36:59.318] [verbose] Resizing HNSW index from 21504 to 22528
+[2026-11-14 09:36:59.562] [verbose] Updating HNSW index capacity from 22528 to 23552
+[2026-11-14 09:36:59.562] [verbose] Resizing HNSW index from 22528 to 23552
+[2026-11-14 09:36:59.811] [verbose] Updating HNSW index capacity from 23552 to 24576
+[2026-11-14 09:36:59.811] [verbose] Resizing HNSW index from 23552 to 24576
+[2026-11-14 09:37:00.084] [verbose] Updating HNSW index capacity from 24576 to 25600
+[2026-11-14 09:37:00.084] [verbose] Resizing HNSW index from 24576 to 25600
+[2026-11-14 09:37:00.378] [verbose] Updating HNSW index capacity from 25600 to 26624
+[2026-11-14 09:37:00.378] [verbose] Resizing HNSW index from 25600 to 26624
+[2026-11-14 09:37:00.677] [verbose] Updating HNSW index capacity from 26624 to 27648
+[2026-11-14 09:37:00.678] [verbose] Resizing HNSW index from 26624 to 27648
+[2026-11-14 09:37:00.973] [verbose] Updating HNSW index capacity from 27648 to 28672
+[2026-11-14 09:37:00.973] [verbose] Resizing HNSW index from 27648 to 28672
+[2026-11-14 09:37:01.264] [verbose] Updating HNSW index capacity from 28672 to 29696
+[2026-11-14 09:37:01.264] [verbose] Resizing HNSW index from 28672 to 29696
+[2026-11-14 09:37:01.582] [verbose] Updating HNSW index capacity from 29696 to 30720
+[2026-11-14 09:37:01.582] [verbose] Resizing HNSW index from 29696 to 30720
+[2026-11-14 09:37:01.900] [verbose] Updating HNSW index capacity from 30720 to 31744
+[2026-11-14 09:37:01.900] [verbose] Resizing HNSW index from 30720 to 31744
+[2026-11-14 09:37:02.218] [verbose] Updating HNSW index capacity from 31744 to 32768
+[2026-11-14 09:37:02.218] [verbose] Resizing HNSW index from 31744 to 32768
+[2026-11-14 09:37:02.533] [verbose] Updating HNSW index capacity from 32768 to 33792
+[2026-11-14 09:37:02.533] [verbose] Resizing HNSW index from 32768 to 33792
+[2026-11-14 09:37:02.877] [verbose] Updating HNSW index capacity from 33792 to 34816
+[2026-11-14 09:37:02.877] [verbose] Resizing HNSW index from 33792 to 34816
+[2026-11-14 09:37:03.246] [verbose] Updating HNSW index capacity from 34816 to 35840
+[2026-11-14 09:37:03.246] [verbose] Resizing HNSW index from 34816 to 35840
+[2026-11-14 09:37:03.593] [verbose] Updating HNSW index capacity from 35840 to 36864
+[2026-11-14 09:37:03.593] [verbose] Resizing HNSW index from 35840 to 36864
+[2026-11-14 09:37:03.936] [verbose] Updating HNSW index capacity from 36864 to 37888
+[2026-11-14 09:37:03.936] [verbose] Resizing HNSW index from 36864 to 37888
+[2026-11-14 09:37:04.281] [verbose] Updating HNSW index capacity from 37888 to 38912
+[2026-11-14 09:37:04.281] [verbose] Resizing HNSW index from 37888 to 38912
+[2026-11-14 09:37:04.590] [verbose] Updating HNSW index capacity from 38912 to 39936
+[2026-11-14 09:37:04.590] [verbose] Resizing HNSW index from 38912 to 39936
+[2026-11-14 09:37:04.895] [verbose] Updating HNSW index capacity from 39936 to 40960
+[2026-11-14 09:37:04.895] [verbose] Resizing HNSW index from 39936 to 40960
+[2026-11-14 09:37:05.199] [verbose] Updating HNSW index capacity from 40960 to 41984
+[2026-11-14 09:37:05.199] [verbose] Resizing HNSW index from 40960 to 41984
+[2026-11-14 09:37:05.515] [verbose] Updating HNSW index capacity from 41984 to 43008
+[2026-11-14 09:37:05.515] [verbose] Resizing HNSW index from 41984 to 43008
+[2026-11-14 09:37:05.820] [verbose] Updating HNSW index capacity from 43008 to 44032
+[2026-11-14 09:37:05.820] [verbose] Resizing HNSW index from 43008 to 44032
+[2026-11-14 09:37:06.142] [verbose] Updating HNSW index capacity from 44032 to 45056
+[2026-11-14 09:37:06.142] [verbose] Resizing HNSW index from 44032 to 45056
+[2026-11-14 09:37:06.465] [verbose] Updating HNSW index capacity from 45056 to 46080
+[2026-11-14 09:37:06.465] [verbose] Resizing HNSW index from 45056 to 46080
+[2026-11-14 09:37:06.792] [verbose] Updating HNSW index capacity from 46080 to 47104
+[2026-11-14 09:37:06.792] [verbose] Resizing HNSW index from 46080 to 47104
+[2026-11-14 09:37:07.130] [verbose] Updating HNSW index capacity from 47104 to 48128
+[2026-11-14 09:37:07.130] [verbose] Resizing HNSW index from 47104 to 48128
+[2026-11-14 09:37:07.469] [verbose] Updating HNSW index capacity from 48128 to 49152
+[2026-11-14 09:37:07.469] [verbose] Resizing HNSW index from 48128 to 49152
+[2026-11-14 09:37:07.796] [verbose] Updating HNSW index capacity from 49152 to 50176
+[2026-11-14 09:37:07.796] [verbose] Resizing HNSW index from 49152 to 50176
+[2026-11-14 09:37:08.105] [verbose] Updating HNSW index capacity from 50176 to 51200
+[2026-11-14 09:37:08.105] [verbose] Resizing HNSW index from 50176 to 51200
+[2026-11-14 09:37:08.441] [verbose] Updating HNSW index capacity from 51200 to 52224
+[2026-11-14 09:37:08.441] [verbose] Resizing HNSW index from 51200 to 52224
+[2026-11-14 09:37:08.814] [verbose] Updating HNSW index capacity from 52224 to 53248
+[2026-11-14 09:37:08.814] [verbose] Resizing HNSW index from 52224 to 53248
+[2026-11-14 09:37:09.153] [verbose] Updating HNSW index capacity from 53248 to 54272
+[2026-11-14 09:37:09.153] [verbose] Resizing HNSW index from 53248 to 54272
+[2026-11-14 09:37:09.466] [verbose] Updating HNSW index capacity from 54272 to 55296
+[2026-11-14 09:37:09.466] [verbose] Resizing HNSW index from 54272 to 55296
+[2026-11-14 09:37:09.784] [verbose] Updating HNSW index capacity from 55296 to 56320
+[2026-11-14 09:37:09.784] [verbose] Resizing HNSW index from 55296 to 56320
+[2026-11-14 09:37:10.100] [verbose] Updating HNSW index capacity from 56320 to 57344
+[2026-11-14 09:37:10.100] [verbose] Resizing HNSW index from 56320 to 57344
+[2026-11-14 09:37:10.421] [verbose] Updating HNSW index capacity from 57344 to 58368
+[2026-11-14 09:37:10.421] [verbose] Resizing HNSW index from 57344 to 58368
+[2026-11-14 09:37:10.739] [verbose] Updating HNSW index capacity from 58368 to 59392
+[2026-11-14 09:37:10.739] [verbose] Resizing HNSW index from 58368 to 59392
+[2026-11-14 09:37:11.067] [verbose] Updating HNSW index capacity from 59392 to 60416
+[2026-11-14 09:37:11.067] [verbose] Resizing HNSW index from 59392 to 60416
+[2026-11-14 09:37:11.409] [verbose] Updating HNSW index capacity from 60416 to 61440
+[2026-11-14 09:37:11.409] [verbose] Resizing HNSW index from 60416 to 61440
+[2026-11-14 09:37:11.749] [verbose] Updating HNSW index capacity from 61440 to 62464
+[2026-11-14 09:37:11.749] [verbose] Resizing HNSW index from 61440 to 62464
+[2026-11-14 09:37:12.090] [verbose] Updating HNSW index capacity from 62464 to 63488
+[2026-11-14 09:37:12.091] [verbose] Resizing HNSW index from 62464 to 63488
+[2026-11-14 09:37:12.440] [verbose] Updating HNSW index capacity from 63488 to 64512
+[2026-11-14 09:37:12.440] [verbose] Resizing HNSW index from 63488 to 64512
+[2026-11-14 09:37:12.796] [verbose] Updating HNSW index capacity from 64512 to 65536
+[2026-11-14 09:37:12.796] [verbose] Resizing HNSW index from 64512 to 65536
+[2026-11-14 09:37:13.143] [verbose] Updating HNSW index capacity from 65536 to 66560
+[2026-11-14 09:37:13.143] [verbose] Resizing HNSW index from 65536 to 66560
+[2026-11-14 09:37:13.505] [verbose] Updating HNSW index capacity from 66560 to 67584
+[2026-11-14 09:37:13.505] [verbose] Resizing HNSW index from 66560 to 67584
+[2026-11-14 09:37:13.898] [verbose] Updating HNSW index capacity from 67584 to 68608
+[2026-11-14 09:37:13.898] [verbose] Resizing HNSW index from 67584 to 68608
+[2026-11-14 09:37:14.257] [verbose] Updating HNSW index capacity from 68608 to 69632
+[2026-11-14 09:37:14.257] [verbose] Resizing HNSW index from 68608 to 69632
+[2026-11-14 09:37:14.622] [verbose] Updating HNSW index capacity from 69632 to 70656
+[2026-11-14 09:37:14.622] [verbose] Resizing HNSW index from 69632 to 70656
+[2026-11-14 09:37:14.977] [verbose] Updating HNSW index capacity from 70656 to 71680
+[2026-11-14 09:37:14.977] [verbose] Resizing HNSW index from 70656 to 71680
+[2026-11-14 09:37:15.347] [verbose] Updating HNSW index capacity from 71680 to 72704
+[2026-11-14 09:37:15.347] [verbose] Resizing HNSW index from 71680 to 72704
+[2026-11-14 09:37:15.716] [verbose] Updating HNSW index capacity from 72704 to 73728
+[2026-11-14 09:37:15.716] [verbose] Resizing HNSW index from 72704 to 73728
+[2026-11-14 09:37:16.089] [verbose] Updating HNSW index capacity from 73728 to 74752
+[2026-11-14 09:37:16.089] [verbose] Resizing HNSW index from 73728 to 74752
+[2026-11-14 09:37:16.459] [verbose] Updating HNSW index capacity from 74752 to 75776
+[2026-11-14 09:37:16.459] [verbose] Resizing HNSW index from 74752 to 75776
+[2026-11-14 09:37:16.830] [verbose] Updating HNSW index capacity from 75776 to 76800
+[2026-11-14 09:37:16.831] [verbose] Resizing HNSW index from 75776 to 76800
+[2026-11-14 09:37:17.202] [verbose] Updating HNSW index capacity from 76800 to 77824
+[2026-11-14 09:37:17.202] [verbose] Resizing HNSW index from 76800 to 77824
+[2026-11-14 09:37:17.581] [verbose] Updating HNSW index capacity from 77824 to 78848
+[2026-11-14 09:37:17.581] [verbose] Resizing HNSW index from 77824 to 78848
+[2026-11-14 09:37:17.959] [verbose] Updating HNSW index capacity from 78848 to 79872
+[2026-11-14 09:37:17.959] [verbose] Resizing HNSW index from 78848 to 79872
+[2026-11-14 09:37:18.349] [verbose] Updating HNSW index capacity from 79872 to 80896
+[2026-11-14 09:37:18.349] [verbose] Resizing HNSW index from 79872 to 80896
+[2026-11-14 09:37:18.715] [verbose] Updating HNSW index capacity from 80896 to 81920
+[2026-11-14 09:37:18.715] [verbose] Resizing HNSW index from 80896 to 81920
+[2026-11-14 09:37:19.087] [verbose] Updating HNSW index capacity from 81920 to 82944
+[2026-11-14 09:37:19.087] [verbose] Resizing HNSW index from 81920 to 82944
+[2026-11-14 09:37:19.503] [verbose] Updating HNSW index capacity from 82944 to 83968
+[2026-11-14 09:37:19.503] [verbose] Resizing HNSW index from 82944 to 83968
+[2026-11-14 09:37:19.888] [verbose] Updating HNSW index capacity from 83968 to 84992
+[2026-11-14 09:37:19.888] [verbose] Resizing HNSW index from 83968 to 84992
+[2026-11-14 09:37:20.278] [verbose] Updating HNSW index capacity from 84992 to 86016
+[2026-11-14 09:37:20.278] [verbose] Resizing HNSW index from 84992 to 86016
+[2026-11-14 09:37:20.669] [verbose] Updating HNSW index capacity from 86016 to 87040
+[2026-11-14 09:37:20.669] [verbose] Resizing HNSW index from 86016 to 87040
+[2026-11-14 09:37:21.053] [verbose] Updating HNSW index capacity from 87040 to 88064
+[2026-11-14 09:37:21.053] [verbose] Resizing HNSW index from 87040 to 88064
+[2026-11-14 09:37:21.440] [verbose] Updating HNSW index capacity from 88064 to 89088
+[2026-11-14 09:37:21.440] [verbose] Resizing HNSW index from 88064 to 89088
+[2026-11-14 09:37:21.827] [verbose] Updating HNSW index capacity from 89088 to 90112
+[2026-11-14 09:37:21.827] [verbose] Resizing HNSW index from 89088 to 90112
+[2026-11-14 09:37:22.223] [verbose] Updating HNSW index capacity from 90112 to 91136
+[2026-11-14 09:37:22.223] [verbose] Resizing HNSW index from 90112 to 91136
+[2026-11-14 09:37:22.625] [verbose] Updating HNSW index capacity from 91136 to 92160
+[2026-11-14 09:37:22.625] [verbose] Resizing HNSW index from 91136 to 92160
+[2026-11-14 09:37:23.010] [verbose] Updating HNSW index capacity from 92160 to 93184
+[2026-11-14 09:37:23.010] [verbose] Resizing HNSW index from 92160 to 93184
+[2026-11-14 09:37:23.400] [verbose] Updating HNSW index capacity from 93184 to 94208
+[2026-11-14 09:37:23.400] [verbose] Resizing HNSW index from 93184 to 94208
+[2026-11-14 09:37:23.794] [verbose] Updating HNSW index capacity from 94208 to 95232
+[2026-11-14 09:37:23.794] [verbose] Resizing HNSW index from 94208 to 95232
+[2026-11-14 09:37:24.183] [verbose] Updating HNSW index capacity from 95232 to 96256
+[2026-11-14 09:37:24.183] [verbose] Resizing HNSW index from 95232 to 96256
+[2026-11-14 09:37:24.580] [verbose] Updating HNSW index capacity from 96256 to 97280
+[2026-11-14 09:37:24.580] [verbose] Resizing HNSW index from 96256 to 97280
+[2026-11-14 09:37:24.988] [verbose] Updating HNSW index capacity from 97280 to 98304
+[2026-11-14 09:37:24.988] [verbose] Resizing HNSW index from 97280 to 98304
+[2026-11-14 09:37:25.411] [verbose] Updating HNSW index capacity from 98304 to 99328
+[2026-11-14 09:37:25.411] [verbose] Resizing HNSW index from 98304 to 99328
+[2026-11-14 09:37:25.838] [verbose] Updating HNSW index capacity from 99328 to 100352
+[2026-11-14 09:37:25.838] [verbose] Resizing HNSW index from 99328 to 100352
+n=100000 dim=96 M=32 efConstruction=200 seed=100(fixed_C_API) repeat=2 base_read_prepare_seconds=0.0175673 build_seconds=30.5854 insert_seconds=30.585 ready_from_fbin_seconds=30.603 rss_before_build=41590784 index_bytes=81915132 resident_index_process_bytes=89120768 build_peak_rss_bytes=130359296
+queries=999
+ef=10 recall10=0.851351 p50_us=38.55 p95_us=54.893 serial_query_qps=25612.2 sweep_qps_including_recall=25400.3
+ef=20 recall10=0.934835 p50_us=60.631 p95_us=80.716 serial_query_qps=16427.8 sweep_qps_including_recall=16341.2
+ef=25 recall10=0.952553 p50_us=71.944 p95_us=94.985 serial_query_qps=13887.9 sweep_qps_including_recall=13829.1
+ef=30 recall10=0.965065 p50_us=83.742 p95_us=109.835 serial_query_qps=11985.7 sweep_qps_including_recall=11941.1
+ef=40 recall10=0.978178 p50_us=104.711 p95_us=137.807 serial_query_qps=9582.45 sweep_qps_including_recall=9553.52
+ef=50 recall10=0.983483 p50_us=126.487 p95_us=167.154 serial_query_qps=7961.43 sweep_qps_including_recall=7940.72
+ef=60 recall10=0.989189 p50_us=144.104 p95_us=190.251 serial_query_qps=6987.09 sweep_qps_including_recall=6971.05
+ef=80 recall10=0.993794 p50_us=179.043 p95_us=237.613 serial_query_qps=5604.01 sweep_qps_including_recall=5593.43
+ef=100 recall10=0.996296 p50_us=218.98 p95_us=292.437 serial_query_qps=4599.02 sweep_qps_including_recall=4591.41
+ef=120 recall10=0.997497 p50_us=249.098 p95_us=335.194 serial_query_qps=4041.1 sweep_qps_including_recall=4035.32
+ef=150 recall10=0.998699 p50_us=300.247 p95_us=403.943 serial_query_qps=3369.09 sweep_qps_including_recall=3364.85
+ef=200 recall10=0.999499 p50_us=383.711 p95_us=519.171 serial_query_qps=2626.92 sweep_qps_including_recall=2624.16
+ef=300 recall10=0.9999 p50_us=526.735 p95_us=717.959 serial_query_qps=1911.53 sweep_qps_including_recall=1909.97
+ef=400 recall10=1 p50_us=674.763 p95_us=909.386 serial_query_qps=1499.68 sweep_qps_including_recall=1498.61
+ef=800 recall10=1 p50_us=1206.13 p95_us=1610.92 serial_query_qps=842.355 sweep_qps_including_recall=841.921
+ef=1000 recall10=1 p50_us=1452.65 p95_us=1916.23 serial_query_qps=700.324 sweep_qps_including_recall=699.974

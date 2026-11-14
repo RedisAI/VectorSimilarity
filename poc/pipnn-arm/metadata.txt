@@ -1,0 +1,8 @@
+Upstream PiPNN 443a328dc71a3b7be753d52ca2b3c9a4ba77f3fd
+Submodules: hnswlib efd405f00dcae1f8b60e72d2d0927dbb0af8682f; mirage 5a6161db9a4cdd4af2c57d03f3f2c8f2031a97d7; parlaylib 7cdb4cae8f020525f5eb4ad82e2565d1e38cfbc3.
+Fetched dependencies: abseil bc257a88f7c1939f24e0379f14a3589e926c950c; eigen 3147391d946bb4b6c68edd901f2add6ac1f31f8c; googlebenchmark cf4d7fedd59473f99042806fcba407ea767c5327; highway 0e0a01dac5321dafec478d781487d1323492359e; parlaylib 51017699dcc421f80479cdb238d3092233ad0d26.
+Remote workspace: dorer-arm-big:/home/ubuntu/pipnn-poc-20261114. GCC 12.3.0; CMake Release, native architecture and fast math. Configure and build logs are in the remote workspace.
+Effective baseline core flags: -fexceptions -fPIC -std=gnu++20 -Werror -Wall -O3 -DNDEBUG. HAVE_SVS=0. No global -march=native or -ffast-math.
+Baseline distance library compiled OPT_NEON, OPT_NEON_BF16, OPT_NEON_DOTPROD, OPT_NEON_FHM, OPT_NEON_HP, OPT_SVE, OPT_SVE2, OPT_SVE_BF16; SVE2 translation unit uses -march=armv9-a+sve2 and SVE uses -march=armv8-a+sve. Runtime selected function pointer was not instrumented.
+Effective PiPNN builder/query flags: -march=native -ffast-math -O3 -DNDEBUG -fPIE -std=gnu++17. Thus these measurements compare the implementations with their respective build settings, not an isolated algorithm with identical compiler arithmetic policy.
+DEEP PiPNN graph hashes (both repeat 1 and 2): aa40b86203e5b542aa6f9978e23177dd52d065093ba0fd8ce362b42e9c971380. Stock randomness was unchanged; these repeats produced identical graphs.

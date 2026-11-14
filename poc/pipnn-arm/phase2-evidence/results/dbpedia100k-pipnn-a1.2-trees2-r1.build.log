@@ -1,0 +1,55 @@
+Vary degree = 0
+Data: detected 100000 points with dimension 1536
+Parlay time: SketchHash construction time: 0.3538
+Size of SketchHash (bytes): 4873728
+Allocate = 0
+Set MSTDeg to: 2 fanout: 30
+Sizeof indexType = 4
+Fanout scheme: 10 3 
+Allocating: 128800000 bytes of space for the candidates lists.
+Sizeof T = 8
+Cleared degree
+FANOUT = 30 FANOUT_PER_LEVEL = 0
+number of levels to fanout: 1
+fanout per level: 30
+total fanout: 30
+total fanout allowance: 30
+leader method: random
+Parlay time: first level assign time: 2.5718
+Parlay time: buckets time: 5.6929
+buckets size (bytes): 11733688
+Total buckets: 6652
+Total points: 2906814
+Computed buckets!
+Building leaves:
+Parlay time: build leaf time: 49.8787
+Built cluster 0 of 2
+Leaf count: 6652
+# of comparisons during clustering: 66610522
+FANOUT = 30 FANOUT_PER_LEVEL = 0
+number of levels to fanout: 1
+fanout per level: 30
+total fanout: 30
+total fanout allowance: 30
+leader method: random
+Parlay time: first level assign time: 2.5922
+Parlay time: buckets time: 5.1872
+buckets size (bytes): 11654592
+Total buckets: 6752
+Total points: 2886640
+Computed buckets!
+Building leaves:
+Parlay time: build leaf time: 48.8570
+Built cluster 1 of 2
+Leaf count: 13404
+# of comparisons during clustering: 133545734
+Allocating graph, prune_degree = 64
+Average table size: 41
+Parlay time: Final prune time: 16.3300
+Average distance traversed: 40
+Writing graph to /home/ubuntu/pipnn-poc-20261114/results/dbpedia100k-pipnn-a1.2-trees2-r1.graph
+Writing graph with 100000 points and max degree 64
+PiPNN graph built with 100000 points and parameters Trees = 2
+Graph has average degree 29.05 and maximum degree 64
+Graph built in 126.3 seconds
+Parlay time: 126.3672

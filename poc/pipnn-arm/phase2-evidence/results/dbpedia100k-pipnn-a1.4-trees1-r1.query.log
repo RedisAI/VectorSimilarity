@@ -1,0 +1,22 @@
+Graph: detected 100000 points with max degree 64
+Total edges read from file: 2526420
+Data: detected 100000 points with dimension 1536
+resident_index_process_bytes=649142272 graph_file_bytes=10505688 base_file_bytes=614400008
+Data: detected 1000 points with dimension 1536
+Ground truth: detected 1000 points with num results 100
+beam=10 recall=0.7723 p50_us=203.777 p95_us=319.206 query_qps=4740.48 peak_rss_kib=1233824 queries=1000
+beam=20 recall=0.8765 p50_us=303.238 p95_us=451.817 query_qps=3222.09 peak_rss_kib=1233824 queries=1000
+beam=25 recall=0.9014 p50_us=352.039 p95_us=507.878 query_qps=2778.08 peak_rss_kib=1233824 queries=1000
+beam=30 recall=0.9204 p50_us=398.095 p95_us=575.66 query_qps=2465.14 peak_rss_kib=1233824 queries=1000
+beam=40 recall=0.9443 p50_us=496.519 p95_us=688.605 query_qps=1996.87 peak_rss_kib=1233824 queries=1000
+beam=50 recall=0.9584 p50_us=584.335 p95_us=816.882 query_qps=1696.22 peak_rss_kib=1233824 queries=1000
+beam=60 recall=0.9671 p50_us=683.202 p95_us=953.005 query_qps=1452.8 peak_rss_kib=1233824 queries=1000
+beam=80 recall=0.9771 p50_us=834.966 p95_us=1172.14 query_qps=1185.44 peak_rss_kib=1233824 queries=1000
+beam=100 recall=0.9824 p50_us=987.254 p95_us=1379.05 query_qps=1000.43 peak_rss_kib=1233824 queries=1000
+beam=120 recall=0.9856 p50_us=1148.05 p95_us=1592.08 query_qps=866.158 peak_rss_kib=1233824 queries=1000
+beam=150 recall=0.9894 p50_us=1351.62 p95_us=1870.72 query_qps=735.734 peak_rss_kib=1233824 queries=1000
+beam=200 recall=0.993 p50_us=1691.88 p95_us=2263.77 query_qps=595.081 peak_rss_kib=1233824 queries=1000
+beam=300 recall=0.9957 p50_us=2285.72 p95_us=2999.98 query_qps=445.998 peak_rss_kib=1233824 queries=1000
+beam=400 recall=0.9969 p50_us=2871.45 p95_us=3774.21 query_qps=358.887 peak_rss_kib=1233824 queries=1000
+beam=800 recall=0.9982 p50_us=5222.28 p95_us=8692.24 query_qps=189.456 peak_rss_kib=1233824 queries=1000
+beam=1000 recall=0.9986 p50_us=5654.04 p95_us=7779.96 query_qps=186.917 peak_rss_kib=1233824 queries=1000
