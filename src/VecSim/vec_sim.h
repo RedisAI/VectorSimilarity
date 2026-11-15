@@ -47,7 +47,7 @@ size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params);
  * combined growth of both tiers or total index memory.
  * @param params index configurations (initial size, data type, dimension, metric, algorithm and the
  * algorithm-related params).
- * @return The estimated single vector memory consumption, considering the parameters.
+ * @return Estimated single vector memory consumption; PiPNN returns SIZE_MAX for invalid params.
  */
 size_t VecSimIndex_EstimateElementSize(const VecSimParams *params);
 
@@ -58,12 +58,37 @@ size_t VecSimIndex_EstimateElementSize(const VecSimParams *params);
 void VecSimIndex_Free(VecSimIndex *index);
 
 /**
+ * @brief Build the PiPNN graph for the current vectors. Returns 1 on success, 0 on failure.
+ * Only standalone PiPNN indexes are supported; tiered PiPNN is unsupported.
+ * PiPNN requires callers to serialize all operations, including queries, because inherited
+ * search-mode bookkeeping is mutable. Writes invalidate the graph; queries use exact search
+ * until a successful rebuild. Do not mutate an index while a batch iterator is live.
+ */
+int VecSimIndex_BuildGraph(VecSimIndex *index);
+
+/** @brief Return whether a standalone PiPNN index has a graph for its current vectors.
+ * Returns false for NULL or a different backend. Requires synchronization against writes/builds.
+ */
+bool VecSimIndex_IsGraphReady(const VecSimIndex *index);
+
+/** @brief Save a standalone PiPNN index in its native format. Returns 1 on success, 0 on failure.
+ * The caller must synchronize against writes and graph builds for the duration of the save.
+ */
+int VecSimIndex_SavePiPNN(const VecSimIndex *index, const char *location);
+
+/** @brief Load a native PiPNN index. Returns NULL on invalid input or any load failure.
+ * The caller owns the returned index and releases it with VecSimIndex_Free.
+ */
+VecSimIndex *VecSimIndex_LoadPiPNN(const char *location, void *logCtx);
+
+/**
  * @brief Add a vector to an index.
  * @param index the index to which the vector is added.
  * @param blob binary representation of the vector. Blob size should match the index data type and
  * dimension.
  * @param label the label of the added vector
- * @return the number of new vectors inserted (1 for new insertion, 0 for override).
+ * @return The number of new vectors inserted (1 for new insertion, 0 for override).
+ * PiPNN returns -1 if the input is invalid or storage fails.
  */
 int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label);
 
@@ -71,7 +96,8 @@ int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label);
  * @brief Remove a vector from an index.
  * @param index the index from which the vector is removed.
  * @param label the label of the removed vector
- * @return the number of vectors removed (0 if the label was not found)
+ * @return The number of vectors removed (0 if the label was not found).
+ * PiPNN returns -1 if deletion fails.
  */
 int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
 
@@ -92,6 +118,7 @@ int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label);
  * @param old_label the label currently holding the vector(s).
  * @param new_label the label to move them to.
  * @return `VecSimRelabel_OK` if the label was moved, otherwise the reason it was not.
+ * PiPNN reports `VecSimRelabel_Failed` if the operation fails.
  */
 VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label, size_t new_label);
 
@@ -136,6 +163,7 @@ VecSimUpdateCode VecSimIndex_UpdateVectors(VecSimIndex *index, size_t label, con
  * absent.
  * @note Quantized indexes allocate and preprocess a temporary query blob on each call.
  */
+// PiPNN returns NaN for invalid FP32 input or an operation failure.
 double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label, const void *blob);
 
 /**
@@ -196,6 +224,8 @@ VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSimRawParam *
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryReply_Iterator.
  */
+// PiPNN returns NULL for invalid FP32 input, invalid order, or allocation failure.
+// Check for NULL before calling VecSimQueryReply accessors.
 VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob, size_t k,
                                         VecSimQueryParams *queryParams, VecSimQueryReply_Order);
 
@@ -212,6 +242,8 @@ VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlo
  * (which is the distance according to the index metric) of every result through
  * VecSimQueryReply_Iterator.
  */
+// PiPNN returns NULL for invalid FP32 input, invalid radius/order, or allocation failure.
+// Check for NULL before calling VecSimQueryReply accessors.
 VecSimQueryReply *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob, double radius,
                                          VecSimQueryParams *queryParams, VecSimQueryReply_Order);
 /**
@@ -240,6 +272,7 @@ VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index);
  *
  * @param index this index to return its info.
  * @return VecSimDebugInfoIterator* An iterable containing the index general and specific meta-data.
+ * PiPNN returns NULL on allocation failure; check before using iterator accessors.
  */
 VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index);
 
@@ -253,6 +286,7 @@ VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index);
  * @param queryParams run time params for the search, which are algorithm-specific.
  * @return Fresh batch iterator
  */
+// PiPNN returns NULL for invalid FP32 input or allocation failure.
 VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                              VecSimQueryParams *queryParams);
 

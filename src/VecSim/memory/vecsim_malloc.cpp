@@ -34,12 +34,19 @@ void VecSimAllocator::setMemoryFunctions(VecSimMemoryFunctions memFunctions) {
 }
 
 void *VecSimAllocator::allocate(size_t size) {
+    if (size > (SIZE_MAX >> 1) - allocation_header_size) {
+        if (throwOnFailure)
+            throw std::bad_alloc();
+        return nullptr;
+    }
     auto ptr = static_cast<VecSimAllocationHeader *>(vecsim_malloc(size + allocation_header_size));
     if (ptr) {
         this->allocated += size + allocation_header_size;
         *ptr = {size, false};
         return ptr + 1;
     }
+    if (throwOnFailure)
+        throw std::bad_alloc();
     return nullptr;
 }
 
@@ -48,6 +55,11 @@ void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
         return allocate(size);
     }
 
+    if (size > (SIZE_MAX >> 1) - allocation_header_size - alignment) {
+        if (throwOnFailure)
+            throw std::bad_alloc();
+        return nullptr;
+    }
     size += alignment; // Add enough space for alignment.
     auto ptr = static_cast<unsigned char *>(vecsim_malloc(size + allocation_header_size));
     if (ptr) {
@@ -61,6 +73,8 @@ void *VecSimAllocator::allocate_aligned(size_t size, unsigned char alignment) {
         // Return the aligned pointer.
         return ptr + allocation_header_size + offset;
     }
+    if (throwOnFailure)
+        throw std::bad_alloc();
     return nullptr;
 }
 
@@ -102,6 +116,11 @@ void VecSimAllocator::free_allocation(void *p) {
 }
 
 void *VecSimAllocator::callocate(size_t size) {
+    if (size > (SIZE_MAX >> 1) - allocation_header_size) {
+        if (throwOnFailure)
+            throw std::bad_alloc();
+        return nullptr;
+    }
     size_t *ptr = (size_t *)vecsim_calloc(1, size + allocation_header_size);
 
     if (ptr) {
@@ -109,6 +128,8 @@ void *VecSimAllocator::callocate(size_t size) {
         *ptr = size;
         return ptr + 1;
     }
+    if (throwOnFailure)
+        throw std::bad_alloc();
     return nullptr;
 }
 
@@ -123,9 +144,17 @@ std::unique_ptr<void, VecSimAllocator::Deleter> VecSimAllocator::allocate_unique
     return {ptr, Deleter(*this)};
 }
 
-void *VecSimAllocator::operator new(size_t size) { return vecsim_malloc(size); }
+void *VecSimAllocator::operator new(size_t size) {
+    if (void *ptr = vecsim_malloc(size))
+        return ptr;
+    throw std::bad_alloc();
+}
 
-void *VecSimAllocator::operator new[](size_t size) { return vecsim_malloc(size); }
+void *VecSimAllocator::operator new[](size_t size) {
+    if (void *ptr = vecsim_malloc(size))
+        return ptr;
+    throw std::bad_alloc();
+}
 void VecSimAllocator::operator delete(void *p, size_t size) { vecsim_free(p); }
 void VecSimAllocator::operator delete[](void *p, size_t size) { vecsim_free(p); }
 

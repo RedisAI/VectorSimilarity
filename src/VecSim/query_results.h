@@ -117,6 +117,8 @@ typedef struct VecSimBatchIterator VecSimBatchIterator;
  * @param order enum - determine the returned results order (by id or by score).
  * @return List of (at most) new n_results vectors which are the "nearest neighbours" to the
  * underline query vector in the iterator.
+ * Returns NULL for an unsupported order. A PiPNN iterator also returns NULL on allocation
+ * failure; the iterator remains valid for retry.
  */
 VecSimQueryReply *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
                                            VecSimQueryReply_Order order);

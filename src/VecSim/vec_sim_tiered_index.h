@@ -716,6 +716,7 @@ VecSimIndexDebugInfo VecSimTieredIndex<DataType, DistType>::debugInfo() const {
         info.tieredInfo.backendInfo.svsInfo = backendInfo.svsInfo;
         break;
     case VecSimAlgo_BF:
+    case VecSimAlgo_PIPNN:
     case VecSimAlgo_TIERED:
         assert(false && "Invalid backend algorithm");
     }

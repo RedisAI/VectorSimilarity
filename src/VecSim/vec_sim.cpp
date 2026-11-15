@@ -16,9 +16,12 @@
 #include "VecSim/vec_sim_adhoc_bf_ctx.h"
 #include "VecSim/types/bfloat16.h"
 #include "VecSim/algorithms/svs/svs_utils.h"
+#include "VecSim/algorithms/pipnn/pipnn.h"
 #include <cassert>
 #include <cstdarg>
 #include <cstdio>
+#include <limits>
+#include <cmath>
 #include "memory.h"
 
 // Ensure labelType is compatible with size_t for C API boundary.
@@ -75,10 +78,10 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
                                                   VecsimQueryType query_type,
                                                   const char **err_msg) {
     long long num_val;
-    // EF_RUNTIME is a valid parameter only in HNSW algorithm.
-    if (index_type != VecSimAlgo_HNSWLIB) {
+    // EF_RUNTIME controls the graph search breadth.
+    if (index_type != VecSimAlgo_HNSWLIB && index_type != VecSimAlgo_PIPNN) {
         return SetResolveErr(err_msg, VecSimParamResolverErr_UnknownParam,
-                             "%s is only valid for HNSW indexes",
+                             "%s is only valid for HNSW and PiPNN indexes",
                              VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
     // EF_RUNTIME is invalid for range query
@@ -87,7 +90,9 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
                              "%s is not a valid parameter for range queries",
                              VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
-    if (qparams->hnswRuntimeParams.efRuntime != 0) {
+    auto &ef_runtime = index_type == VecSimAlgo_PIPNN ? qparams->pipnnRuntimeParams.efRuntime
+                                                     : qparams->hnswRuntimeParams.efRuntime;
+    if (ef_runtime != 0) {
         return SetResolveErr(err_msg, VecSimParamResolverErr_AlreadySet,
                              "%s was specified more than once",
                              VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
@@ -98,7 +103,7 @@ static VecSimResolveCode _ResolveParams_EFRuntime(VecSimAlgo index_type, VecSimR
                              VecSimCommonStrings::HNSW_EF_RUNTIME_STRING);
     }
 
-    qparams->hnswRuntimeParams.efRuntime = (size_t)num_val;
+    ef_runtime = (size_t)num_val;
     return VecSimParamResolver_OK;
 }
 
@@ -300,29 +305,71 @@ extern "C" size_t VecSimIndex_EstimateInitialSize(const VecSimParams *params) {
 }
 
 extern "C" int VecSimIndex_AddVector(VecSimIndex *index, const void *blob, size_t label) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            return index->addVector(blob, label);
+        } catch (...) {
+            return -1;
+        }
+    }
     return index->addVector(blob, label);
 }
 
 extern "C" int VecSimIndex_DeleteVector(VecSimIndex *index, size_t label) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            return index->deleteVector(label);
+        } catch (...) {
+            return -1;
+        }
+    }
     return index->deleteVector(label);
 }
 
 extern "C" VecSimRelabelCode VecSimIndex_RelabelVector(VecSimIndex *index, size_t old_label,
                                                        size_t new_label) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            return index->relabelVector(old_label, new_label);
+        } catch (...) {
+            return VecSimRelabel_Failed;
+        }
+    }
     return index->relabelVector(old_label, new_label);
 }
 
 extern "C" VecSimUpdateCode VecSimIndex_UpdateVectors(VecSimIndex *index, size_t label,
                                                       const void *new_blobs, size_t n) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            return index->updateVectors(label, new_blobs, n);
+        } catch (...) {
+            return VecSimUpdate_Failed;
+        }
+    }
     return index->updateVectors(label, new_blobs, n);
 }
 
 extern "C" double VecSimIndex_GetDistanceFrom_Unsafe(VecSimIndex *index, size_t label,
                                                      const void *blob) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            return index->getDistanceFrom_Unsafe(label, blob);
+        } catch (...) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+    }
     return index->getDistanceFrom_Unsafe(label, blob);
 }
 
 extern "C" size_t VecSimIndex_EstimateElementSize(const VecSimParams *params) {
+    if (!params || params->algo == VecSimAlgo_PIPNN) {
+        try {
+            return VecSimFactory::EstimateElementSize(params);
+        } catch (...) {
+            return SIZE_MAX;
+        }
+    }
     return VecSimFactory::EstimateElementSize(params);
 }
 
@@ -428,10 +475,10 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
                              "%s is irrelevant for the '%s' hybrid policy",
                              VecSimCommonStrings::BATCH_SIZE_STRING, VECSIM_POLICY_ADHOC_BF);
     }
-    // Also, 'ef_runtime' is meaning less in AD-HOC policy, since it doesn't involve search in HNSW
-    // graph.
-    if (qparams->searchMode == HYBRID_ADHOC_BF && index_type == VecSimAlgo_HNSWLIB &&
-        qparams->hnswRuntimeParams.efRuntime > 0) {
+    // EF_RUNTIME is irrelevant to AD-HOC policy, which does not search the graph.
+    if (qparams->searchMode == HYBRID_ADHOC_BF &&
+        ((index_type == VecSimAlgo_HNSWLIB && qparams->hnswRuntimeParams.efRuntime > 0) ||
+         (index_type == VecSimAlgo_PIPNN && qparams->pipnnRuntimeParams.efRuntime > 0))) {
         return SetResolveErr(err_msg, VecSimParamResolverErr_InvalidPolicy_AdHoc_With_EfRuntime,
                              "%s is irrelevant for the '%s' hybrid policy",
                              VecSimCommonStrings::HNSW_EF_RUNTIME_STRING, VECSIM_POLICY_ADHOC_BF);
@@ -445,6 +492,20 @@ extern "C" VecSimResolveCode VecSimIndex_ResolveParams(VecSimIndex *index, VecSi
 extern "C" VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const void *queryBlob,
                                                    size_t k, VecSimQueryParams *queryParams,
                                                    VecSimQueryReply_Order order) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            if (order != BY_ID && order != BY_SCORE) {
+                return nullptr;
+            }
+            std::unique_ptr<VecSimQueryReply> results(index->topKQuery(queryBlob, k, queryParams));
+            if (results && order == BY_ID) {
+                sort_results_by_id(results.get());
+            }
+            return results.release();
+        } catch (...) {
+            return nullptr;
+        }
+    }
     assert((order == BY_ID || order == BY_SCORE) &&
            "Possible order values are only 'BY_ID' or 'BY_SCORE'");
     VecSimQueryReply *results;
@@ -459,6 +520,16 @@ extern "C" VecSimQueryReply *VecSimIndex_TopKQuery(VecSimIndex *index, const voi
 extern "C" VecSimQueryReply *VecSimIndex_RangeQuery(VecSimIndex *index, const void *queryBlob,
                                                     double radius, VecSimQueryParams *queryParams,
                                                     VecSimQueryReply_Order order) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            if ((order != BY_ID && order != BY_SCORE) || radius < 0 || std::isnan(radius)) {
+                return nullptr;
+            }
+            return index->rangeQuery(queryBlob, radius, queryParams, order);
+        } catch (...) {
+            return nullptr;
+        }
+    }
     if (order != BY_ID && order != BY_SCORE) {
         throw std::runtime_error("Possible order values are only 'BY_ID' or 'BY_SCORE'");
     }
@@ -479,6 +550,21 @@ extern "C" VecSimIndexDebugInfo VecSimIndex_DebugInfo(VecSimIndex *index) {
 }
 
 extern "C" VecSimDebugInfoIterator *VecSimIndex_DebugInfoIterator(VecSimIndex *index) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            std::unique_ptr<VecSimDebugInfoIterator> iterator(index->debugInfoIterator());
+            if (!iterator) {
+                return nullptr;
+            }
+            iterator->addInfoField(
+                VecSim_InfoField{.fieldName = VecSimCommonStrings::SHARED_MEMORY_STRING,
+                                 .fieldType = INFOFIELD_UINT64,
+                                 .fieldValue = {FieldValue{.uintegerValue = VecSim_GetSharedMemory()}}});
+            return iterator.release();
+        } catch (...) {
+            return nullptr;
+        }
+    }
     VecSimDebugInfoIterator *infoIterator = index->debugInfoIterator();
     // Append the process-wide shared memory total. This field is not emitted by
     // any algorithm's own debugInfoIterator(); it is injected here at the C API
@@ -505,6 +591,13 @@ extern "C" VecSimIndexStatsInfo VecSimIndex_StatsInfo(VecSimIndex *index) {
 
 extern "C" VecSimBatchIterator *VecSimBatchIterator_New(VecSimIndex *index, const void *queryBlob,
                                                         VecSimQueryParams *queryParams) {
+    if (index && index->basicInfo().algo == VecSimAlgo_PIPNN) {
+        try {
+            return index->newBatchIterator(queryBlob, queryParams);
+        } catch (...) {
+            return nullptr;
+        }
+    }
     return index->newBatchIterator(queryBlob, queryParams);
 }
 
@@ -550,4 +643,63 @@ extern "C" void VecSimIndex_AdhocBfCtx_GetExactDistances(VecSimAdhocBfCtx *ctx,
                                                          const size_t *labels,
                                                          double *distances_out, size_t count) {
     ctx->getExactDistances(labels, distances_out, count);
+}
+
+namespace {
+const PiPNNIndex *AsPiPNNIndex(const VecSimIndex *index) {
+    if (!index) {
+        return nullptr;
+    }
+    const auto info = index->basicInfo();
+    if (info.algo != VecSimAlgo_PIPNN || info.isTiered) {
+        return nullptr;
+    }
+    return dynamic_cast<const PiPNNIndex *>(index);
+}
+} // namespace
+
+extern "C" int VecSimIndex_BuildGraph(VecSimIndex *index) {
+    try {
+        auto *pipnn = const_cast<PiPNNIndex *>(AsPiPNNIndex(index));
+        if (!pipnn) {
+            return 0;
+        }
+        pipnn->buildGraph();
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" bool VecSimIndex_IsGraphReady(const VecSimIndex *index) {
+    try {
+        const auto *pipnn = AsPiPNNIndex(index);
+        return pipnn && pipnn->isGraphReady();
+    } catch (...) {
+        return false;
+    }
+}
+
+extern "C" int VecSimIndex_SavePiPNN(const VecSimIndex *index, const char *location) {
+    try {
+        const auto *pipnn = AsPiPNNIndex(index);
+        if (!pipnn || !location || !*location) {
+            return 0;
+        }
+        pipnn->saveIndex(location);
+        return 1;
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" VecSimIndex *VecSimIndex_LoadPiPNN(const char *location, void *logCtx) {
+    try {
+        if (!location || !*location) {
+            return nullptr;
+        }
+        return PiPNNIndex::loadIndex(location, logCtx);
+    } catch (...) {
+        return nullptr;
+    }
 }

@@ -12,6 +12,8 @@
 #include <memory>
 #include <atomic>
 #include <cstring>
+#include <limits>
+#include <new>
 
 struct VecSimAllocator {
     // Allow global vecsim memory functions to access this class.
@@ -22,6 +24,7 @@ struct VecSimAllocator {
 
 private:
     std::atomic_uint64_t allocated;
+    bool throwOnFailure = false;
 
     // Static member that indicates each allocation additional size.
     static size_t allocation_header_size;
@@ -33,6 +36,8 @@ private:
 
 public:
     static std::shared_ptr<VecSimAllocator> newVecsimAllocator();
+    // Set during factory initialization, before the allocator is shared with index components.
+    void setThrowOnAllocationFailure() { throwOnFailure = true; }
     void *allocate(size_t size);
     void *allocate_aligned(size_t size, unsigned char alignment);
     void *callocate(size_t size);
@@ -145,7 +150,12 @@ public:
         return *this;
     }
 
-    T *allocate(size_t size) { return (T *)this->vecsim_allocator->allocate(size * sizeof(T)); }
+    T *allocate(size_t size) {
+        if (size > std::numeric_limits<size_t>::max() / sizeof(T)) {
+            throw std::bad_array_new_length();
+        }
+        return (T *)this->vecsim_allocator->allocate(size * sizeof(T));
+    }
 
     void deallocate(T *ptr, size_t size) {
         this->vecsim_allocator->deallocate(ptr, size * sizeof(T));

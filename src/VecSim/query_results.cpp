@@ -67,8 +67,9 @@ extern "C" void VecSimQueryReply_IteratorReset(VecSimQueryReply_Iterator *iterat
 /********************** batch iterator API ***************************/
 VecSimQueryReply *VecSimBatchIterator_Next(VecSimBatchIterator *iterator, size_t n_results,
                                            VecSimQueryReply_Order order) {
-    assert((order == BY_ID || order == BY_SCORE) &&
-           "Possible order values are only 'BY_ID' or 'BY_SCORE'");
+    if (order != BY_ID && order != BY_SCORE) {
+        return nullptr;
+    }
     return iterator->getNextResults(n_results, order);
 }
 

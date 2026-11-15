@@ -1,0 +1,28 @@
+backend=pipnn n=100000 dim=1536 queries=1000 metric=L2 type=FLOAT32 seed=100 max_degree=32 leaf_size=128 fanout=2 hash_bits=12 candidate_limit=80 alpha=1.1 build_seconds=21.3256435 creation_insert_seconds=0.28626524 graph_build_seconds=21.0393783 index_bytes=635556728 build_peak_rss_bytes=1362378752
+backend=pipnn ef=50 recall10=0.6911 p50_us=279.601 p95_us=414.402 serial_query_qps=3454.80207 peak_rss_bytes=1362378752
+backend=pipnn ef=100 recall10=0.8023 p50_us=462.763 p95_us=628.957 serial_query_qps=2110.40427 peak_rss_bytes=1362378752
+backend=pipnn ef=200 recall10=0.8804 p50_us=838.702 p95_us=1073.17 serial_query_qps=1184.183 peak_rss_bytes=1362378752
+backend=pipnn ef=400 recall10=0.9295 p50_us=1479.26 p95_us=1821.179 serial_query_qps=676.595371 peak_rss_bytes=1362378752
+backend=pipnn ef=800 recall10=0.9617 p50_us=2659.499 p95_us=3180.417 serial_query_qps=379.050232 peak_rss_bytes=1362378752
+backend=pipnn ef=1600 recall10=0.9824 p50_us=5034.395 p95_us=5886.945 serial_query_qps=200.977983 peak_rss_bytes=1362378752
+backend=hnsw n=100000 dim=1536 queries=1000 metric=L2 type=FLOAT32 seed=100 M=16 ef_construction=100 build_seconds=60.0027098 creation_insert_seconds=60.0027092 graph_build_seconds=5.73e-07 index_bytes=647694644 build_peak_rss_bytes=1268420608
+backend=hnsw ef=50 recall10=0.931 p50_us=403.208 p95_us=506.731 serial_query_qps=2478.42923 peak_rss_bytes=1268420608
+backend=hnsw ef=100 recall10=0.9692 p50_us=690.182 p95_us=847.021 serial_query_qps=1472.03628 peak_rss_bytes=1268420608
+backend=hnsw ef=200 recall10=0.9807 p50_us=1223.222 p95_us=1500.39 serial_query_qps=835.288335 peak_rss_bytes=1268420608
+backend=hnsw ef=400 recall10=0.989 p50_us=2215.058 p95_us=2693.607 serial_query_qps=464.052971 peak_rss_bytes=1268420608
+backend=hnsw ef=800 recall10=0.9934 p50_us=3848.446 p95_us=4715.636 serial_query_qps=266.484313 peak_rss_bytes=1268420608
+backend=hnsw ef=1600 recall10=0.9962 p50_us=6662.637 p95_us=8310.268 serial_query_qps=150.830566 peak_rss_bytes=1268420608
+backend=pipnn n=100000 dim=96 queries=999 metric=L2 type=FLOAT32 seed=100 max_degree=32 leaf_size=128 fanout=2 hash_bits=12 candidate_limit=80 alpha=1.1 build_seconds=2.58716228 creation_insert_seconds=0.040176588 graph_build_seconds=2.54698569 index_bytes=57529208 build_peak_rss_bytes=209981440
+backend=pipnn ef=50 recall10=0.802102102 p50_us=120.33 p95_us=159.593 serial_query_qps=8198.44787 peak_rss_bytes=209981440
+backend=pipnn ef=100 recall10=0.89029029 p50_us=208.736 p95_us=263.74 serial_query_qps=4777.3922 peak_rss_bytes=209981440
+backend=pipnn ef=200 recall10=0.944744745 p50_us=372.53 p95_us=459.254 serial_query_qps=2703.53 peak_rss_bytes=209981440
+backend=pipnn ef=400 recall10=0.976076076 p50_us=687.242 p95_us=831.266 serial_query_qps=1478.07696 peak_rss_bytes=209981440
+backend=pipnn ef=800 recall10=0.991291291 p50_us=1238.211 p95_us=1599.289 serial_query_qps=797.539677 peak_rss_bytes=209981440
+backend=pipnn ef=1600 recall10=0.997097097 p50_us=2302.216 p95_us=2756.505 serial_query_qps=435.03809 peak_rss_bytes=209981440
+backend=hnsw n=100000 dim=96 queries=999 metric=L2 type=FLOAT32 seed=100 M=16 ef_construction=100 build_seconds=12.6275737 creation_insert_seconds=12.6275732 graph_build_seconds=4.7e-07 index_bytes=69761400 build_peak_rss_bytes=117645312
+backend=hnsw ef=50 recall10=0.969169169 p50_us=85.69 p95_us=108.746 serial_query_qps=11802.7651 peak_rss_bytes=117645312
+backend=hnsw ef=100 recall10=0.98968969 p50_us=153.594 p95_us=194.854 serial_query_qps=6572.82143 peak_rss_bytes=117645312
+backend=hnsw ef=200 recall10=0.997297297 p50_us=265.36 p95_us=339.757 serial_query_qps=3802.86748 peak_rss_bytes=117645312
+backend=hnsw ef=400 recall10=0.9996997 p50_us=494.223 p95_us=632.8 serial_query_qps=2052.7578 peak_rss_bytes=117645312
+backend=hnsw ef=800 recall10=1 p50_us=915.594 p95_us=1152.396 serial_query_qps=1114.93286 peak_rss_bytes=117645312
+backend=hnsw ef=1600 recall10=1 p50_us=1673.679 p95_us=2102.27 serial_query_qps=609.500333 peak_rss_bytes=117645312

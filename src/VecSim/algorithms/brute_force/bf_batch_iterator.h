@@ -18,6 +18,7 @@
 #include <iostream>
 #include <cmath>
 #include <functional>
+#include <memory>
 
 using std::pair;
 
@@ -106,7 +107,7 @@ void BF_BatchIterator<DataType, DistType>::swapScores(
 
 template <typename DataType, typename DistType>
 VecSimQueryReply *BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n_res) {
-    auto rep = new VecSimQueryReply(this->allocator);
+    auto rep = std::make_unique<VecSimQueryReply>(this->allocator);
     DistType upperBound = std::numeric_limits<DistType>::lowest();
     vecsim_stl::max_priority_queue<DistType, labelType> TopCandidates(this->allocator);
     // map vector's label to its index in the scores vector.
@@ -136,12 +137,12 @@ VecSimQueryReply *BF_BatchIterator<DataType, DistType>::heapBasedSearch(size_t n
         TopCandidates.pop();
     }
     swapScores(TopCandidatesIndices, rep->results.size());
-    return rep;
+    return rep.release();
 }
 
 template <typename DataType, typename DistType>
 VecSimQueryReply *BF_BatchIterator<DataType, DistType>::selectBasedSearch(size_t n_res) {
-    auto rep = new VecSimQueryReply(this->allocator);
+    auto rep = std::make_unique<VecSimQueryReply>(this->allocator);
     size_t remaining_vectors_count = this->scores.size() - this->scores_valid_start_pos;
     // Get an iterator to the effective first element in the scores array, which is the first
     // element that hasn't been returned in previous iterations.
@@ -162,7 +163,7 @@ VecSimQueryReply *BF_BatchIterator<DataType, DistType>::selectBasedSearch(size_t
     }
     // Update the valid results start position after returning the results.
     this->scores_valid_start_pos += rep->results.size();
-    return rep;
+    return rep.release();
 }
 
 template <typename DataType, typename DistType>
