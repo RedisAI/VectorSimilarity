@@ -10,14 +10,17 @@
 #include "index_factory.h"
 #include "hnsw_factory.h"
 #include "brute_force_factory.h"
+#include "pipnn_factory.h"
 #include "tiered_factory.h"
 #include "svs_factory.h"
 
 namespace VecSimFactory {
 VecSimIndex *NewIndex(const VecSimParams *params) {
     VecSimIndex *index = NULL;
-    std::shared_ptr<VecSimAllocator> allocator = VecSimAllocator::newVecsimAllocator();
     try {
+        if (!params) {
+            return nullptr;
+        }
         switch (params->algo) {
         case VecSimAlgo_HNSWLIB: {
             index = HNSWFactory::NewIndex(params);
@@ -26,6 +29,10 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 
         case VecSimAlgo_BF: {
             index = BruteForceFactory::NewIndex(params);
+            break;
+        }
+        case VecSimAlgo_PIPNN: {
+            index = PiPNNFactory::NewIndex(params);
             break;
         }
         case VecSimAlgo_TIERED: {
@@ -44,11 +51,16 @@ VecSimIndex *NewIndex(const VecSimParams *params) {
 }
 
 size_t EstimateInitialSize(const VecSimParams *params) {
+    if (!params) {
+        return SIZE_MAX;
+    }
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateInitialSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateInitialSize(&params->algoParams.bfParams);
+    case VecSimAlgo_PIPNN:
+        return PiPNNFactory::EstimateInitialSize(&params->algoParams.pipnnParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateInitialSize(&params->algoParams.tieredParams);
     case VecSimAlgo_SVS:; // empty statement if svs not available
@@ -58,11 +70,16 @@ size_t EstimateInitialSize(const VecSimParams *params) {
 }
 
 size_t EstimateElementSize(const VecSimParams *params) {
+    if (!params) {
+        return SIZE_MAX;
+    }
     switch (params->algo) {
     case VecSimAlgo_HNSWLIB:
         return HNSWFactory::EstimateElementSize(&params->algoParams.hnswParams);
     case VecSimAlgo_BF:
         return BruteForceFactory::EstimateElementSize(&params->algoParams.bfParams);
+    case VecSimAlgo_PIPNN:
+        return PiPNNFactory::EstimateElementSize(&params->algoParams.pipnnParams);
     case VecSimAlgo_TIERED:
         return TieredFactory::EstimateElementSize(&params->algoParams.tieredParams);
     case VecSimAlgo_SVS:; // empty statement if svs not available

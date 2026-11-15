@@ -151,8 +151,16 @@ public:
         // so only the first vector in every block is guaranteed to be aligned. Aligning every
         // vector would require padding `storedDataSize` up to a multiple of the alignment, which
         // is a separate change.
-        this->vectors = new (this->allocator) DataBlocksContainer(
-            this->blockSize, this->storedDataSize, this->allocator, this->getStorageAlignment());
+        try {
+            this->vectors = new (this->allocator) DataBlocksContainer(
+                this->blockSize, this->storedDataSize, this->allocator, this->getStorageAlignment());
+        } catch (...) {
+            // A failed constructor does not run this class's destructor. Components have
+            // already been adopted, so release them before propagating the storage failure.
+            delete indexCalculator;
+            delete preprocessors;
+            throw;
+        }
     }
 
     /**

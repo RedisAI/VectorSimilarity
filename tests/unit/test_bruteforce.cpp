@@ -1280,7 +1280,7 @@ TYPED_TEST(BruteForceTest, brute_force_resolve_params) {
         ASSERT_EQ(VecSimIndex_ResolveParams(index, rparams.data(), rparams.size(), &qparams,
                                             query_type, &err_msg),
                   VecSimParamResolverErr_UnknownParam);
-        ASSERT_STREQ(err_msg, "EF_RUNTIME is only valid for HNSW indexes");
+        ASSERT_STREQ(err_msg, "EF_RUNTIME is only valid for HNSW and PiPNN indexes");
     }
     /** Testing with hybrid query params - cases which are only relevant for BF flat index. **/
     // Sending only "batch_size" param is valid.

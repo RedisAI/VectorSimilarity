@@ -8,13 +8,13 @@
 Starting with version 8.0, RediSearch and this vector similarity library is an integral part of Redis. See https://github.com/redis/redis
 
 This repo exposes a C API for using vector similarity search.
-Allows creating indices of vectors and searching for top K similar to some vector in two methods: brute force, and by using the hnsw algorithm (probabilistic).
+Allows creating vector indexes and searching for the top K similar vectors using exact brute force or approximate graph search.
 
 The API header files are `vec_sim.h` and `query_results.h`, which are located in `src/VecSim`.
 
 ## Algorithms
 
-All of the algorithms in this library are designed to work inside RediSearch and support the following features:
+The Flat and HNSW algorithms are designed to work inside RediSearch and support the following features:
 1. In place insert, delete, and update vectors in the index.
 2. KNN queries - results can be ordered by score or ID.
 3. Iterator interface for consecutive KNN queries.
@@ -29,6 +29,13 @@ Brute force comparison of the query vector `q` with the stored vectors. Vectors 
 
 ### HNSW
 Modified implementation of [hnswlib](https://github.com/nmslib/hnswlib). Modified to accommodate the above feature set.
+
+### PiPNN
+
+An opt-in bulk-built graph backend for FLOAT32/L2 single-value indexes. Mutations
+invalidate its graph and queries use exact search until an explicit rebuild.
+See [PiPNN lifecycle, supported operations, and validation](docs/pipnn.md) before
+integrating it; tiered indexes and Redis Search schema integration are not included.
 
 ## Metrics
 We support three popular distance metrics to measure the degree of similarity between two vectors:

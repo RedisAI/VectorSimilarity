@@ -78,7 +78,13 @@ typedef enum {
 } VecSimQuantType;
 
 // Algorithm type/library.
-typedef enum { VecSimAlgo_BF, VecSimAlgo_HNSWLIB, VecSimAlgo_TIERED, VecSimAlgo_SVS } VecSimAlgo;
+typedef enum {
+    VecSimAlgo_BF,
+    VecSimAlgo_HNSWLIB,
+    VecSimAlgo_TIERED,
+    VecSimAlgo_SVS,
+    VecSimAlgo_PIPNN
+} VecSimAlgo;
 
 typedef enum {
     VecSimOption_AUTO = 0,
@@ -141,7 +147,8 @@ typedef enum {
     VecSimRelabel_OldLabelMissing, // `old_label` is not in the index
     VecSimRelabel_NewLabelTaken,   // `new_label` is already in the index
     VecSimRelabel_SameLabel,       // `old_label` and `new_label` are equal
-    VecSimRelabel_Unsupported      // this index type does not implement relabeling
+    VecSimRelabel_Unsupported,     // this index type does not implement relabeling
+    VecSimRelabel_Failed           // the index could not complete relabeling
 } VecSimRelabelCode;
 
 // Outcome of `updateVectors`. The refusals are told apart because a caller acts on them
@@ -205,6 +212,27 @@ typedef struct {
     size_t initialCapacity; // Deprecated.
     size_t blockSize;
 } BFParams;
+
+/** PiPNN is an opt-in, in-memory backend for FLOAT32/L2 single-value indexes.
+ * Zero-valued tuning fields select the defaults documented below.
+ * initialCapacity is deprecated and does not reserve storage, as in FLAT.
+ */
+typedef struct {
+    VecSimType type;
+    size_t dim;
+    VecSimMetric metric;
+    size_t initialCapacity;
+    size_t blockSize;       // Default: DEFAULT_BLOCK_SIZE.
+    bool multi;            // Must be false.
+    size_t maxDegree;       // At least 2; default: 32.
+    size_t leafSize;        // At least 2; default: 128.
+    size_t fanout;          // Between 2 and 32; default: 2.
+    size_t hashBits;        // At most 32; default: 12.
+    size_t candidateLimit;  // At least maxDegree; default: 80.
+    double alpha;          // Finite and at least 1; default: 1.1.
+    size_t efRuntime;       // Default: 100.
+    uint64_t seed;          // Default: 100.
+} PiPNNParams;
 
 typedef enum {
     VecSimSvsQuant_NONE = 0,           // No quantization.
@@ -290,6 +318,7 @@ typedef union {
     BFParams bfParams;
     TieredIndexParams tieredParams;
     SVSParams svsParams;
+    PiPNNParams pipnnParams;
 } AlgoParams;
 
 struct VecSimParams {
@@ -331,6 +360,10 @@ typedef struct {
     size_t efRuntime; // EF parameter for HNSW graph accuracy/latency for search.
     double epsilon;   // Epsilon parameter for HNSW graph accuracy/latency for range search.
 } HNSWRuntimeParams;
+
+typedef struct {
+    size_t efRuntime; // Zero selects the index default.
+} PiPNNRuntimeParams;
 
 typedef struct {
     size_t efRuntime;        // EF parameter for HNSW graph accuracy/latency for search.
@@ -377,6 +410,7 @@ typedef struct {
         HNSWRuntimeParams hnswRuntimeParams;
         HNSWDiskRuntimeParams hnswDiskRuntimeParams;
         SVSRuntimeParams svsRuntimeParams;
+        PiPNNRuntimeParams pipnnRuntimeParams;
     };
     size_t batchSize;
     VecSearchMode searchMode;

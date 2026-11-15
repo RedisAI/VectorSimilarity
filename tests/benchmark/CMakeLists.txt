@@ -5,6 +5,10 @@ project(VectorSimilarity_Benchmark)
 
 set(CMAKE_CXX_STANDARD 20)
 
+# Explicitly requested comparison runner; it needs no benchmark/gtest runtime.
+add_executable(pipnn_comparison EXCLUDE_FROM_ALL pipnn_comparison.cpp)
+target_link_libraries(pipnn_comparison VectorSimilarity)
+
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(../)

@@ -24,6 +24,9 @@ endif()
 
 add_library(VectorSimilarity ${VECSIM_LIBTYPE}
     index_factories/brute_force_factory.cpp
+    index_factories/pipnn_factory.cpp
+    algorithms/pipnn/pipnn.cpp
+    algorithms/pipnn/pipnn_serialization.cpp
     index_factories/hnsw_factory.cpp
     index_factories/tiered_factory.cpp
     index_factories/svs_factory.cpp
