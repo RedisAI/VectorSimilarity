@@ -34,6 +34,21 @@ private:
             if (VECSIM_TIMEOUT(this->getTimeoutCtx())) {
                 return VecSim_QueryReply_TimedOut;
             }
+            if (this->navix.mayMatch) {
+                if (this->navix.stats)
+                    ++this->navix.stats->filterChecks;
+                if (!this->navix.mayMatch(this->navix.context,
+                                          this->index->getVectorLabel(curr_id))) {
+                    if (this->navix.stats)
+                        ++this->navix.stats->filterRejected;
+                    ++curr_id;
+                    continue;
+                }
+                if (this->navix.stats) {
+                    ++this->navix.stats->frontendCandidates;
+                    ++this->navix.stats->distanceComputations;
+                }
+            }
             auto score = this->index->calcDistance(vector, this->getQueryBlob());
             labelType curr_label = this->index->getVectorLabel(curr_id);
             auto curr_pair = tmp_scores.find(curr_label);

@@ -85,3 +85,11 @@ queueing
 SVS
 LVQ
 allocator
+NaviX
+POC
+ABI
+struct
+resumable
+ef
+APIs
+frontend
