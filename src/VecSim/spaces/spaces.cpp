@@ -29,6 +29,7 @@ dist_func_t<float> GetDistFunc<vecsim_types::bfloat16, float>(VecSimMetric metri
                                                               unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
     case VecSimMetric_IP:
         return IP_BF16_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
@@ -42,6 +43,7 @@ dist_func_t<float> GetDistFunc<vecsim_types::float16, float>(VecSimMetric metric
                                                              unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
     case VecSimMetric_IP:
         return IP_FP16_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
@@ -55,6 +57,7 @@ dist_func_t<float> GetDistFunc<float, float>(VecSimMetric metric, size_t dim,
                                              unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
     case VecSimMetric_IP:
         return IP_FP32_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
@@ -68,6 +71,7 @@ dist_func_t<double> GetDistFunc<double, double>(VecSimMetric metric, size_t dim,
                                                 unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
     case VecSimMetric_IP:
         return IP_FP64_GetDistFunc(dim, alignment);
     case VecSimMetric_L2:
@@ -81,6 +85,7 @@ dist_func_t<float> GetDistFunc<int8_t, float>(VecSimMetric metric, size_t dim,
                                               unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
         return Cosine_INT8_GetDistFunc(dim, alignment);
     case VecSimMetric_IP:
         return IP_INT8_GetDistFunc(dim, alignment);
@@ -95,6 +100,7 @@ dist_func_t<float> GetDistFunc<uint8_t, float>(VecSimMetric metric, size_t dim,
                                                unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
         return Cosine_UINT8_GetDistFunc(dim, alignment);
     case VecSimMetric_IP:
         return IP_UINT8_GetDistFunc(dim, alignment);
@@ -109,6 +115,7 @@ dist_func_t<float> GetDistFunc<vecsim_types::sq8, float>(VecSimMetric metric, si
                                                          unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
         return Cosine_SQ8_SQ8_GetDistFunc(dim, alignment);
     case VecSimMetric_IP:
         return IP_SQ8_SQ8_GetDistFunc(dim, alignment);
@@ -123,6 +130,7 @@ dist_func_t<float> GetDistFunc<vecsim_types::sq8, float, float>(VecSimMetric met
                                                                 unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
         return Cosine_SQ8_FP32_GetDistFunc(dim, alignment);
     case VecSimMetric_IP:
         return IP_SQ8_FP32_GetDistFunc(dim, alignment);
@@ -138,6 +146,7 @@ GetDistFunc<vecsim_types::sq8, float, vecsim_types::float16>(VecSimMetric metric
                                                              unsigned char *alignment) {
     switch (metric) {
     case VecSimMetric_Cosine:
+    case VecSimMetric_CosineSimilarity:
         return Cosine_SQ8_FP16_GetDistFunc(dim, alignment);
     case VecSimMetric_IP:
         return IP_SQ8_FP16_GetDistFunc(dim, alignment);
