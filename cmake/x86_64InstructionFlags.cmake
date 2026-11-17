@@ -21,15 +21,35 @@ CHECK_CXX_COMPILER_FLAG(-msse4.1 CXX_SSE4)
 CHECK_CXX_COMPILER_FLAG(-msse3 CXX_SSE3)
 CHECK_CXX_COMPILER_FLAG(-msse CXX_SSE)
 
-# Turn off AVX512BF16 on Ubuntu 18.04 as it is not supported by its binutils assembler version.
+# Check binutils version for AVX512 instruction support.
+# Even if the compiler supports certain flags, the assembler (binutils) may not.
+# - AVX512-BF16 requires binutils >= 2.34
+# - AVX512-FP16 requires binutils >= 2.38
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
-	execute_process(COMMAND lsb_release -rs
-				OUTPUT_VARIABLE UBUNTU_VERSION
-				OUTPUT_STRIP_TRAILING_WHITESPACE)
+	# Get binutils/assembler version
+	execute_process(COMMAND as --version
+				OUTPUT_VARIABLE AS_VERSION_OUTPUT
+				OUTPUT_STRIP_TRAILING_WHITESPACE
+				ERROR_QUIET)
+	# Extract version number (e.g., "2.34" from "GNU assembler (GNU Binutils for Ubuntu) 2.34")
+	string(REGEX MATCH "[0-9]+\\.[0-9]+" BINUTILS_VERSION "${AS_VERSION_OUTPUT}")
 
-	if("${UBUNTU_VERSION}" STREQUAL "18.04")
-		message(STATUS "Compiling on Ubuntu 18.04, turning off CXX_AVX512BF16 flag.")
-		set(CXX_AVX512BF16 FALSE)
+	if(BINUTILS_VERSION)
+		message(STATUS "Detected binutils version: ${BINUTILS_VERSION}")
+
+		# AVX512-BF16 requires binutils >= 2.34
+		if(BINUTILS_VERSION VERSION_LESS "2.34")
+			message(STATUS "binutils ${BINUTILS_VERSION} < 2.34, turning off CXX_AVX512BF16 flag.")
+			set(CXX_AVX512BF16 FALSE)
+		endif()
+
+		# AVX512-FP16 requires binutils >= 2.38
+		if(BINUTILS_VERSION VERSION_LESS "2.38")
+			message(STATUS "binutils ${BINUTILS_VERSION} < 2.38, turning off CXX_AVX512FP16 flag.")
+			set(CXX_AVX512FP16 FALSE)
+		endif()
+	else()
+		message(WARNING "Could not detect binutils version, AVX512 features may fail to assemble")
 	endif()
 endif()
 
