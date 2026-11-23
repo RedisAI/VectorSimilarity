@@ -6,6 +6,7 @@
     - [How to define and register a new test](#how-to-define-and-register-a-new-test)
 * [Fixtures](#fixtures)
     - [Benchmarks fixture classes hierarchy](#benchmarks-fixture-classes-hierarchy)
+* [Training the RAM HNSW policy selector](hnsw_policy_training.md)
 
 # Directory structure 
 The benchmark directory contains several types of files as follows:

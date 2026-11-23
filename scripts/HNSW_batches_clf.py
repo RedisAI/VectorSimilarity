@@ -2,15 +2,16 @@
 # Licensed under your choice of the Redis Source Available License 2.0 (RSALv2) or
 # the Server Side Public License v1 (SSPLv1).
 
-import matplotlib.pyplot as plt
-import numpy as np
+import sys
 
-from sklearn.tree import DecisionTreeClassifier
-from sklearn import tree
 '''------------------- batches HNSW -----------------'''
 
 
 def print_tree(clf):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from sklearn import tree
+
     tree.plot_tree(clf)
     plt.savefig('batches_vs_adhoc-HNSW.pdf')
     plt.show()
@@ -49,11 +50,17 @@ def print_tree(clf):
                                                  feature=feature[i], threshold=threshold[i], right=children_right[i]))
 
 
-if __name__ == '__main__':
+def train_legacy():
+    import numpy as np
+    from sklearn.tree import DecisionTreeClassifier
+
     clf = DecisionTreeClassifier(max_leaf_nodes=20)
 
     # features: (k, index_size, dim, M, r)
     # labels: 1: adhoc better, -1: batches better
+    # Preserve the historical encoding (k = 5, 10, 15 in X_1 through X_4).
+    # The experimental comments say 5, 50, 500. The script only records
+    # the winning policy for each comparison. Measured mode takes the actual k.
     y = []
 
     # The following labels represent the results for experiments that were held for the following combinations:
@@ -343,3 +350,12 @@ if __name__ == '__main__':
     print_tree(clf)
     # (k, index_size, dim, M, r)
     print(clf.predict([[10, 800000, 100, 50, 0.0001]]))
+
+
+if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        train_legacy()
+    else:
+        from hnsw_policy_training import main
+
+        main()
