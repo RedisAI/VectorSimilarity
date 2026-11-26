@@ -29,6 +29,9 @@ static inline void normalizeVector_imp(void *vec, const size_t dim) {
     for (size_t i = 0; i < dim; i++) {
         sum += (double)input_vector[i] * (double)input_vector[i];
     }
+    if (sum == 0) {
+        return;
+    }
     double norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
@@ -51,6 +54,9 @@ static inline void bfloat16_normalizeVector(void *vec, const size_t dim) {
         sum += (double)val * (double)val;
     }
 
+    if (sum == 0) {
+        return;
+    }
     double norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
@@ -71,6 +77,9 @@ static inline void float16_normalizeVector(void *vec, const size_t dim) {
         sum += val * val;
     }
 
+    if (sum == 0) {
+        return;
+    }
     float norm = sqrt(sum);
 
     for (size_t i = 0; i < dim; i++) {
@@ -83,6 +92,9 @@ static inline void integer_normalizeVector(void *vec, const size_t dim) {
     DataType *input_vector = static_cast<DataType *>(vec);
 
     float norm = IntegralType_ComputeNorm<DataType>(input_vector, dim);
+    if (norm == 0) {
+        norm = 1.0f;
+    }
 
     // The norm follows a one-byte element payload and may be unaligned for odd dimensions.
     std::memcpy(input_vector + dim, &norm, sizeof(norm));
