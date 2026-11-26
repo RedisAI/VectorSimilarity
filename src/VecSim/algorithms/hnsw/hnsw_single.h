@@ -91,6 +91,20 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    int relabelVectorUnsafe(labelType old_label, labelType new_label) override {
+        auto it = labelLookup.find(old_label);
+        if (it == labelLookup.end()) {
+            return 0; // old_label not found
+        }
+        if (labelLookup.find(new_label) != labelLookup.end()) {
+            return 0; // new_label already exists; caller should fall back to delete + add
+        }
+        idType id = it->second;
+        labelLookup.erase(it);
+        labelLookup[new_label] = id;
+        this->idToMetaData[id].label = new_label;
+        return 1;
+    }
 };
 
 /**

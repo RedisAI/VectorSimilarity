@@ -201,6 +201,7 @@ public:
 
     int addVector(const void *blob, labelType label) override;
     int deleteVector(labelType label) override;
+    int relabelVector(labelType old_label, labelType new_label) override;
     size_t getNumMarkedDeleted() const override {
         return this->getHNSWIndex()->getNumMarkedDeleted();
     }
@@ -860,6 +861,48 @@ int TieredHNSWIndex<DataType, DistType>::deleteVector(labelType label) {
     }
 
     return num_deleted_vectors;
+}
+
+template <typename DataType, typename DistType>
+int TieredHNSWIndex<DataType, DistType>::relabelVector(labelType old_label, labelType new_label) {
+    auto *hnsw_index = this->getHNSWIndex();
+    int ret = 0;
+
+    // Take both exclusive locks in the canonical order (flat then main). Holding both prevents a
+    // search or the background ingestion worker from observing a half-renamed state, and prevents a
+    // pending insert job from being executed (ingesting old_label into HNSW) between the two tier
+    // updates. The caller must guarantee new_label does not already exist in the index.
+    this->flatIndexGuard.lock();
+    this->lockMainIndexGuard();
+
+    // Flat tier: relabel the buffered vector (if present) and re-key any pending insert job(s), so
+    // a not-yet-ingested vector is later ingested into HNSW under new_label rather than old_label.
+    if (this->frontendIndex->isLabelExists(old_label)) {
+        if (this->frontendIndex->relabelVector(old_label, new_label) == 1) {
+            ret = 1;
+        }
+        auto it = this->labelToInsertJobs.find(old_label);
+        if (it != this->labelToInsertJobs.end()) {
+            for (auto *job : it->second) {
+                job->label = new_label;
+            }
+            auto jobs = std::move(it->second);
+            this->labelToInsertJobs.erase(it);
+            this->labelToInsertJobs.emplace(new_label, std::move(jobs));
+        }
+    }
+
+    // Backend (HNSW) tier: we already hold mainIndexGuard, so take the HNSW data guard and use the
+    // lock-free variant to avoid re-locking it recursively.
+    hnsw_index->lockIndexDataGuard();
+    if (hnsw_index->relabelVectorUnsafe(old_label, new_label) == 1) {
+        ret = 1;
+    }
+    hnsw_index->unlockIndexDataGuard();
+
+    this->unlockMainIndexGuard();
+    this->flatIndexGuard.unlock();
+    return ret;
 }
 
 // `getDistanceFrom` returns the minimum distance between the given blob and the vector with the

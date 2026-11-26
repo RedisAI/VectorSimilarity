@@ -121,6 +121,23 @@ public:
         return getDistanceFromInternal(label, vector_data);
     }
     int removeLabel(labelType label) override { return labelLookup.erase(label); }
+    int relabelVectorUnsafe(labelType old_label, labelType new_label) override {
+        auto it = labelLookup.find(old_label);
+        if (it == labelLookup.end()) {
+            return 0; // old_label not found
+        }
+        if (labelLookup.find(new_label) != labelLookup.end()) {
+            return 0; // new_label already exists; caller should fall back to delete + add
+        }
+        // A label may map to several internal ids in MULTI mode; relabel all of them.
+        for (idType id : it->second) {
+            this->idToMetaData[id].label = new_label;
+        }
+        auto ids = std::move(it->second);
+        labelLookup.erase(it);
+        labelLookup.emplace(new_label, std::move(ids));
+        return 1;
+    }
 };
 
 /**
