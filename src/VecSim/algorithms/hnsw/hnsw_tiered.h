@@ -248,6 +248,10 @@ public:
 
 #ifdef BUILD_TESTS
     void getDataByLabel(labelType label, std::vector<std::vector<DataType>> &vectors_output) const;
+    size_t indexMetaDataCapacity() const override {
+        return this->backendIndex->indexMetaDataCapacity() +
+               this->frontendIndex->indexMetaDataCapacity();
+    }
 #endif
 };
 

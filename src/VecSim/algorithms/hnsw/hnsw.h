@@ -310,6 +310,8 @@ public:
             resizeLabelLookup(idToMetaData.size());
         }
     }
+
+    size_t indexMetaDataCapacity() const override { return idToMetaData.capacity(); }
 #endif
 
 protected:
